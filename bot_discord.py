@@ -213,30 +213,38 @@ async def on_thread_create(thread):
     if thread.parent_id != FORUM_CHANNEL_ID: return
     
     # Marquer ce thread comme récemment créé (pour éviter les doublons avec on_thread_update)
+    # On utilise un délai plus long (30 secondes) pour être sûr
     import time
     recent_threads[thread.id] = time.time()
     
-    await discord.utils.sleep_until(discord.utils.utcnow()) 
+    # Attendre un peu pour que Discord finisse de créer le thread
+    await asyncio.sleep(1)
     
-    trads = trier_tags(thread.applied_tags)
+    # Récupérer le thread à jour avec tous ses tags
+    thread_actuel = bot.get_channel(thread.id)
+    if not thread_actuel:
+        return
+    
+    trads = trier_tags(thread_actuel.applied_tags)
     # On envoie l'annonce seulement si des tags sont présents
     if len(trads) > 0:
-        await planifier_annonce(thread, trads, source="thread_create")
+        print(f"🆕 Nouveau thread créé : {thread_actuel.name}")
+        await planifier_annonce(thread_actuel, trads, source="thread_create")
 
 @bot.event
 async def on_thread_update(before, after):
     """Détecte les modifications des tags d'un thread"""
     if after.parent_id != FORUM_CHANNEL_ID: return
     
-    # Ignorer les mises à jour dans les 10 premières secondes après création (éviter doublons)
+    # Ignorer les mises à jour dans les 30 premières secondes après création (éviter doublons)
     import time
     if after.id in recent_threads:
         temps_ecoule = time.time() - recent_threads[after.id]
-        if temps_ecoule < 10:
+        if temps_ecoule < 30:
             print(f"⏭️ Thread récent ({temps_ecoule:.1f}s), on_thread_update ignoré pour : {after.name}")
             return
         else:
-            # Nettoyer le dictionnaire après 10 secondes
+            # Nettoyer le dictionnaire après 30 secondes
             del recent_threads[after.id]
 
     trads_after = trier_tags(after.applied_tags)
@@ -276,11 +284,11 @@ async def on_message_edit(before, after):
     if before.content == after.content:
         return
     
-    # Ignorer les modifications dans les 10 premières secondes après création (éviter doublons)
+    # Ignorer les modifications dans les 30 premières secondes après création (éviter doublons)
     import time
     if after.channel.id in recent_threads:
         temps_ecoule = time.time() - recent_threads[after.channel.id]
-        if temps_ecoule < 10:
+        if temps_ecoule < 30:
             print(f"⏭️ Thread récent ({temps_ecoule:.1f}s), on_message_edit ignoré pour : {after.channel.name}")
             return
     
