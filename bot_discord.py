@@ -100,6 +100,15 @@ async def envoyer_annonce(thread, liste_tags_trads):
     titre_match = re.search(r"\*\*Titre du jeu\s*:\*\*\s*(.+?)(?:\n|$)", contenu)
     titre_jeu = titre_match.group(1).strip() if titre_match else thread.name
     
+    # Version du jeu (d'abord chercher dans le contenu, sinon extraire du titre)
+    version_jeu_match = re.search(r"\*\*Version du jeu\s*:\*\*\s*(.+?)(?:\n|$)", contenu)
+    if version_jeu_match:
+        version_jeu = version_jeu_match.group(1).strip()
+    else:
+        # Extraire depuis le titre : "Nom du jeu [v1.0 SE] [Auteur]"
+        version_titre_match = re.search(r"\[([^\]]+)\]", thread.name)
+        version_jeu = version_titre_match.group(1).strip() if version_titre_match else "Non spécifiée"
+    
     # Version traduite
     version_trad_match = re.search(r"\*\*Version traduite\s*:\*\*\s*(.+?)(?:\n|$)", contenu)
     version_traduction = version_trad_match.group(1).strip() if version_trad_match else "Non spécifiée"
@@ -132,6 +141,7 @@ async def envoyer_annonce(thread, liste_tags_trads):
     
     msg_content = f"{prefixe}\n\n"
     msg_content += f"**Nom du jeu :** {titre_jeu}\n"
+    msg_content += f"**Version du jeu :** {version_jeu}\n"
     msg_content += f"**Version de la traduction :** {version_traduction}\n"
     msg_content += f"**État :** {etat_txt}\n"
     msg_content += f"**Lien :** {thread.jump_url}"
@@ -169,13 +179,38 @@ async def on_thread_update(before, after):
     trads_after = trier_tags(after.applied_tags)
     trads_before = trier_tags(before.applied_tags)
 
-    # Si aucun tag de traduction actuellement, on ne fait rien (on attend que vous en mettiez un)
+    # Si aucun tag actuellement, on ne fait rien
     if len(trads_after) == 0:
         return
 
-    # On déclenche SEULEMENT si les tags ont changé
-    # OU si c'est la première fois qu'on met des tags (0 avant -> X après)
+    # On déclenche si les tags ont changé
     if trads_before != trads_after:
         await envoyer_annonce(after, trads_after)
+
+@bot.event
+async def on_message_edit(before, after):
+    """Détecte les modifications du contenu du premier message d'un thread"""
+    # Vérifier si c'est un message dans un thread du forum
+    if not isinstance(after.channel, discord.Thread):
+        return
+    
+    if after.channel.parent_id != FORUM_CHANNEL_ID:
+        return
+    
+    # Vérifier si c'est le premier message du thread (ID du message = ID du thread)
+    if after.id != after.channel.id:
+        return
+    
+    # Vérifier si le contenu a vraiment changé
+    if before.content == after.content:
+        return
+    
+    # Récupérer les tags actuels
+    trads = trier_tags(after.channel.applied_tags)
+    
+    # Si il y a des tags, on envoie l'annonce
+    if len(trads) > 0:
+        await envoyer_annonce(after.channel, trads)
+        print(f"Modification du contenu détectée pour : {after.channel.name}")
 
 bot.run(TOKEN)

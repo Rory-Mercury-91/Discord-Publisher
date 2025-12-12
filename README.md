@@ -5,8 +5,9 @@ Bot Discord qui surveille un forum de traductions de jeux et envoie automatiquem
 ## 🚀 Fonctionnalités
 
 - Détection automatique des nouveaux threads dans le forum
+- Détection des modifications du contenu des posts (pas seulement les tags)
 - Annonces avec distinction "Nouvelle traduction" vs "Mise à jour"
-- Extraction automatique du titre du jeu et de la version de la traduction
+- Extraction automatique du titre du jeu, version du jeu et version de la traduction
 - Affichage des tags (Terminé, En cours) avec emojis
 - Affichage de l'image du jeu
 - Anti-spam : supprime les doublons récents
@@ -67,12 +68,18 @@ Les variables d'environnement nécessaires :
 
 ## 📋 Format attendu des posts
 
+### Titre du thread
+Format recommandé : `Nom du jeu [Version] [Auteur]`
+Exemple : `Step Bi Step [v1.0 SE] [Dumb Koala Games]`
+
+### Contenu du post
 Le bot extrait automatiquement les informations des posts qui suivent ce format :
 
 ```
 ### :computer: Infos du Jeu & Liens de Téléchargement :
 * **Titre du jeu :** [Nom du jeu]
-* **Version traduite :** [Version]
+* **Version du jeu :** [Version] (optionnel, sinon extrait du titre)
+* **Version traduite :** [Version de la traduction]
 * **Lien du jeu (VO) :** [Lien vers le jeu]
 * **Lien de la Traduction 1 :** [Lien]
 * **Lien de la Traduction 2 (Backup) :** [Lien]
@@ -80,10 +87,17 @@ Le bot extrait automatiquement les informations des posts qui suivent ce format 
 
 Le bot génère alors une annonce avec :
 - Nom du jeu (titre du thread)
+- Version du jeu (extraite du titre ou du contenu)
 - Version de la traduction
 - État (basé sur les tags : Terminé, En cours)
 - Lien vers le thread
 - Image du post (si présente)
+
+### Déclenchement des annonces
+Le bot envoie une annonce :
+- ✅ Lors de la création d'un nouveau thread avec des tags
+- ✅ Lors de la modification des tags d'un thread
+- ✅ Lors de la modification du contenu du premier message du thread
 
 ## 🔒 Sécurité
 
