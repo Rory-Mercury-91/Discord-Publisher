@@ -46,6 +46,9 @@ pending_announcements = {}
 # Dictionnaire pour suivre les threads récemment créés (éviter les doublons)
 recent_threads = {}
 
+# Dictionnaire de verrous pour éviter les annonces simultanées
+announcement_locks = {}
+
 # --- OUTILS ---
 
 async def planifier_annonce(thread, tags_actuels, source=""):
@@ -55,32 +58,40 @@ async def planifier_annonce(thread, tags_actuels, source=""):
     """
     thread_id = thread.id
     
-    # Si une tâche est déjà en attente pour ce thread, on l'annule
-    if thread_id in pending_announcements:
-        pending_announcements[thread_id].cancel()
-        print(f"⏱️ Annulation de l'annonce précédente pour : {thread.name} (source: {source})")
+    # Créer un verrou pour ce thread s'il n'existe pas
+    if thread_id not in announcement_locks:
+        announcement_locks[thread_id] = asyncio.Lock()
     
-    # Fonction qui sera exécutée après le délai
-    async def envoyer_apres_delai():
-        try:
-            await asyncio.sleep(ANNOUNCE_DELAY)
-            # Après le délai, on récupère les tags actuels du thread
-            thread_actuel = bot.get_channel(thread_id)
-            if thread_actuel:
-                tags_finaux = trier_tags(thread_actuel.applied_tags)
-                if len(tags_finaux) > 0:
-                    await envoyer_annonce(thread_actuel, tags_finaux)
-            # On retire la tâche du dictionnaire
-            if thread_id in pending_announcements:
-                del pending_announcements[thread_id]
-        except asyncio.CancelledError:
-            # La tâche a été annulée, c'est normal
-            print(f"❌ Tâche annulée pour : {thread.name}")
-    
-    # On crée et stocke la nouvelle tâche
-    task = asyncio.create_task(envoyer_apres_delai())
-    pending_announcements[thread_id] = task
-    print(f"⏱️ Annonce planifiée dans {ANNOUNCE_DELAY}s pour : {thread.name} (source: {source})")
+    # Acquérir le verrou pour éviter les annonces simultanées
+    async with announcement_locks[thread_id]:
+        # Si une tâche est déjà en attente pour ce thread, on l'annule
+        if thread_id in pending_announcements:
+            pending_announcements[thread_id].cancel()
+            print(f"⏱️ Annulation de l'annonce précédente pour : {thread.name} (source: {source})")
+        
+        # Fonction qui sera exécutée après le délai
+        async def envoyer_apres_delai():
+            try:
+                await asyncio.sleep(ANNOUNCE_DELAY)
+                # Après le délai, on récupère les tags actuels du thread
+                thread_actuel = bot.get_channel(thread_id)
+                if thread_actuel:
+                    tags_finaux = trier_tags(thread_actuel.applied_tags)
+                    if len(tags_finaux) > 0:
+                        # Vérifier qu'on n'est pas déjà en train d'envoyer
+                        async with announcement_locks[thread_id]:
+                            await envoyer_annonce(thread_actuel, tags_finaux)
+                # On retire la tâche du dictionnaire
+                if thread_id in pending_announcements:
+                    del pending_announcements[thread_id]
+            except asyncio.CancelledError:
+                # La tâche a été annulée, c'est normal
+                print(f"❌ Tâche annulée pour : {thread.name}")
+        
+        # On crée et stocke la nouvelle tâche
+        task = asyncio.create_task(envoyer_apres_delai())
+        pending_announcements[thread_id] = task
+        print(f"⏱️ Annonce planifiée dans {ANNOUNCE_DELAY}s pour : {thread.name} (source: {source})")
 
 def trier_tags(tags):
     """ Récupère les tags avec leurs EMOJIS (Terminé, En cours, etc.) """
@@ -212,24 +223,27 @@ async def on_thread_create(thread):
     """Détecte la création d'un nouveau thread"""
     if thread.parent_id != FORUM_CHANNEL_ID: return
     
-    # Marquer ce thread comme récemment créé (pour éviter les doublons avec on_thread_update)
-    # On utilise un délai plus long (30 secondes) pour être sûr
+    # Marquer ce thread comme récemment créé (pour éviter COMPLÈTEMENT les autres événements)
     import time
     recent_threads[thread.id] = time.time()
     
-    # Attendre un peu pour que Discord finisse de créer le thread
-    await asyncio.sleep(1)
+    # Attendre 2 secondes pour que Discord finisse de créer le thread avec tous ses tags
+    await asyncio.sleep(2)
     
     # Récupérer le thread à jour avec tous ses tags
     thread_actuel = bot.get_channel(thread.id)
     if not thread_actuel:
+        print(f"❌ Thread introuvable : {thread.id}")
         return
     
     trads = trier_tags(thread_actuel.applied_tags)
     # On envoie l'annonce seulement si des tags sont présents
     if len(trads) > 0:
-        print(f"🆕 Nouveau thread créé : {thread_actuel.name}")
-        await planifier_annonce(thread_actuel, trads, source="thread_create")
+        print(f"🆕 Nouveau thread créé : {thread_actuel.name} avec tags : {trads}")
+        # Envoyer directement sans délai pour les nouveaux threads
+        await envoyer_annonce(thread_actuel, trads)
+    else:
+        print(f"⏭️ Nouveau thread sans tags : {thread_actuel.name}")
 
 @bot.event
 async def on_thread_update(before, after):
