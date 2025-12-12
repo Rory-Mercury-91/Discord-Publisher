@@ -1,14 +1,16 @@
 # Bot Discord - Annonces de Traductions
 
-Bot Discord qui surveille un forum et envoie automatiquement des annonces dans un canal dédié.
+Bot Discord qui surveille un forum de traductions de jeux et envoie automatiquement des annonces dans un canal dédié.
 
 ## 🚀 Fonctionnalités
 
 - Détection automatique des nouveaux threads dans le forum
-- Annonces avec distinction "Nouveau jeu" vs "Mise à jour"
-- Extraction automatique de la version du patch
-- Affichage des tags de traduction avec emojis
+- Annonces avec distinction "Nouvelle traduction" vs "Mise à jour"
+- Extraction automatique du titre du jeu et de la version de la traduction
+- Affichage des tags (Terminé, En cours) avec emojis
+- Affichage de l'image du jeu
 - Anti-spam : supprime les doublons récents
+- Lien direct vers le thread du forum
 
 ## 📦 Installation locale
 
@@ -62,6 +64,26 @@ Les variables d'environnement nécessaires :
 - `DISCORD_TOKEN` : Token de ton bot Discord
 - `FORUM_CHANNEL_ID` : ID du canal forum à surveiller (1427703869844230317)
 - `ANNOUNCE_CHANNEL_ID` : ID du canal où envoyer les annonces (1449148521084096695)
+
+## 📋 Format attendu des posts
+
+Le bot extrait automatiquement les informations des posts qui suivent ce format :
+
+```
+### :computer: Infos du Jeu & Liens de Téléchargement :
+* **Titre du jeu :** [Nom du jeu]
+* **Version traduite :** [Version]
+* **Lien du jeu (VO) :** [Lien vers le jeu]
+* **Lien de la Traduction 1 :** [Lien]
+* **Lien de la Traduction 2 (Backup) :** [Lien]
+```
+
+Le bot génère alors une annonce avec :
+- Nom du jeu (titre du thread)
+- Version de la traduction
+- État (basé sur les tags : Terminé, En cours)
+- Lien vers le thread
+- Image du post (si présente)
 
 ## 🔒 Sécurité
 

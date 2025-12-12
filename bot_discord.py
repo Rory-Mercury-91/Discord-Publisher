@@ -39,19 +39,16 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # --- OUTILS ---
 
 def trier_tags(tags):
-    """ Récupère les tags de traduction avec leurs EMOJIS """
-    trads_formatted = []
+    """ Récupère les tags avec leurs EMOJIS (Terminé, En cours, etc.) """
+    tags_formatted = []
     for tag in tags:
         name = tag.name
-        # Ignore les versions (v + chiffre)
-        if name.lower().startswith('v') and any(char.isdigit() for char in name):
-            continue
         
         # Ajout de l'emoji si présent
         emoji_visuel = (str(tag.emoji) + " ") if tag.emoji else ""
-        trads_formatted.append(f"{emoji_visuel}{name}")
+        tags_formatted.append(f"{emoji_visuel}{name}")
     
-    return sorted(trads_formatted)
+    return sorted(tags_formatted)
 
 async def nettoyer_doublons_et_verifier_historique(channel, thread_id):
     """
@@ -88,24 +85,33 @@ async def envoyer_annonce(thread, liste_tags_trads):
     channel_annonce = bot.get_channel(ANNOUNCE_CHANNEL_ID)
     if not channel_annonce: return
 
-    # 2. On détermine si c'est une UPDATE ou un NOUVEAU JEU en regardant l'historique
+    # 2. On détermine si c'est une UPDATE ou une NOUVELLE TRADUCTION
     is_update = await nettoyer_doublons_et_verifier_historique(channel_annonce, thread.id)
 
-    # 3. Lire le contenu
+    # 3. Lire le contenu du message
     try:
         message = await thread.fetch_message(thread.id)
         contenu = message.content
     except discord.NotFound:
         return
 
-    # 4. Regex Version
-    match = re.search(r"Version du Patch\s*:\*\*\s*[`']?([^`\n\r]+)[`']?", contenu)
-    version_txt = match.group(1).strip() if match else "Non spécifiée"
+    # 4. Extraction des informations avec regex
+    # Titre du jeu (déjà dans thread.name, mais on peut aussi l'extraire)
+    titre_match = re.search(r"\*\*Titre du jeu\s*:\*\*\s*(.+?)(?:\n|$)", contenu)
+    titre_jeu = titre_match.group(1).strip() if titre_match else thread.name
+    
+    # Version traduite
+    version_trad_match = re.search(r"\*\*Version traduite\s*:\*\*\s*(.+?)(?:\n|$)", contenu)
+    version_traduction = version_trad_match.group(1).strip() if version_trad_match else "Non spécifiée"
+    
+    # Lien du jeu (VO)
+    lien_jeu_match = re.search(r"\*\*Lien du jeu \(VO\)\s*:\*\*\s*\[.+?\]\((.+?)\)", contenu)
+    lien_jeu = lien_jeu_match.group(1).strip() if lien_jeu_match else None
 
-    # 5. Texte des tags
-    etat_txt = ", ".join(liste_tags_trads)
+    # 5. État de la traduction (tags)
+    etat_txt = ", ".join(liste_tags_trads) if liste_tags_trads else "Non spécifié"
 
-    # 6. Image
+    # 6. Extraction de l'image
     image_url = None
     if message.attachments:
         for attachment in message.attachments:
@@ -121,24 +127,24 @@ async def envoyer_annonce(thread, liste_tags_trads):
                 image_url = emb.thumbnail.url
                 break
 
-    # 7. Choix du titre
-    prefixe = "🔄 MISE À JOUR DE" if is_update else "🚀 NOUVEAU JEU AJOUTÉ"
+    # 7. Construction du message d'annonce
+    prefixe = "🔄 **Mise à jour d'une traduction**" if is_update else "🎮 **Publication d'une nouvelle traduction**"
     
-    msg_content = (
-        f"## {prefixe} : [{thread.name}]({thread.jump_url})\n\n"
-        f"> **Version actuelle :** `{version_txt}`\n"
-        f"> **Etat de la traduction :** {etat_txt}"
-    )
+    msg_content = f"{prefixe}\n\n"
+    msg_content += f"**Nom du jeu :** {titre_jeu}\n"
+    msg_content += f"**Version de la traduction :** {version_traduction}\n"
+    msg_content += f"**État :** {etat_txt}\n"
+    msg_content += f"**Lien :** {thread.jump_url}"
 
-    # 8. Envoi
+    # 8. Envoi du message
     if image_url:
-        embed = discord.Embed(color=discord.Color.blue())
+        embed = discord.Embed(color=discord.Color.green())
         embed.set_image(url=image_url)
         await channel_annonce.send(content=msg_content, embed=embed)
     else:
         await channel_annonce.send(content=msg_content)
         
-    print(f"Annonce envoyée ({prefixe}) : {thread.name}")
+    print(f"Annonce envoyée ({prefixe}) : {titre_jeu}")
 
 
 # --- ÉVÉNEMENTS ---
