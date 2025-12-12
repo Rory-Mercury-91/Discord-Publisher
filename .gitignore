@@ -1,6 +1,8 @@
 # Fichiers sensibles - NE JAMAIS COMMIT
 .env
 GUIDE_INSTALLATION.txt
+daitenshi_bot_discord.py
+Procfile_daitenshi
 
 # Python
 __pycache__/
