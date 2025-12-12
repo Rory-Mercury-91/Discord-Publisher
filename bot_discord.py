@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import re
 import os
+import asyncio
 from dotenv import load_dotenv
 
 # Charger les variables d'environnement depuis le fichier .env
@@ -29,6 +30,9 @@ if not ANNOUNCE_CHANNEL_ID:
 FORUM_CHANNEL_ID = int(FORUM_CHANNEL_ID)
 ANNOUNCE_CHANNEL_ID = int(ANNOUNCE_CHANNEL_ID)
 
+# Délai avant d'envoyer l'annonce (en secondes)
+ANNOUNCE_DELAY = 5
+
 # Permissions
 intents = discord.Intents.default()
 intents.message_content = True
@@ -36,7 +40,44 @@ intents.guilds = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Dictionnaire pour gérer les tâches en attente
+pending_announcements = {}
+
 # --- OUTILS ---
+
+async def planifier_annonce(thread, tags_actuels):
+    """
+    Planifie l'envoi d'une annonce après un délai.
+    Si une nouvelle modification arrive, annule l'ancienne tâche et repart de zéro.
+    """
+    thread_id = thread.id
+    
+    # Si une tâche est déjà en attente pour ce thread, on l'annule
+    if thread_id in pending_announcements:
+        pending_announcements[thread_id].cancel()
+        print(f"⏱️ Annulation de l'annonce précédente pour : {thread.name}")
+    
+    # Fonction qui sera exécutée après le délai
+    async def envoyer_apres_delai():
+        try:
+            await asyncio.sleep(ANNOUNCE_DELAY)
+            # Après le délai, on récupère les tags actuels du thread
+            thread_actuel = bot.get_channel(thread_id)
+            if thread_actuel:
+                tags_finaux = trier_tags(thread_actuel.applied_tags)
+                if len(tags_finaux) > 0:
+                    await envoyer_annonce(thread_actuel, tags_finaux)
+            # On retire la tâche du dictionnaire
+            if thread_id in pending_announcements:
+                del pending_announcements[thread_id]
+        except asyncio.CancelledError:
+            # La tâche a été annulée, c'est normal
+            pass
+    
+    # On crée et stocke la nouvelle tâche
+    task = asyncio.create_task(envoyer_apres_delai())
+    pending_announcements[thread_id] = task
+    print(f"⏱️ Annonce planifiée dans {ANNOUNCE_DELAY}s pour : {thread.name}")
 
 def trier_tags(tags):
     """ Récupère les tags avec leurs EMOJIS (Terminé, En cours, etc.) """
@@ -165,15 +206,18 @@ async def on_ready():
 
 @bot.event
 async def on_thread_create(thread):
+    """Détecte la création d'un nouveau thread"""
     if thread.parent_id != FORUM_CHANNEL_ID: return
     await discord.utils.sleep_until(discord.utils.utcnow()) 
     
     trads = trier_tags(thread.applied_tags)
+    # On envoie l'annonce seulement si des tags sont présents
     if len(trads) > 0:
-        await envoyer_annonce(thread, trads)
+        await planifier_annonce(thread, trads)
 
 @bot.event
 async def on_thread_update(before, after):
+    """Détecte les modifications des tags d'un thread"""
     if after.parent_id != FORUM_CHANNEL_ID: return
 
     trads_after = trier_tags(after.applied_tags)
@@ -181,11 +225,19 @@ async def on_thread_update(before, after):
 
     # Si aucun tag actuellement, on ne fait rien
     if len(trads_after) == 0:
+        print(f"❌ Pas de tags sur : {after.name} - Annonce ignorée")
         return
 
-    # On déclenche si les tags ont changé
-    if trads_before != trads_after:
-        await envoyer_annonce(after, trads_after)
+    # Vérifier si des tags ont été AJOUTÉS (pas seulement retirés)
+    tags_ajoutes = set(trads_after) - set(trads_before)
+    
+    if len(tags_ajoutes) > 0:
+        # Des tags ont été ajoutés, on planifie l'annonce
+        print(f"✅ Tags ajoutés sur {after.name} : {tags_ajoutes}")
+        await planifier_annonce(after, trads_after)
+    else:
+        # Seulement des tags retirés, on ignore
+        print(f"⏭️ Tags retirés uniquement sur {after.name} - Annonce ignorée")
 
 @bot.event
 async def on_message_edit(before, after):
@@ -208,9 +260,9 @@ async def on_message_edit(before, after):
     # Récupérer les tags actuels
     trads = trier_tags(after.channel.applied_tags)
     
-    # Si il y a des tags, on envoie l'annonce
+    # Si il y a des tags, on planifie l'annonce
     if len(trads) > 0:
-        await envoyer_annonce(after.channel, trads)
-        print(f"Modification du contenu détectée pour : {after.channel.name}")
+        print(f"📝 Modification du contenu détectée pour : {after.channel.name}")
+        await planifier_annonce(after.channel, trads)
 
 bot.run(TOKEN)

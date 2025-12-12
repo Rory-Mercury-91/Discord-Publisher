@@ -94,10 +94,60 @@ Le bot génère alors une annonce avec :
 - Image du post (si présente)
 
 ### Déclenchement des annonces
-Le bot envoie une annonce :
-- ✅ Lors de la création d'un nouveau thread avec des tags
-- ✅ Lors de la modification des tags d'un thread
+
+Le bot envoie une annonce dans les cas suivants :
+- ✅ Lors de la création d'un nouveau thread **avec des tags**
+- ✅ Lors de l'**ajout** d'un tag (pas lors du retrait)
 - ✅ Lors de la modification du contenu du premier message du thread
+
+**Important** : Le bot attend **5 secondes** après une modification avant d'envoyer l'annonce. Si vous faites plusieurs modifications rapidement, une seule annonce sera envoyée avec l'état final.
+
+### 📝 Comment poster correctement une traduction
+
+#### 1️⃣ **Créer le thread**
+- **Titre** : `Nom du jeu [Version] [Auteur]`
+  - Exemple : `Step Bi Step [v1.0 SE] [Dumb Koala Games]`
+
+#### 2️⃣ **Rédiger le contenu**
+Utilisez ce format dans le premier message :
+
+```
+### :computer: Infos du Jeu & Liens de Téléchargement :
+* **Titre du jeu :** Step Bi Step
+* **Version du jeu :** v1.0 SE (optionnel si déjà dans le titre)
+* **Version traduite :** v1.0 SE (la dernière version stable)
+* **Lien du jeu (VO) :** [Accès au jeu original](https://example.com)
+* **Lien de la Traduction 1 :** [LewdCorner](https://example.com)
+* **Lien de la Traduction 2 (Backup) :** [Proton Drive](https://example.com)
+```
+
+#### 3️⃣ **Ajouter une image**
+Joignez une image du jeu (bannière, logo, etc.)
+
+#### 4️⃣ **Ajouter le tag "En cours"**
+Dès que vous ajoutez ce tag, le bot enverra une annonce après 5 secondes.
+
+#### 5️⃣ **Mettre à jour la traduction**
+- Modifiez le contenu (version traduite, liens, etc.)
+- Le bot détecte automatiquement et envoie une mise à jour après 5 secondes
+
+#### 6️⃣ **Marquer comme terminé**
+Quand la traduction est complète :
+1. Retirez le tag "En cours" (pas d'annonce)
+2. Ajoutez le tag "Terminé" (annonce envoyée après 5 secondes)
+
+**Astuce** : Vous pouvez faire toutes vos modifications (contenu + tags) en 5 secondes, et le bot n'enverra qu'une seule annonce avec l'état final ! 🎯
+
+### ⚙️ Logique des annonces
+
+| Situation | Tag avant | Tag après | Annonce ? |
+|-----------|-----------|-----------|-----------|
+| Nouveau thread | Aucun | En cours | ✅ Oui |
+| Modification contenu | En cours | En cours | ✅ Oui |
+| Retrait tag | En cours | Aucun | ❌ Non |
+| Ajout tag | Aucun | Terminé | ✅ Oui |
+| Changement tag | En cours | Terminé | ✅ Oui |
+| Modification contenu | Terminé | Terminé | ✅ Oui |
 
 ## 🔒 Sécurité
 
