@@ -229,7 +229,7 @@ async def envoyer_annonce(thread, liste_tags_trads):
 
 # ✨ NOUVELLE FONCTION : Notification pour F95fr
 async def envoyer_notification_f95(thread):
-    """Envoie une notification simple pour rappel de publication F95fr"""
+    """Envoie une notification simple pour rappel de publication F95fr avec anti-spam"""
     if not NOTIFICATION_CHANNEL_F95_ID:
         return  # Pas configuré, on ne fait rien
     
@@ -240,6 +240,15 @@ async def envoyer_notification_f95(thread):
     
     # Attendre que le thread soit complètement créé
     await asyncio.sleep(2)
+    
+    # Anti-spam : Supprimer l'ancienne notification si elle existe
+    messages = [msg async for msg in channel.history(limit=50)]
+    for msg in messages:
+        if msg.author == bot.user and str(thread.id) in msg.content:
+            # Trouvé une ancienne notification pour ce thread, on la supprime
+            await msg.delete()
+            print(f"🗑️ Ancienne notification F95 supprimée pour : {thread.name}")
+            break
     
     # Calculer le timestamp Discord pour la date de publication
     date_publication = datetime.datetime.now() + datetime.timedelta(days=DAYS_BEFORE_PUBLICATION)
@@ -256,10 +265,10 @@ async def envoyer_notification_f95(thread):
     except:
         pseudo = "Inconnu"
     
-    # Construction du message simple
+    # Construction du message simple (on ajoute l'ID du thread pour l'anti-spam)
     message = f"**Pseudo :** {pseudo}\n"
     message += f"**{nom_forum} :**\n"
-    message += f"{thread.name} <t:{timestamp}:R>"
+    message += f"[{thread.name}]({thread.jump_url}) <t:{timestamp}:R>"
     
     await channel.send(message)
     print(f"📅 Notification F95 envoyée : {thread.name}")
@@ -356,9 +365,6 @@ async def on_message_edit(before, after):
     if not isinstance(after.channel, discord.Thread):
         return
     
-    if after.channel.parent_id != FORUM_CHANNEL_ID:
-        return
-    
     # Vérifier si c'est le premier message du thread (ID du message = ID du thread)
     if after.id != after.channel.id:
         return
@@ -367,20 +373,32 @@ async def on_message_edit(before, after):
     if before.content == after.content:
         return
     
-    # Ignorer les modifications dans les 30 premières secondes après création (éviter doublons)
-    import time
-    if after.channel.id in recent_threads:
-        temps_ecoule = time.time() - recent_threads[after.channel.id]
-        if temps_ecoule < 30:
-            print(f"⏭️ Thread récent ({temps_ecoule:.1f}s), on_message_edit ignoré pour : {after.channel.name}")
-            return
+    # Discord 1 : Annonces de traductions
+    if after.channel.parent_id == FORUM_CHANNEL_ID:
+        # Ignorer les modifications dans les 30 premières secondes après création (éviter doublons)
+        import time
+        if after.channel.id in recent_threads:
+            temps_ecoule = time.time() - recent_threads[after.channel.id]
+            if temps_ecoule < 30:
+                print(f"⏭️ Thread récent ({temps_ecoule:.1f}s), on_message_edit ignoré pour : {after.channel.name}")
+                return
+        
+        # Récupérer les tags actuels
+        trads = trier_tags(after.channel.applied_tags)
+        
+        # Si il y a des tags, on planifie l'annonce
+        if len(trads) > 0:
+            print(f"📝 Modification du contenu détectée pour : {after.channel.name}")
+            await planifier_annonce(after.channel, trads, source="message_edit")
     
-    # Récupérer les tags actuels
-    trads = trier_tags(after.channel.applied_tags)
+    # Discord 2 : Rappels F95fr - Forum Semi-Auto
+    elif FORUM_SEMI_AUTO_ID and after.channel.parent_id == FORUM_SEMI_AUTO_ID:
+        print(f"📝 Modification F95 Semi-Auto détectée : {after.channel.name}")
+        await envoyer_notification_f95(after.channel)
     
-    # Si il y a des tags, on planifie l'annonce
-    if len(trads) > 0:
-        print(f"📝 Modification du contenu détectée pour : {after.channel.name}")
-        await planifier_annonce(after.channel, trads, source="message_edit")
+    # Discord 2 : Rappels F95fr - Forum Auto
+    elif FORUM_AUTO_ID and after.channel.parent_id == FORUM_AUTO_ID:
+        print(f"📝 Modification F95 Auto détectée : {after.channel.name}")
+        await envoyer_notification_f95(after.channel)
 
 bot.run(TOKEN)

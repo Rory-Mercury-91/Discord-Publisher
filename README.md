@@ -35,9 +35,11 @@ Version de la traduction : v1.0 SE
 
 **Fonctionnement :**
 - Surveille 2 forums (Traduction Semi-Auto et Traduction Auto)
-- Envoie une notification immédiate lors de la création d'un thread
+- Envoie une notification lors de la création d'un thread
+- **Envoie une notification lors de la modification du premier post**
 - Format simple avec timestamp Discord dynamique
 - Le compte à rebours se met à jour automatiquement
+- **Anti-spam :** Supprime l'ancienne notification lors d'une modification
 
 **Exemple de notification :**
 ```
@@ -47,6 +49,8 @@ King's Revolt v0.1.1 dans 14 jours
 ```
 
 Le timestamp Discord affiche automatiquement le temps restant : "dans 14 jours" → "dans 7 jours" → "dans 1 jour" → "il y a 1 jour"
+
+**Note :** Si le premier post est modifié, l'ancienne notification est supprimée et une nouvelle est envoyée (évite les doublons).
 
 ## 📦 Installation locale
 
