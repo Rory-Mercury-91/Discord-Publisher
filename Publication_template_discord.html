@@ -1,0 +1,990 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Générateur de publications</title>
+  <style>
+    :root{
+      --bg:#0b0f12;
+      --panel:#0f1720;
+      --border:rgba(255,255,255,0.06);
+      --muted:#9aa5b1;
+      --accent:#7dd3fc;
+      --accent-2:#f472b6;
+      --text:#e6eef6;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text)}
+    .container{max-width:1000px;margin:20px auto;padding:24px}
+    h1{margin:0 0 20px;font-size:22px;font-weight:600}
+    
+    .section{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px}
+    .section-title{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--accent)}
+    
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .field{display:flex;flex-direction:column;gap:4px;position:relative}
+    .field label{font-size:13px;color:var(--muted);font-weight:500}
+    .field input,.field textarea{
+      background:var(--bg);
+      border:1px solid var(--border);
+      padding:8px 10px;
+      border-radius:6px;
+      color:var(--text);
+      font-size:14px;
+      font-family:inherit;
+    }
+    .field input:focus,.field textarea:focus{
+      outline:none;
+      border-color:var(--accent);
+    }
+    .field textarea{resize:vertical;min-height:80px}
+    
+    .field.custom{border:1px dashed var(--accent-2);padding:8px;border-radius:6px;background:rgba(244,114,182,0.05)}
+    .field.custom label{color:var(--accent-2)}
+    
+    .remove-var{
+      position:absolute;
+      top:0;
+      right:0;
+      background:transparent;
+      border:none;
+      color:var(--accent-2);
+      cursor:pointer;
+      padding:0;
+      width:20px;
+      height:20px;
+      font-size:16px;
+    }
+    .remove-var:hover{color:#ff6b9d}
+    
+    select{
+      background:var(--bg);
+      border:1px solid var(--border);
+      padding:8px 10px;
+      border-radius:6px;
+      color:var(--text);
+      font-size:14px;
+      cursor:pointer;
+    }
+    
+    .checkbox-group{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+    .checkbox-group input[type="checkbox"]{width:18px;height:18px;cursor:pointer}
+    .checkbox-group label{margin:0;cursor:pointer;font-size:14px}
+    
+    button{
+      background:var(--panel);
+      border:1px solid var(--border);
+      padding:8px 16px;
+      border-radius:6px;
+      color:var(--accent);
+      font-size:14px;
+      cursor:pointer;
+      font-weight:500;
+      transition:all 0.2s;
+    }
+    button:hover{background:rgba(125,211,252,0.1);border-color:var(--accent)}
+    button:active{transform:scale(0.98)}
+    button.success{color:#4ade80}
+    button.secondary{color:var(--accent-2)}
+    
+    .btn-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+    
+    .preview{
+      background:var(--bg);
+      border:1px solid var(--border);
+      border-radius:6px;
+      padding:16px;
+      font-family:monospace;
+      font-size:13px;
+      white-space:pre-wrap;
+      word-wrap:break-word;
+      max-height:400px;
+      overflow-y:auto;
+      line-height:1.6;
+    }
+    
+    /* Modal styles */
+    .modal{
+      display:none;
+      position:fixed;
+      top:0;
+      left:0;
+      width:100%;
+      height:100%;
+      background:rgba(0,0,0,0.8);
+      z-index:1000;
+      overflow-y:auto;
+    }
+    .modal-content{
+      max-width:800px;
+      margin:40px auto;
+      background:var(--panel);
+      border-radius:8px;
+      padding:24px;
+      position:relative;
+    }
+    .modal-close{
+      position:absolute;
+      top:16px;
+      right:16px;
+      background:transparent;
+      border:none;
+      color:var(--muted);
+      font-size:24px;
+      cursor:pointer;
+      padding:0;
+      width:32px;
+      height:32px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .modal-close:hover{color:var(--text)}
+    
+    #modal h2{color:var(--accent);font-size:20px;margin:0 0 16px}
+    #modal h3{color:var(--accent);font-size:16px;margin:20px 0 12px}
+    #modal strong{color:#7dd3fc}
+    #modal a{color:var(--accent);text-decoration:none}
+    #modal a:hover{text-decoration:underline}
+    #modal ul{margin:8px 0;padding-left:20px}
+    #modal li{margin:4px 0}
+    #modal blockquote{border-left:3px solid var(--accent);padding-left:12px;margin:8px 0;color:var(--muted);font-style:italic}
+    #modal p{margin:12px 0}
+    
+    .saved-item{
+      background:var(--bg);
+      border:1px solid var(--border);
+      padding:10px;
+      border-radius:6px;
+      margin-bottom:8px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      cursor:pointer;
+      transition:all 0.2s;
+    }
+    .saved-item:hover{border-color:var(--accent);background:rgba(125,211,252,0.05)}
+    .saved-item-name{font-size:14px;font-weight:500}
+    .saved-item-actions{display:flex;gap:8px}
+    .saved-item-actions button{padding:4px 8px;font-size:12px}
+    
+    .template-editor{margin-top:12px}
+    .template-editor textarea{width:100%;min-height:300px;font-family:monospace;font-size:13px}
+    
+    @media(max-width:768px){
+      .grid{grid-template-columns:1fr}
+      .container{padding:16px;margin:10px}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🇫🇷 Générateur de Publications</h1>
+    
+    <!-- Template Selection -->
+    <div class="section">
+      <div class="field">
+        <label>Type de publication</label>
+        <select id="templateType">
+          <option value="mes">Mes traductions (avec soutien)</option>
+          <option value="partenaire">Traductions partenaire (sans soutien)</option>
+          <option value="f95">Poste F95 FR</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <button id="editTemplates" class="secondary">✏️ Modifier les templates</button>
+      </div>
+    </div>
+    
+    <!-- Variables Grid -->
+    <div class="section">
+      <div class="section-title">Variables</div>
+      <div class="grid" id="variablesGrid">
+        <!-- Default variables will be added here -->
+      </div>
+      <div class="btn-row">
+        <button id="addVariable" class="secondary">➕ Ajouter une variable personnalisée</button>
+      </div>
+    </div>
+    
+    <!-- Instructions -->
+    <div class="section">
+      <div class="section-title">Instructions d'installation</div>
+      <div class="checkbox-group">
+        <input type="checkbox" id="includeInstr" checked>
+        <label for="includeInstr">Inclure les instructions dans la publication</label>
+      </div>
+      <textarea id="instrText" style="width:100%;min-height:120px;background:var(--bg);border:1px solid var(--border);padding:10px;border-radius:6px;color:var(--text);font-family:inherit">1. Téléchargez le jeu original et mon archive de traduction.
+2. Décompressez l'archive du jeu.
+3. Décompressez mon archive de traduction.
+4. Fusionnez le dossier "game" de mon archive avec celui du jeu original.
+5. Lancez votre jeu. Enjoy !</textarea>
+      <div class="btn-row">
+        <button id="copyInstr">📋 Copier instructions</button>
+        <button id="saveInstr" class="secondary">💾 Sauvegarder</button>
+        <button id="loadInstr" class="secondary">📂 Charger</button>
+      </div>
+    </div>
+    
+    <!-- Preview -->
+    <div class="section">
+      <div class="section-title">Prévisualisation</div>
+      <div class="preview" id="preview">Remplissez les variables ci-dessus...</div>
+      <div class="btn-row">
+        <button id="copyPreview">📋 Copier la publication</button>
+        <button id="togglePreview">👁️ Aperçu rendu</button>
+      </div>
+    </div>
+
+    <!-- Discord Publish -->
+    <div class="section">
+      <div class="section-title">Publication directe sur Discord (Forum)</div>
+      <div class="grid">
+        <div class="field">
+          <label>URL de l'API Publisher</label>
+          <input type="text" id="publisherApiUrl" placeholder="https://ton-service.up.railway.app/api/forum-post">
+        </div>
+        <div class="field">
+          <label>Clé API (X-API-KEY)</label>
+          <input type="password" id="publisherApiKey" placeholder="(stockée en local dans ton navigateur)">
+        </div>
+        <div class="field">
+          <label>Titre du post (optionnel)</label>
+          <input type="text" id="publisherTitle" placeholder="Par défaut: Nom du jeu">
+        </div>
+        <div class="field">
+          <label>Tags (noms séparés par virgules)</label>
+          <input type="text" id="publisherTags" placeholder="Ex: En cours, Terminé, MAJ">
+        </div>
+        <div class="field">
+          <label>Image (optionnel)</label>
+          <input type="file" id="publisherImage" accept="image/*">
+        </div>
+        <div class="field">
+          <label>Template envoyé au bot</label>
+          <input type="text" id="publisherTemplateInfo" value="auto (my/partner selon le template choisi)" disabled>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button id="publishToDiscord">🚀 Publier sur Discord</button>
+        <button id="savePublisherSettings" class="secondary">💾 Sauvegarder API/clé</button>
+        <button id="clearPublisherKey" class="secondary">🧹 Effacer la clé</button>
+      </div>
+      <div style="margin-top:10px;color:var(--muted);font-size:13px;line-height:1.5">
+        ⚠️ Astuce : garde ce fichier en local. Si tu héberges ce HTML publiquement, n'y mets pas une clé API exploitable.
+      </div>
+      <div id="publisherStatus" style="margin-top:12px;font-size:14px"></div>
+    </div>
+
+  </div>
+
+  <!-- Rendered Preview Modal -->
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeModal">✕</button>
+      <div id="renderedPreview"></div>
+    </div>
+  </div>
+
+  <!-- Save Instructions Modal -->
+  <div id="saveInstrModal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeSaveInstr">✕</button>
+      <h2>💾 Sauvegarder les instructions</h2>
+      <div class="field">
+        <label>Nom du template</label>
+        <input type="text" id="instrName" placeholder="Ex: Installation standard">
+      </div>
+      <div class="btn-row">
+        <button id="confirmSaveInstr">Sauvegarder</button>
+        <button id="cancelSaveInstr" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load Instructions Modal -->
+  <div id="loadInstrModal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeLoadInstr">✕</button>
+      <h2>📂 Charger des instructions</h2>
+      <div id="savedInstrList"></div>
+    </div>
+  </div>
+
+  <!-- Add Variable Modal -->
+  <div id="addVarModal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeAddVar">✕</button>
+      <h2>➕ Ajouter une variable personnalisée</h2>
+      <div class="field">
+        <label>Nom de la variable (sans crochets)</label>
+        <input type="text" id="varName" placeholder="Ex: developer">
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Label affiché</label>
+        <input type="text" id="varLabel" placeholder="Ex: Développeur">
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Type de champ</label>
+        <select id="varType">
+          <option value="text">Texte court</option>
+          <option value="textarea">Texte long</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <button id="confirmAddVar">Ajouter</button>
+        <button id="cancelAddVar" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Templates Modal -->
+  <div id="editTemplatesModal" class="modal">
+    <div class="modal-content" style="max-width:1000px">
+      <button class="modal-close" id="closeEditTemplates">✕</button>
+      <h2>✏️ Modifier les templates de référence</h2>
+      
+      <div style="background:rgba(125,211,252,0.1);border:1px solid var(--accent);border-radius:6px;padding:12px;margin-bottom:16px">
+        <div style="font-weight:600;margin-bottom:8px;color:var(--accent)">📝 Variables disponibles :</div>
+        <div id="availableVars" style="font-family:monospace;font-size:13px;line-height:1.8;color:var(--text)">
+        </div>
+        <div style="margin-top:8px;font-size:13px;color:var(--muted)">
+          💡 Utilisez ces variables entre crochets pour qu'elles soient remplacées automatiquement
+        </div>
+      </div>
+      
+      <div class="field">
+        <label>Template "Mes traductions"</label>
+        <textarea id="templateMes" class="template-editor"></textarea>
+      </div>
+      <div class="field" style="margin-top:16px">
+        <label>Template "Traductions partenaire"</label>
+        <textarea id="templatePartenaire" class="template-editor"></textarea>
+      </div>
+      <div class="field" style="margin-top:16px">
+        <label>Template "Poste F95 FR"</label>
+        <textarea id="templateF95" class="template-editor"></textarea>
+      </div>
+      <div class="btn-row">
+        <button id="saveTemplates">💾 Sauvegarder les templates</button>
+        <button id="resetTemplates" class="secondary">🔄 Réinitialiser</button>
+        <button id="cancelEditTemplates" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    
+// Default variables configuration
+    const defaultVarsConfig = [
+      {name: 'NAME_GAME', label: 'NOM DU JEU', placeholder: 'LOST SOLACE', type: 'text', templates: ['mes', 'partenaire']},
+      {name: 'Name_game', label: 'Nom du jeu', placeholder: 'Lost Solace', type: 'text', templates: ['mes', 'partenaire']},
+      {name: 'Game_version', label: 'Version du jeu', placeholder: 'Ch.2 P1 v0.2a', type: 'text', templates: ['mes', 'partenaire', 'f95']},
+      {name: 'Translate_version', label: 'Version de la traduction', placeholder: 'Ch.2 P1 v0.2a', type: 'text', templates: ['mes', 'partenaire', 'f95']},
+      {name: 'Game_link', label: 'Lien du jeu', placeholder: 'https://...', type: 'text', templates: ['mes', 'partenaire', 'f95']},
+      {name: 'Translate_link', label: 'Lien de la traduction', placeholder: 'https://...', type: 'text', templates: ['mes', 'partenaire', 'f95']},
+      {name: 'traductor', label: 'Traducteur', placeholder: 'Rory Mercury 91', type: 'text', templates: ['partenaire', 'f95']},
+      {name: 'overview', label: 'Synopsis', placeholder: 'Synopsis du jeu...', type: 'textarea', templates: ['mes', 'partenaire']},
+      {name: 'modded', label: 'Jeux modé', type: 'select', options: ['Oui', 'Non'], templates: ['f95']},
+      {name: 'translation_type', label: 'Type de traduction', type: 'select', options: ['Manuelle', 'Automatique', 'Semi-Automatique', 'VO Française'], templates: ['f95']}
+    ];
+    
+    // Load custom variables from storage
+    let customVars = [];
+    try{
+      const saved = localStorage.getItem('customVariables');
+      if(saved) customVars = JSON.parse(saved);
+    }catch(e){}
+    
+    const allVarsConfig = [...defaultVarsConfig, ...customVars];
+
+    // Default templates
+    const defaultTemplates = {
+      mes: `## :flag_fr: TRADUCTION FR DISPONIBLE POUR : **[NAME_GAME]** ! :tada:
+Salut à tous ! La version française de **[Name_game]** est enfin là et prête à être installée ! Un max de plaisir en VF pour tout le monde ! :point_down:
+
+### :computer: Infos du Mod & Liens de Téléchargement
+* **Titre du jeu :** [Name_game]
+* **Version du jeu :** [Game_version]
+* **Version traduite :** [Translate_version]
+* **Lien du jeu (VO) :** [Accès au jeu original]([Game_link])
+* **Lien de la Traduction :** [Téléchargez la traduction FR ici !]([Translate_link])
+> **Synopsis du jeu :**
+> [overview]
+
+### :sparkling_heart: Soutenez le Traducteur !
+
+Pour m'encourager et soutenir mes efforts :
+* **Soutien au Traducteur (Moi !) :** [Offrez-moi un café pour le temps passé !](https://discord.com/channels/1417811606674477139/1433930090349330493)`,
+      partenaire: `## :flag_fr: TRADUCTION FR DISPONIBLE POUR : **[NAME_GAME]** ! :tada:
+Salut à tous ! La version française de **[Name_game]** est enfin là et prête à être installée ! Un max de plaisir en VF pour tout le monde ! :point_down:
+
+### :computer: Infos du Mod & Liens de Téléchargement
+* **Traducteur :** [traductor]
+* **Titre du jeu :** [Name_game]
+* **Version du jeu :** [Game_version]
+* **Version traduite :** [Translate_version]
+* **Lien du jeu (VO) :** [Accès au jeu original]([Game_link])
+* **Lien de la Traduction :** [Téléchargez la traduction FR ici !]([Translate_link])
+> **Synopsis du jeu :**
+> [overview]`,
+      f95: `**Lien du jeu :** [Game_link]
+**Version du jeu :** [Game_version]
+**Lien de la traduction :** [Translate_link]
+**Version de la traduction :** [Translate_version]
+**Jeux modé :** [modded]
+**Traduction :** [translation_type]
+**Pseudo du traducteur :** [traductor]`
+    };
+
+    // Load templates from storage or use defaults
+    let templates = {...defaultTemplates};
+    try{
+      const saved = localStorage.getItem('customTemplates');
+      if(saved) templates = JSON.parse(saved);
+    }catch(e){}
+    
+    // Render variables grid
+    function renderVariablesGrid(){
+      const grid = $('variablesGrid');
+      const currentTemplate = $('templateType').value;
+      grid.innerHTML = '';
+      
+      // Filter variables based on current template
+      const visibleVars = allVarsConfig.filter(varConfig => {
+        // Custom variables are always shown
+        if(!varConfig.templates) return true;
+        // Default variables shown only if they match the current template
+        return varConfig.templates.includes(currentTemplate);
+      });
+      
+      visibleVars.forEach((varConfig) => {
+        const isCustom = !defaultVarsConfig.includes(varConfig);
+        const field = document.createElement('div');
+        field.className = isCustom ? 'field custom' : 'field';
+        
+        const label = document.createElement('label');
+        label.textContent = varConfig.label;
+        
+        let input;
+        if(varConfig.type === 'select'){
+          input = document.createElement('select');
+          // Add empty option
+          const emptyOption = document.createElement('option');
+          emptyOption.value = '';
+          emptyOption.textContent = '-- Sélectionner --';
+          input.appendChild(emptyOption);
+          // Add options
+          varConfig.options.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt;
+            input.appendChild(option);
+          });
+        } else if(varConfig.type === 'textarea'){
+          input = document.createElement('textarea');
+        } else {
+          input = document.createElement('input');
+          input.type = 'text';
+        }
+        input.id = 'var_' + varConfig.name;
+        if(varConfig.placeholder) input.placeholder = varConfig.placeholder;
+        
+        // Restore previous value if exists
+        const existingInput = document.getElementById('var_' + varConfig.name);
+        if(existingInput) {
+          input.value = existingInput.value;
+        }
+        
+        input.addEventListener('input', updatePreview);
+        input.addEventListener('change', updatePreview);
+        
+        field.appendChild(label);
+        field.appendChild(input);
+        
+        if(isCustom){
+          const removeBtn = document.createElement('button');
+          removeBtn.className = 'remove-var';
+          removeBtn.textContent = '✕';
+          const customIndex = customVars.findIndex(v => v.name === varConfig.name);
+          removeBtn.onclick = () => removeCustomVariable(customIndex);
+          field.appendChild(removeBtn);
+        }
+        
+        grid.appendChild(field);
+      });
+      
+      updateAvailableVarsDisplay();
+    }
+    
+    function updateAvailableVarsDisplay(){
+      const display = $('availableVars');
+      if(!display) return;
+      
+      display.innerHTML = allVarsConfig.map(v => 
+        `<code>[${v.name}]</code> → ${v.label}`
+      ).join('<br>');
+    }
+    
+    function removeCustomVariable(index){
+      if(!confirm('Supprimer cette variable personnalisée ?')) return;
+      const varToRemove = customVars[index];
+      customVars.splice(index, 1);
+      localStorage.setItem('customVariables', JSON.stringify(customVars));
+      
+      // Remove from allVarsConfig
+      const allIndex = allVarsConfig.findIndex(v => v.name === varToRemove.name);
+      if(allIndex !== -1) {
+        allVarsConfig.splice(allIndex, 1);
+      }
+      
+      renderVariablesGrid();
+      updatePreview();
+    }
+    
+    function updatePreview(){
+      const type = $('templateType').value;
+      let template = templates[type];
+      
+      // Replace all variables
+      allVarsConfig.forEach(varConfig => {
+        const input = $('var_' + varConfig.name);
+        if(!input) return;
+        
+        let val = input.value.trim();
+        
+        // Special handling for NAME_GAME
+        if(varConfig.name === 'NAME_GAME') val = val.toUpperCase();
+        
+        // Special handling for overview
+        if(varConfig.name === 'overview' && val){
+          const lines = val.split('\n').map(l=>l.trim()).filter(Boolean);
+          val = lines.join('\n> ');
+        }
+        
+        template = template.split(`[${varConfig.name}]`).join(val || `[${varConfig.name}]`);
+      });
+      
+      // Add instructions if checked
+      if($('includeInstr').checked){
+        const instr = $('instrText').value.trim();
+        if(instr){
+          const lines = instr.split('\n').map(l=>l.trim()).filter(Boolean);
+          template += '\n\n**Instructions d\'installation :**\n' + lines.map(l=>'* '+l).join('\n');
+        }
+      }
+      
+      $('preview').textContent = template;
+    }
+    
+    // Event listeners
+    $('templateType').addEventListener('change', ()=>{
+      renderVariablesGrid();
+      updatePreview();
+    });
+    $('includeInstr').addEventListener('change', updatePreview);
+    $('instrText').addEventListener('input', updatePreview);
+    
+    // Copy buttons
+    $('copyInstr').addEventListener('click', async ()=>{
+      try{
+        await navigator.clipboard.writeText($('instrText').value);
+        $('copyInstr').textContent = '✅ Copié !';
+        $('copyInstr').classList.add('success');
+        setTimeout(()=>{
+          $('copyInstr').textContent = '📋 Copier instructions';
+          $('copyInstr').classList.remove('success');
+        },1500);
+      }catch(e){alert('Erreur copie')}
+    });
+    
+    $('copyPreview').addEventListener('click', async ()=>{
+      try{
+        await navigator.clipboard.writeText($('preview').textContent);
+        $('copyPreview').textContent = '✅ Copié !';
+        $('copyPreview').classList.add('success');
+        setTimeout(()=>{
+          $('copyPreview').textContent = '📋 Copier la publication';
+          $('copyPreview').classList.remove('success');
+        },1500);
+      }catch(e){alert('Erreur copie')}
+    });
+    
+    // Toggle preview modal
+    $('togglePreview').addEventListener('click', ()=>{
+      const markdown = $('preview').textContent;
+      const html = convertMarkdownToHTML(markdown);
+      $('renderedPreview').innerHTML = html;
+      $('modal').style.display = 'block';
+    });
+    
+    $('closeModal').addEventListener('click', ()=>{
+      $('modal').style.display = 'none';
+    });
+    
+    $('modal').addEventListener('click', (e)=>{
+      if(e.target === $('modal')) $('modal').style.display = 'none';
+    });
+    
+    // Simple markdown to HTML converter for Discord-style formatting
+    function convertMarkdownToHTML(md){
+      let html = md;
+      
+      // Headers
+      html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+      html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+      
+      // Bold
+      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      
+      // Links
+      html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+      
+      // Lists
+      html = html.replace(/^\* (.+)$/gm, '<li>$1</li>');
+      html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+      
+      // Blockquotes
+      html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
+      
+      // Emojis (Discord style)
+      html = html.replace(/:flag_fr:/g, '🇫🇷');
+      html = html.replace(/:tada:/g, '🎉');
+      html = html.replace(/:point_down:/g, '👇');
+      html = html.replace(/:computer:/g, '💻');
+      html = html.replace(/:sparkling_heart:/g, '💖');
+      
+      // Paragraphs
+      html = html.split('\n\n').map(p => p.trim() ? `<p>${p}</p>` : '').join('');
+      
+      return html;
+    }
+    
+    // Save Instructions functionality
+    $('saveInstr').addEventListener('click', ()=>{
+      $('instrName').value = '';
+      $('saveInstrModal').style.display = 'block';
+    });
+    
+    $('closeSaveInstr').addEventListener('click', ()=>{
+      $('saveInstrModal').style.display = 'none';
+    });
+    
+    $('cancelSaveInstr').addEventListener('click', ()=>{
+      $('saveInstrModal').style.display = 'none';
+    });
+    
+    $('confirmSaveInstr').addEventListener('click', ()=>{
+      const name = $('instrName').value.trim();
+      if(!name){
+        alert('Veuillez entrer un nom');
+        return;
+      }
+      
+      const instr = $('instrText').value;
+      let saved = {};
+      try{
+        const data = localStorage.getItem('savedInstructions');
+        if(data) saved = JSON.parse(data);
+      }catch(e){}
+      
+      saved[name] = instr;
+      localStorage.setItem('savedInstructions', JSON.stringify(saved));
+      
+      $('saveInstrModal').style.display = 'none';
+      alert('Instructions sauvegardées !');
+    });
+    
+    // Load Instructions functionality
+    $('loadInstr').addEventListener('click', ()=>{
+      let saved = {};
+      try{
+        const data = localStorage.getItem('savedInstructions');
+        if(data) saved = JSON.parse(data);
+      }catch(e){}
+      
+      const list = $('savedInstrList');
+      list.innerHTML = '';
+      
+      if(Object.keys(saved).length === 0){
+        list.innerHTML = '<p style="color:var(--muted)">Aucune instruction sauvegardée</p>';
+      } else {
+        Object.keys(saved).forEach(name => {
+          const item = document.createElement('div');
+          item.className = 'saved-item';
+          item.innerHTML = `
+            <div class="saved-item-name">${name}</div>
+            <div class="saved-item-actions">
+              <button onclick="loadInstruction('${name.replace(/'/g, "\\'")}')">Charger</button>
+              <button onclick="deleteInstruction('${name.replace(/'/g, "\\'")}')">Supprimer</button>
+            </div>
+          `;
+          list.appendChild(item);
+        });
+      }
+      
+      $('loadInstrModal').style.display = 'block';
+    });
+    
+    $('closeLoadInstr').addEventListener('click', ()=>{
+      $('loadInstrModal').style.display = 'none';
+    });
+    
+    window.loadInstruction = function(name){
+      try{
+        const data = localStorage.getItem('savedInstructions');
+        const saved = JSON.parse(data);
+        $('instrText').value = saved[name] || '';
+        $('loadInstrModal').style.display = 'none';
+        updatePreview();
+      }catch(e){alert('Erreur de chargement')}
+    };
+    
+    window.deleteInstruction = function(name){
+      if(!confirm(`Supprimer "${name}" ?`)) return;
+      try{
+        const data = localStorage.getItem('savedInstructions');
+        const saved = JSON.parse(data);
+        delete saved[name];
+        localStorage.setItem('savedInstructions', JSON.stringify(saved));
+        $('loadInstr').click(); // Refresh list
+      }catch(e){alert('Erreur de suppression')}
+    };
+    
+    // Add Variable functionality
+    $('addVariable').addEventListener('click', ()=>{
+      $('varName').value = '';
+      $('varLabel').value = '';
+      $('varType').value = 'text';
+      $('addVarModal').style.display = 'block';
+    });
+    
+    $('closeAddVar').addEventListener('click', ()=>{
+      $('addVarModal').style.display = 'none';
+    });
+    
+    $('cancelAddVar').addEventListener('click', ()=>{
+      $('addVarModal').style.display = 'none';
+    });
+    
+    $('confirmAddVar').addEventListener('click', ()=>{
+      const name = $('varName').value.trim();
+      const label = $('varLabel').value.trim();
+      const type = $('varType').value;
+      
+      if(!name || !label){
+        alert('Veuillez remplir tous les champs');
+        return;
+      }
+      
+      // Check if variable name already exists
+      if(allVarsConfig.some(v => v.name === name)){
+        alert('Cette variable existe déjà');
+        return;
+      }
+      
+      const newVar = {
+        name: name,
+        label: label,
+        placeholder: '',
+        type: type
+      };
+      
+      customVars.push(newVar);
+      allVarsConfig.push(newVar);
+      localStorage.setItem('customVariables', JSON.stringify(customVars));
+      
+      $('addVarModal').style.display = 'none';
+      renderVariablesGrid();
+      updatePreview();
+    });
+    
+    // Edit Templates functionality
+    $('editTemplates').addEventListener('click', ()=>{
+      $('templateMes').value = templates.mes;
+      $('templatePartenaire').value = templates.partenaire;
+      $('templateF95').value = templates.f95 || defaultTemplates.f95;
+      updateAvailableVarsDisplay();
+      $('editTemplatesModal').style.display = 'block';
+    });
+    
+    $('closeEditTemplates').addEventListener('click', ()=>{
+      $('editTemplatesModal').style.display = 'none';
+    });
+    
+    $('cancelEditTemplates').addEventListener('click', ()=>{
+      $('editTemplatesModal').style.display = 'none';
+    });
+    
+    $('saveTemplates').addEventListener('click', ()=>{
+      const mesTemplate = $('templateMes').value;
+      const partenaireTemplate = $('templatePartenaire').value;
+      const f95Template = $('templateF95').value;
+      
+      // Check if essential variables are present
+      const essentialVars = ['[NAME_GAME]', '[Name_game]', '[Game_link]', '[Translate_link]'];
+      const missingInMes = essentialVars.filter(v => !mesTemplate.includes(v));
+      const missingInPartenaire = essentialVars.filter(v => !partenaireTemplate.includes(v));
+      
+      let warning = '';
+      if(missingInMes.length > 0){
+        warning += `⚠️ Template "Mes traductions" : Variables manquantes → ${missingInMes.join(', ')}\n`;
+      }
+      if(missingInPartenaire.length > 0){
+        warning += `⚠️ Template "Partenaire" : Variables manquantes → ${missingInPartenaire.join(', ')}\n`;
+      }
+      
+      if(warning){
+        warning += '\nContinuer quand même ?';
+        if(!confirm(warning)) return;
+      }
+      
+      templates.mes = mesTemplate;
+      templates.partenaire = partenaireTemplate;
+      templates.f95 = f95Template;
+      localStorage.setItem('customTemplates', JSON.stringify(templates));
+      $('editTemplatesModal').style.display = 'none';
+      updatePreview();
+      alert('Templates sauvegardés !');
+    });
+    
+    $('resetTemplates').addEventListener('click', ()=>{
+      if(!confirm('Réinitialiser les templates par défaut ?')) return;
+      templates = {...defaultTemplates};
+      localStorage.removeItem('customTemplates');
+      $('templateMes').value = templates.mes;
+      $('templatePartenaire').value = templates.partenaire;
+      $('templateF95').value = templates.f95;
+      alert('Templates réinitialisés !');
+    });
+    
+
+
+    // ===== Discord Publisher (Forum) =====
+    function loadPublisherSettings(){
+      try{
+        const apiUrl = localStorage.getItem('publisherApiUrl') || '';
+        const apiKey = localStorage.getItem('publisherApiKey') || '';
+        $('publisherApiUrl').value = apiUrl;
+        $('publisherApiKey').value = apiKey;
+      }catch(e){}
+    }
+
+    function savePublisherSettings(){
+      try{
+        localStorage.setItem('publisherApiUrl', $('publisherApiUrl').value.trim());
+        localStorage.setItem('publisherApiKey', $('publisherApiKey').value);
+      }catch(e){}
+    }
+
+    function clearPublisherKey(){
+      if(!confirm('Effacer la clé API enregistrée ?')) return;
+      try{
+        localStorage.removeItem('publisherApiKey');
+        $('publisherApiKey').value = '';
+      }catch(e){}
+    }
+
+    function mapTemplateForPublisher(){
+      const t = $('templateType').value;
+      if(t === 'partenaire') return 'partner';
+      if(t === 'mes') return 'my';
+      // Poste F95 FR n'est pas géré par le publisher forum (tu peux l'activer plus tard si besoin)
+      return null;
+    }
+
+    function guessDefaultTitle(){
+      const override = $('publisherTitle').value.trim();
+      if(override) return override;
+      const nameGame = $('var_Name_game') ? $('var_Name_game').value.trim() : '';
+      const nameGame2 = $('var_NAME_GAME') ? $('var_NAME_GAME').value.trim() : '';
+      return nameGame || nameGame2 || 'Nouvelle publication';
+    }
+
+    async function publishCurrentToDiscord(){
+      const statusEl = $('publisherStatus');
+      statusEl.textContent = '';
+
+      const apiUrl = $('publisherApiUrl').value.trim();
+      const apiKey = $('publisherApiKey').value;
+      const template = mapTemplateForPublisher();
+
+      if(!apiUrl){
+        statusEl.textContent = "❌ Renseigne l'URL de l'API Publisher.";
+        return;
+      }
+      if(!template){
+        statusEl.textContent = "❌ Le template actuel n'est pas publiable via le Forum (choisis 'Mes traductions' ou 'Traductions partenaire').";
+        return;
+      }
+
+      const title = guessDefaultTitle();
+      const content = $('preview').textContent; // publication complète déjà rendue
+      const tags = $('publisherTags').value.trim();
+      const imgInput = $('publisherImage');
+      const imgFile = imgInput && imgInput.files && imgInput.files[0] ? imgInput.files[0] : null;
+
+      const fd = new FormData();
+      fd.append('title', title);
+      fd.append('content', content);
+      fd.append('tags', tags);
+      fd.append('template', template); // "my" / "partner"
+      if(imgFile) fd.append('image', imgFile);
+
+      const btn = $('publishToDiscord');
+      const oldText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '⏳ Publication...';
+
+      try{
+        const headers = {};
+        if(apiKey) headers['X-API-KEY'] = apiKey;
+
+        const res = await fetch(apiUrl, {method:'POST', headers, body: fd});
+        const data = await res.json().catch(()=>null);
+
+        if(!res.ok || !data || !data.ok){
+          const details = data && (data.error || (data.details && JSON.stringify(data.details))) ? (data.error || JSON.stringify(data.details)) : 'Erreur inconnue';
+          statusEl.textContent = '❌ Échec : ' + details;
+          return;
+        }
+
+        const url = data.thread_url || '';
+        statusEl.innerHTML = url 
+          ? `✅ Post créé : <a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
+          : '✅ Post créé.';
+
+      }catch(e){
+        statusEl.textContent = '❌ Erreur réseau : ' + (e && e.message ? e.message : e);
+      }finally{
+        btn.disabled = false;
+        btn.textContent = oldText;
+      }
+    }
+
+    // Publisher buttons
+    $('savePublisherSettings').addEventListener('click', ()=>{
+      savePublisherSettings();
+      $('savePublisherSettings').textContent = '✅ Sauvegardé !';
+      $('savePublisherSettings').classList.add('success');
+      setTimeout(()=>{
+        $('savePublisherSettings').textContent = '💾 Sauvegarder API/clé';
+        $('savePublisherSettings').classList.remove('success');
+      },1500);
+    });
+
+    $('clearPublisherKey').addEventListener('click', clearPublisherKey);
+    $('publishToDiscord').addEventListener('click', ()=>{
+      // sauvegarde pratique avant d'envoyer
+      savePublisherSettings();
+      publishCurrentToDiscord();
+    });
+    // Initialize
+    renderVariablesGrid();
+    updatePreview();
+    loadPublisherSettings();
+  </script>
+</body>
+</html>

@@ -15,6 +15,7 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 # Discord 1 : Annonces de traductions (existant)
 FORUM_CHANNEL_ID = os.getenv('FORUM_CHANNEL_ID')
 ANNOUNCE_CHANNEL_ID = os.getenv('ANNOUNCE_CHANNEL_ID')
+FORUM_PARTNER_ID = os.getenv('FORUM_PARTNER_ID')  # Forum "Traductions partenaires" (optionnel)
 
 # Discord 2 : Rappels F95fr (nouveau)
 FORUM_SEMI_AUTO_ID = os.getenv('FORUM_SEMI_AUTO_ID')
@@ -38,6 +39,7 @@ if not ANNOUNCE_CHANNEL_ID:
 # Conversion en int après vérification
 FORUM_CHANNEL_ID = int(FORUM_CHANNEL_ID)
 ANNOUNCE_CHANNEL_ID = int(ANNOUNCE_CHANNEL_ID)
+FORUM_PARTNER_ID = int(FORUM_PARTNER_ID) if FORUM_PARTNER_ID else None
 
 # Conversion pour Discord 2 (optionnel, ne génère pas d'erreur si absent)
 if FORUM_SEMI_AUTO_ID:
@@ -192,6 +194,16 @@ async def envoyer_annonce(thread, liste_tags_trads):
     except discord.NotFound:
         return
 
+    # 2bis. (Optionnel) Extraire le nom du traducteur depuis le post
+    # Cherche par exemple : "**Traducteur :** Rory Mercury 91" ou "Traducteur : Rory Mercury 91"
+    traducteur = None
+    trad_match = re.search(r"(?:\*\*\s*)?Traducteur\s*:\s*(?:\*\*\s*)?(.+?)(?:\n|$)", contenu, re.IGNORECASE)
+    if trad_match:
+        traducteur = trad_match.group(1).strip()
+        # Nettoyage léger (évite les placeholders)
+        if traducteur.lower() in ["(traducteur)", "(nom)", "", "n/a", "na", "aucun"]:
+            traducteur = None
+
     # 3. Extraction des informations avec regex
     # Titre du jeu : chercher d'abord dans le message (après "TRADUCTION FR DISPONIBLE POUR")
     titre_jeu = thread.name  # Par défaut, utiliser le nom du thread
@@ -291,10 +303,15 @@ async def envoyer_annonce(thread, liste_tags_trads):
                 break
 
     # 7. Construction du message d'annonce
-    prefixe = "🔄 **Mise à jour d'une traduction**" if is_update else "🎮 **Publication d'une nouvelle traduction**"
+    if traducteur:
+        prefixe = "🔄 **Mise à jour d'une traduction de " + traducteur + "**" if is_update else "🎮 **Publication d'une nouvelle traduction de " + traducteur + "**"
+    else:
+        prefixe = "🔄 **Mise à jour d'une de mes traduction**" if is_update else "🎮 **Publication d'une de mes nouvelle traduction**"
     
     msg_content = f"{prefixe}\n\n"
     msg_content += f"**Nom du jeu :** [{titre_jeu}]({thread.jump_url})\n"
+    if traducteur:
+        msg_content += f"**Traducteur :** {traducteur}\n"
     msg_content += f"**Version du jeu :** {version_jeu}\n"
     msg_content += f"**Version de la traduction :** {version_traduction}\n"
     msg_content += f"**État :** {etat_txt}"
@@ -362,6 +379,8 @@ async def envoyer_notification_f95(thread):
 async def on_ready():
     print(f'Bot prêt : {bot.user}')
     print(f'📊 Discord 1 - Forum surveillé : {FORUM_CHANNEL_ID}')
+    if FORUM_PARTNER_ID:
+        print(f'📊 Discord 1 - Forum partenaires surveillé : {FORUM_PARTNER_ID}')
     if FORUM_SEMI_AUTO_ID:
         print(f'📊 Discord 2 - Forum Semi-Auto surveillé : {FORUM_SEMI_AUTO_ID}')
     if FORUM_AUTO_ID:
@@ -372,7 +391,7 @@ async def on_thread_create(thread):
     """Détecte la création d'un nouveau thread"""
     
     # Discord 1 : Annonces de traductions (existant)
-    if thread.parent_id == FORUM_CHANNEL_ID:
+    if thread.parent_id == FORUM_CHANNEL_ID or (FORUM_PARTNER_ID and thread.parent_id == FORUM_PARTNER_ID):
         # Marquer ce thread comme récemment créé (pour éviter COMPLÈTEMENT les autres événements)
         import time
         recent_threads[thread.id] = time.time()
