@@ -243,7 +243,7 @@
       <div class="grid">
         <div class="field">
           <label>URL de l'API Publisher</label>
-          <input type="text" id="publisherApiUrl" placeholder="https://ton-service.up.railway.app/api/forum-post">
+          <input type="text" id="publisherApiUrl" value="https://vn-traductions-publisher-production.up.railway.app/api/forum-post">
         </div>
         <div class="field">
           <label>Clé API (X-API-KEY)</label>
@@ -865,10 +865,10 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
     // ===== Discord Publisher (Forum) =====
     function loadPublisherSettings(){
       try{
-        const apiUrl = localStorage.getItem('publisherApiUrl') || '';
-        const apiKey = localStorage.getItem('publisherApiKey') || '';
-        $('publisherApiUrl').value = apiUrl;
-        $('publisherApiKey').value = apiKey;
+        const savedUrl = localStorage.getItem('publisherApiUrl');
+        const savedKey = localStorage.getItem('publisherApiKey');
+        if(savedUrl && savedUrl.trim()) $('publisherApiUrl').value = savedUrl.trim();
+        if(savedKey && savedKey.trim()) $('publisherApiKey').value = savedKey;
       }catch(e){}
     }
 
@@ -915,6 +915,10 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
         statusEl.textContent = "❌ Renseigne l'URL de l'API Publisher.";
         return;
       }
+      if(!apiKey || !apiKey.trim()){
+        statusEl.textContent = "❌ Renseigne la clé API (X-API-KEY).";
+        return;
+      }
       if(!template){
         statusEl.textContent = "❌ Le template actuel n'est pas publiable via le Forum (choisis 'Mes traductions' ou 'Traductions partenaire').";
         return;
@@ -939,8 +943,7 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
       btn.textContent = '⏳ Publication...';
 
       try{
-        const headers = {};
-        if(apiKey) headers['X-API-KEY'] = apiKey;
+        const headers = {'X-API-KEY': apiKey};
 
         const res = await fetch(apiUrl, {method:'POST', headers, body: fd});
         const data = await res.json().catch(()=>null);
