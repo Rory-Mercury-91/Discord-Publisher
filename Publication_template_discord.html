@@ -25,7 +25,7 @@
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     .field{display:flex;flex-direction:column;gap:4px;position:relative}
     .field label{font-size:13px;color:var(--muted);font-weight:500}
-    .field input,.field textarea{
+    .field input,.field textarea,.field select{
       background:var(--bg);
       border:1px solid var(--border);
       padding:8px 10px;
@@ -34,7 +34,7 @@
       font-size:14px;
       font-family:inherit;
     }
-    .field input:focus,.field textarea:focus{
+    .field input:focus,.field textarea:focus,.field select:focus{
       outline:none;
       border-color:var(--accent);
     }
@@ -58,14 +58,38 @@
     }
     .remove-var:hover{color:#ff6b9d}
     
-    select{
+    /* Radio button styles pour templates */
+    .template-radio-group{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+    .template-radio-item{position:relative}
+    .template-radio-item input[type="radio"]{
+      position:absolute;
+      opacity:0;
+      width:0;
+      height:0;
+    }
+    .template-radio-label{
+      display:inline-block;
       background:var(--bg);
-      border:1px solid var(--border);
-      padding:8px 10px;
+      border:2px solid var(--border);
+      padding:10px 16px;
       border-radius:6px;
-      color:var(--text);
-      font-size:14px;
       cursor:pointer;
+      font-size:14px;
+      font-weight:500;
+      transition:all 0.2s;
+    }
+    .template-radio-item input[type="radio"]:checked + .template-radio-label{
+      background:rgba(125,211,252,0.15);
+      border-color:var(--accent);
+      color:var(--accent);
+    }
+    .template-radio-label:hover{
+      border-color:var(--accent);
+      background:rgba(125,211,252,0.08);
+    }
+    .template-radio-label.new-template{
+      border-style:dashed;
+      color:var(--accent-2);
     }
     
     .checkbox-group{display:flex;align-items:center;gap:8px;margin-bottom:12px}
@@ -87,6 +111,7 @@
     button:active{transform:scale(0.98)}
     button.success{color:#4ade80}
     button.secondary{color:var(--accent-2)}
+    button.danger{color:#ef4444}
     
     .btn-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
     
@@ -103,6 +128,50 @@
       overflow-y:auto;
       line-height:1.6;
     }
+    
+    /* Image gallery styles */
+    .image-gallery{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+    .image-preview-item{
+      position:relative;
+      width:120px;
+      height:120px;
+      border:2px solid var(--border);
+      border-radius:6px;
+      overflow:hidden;
+      cursor:pointer;
+      transition:all 0.2s;
+    }
+    .image-preview-item:hover{border-color:var(--accent)}
+    .image-preview-item.main{border-color:var(--accent);box-shadow:0 0 12px rgba(125,211,252,0.4)}
+    .image-preview-item img{width:100%;height:100%;object-fit:cover}
+    .image-preview-badge{
+      position:absolute;
+      top:4px;
+      left:4px;
+      background:var(--accent);
+      color:var(--bg);
+      padding:2px 6px;
+      border-radius:4px;
+      font-size:10px;
+      font-weight:600;
+    }
+    .image-preview-remove{
+      position:absolute;
+      top:4px;
+      right:4px;
+      background:rgba(239,68,68,0.9);
+      color:white;
+      border:none;
+      width:24px;
+      height:24px;
+      border-radius:4px;
+      cursor:pointer;
+      font-size:14px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .image-preview-remove:hover{background:#ef4444}
     
     /* Modal styles */
     .modal{
@@ -172,6 +241,19 @@
     .template-editor{margin-top:12px}
     .template-editor textarea{width:100%;min-height:300px;font-family:monospace;font-size:13px}
     
+    .template-manager{margin-bottom:16px}
+    .template-list{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+    .template-item{
+      background:var(--bg);
+      border:1px solid var(--border);
+      padding:12px;
+      border-radius:6px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+    }
+    .template-item-name{font-size:14px;font-weight:500}
+    
     @media(max-width:768px){
       .grid{grid-template-columns:1fr}
       .container{padding:16px;margin:10px}
@@ -184,16 +266,14 @@
     
     <!-- Template Selection -->
     <div class="section">
-      <div class="field">
-        <label>Type de publication</label>
-        <select id="templateType">
-          <option value="mes">Mes traductions (avec soutien)</option>
-          <option value="partenaire">Traductions partenaire (sans soutien)</option>
-          <option value="f95">Poste F95 FR</option>
-        </select>
+      <div class="section-title">Type de publication</div>
+      <div class="template-radio-group" id="templateRadioGroup">
+        <!-- Les boutons radio seront générés dynamiquement ici -->
       </div>
       <div class="btn-row">
-        <button id="editTemplates" class="secondary">✏️ Modifier les templates</button>
+        <button id="editTemplates" class="secondary">✏️ Gérer les templates</button>
+        <button id="exportTemplates" class="secondary">📤 Exporter templates</button>
+        <button id="importTemplates" class="secondary">📥 Importer templates</button>
       </div>
     </div>
     
@@ -257,13 +337,14 @@
           <label>Tags (noms séparés par virgules)</label>
           <input type="text" id="publisherTags" placeholder="Ex: En cours, Terminé, MAJ">
         </div>
-        <div class="field">
-          <label>Image (optionnel)</label>
-          <input type="file" id="publisherImage" accept="image/*">
+        <div class="field" style="grid-column:1/-1">
+          <label>Images (la première sera l'image principale)</label>
+          <input type="file" id="publisherImage" accept="image/*" multiple>
+          <div class="image-gallery" id="imageGallery"></div>
         </div>
         <div class="field">
           <label>Template envoyé au bot</label>
-          <input type="text" id="publisherTemplateInfo" value="auto (my/partner selon le template choisi)" disabled>
+          <input type="text" id="publisherTemplateInfo" value="" disabled>
         </div>
       </div>
       <div class="btn-row">
@@ -343,7 +424,7 @@
   <div id="editTemplatesModal" class="modal">
     <div class="modal-content" style="max-width:1000px">
       <button class="modal-close" id="closeEditTemplates">✕</button>
-      <h2>✏️ Modifier les templates de référence</h2>
+      <h2>✏️ Gérer les templates</h2>
       
       <div style="background:rgba(125,211,252,0.1);border:1px solid var(--accent);border-radius:6px;padding:12px;margin-bottom:16px">
         <div style="font-weight:600;margin-bottom:8px;color:var(--accent)">📝 Variables disponibles :</div>
@@ -354,22 +435,67 @@
         </div>
       </div>
       
+      <div class="template-manager">
+        <div class="section-title">Templates existants</div>
+        <div class="template-list" id="templateList"></div>
+      </div>
+      
+      <div class="btn-row">
+        <button id="addNewTemplate" class="secondary">➕ Nouveau template</button>
+        <button id="saveAllTemplates">💾 Sauvegarder tout</button>
+        <button id="cancelEditTemplates" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New/Edit Template Modal -->
+  <div id="templateEditorModal" class="modal">
+    <div class="modal-content" style="max-width:900px">
+      <button class="modal-close" id="closeTemplateEditor">✕</button>
+      <h2 id="templateEditorTitle">Nouveau template</h2>
       <div class="field">
-        <label>Template "Mes traductions"</label>
-        <textarea id="templateMes" class="template-editor"></textarea>
+        <label>Nom du template</label>
+        <input type="text" id="templateEditorName" placeholder="Ex: Mon template custom">
       </div>
-      <div class="field" style="margin-top:16px">
-        <label>Template "Traductions partenaire"</label>
-        <textarea id="templatePartenaire" class="template-editor"></textarea>
-      </div>
-      <div class="field" style="margin-top:16px">
-        <label>Template "Poste F95 FR"</label>
-        <textarea id="templateF95" class="template-editor"></textarea>
+      <div class="field" style="margin-top:12px">
+        <label>Contenu du template</label>
+        <textarea id="templateEditorContent" class="template-editor"></textarea>
       </div>
       <div class="btn-row">
-        <button id="saveTemplates">💾 Sauvegarder les templates</button>
-        <button id="resetTemplates" class="secondary">🔄 Réinitialiser</button>
-        <button id="cancelEditTemplates" class="secondary">Annuler</button>
+        <button id="saveTemplateEditor">💾 Sauvegarder</button>
+        <button id="cancelTemplateEditor" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Save Traductor Modal -->
+  <div id="saveTraductorModal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeSaveTraductor">✕</button>
+      <h2>💾 Sauvegarder le traducteur</h2>
+      <div class="field">
+        <label>Nom du traducteur</label>
+        <input type="text" id="traductorName" placeholder="Ex: Rory Mercury 91">
+      </div>
+      <div class="btn-row">
+        <button id="confirmSaveTraductor">Sauvegarder</button>
+        <button id="cancelSaveTraductor" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Templates Modal -->
+  <div id="importTemplatesModal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeImportTemplates">✕</button>
+      <h2>📥 Importer des templates</h2>
+      <div class="field">
+        <label>Coller le JSON des templates</label>
+        <textarea id="importTemplatesText" style="min-height:200px;font-family:monospace;font-size:12px"></textarea>
+      </div>
+      <div class="btn-row">
+        <button id="confirmImportTemplates">Importer</button>
+        <button id="cancelImportTemplates" class="secondary">Annuler</button>
       </div>
     </div>
   </div>
@@ -385,7 +511,7 @@
       {name: 'Translate_version', label: 'Version de la traduction', placeholder: 'Ch.2 P1 v0.2a', type: 'text', templates: ['mes', 'partenaire', 'f95']},
       {name: 'Game_link', label: 'Lien du jeu', placeholder: 'https://...', type: 'text', templates: ['mes', 'partenaire', 'f95']},
       {name: 'Translate_link', label: 'Lien de la traduction', placeholder: 'https://...', type: 'text', templates: ['mes', 'partenaire', 'f95']},
-      {name: 'traductor', label: 'Traducteur', placeholder: 'Rory Mercury 91', type: 'text', templates: ['partenaire', 'f95']},
+      {name: 'traductor', label: 'Traducteur', placeholder: 'Rory Mercury 91', type: 'text', templates: ['partenaire', 'f95'], hasSaveLoad: true},
       {name: 'overview', label: 'Synopsis', placeholder: 'Synopsis du jeu...', type: 'textarea', templates: ['mes', 'partenaire']},
       {name: 'modded', label: 'Jeux modé', type: 'select', options: ['Oui', 'Non'], templates: ['f95']},
       {name: 'translation_type', label: 'Type de traduction', type: 'select', options: ['Manuelle', 'Automatique', 'Semi-Automatique', 'VO Française'], templates: ['f95']}
@@ -402,7 +528,9 @@
 
     // Default templates
     const defaultTemplates = {
-      mes: `## :flag_fr: TRADUCTION FR DISPONIBLE POUR : **[NAME_GAME]** ! :tada:
+      mes: {
+        name: 'Mes traductions (avec soutien)',
+        content: `## :flag_fr: TRADUCTION FR DISPONIBLE POUR : **[NAME_GAME]** ! :tada:
 Salut à tous ! La version française de **[Name_game]** est enfin là et prête à être installée ! Un max de plaisir en VF pour tout le monde ! :point_down:
 
 ### :computer: Infos du Mod & Liens de Téléchargement
@@ -417,8 +545,11 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
 ### :sparkling_heart: Soutenez le Traducteur !
 
 Pour m'encourager et soutenir mes efforts :
-* **Soutien au Traducteur (Moi !) :** [Offrez-moi un café pour le temps passé !](https://discord.com/channels/1417811606674477139/1433930090349330493)`,
-      partenaire: `## :flag_fr: TRADUCTION FR DISPONIBLE POUR : **[NAME_GAME]** ! :tada:
+* **Soutien au Traducteur (Moi !) :** [Offrez-moi un café pour le temps passé !](https://discord.com/channels/1417811606674477139/1433930090349330493)`
+      },
+      partenaire: {
+        name: 'Traductions partenaire (sans soutien)',
+        content: `## :flag_fr: TRADUCTION FR DISPONIBLE POUR : **[NAME_GAME]** ! :tada:
 Salut à tous ! La version française de **[Name_game]** est enfin là et prête à être installée ! Un max de plaisir en VF pour tout le monde ! :point_down:
 
 ### :computer: Infos du Mod & Liens de Téléchargement
@@ -429,27 +560,81 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
 * **Lien du jeu (VO) :** [Accès au jeu original]([Game_link])
 * **Lien de la Traduction :** [Téléchargez la traduction FR ici !]([Translate_link])
 > **Synopsis du jeu :**
-> [overview]`,
-      f95: `**Lien du jeu :** [Game_link]
+> [overview]`
+      },
+      f95: {
+        name: 'Poste F95 FR',
+        content: `**Lien du jeu :** [Game_link]
 **Version du jeu :** [Game_version]
 **Lien de la traduction :** [Translate_link]
 **Version de la traduction :** [Translate_version]
 **Jeux modé :** [modded]
 **Traduction :** [translation_type]
 **Pseudo du traducteur :** [traductor]`
+      }
     };
 
     // Load templates from storage or use defaults
-    let templates = {...defaultTemplates};
+    let templates = {};
     try{
       const saved = localStorage.getItem('customTemplates');
-      if(saved) templates = JSON.parse(saved);
+      if(saved) {
+        templates = JSON.parse(saved);
+      } else {
+        templates = {...defaultTemplates};
+      }
+    }catch(e){
+      templates = {...defaultTemplates};
+    }
+    
+    let currentTemplate = Object.keys(templates)[0] || 'mes';
+    let currentEditingTemplateKey = null;
+    let uploadedImages = [];
+    let savedTraductors = [];
+    
+    // Load saved traductors
+    try{
+      const saved = localStorage.getItem('savedTraductors');
+      if(saved) savedTraductors = JSON.parse(saved);
     }catch(e){}
+    
+    // Render template radio buttons
+    function renderTemplateRadios(){
+      const container = $('templateRadioGroup');
+      container.innerHTML = '';
+      
+      Object.keys(templates).forEach(key => {
+        const item = document.createElement('div');
+        item.className = 'template-radio-item';
+        
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'templateType';
+        radio.value = key;
+        radio.id = 'template_' + key;
+        radio.checked = currentTemplate === key;
+        
+        const label = document.createElement('label');
+        label.className = 'template-radio-label';
+        label.htmlFor = 'template_' + key;
+        label.textContent = templates[key].name || key;
+        
+        radio.addEventListener('change', ()=>{
+          currentTemplate = key;
+          renderVariablesGrid();
+          updatePreview();
+          updatePublisherTemplateInfo();
+        });
+        
+        item.appendChild(radio);
+        item.appendChild(label);
+        container.appendChild(item);
+      });
+    }
     
     // Render variables grid
     function renderVariablesGrid(){
       const grid = $('variablesGrid');
-      const currentTemplate = $('templateType').value;
       grid.innerHTML = '';
       
       // Filter variables based on current template
@@ -465,18 +650,53 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
         const field = document.createElement('div');
         field.className = isCustom ? 'field custom' : 'field';
         
+        const labelContainer = document.createElement('div');
+        labelContainer.style.display = 'flex';
+        labelContainer.style.justifyContent = 'space-between';
+        labelContainer.style.alignItems = 'center';
+        
         const label = document.createElement('label');
         label.textContent = varConfig.label;
+        labelContainer.appendChild(label);
+        
+        // Add save/load buttons for traductor field
+        if(varConfig.hasSaveLoad){
+          const btnGroup = document.createElement('div');
+          btnGroup.style.display = 'flex';
+          btnGroup.style.gap = '4px';
+          
+          const saveBtn = document.createElement('button');
+          saveBtn.textContent = '💾';
+          saveBtn.style.padding = '2px 6px';
+          saveBtn.style.fontSize = '12px';
+          saveBtn.title = 'Sauvegarder ce traducteur';
+          saveBtn.onclick = (e) => {
+            e.preventDefault();
+            openSaveTraductorModal();
+          };
+          
+          const loadBtn = document.createElement('button');
+          loadBtn.textContent = '📂';
+          loadBtn.style.padding = '2px 6px';
+          loadBtn.style.fontSize = '12px';
+          loadBtn.title = 'Charger un traducteur';
+          loadBtn.onclick = (e) => {
+            e.preventDefault();
+            showTraductorDropdown(field);
+          };
+          
+          btnGroup.appendChild(saveBtn);
+          btnGroup.appendChild(loadBtn);
+          labelContainer.appendChild(btnGroup);
+        }
         
         let input;
         if(varConfig.type === 'select'){
           input = document.createElement('select');
-          // Add empty option
           const emptyOption = document.createElement('option');
           emptyOption.value = '';
           emptyOption.textContent = '-- Sélectionner --';
           input.appendChild(emptyOption);
-          // Add options
           varConfig.options.forEach(opt => {
             const option = document.createElement('option');
             option.value = opt;
@@ -501,7 +721,7 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
         input.addEventListener('input', updatePreview);
         input.addEventListener('change', updatePreview);
         
-        field.appendChild(label);
+        field.appendChild(labelContainer);
         field.appendChild(input);
         
         if(isCustom){
@@ -519,6 +739,48 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
       updateAvailableVarsDisplay();
     }
     
+    function showTraductorDropdown(parentField){
+      if(savedTraductors.length === 0){
+        alert('Aucun traducteur sauvegardé');
+        return;
+      }
+      
+      const select = document.createElement('select');
+      select.style.marginTop = '4px';
+      
+      const emptyOpt = document.createElement('option');
+      emptyOpt.value = '';
+      emptyOpt.textContent = '-- Choisir un traducteur --';
+      select.appendChild(emptyOpt);
+      
+      savedTraductors.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+      
+      select.addEventListener('change', (e) => {
+        const traductorInput = $('var_traductor');
+        if(traductorInput && e.target.value){
+          traductorInput.value = e.target.value;
+          updatePreview();
+        }
+        select.remove();
+      });
+      
+      parentField.appendChild(select);
+      select.focus();
+    }
+    
+    function openSaveTraductorModal(){
+      const traductorInput = $('var_traductor');
+      if(traductorInput){
+        $('traductorName').value = traductorInput.value;
+      }
+      $('saveTraductorModal').style.display = 'block';
+    }
+    
     function updateAvailableVarsDisplay(){
       const display = $('availableVars');
       if(!display) return;
@@ -534,7 +796,6 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
       customVars.splice(index, 1);
       localStorage.setItem('customVariables', JSON.stringify(customVars));
       
-      // Remove from allVarsConfig
       const allIndex = allVarsConfig.findIndex(v => v.name === varToRemove.name);
       if(allIndex !== -1) {
         allVarsConfig.splice(allIndex, 1);
@@ -545,47 +806,182 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
     }
     
     function updatePreview(){
-      const type = $('templateType').value;
-      let template = templates[type];
+      const template = templates[currentTemplate];
+      if(!template) return;
       
-      // Replace all variables
+      let content = template.content;
+      
       allVarsConfig.forEach(varConfig => {
         const input = $('var_' + varConfig.name);
         if(!input) return;
         
         let val = input.value.trim();
         
-        // Special handling for NAME_GAME
         if(varConfig.name === 'NAME_GAME') val = val.toUpperCase();
         
-        // Special handling for overview
         if(varConfig.name === 'overview' && val){
           const lines = val.split('\n').map(l=>l.trim()).filter(Boolean);
           val = lines.join('\n> ');
         }
         
-        template = template.split(`[${varConfig.name}]`).join(val || `[${varConfig.name}]`);
+        content = content.split(`[${varConfig.name}]`).join(val || `[${varConfig.name}]`);
       });
       
-      // Add instructions if checked
       if($('includeInstr').checked){
         const instr = $('instrText').value.trim();
         if(instr){
           const lines = instr.split('\n').map(l=>l.trim()).filter(Boolean);
-          template += '\n\n**Instructions d\'installation :**\n' + lines.map(l=>'* '+l).join('\n');
+          content += '\n\n**Instructions d\'installation :**\n' + lines.map(l=>'* '+l).join('\n');
         }
       }
       
-      $('preview').textContent = template;
+      $('preview').textContent = content;
+    }
+    
+    function updatePublisherTemplateInfo(){
+      const t = currentTemplate;
+      let displayValue = t;
+      
+      if(t === 'partenaire') displayValue = 'partner';
+      else if(t === 'mes') displayValue = 'my';
+      
+      $('publisherTemplateInfo').value = displayValue;
+    }
+    
+    // Image handling
+    function handleImageUpload(files){
+      Array.from(files).forEach(file => {
+        if(!file.type.startsWith('image/')) return;
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          uploadedImages.push({
+            file: file,
+            dataUrl: e.target.result,
+            isMain: uploadedImages.length === 0
+          });
+          renderImageGallery();
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+    
+    function renderImageGallery(){
+      const gallery = $('imageGallery');
+      gallery.innerHTML = '';
+      
+      uploadedImages.forEach((img, index) => {
+        const item = document.createElement('div');
+        item.className = 'image-preview-item' + (img.isMain ? ' main' : '');
+        
+        const imgEl = document.createElement('img');
+        imgEl.src = img.dataUrl;
+        
+        if(img.isMain){
+          const badge = document.createElement('div');
+          badge.className = 'image-preview-badge';
+          badge.textContent = 'PRINCIPALE';
+          item.appendChild(badge);
+        }
+        
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'image-preview-remove';
+        removeBtn.textContent = '✕';
+        removeBtn.onclick = (e) => {
+          e.stopPropagation();
+          uploadedImages.splice(index, 1);
+          if(uploadedImages.length > 0 && img.isMain){
+            uploadedImages[0].isMain = true;
+          }
+          renderImageGallery();
+        };
+        
+        item.onclick = () => {
+          uploadedImages.forEach(i => i.isMain = false);
+          img.isMain = true;
+          renderImageGallery();
+        };
+        
+        item.appendChild(imgEl);
+        item.appendChild(removeBtn);
+        gallery.appendChild(item);
+      });
+    }
+    
+    // Template management
+    function renderTemplateList(){
+      const list = $('templateList');
+      list.innerHTML = '';
+      
+      Object.keys(templates).forEach(key => {
+        const item = document.createElement('div');
+        item.className = 'template-item';
+        
+        const nameEl = document.createElement('div');
+        nameEl.className = 'template-item-name';
+        nameEl.textContent = templates[key].name || key;
+        
+        const actions = document.createElement('div');
+        actions.className = 'saved-item-actions';
+        
+        const editBtn = document.createElement('button');
+        editBtn.textContent = 'Modifier';
+        editBtn.onclick = () => openTemplateEditor(key);
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Supprimer';
+        deleteBtn.className = 'danger';
+        deleteBtn.onclick = () => deleteTemplate(key);
+        
+        actions.appendChild(editBtn);
+        actions.appendChild(deleteBtn);
+        
+        item.appendChild(nameEl);
+        item.appendChild(actions);
+        list.appendChild(item);
+      });
+    }
+    
+    function openTemplateEditor(key = null){
+      currentEditingTemplateKey = key;
+      
+      if(key){
+        $('templateEditorTitle').textContent = 'Modifier le template';
+        $('templateEditorName').value = templates[key].name || key;
+        $('templateEditorContent').value = templates[key].content || '';
+      } else {
+        $('templateEditorTitle').textContent = 'Nouveau template';
+        $('templateEditorName').value = '';
+        $('templateEditorContent').value = '';
+      }
+      
+      $('editTemplatesModal').style.display = 'none';
+      $('templateEditorModal').style.display = 'block';
+    }
+    
+    function deleteTemplate(key){
+      if(!confirm(`Supprimer le template "${templates[key].name || key}" ?`)) return;
+      
+      delete templates[key];
+      localStorage.setItem('customTemplates', JSON.stringify(templates));
+      
+      if(currentTemplate === key){
+        currentTemplate = Object.keys(templates)[0] || 'mes';
+      }
+      
+      renderTemplateList();
+      renderTemplateRadios();
+      updatePreview();
+      updatePublisherTemplateInfo();
     }
     
     // Event listeners
-    $('templateType').addEventListener('change', ()=>{
-      renderVariablesGrid();
-      updatePreview();
-    });
     $('includeInstr').addEventListener('change', updatePreview);
     $('instrText').addEventListener('input', updatePreview);
+    
+    $('publisherImage').addEventListener('change', (e) => {
+      handleImageUpload(e.target.files);
+    });
     
     // Copy buttons
     $('copyInstr').addEventListener('click', async ()=>{
@@ -628,41 +1024,27 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
       if(e.target === $('modal')) $('modal').style.display = 'none';
     });
     
-    // Simple markdown to HTML converter for Discord-style formatting
     function convertMarkdownToHTML(md){
       let html = md;
       
-      // Headers
       html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
       html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-      
-      // Bold
       html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-      
-      // Links
       html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-      
-      // Lists
       html = html.replace(/^\* (.+)$/gm, '<li>$1</li>');
       html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-      
-      // Blockquotes
       html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
-      
-      // Emojis (Discord style)
       html = html.replace(/:flag_fr:/g, '🇫🇷');
       html = html.replace(/:tada:/g, '🎉');
       html = html.replace(/:point_down:/g, '👇');
       html = html.replace(/:computer:/g, '💻');
       html = html.replace(/:sparkling_heart:/g, '💖');
-      
-      // Paragraphs
       html = html.split('\n\n').map(p => p.trim() ? `<p>${p}</p>` : '').join('');
       
       return html;
     }
     
-    // Save Instructions functionality
+    // Save/Load Instructions
     $('saveInstr').addEventListener('click', ()=>{
       $('instrName').value = '';
       $('saveInstrModal').style.display = 'block';
@@ -697,7 +1079,6 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
       alert('Instructions sauvegardées !');
     });
     
-    // Load Instructions functionality
     $('loadInstr').addEventListener('click', ()=>{
       let saved = {};
       try{
@@ -749,11 +1130,42 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
         const saved = JSON.parse(data);
         delete saved[name];
         localStorage.setItem('savedInstructions', JSON.stringify(saved));
-        $('loadInstr').click(); // Refresh list
+        $('loadInstr').click();
       }catch(e){alert('Erreur de suppression')}
     };
     
-    // Add Variable functionality
+    // Save Traductor
+    $('closeSaveTraductor').addEventListener('click', ()=>{
+      $('saveTraductorModal').style.display = 'none';
+    });
+    
+    $('cancelSaveTraductor').addEventListener('click', ()=>{
+      $('saveTraductorModal').style.display = 'none';
+    });
+    
+    $('confirmSaveTraductor').addEventListener('click', ()=>{
+      const name = $('traductorName').value.trim();
+      if(!name){
+        alert('Veuillez entrer un nom');
+        return;
+      }
+      
+      if(!savedTraductors.includes(name)){
+        savedTraductors.push(name);
+        localStorage.setItem('savedTraductors', JSON.stringify(savedTraductors));
+      }
+      
+      const traductorInput = $('var_traductor');
+      if(traductorInput){
+        traductorInput.value = name;
+        updatePreview();
+      }
+      
+      $('saveTraductorModal').style.display = 'none';
+      alert('Traducteur sauvegardé !');
+    });
+    
+    // Add Variable
     $('addVariable').addEventListener('click', ()=>{
       $('varName').value = '';
       $('varLabel').value = '';
@@ -779,7 +1191,6 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
         return;
       }
       
-      // Check if variable name already exists
       if(allVarsConfig.some(v => v.name === name)){
         alert('Cette variable existe déjà');
         return;
@@ -801,12 +1212,10 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
       updatePreview();
     });
     
-    // Edit Templates functionality
+    // Edit Templates
     $('editTemplates').addEventListener('click', ()=>{
-      $('templateMes').value = templates.mes;
-      $('templatePartenaire').value = templates.partenaire;
-      $('templateF95').value = templates.f95 || defaultTemplates.f95;
       updateAvailableVarsDisplay();
+      renderTemplateList();
       $('editTemplatesModal').style.display = 'block';
     });
     
@@ -818,51 +1227,122 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
       $('editTemplatesModal').style.display = 'none';
     });
     
-    $('saveTemplates').addEventListener('click', ()=>{
-      const mesTemplate = $('templateMes').value;
-      const partenaireTemplate = $('templatePartenaire').value;
-      const f95Template = $('templateF95').value;
-      
-      // Check if essential variables are present
-      const essentialVars = ['[NAME_GAME]', '[Name_game]', '[Game_link]', '[Translate_link]'];
-      const missingInMes = essentialVars.filter(v => !mesTemplate.includes(v));
-      const missingInPartenaire = essentialVars.filter(v => !partenaireTemplate.includes(v));
-      
-      let warning = '';
-      if(missingInMes.length > 0){
-        warning += `⚠️ Template "Mes traductions" : Variables manquantes → ${missingInMes.join(', ')}\n`;
-      }
-      if(missingInPartenaire.length > 0){
-        warning += `⚠️ Template "Partenaire" : Variables manquantes → ${missingInPartenaire.join(', ')}\n`;
-      }
-      
-      if(warning){
-        warning += '\nContinuer quand même ?';
-        if(!confirm(warning)) return;
-      }
-      
-      templates.mes = mesTemplate;
-      templates.partenaire = partenaireTemplate;
-      templates.f95 = f95Template;
+    $('addNewTemplate').addEventListener('click', ()=>{
+      openTemplateEditor(null);
+    });
+    
+    $('saveAllTemplates').addEventListener('click', ()=>{
       localStorage.setItem('customTemplates', JSON.stringify(templates));
       $('editTemplatesModal').style.display = 'none';
-      updatePreview();
       alert('Templates sauvegardés !');
     });
     
-    $('resetTemplates').addEventListener('click', ()=>{
-      if(!confirm('Réinitialiser les templates par défaut ?')) return;
-      templates = {...defaultTemplates};
-      localStorage.removeItem('customTemplates');
-      $('templateMes').value = templates.mes;
-      $('templatePartenaire').value = templates.partenaire;
-      $('templateF95').value = templates.f95;
-      alert('Templates réinitialisés !');
+    // Template Editor
+    $('closeTemplateEditor').addEventListener('click', ()=>{
+      $('templateEditorModal').style.display = 'none';
+      $('editTemplatesModal').style.display = 'block';
     });
     
-
-
-    // ===== Discord Publisher (Forum) =====
+    $('cancelTemplateEditor').addEventListener('click', ()=>{
+      $('templateEditorModal').style.display = 'none';
+      $('editTemplatesModal').style.display = 'block';
+    });
+    
+    $('saveTemplateEditor').addEventListener('click', ()=>{
+      const name = $('templateEditorName').value.trim();
+      const content = $('templateEditorContent').value;
+      
+      if(!name){
+        alert('Veuillez entrer un nom pour le template');
+        return;
+      }
+      
+      let key = currentEditingTemplateKey;
+      
+      if(!key){
+        key = name.toLowerCase().replace(/\s+/g, '_');
+        let counter = 1;
+        while(templates[key]){
+          key = name.toLowerCase().replace(/\s+/g, '_') + '_' + counter;
+          counter++;
+        }
+      }
+      
+      templates[key] = {
+        name: name,
+        content: content
+      };
+      
+      localStorage.setItem('customTemplates', JSON.stringify(templates));
+      
+      $('templateEditorModal').style.display = 'none';
+      $('editTemplatesModal').style.display = 'block';
+      
+      renderTemplateList();
+      renderTemplateRadios();
+      updatePreview();
+      updatePublisherTemplateInfo();
+    });
+    
+    // Export/Import Templates
+    $('exportTemplates').addEventListener('click', ()=>{
+      const json = JSON.stringify(templates, null, 2);
+      navigator.clipboard.writeText(json).then(()=>{
+        alert('Templates exportés dans le presse-papier !');
+      }).catch(()=>{
+        const blob = new Blob([json], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'templates.json';
+        a.click();
+      });
+    });
+    
+    $('importTemplates').addEventListener('click', ()=>{
+      $('importTemplatesText').value = '';
+      $('importTemplatesModal').style.display = 'block';
+    });
+    
+    $('closeImportTemplates').addEventListener('click', ()=>{
+      $('importTemplatesModal').style.display = 'none';
+    });
+    
+    $('cancelImportTemplates').addEventListener('click', ()=>{
+      $('importTemplatesModal').style.display = 'none';
+    });
+    
+    $('confirmImportTemplates').addEventListener('click', ()=>{
+      const json = $('importTemplatesText').value.trim();
+      if(!json){
+        alert('Veuillez coller le JSON des templates');
+        return;
+      }
+      
+      try{
+        const imported = JSON.parse(json);
+        
+        if(confirm('Voulez-vous remplacer tous les templates existants ou fusionner ?')){
+          // Fusionner
+          Object.assign(templates, imported);
+        } else {
+          // Remplacer
+          templates = imported;
+        }
+        
+        localStorage.setItem('customTemplates', JSON.stringify(templates));
+        
+        $('importTemplatesModal').style.display = 'none';
+        renderTemplateRadios();
+        updatePreview();
+        updatePublisherTemplateInfo();
+        alert('Templates importés !');
+      }catch(e){
+        alert('Erreur : JSON invalide');
+      }
+    });
+    
+    // Publisher functions
     function loadPublisherSettings(){
       try{
         const savedUrl = localStorage.getItem('publisherApiUrl');
@@ -888,10 +1368,9 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
     }
 
     function mapTemplateForPublisher(){
-      const t = $('templateType').value;
+      const t = currentTemplate;
       if(t === 'partenaire') return 'partner';
       if(t === 'mes') return 'my';
-      // Poste F95 FR n'est pas géré par le publisher forum (tu peux l'activer plus tard si besoin)
       return null;
     }
 
@@ -925,17 +1404,18 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
       }
 
       const title = guessDefaultTitle();
-      const content = $('preview').textContent; // publication complète déjà rendue
+      const content = $('preview').textContent;
       const tags = $('publisherTags').value.trim();
-      const imgInput = $('publisherImage');
-      const imgFile = imgInput && imgInput.files && imgInput.files[0] ? imgInput.files[0] : null;
-
+      
+      // Get main image
+      const mainImage = uploadedImages.find(img => img.isMain);
+      
       const fd = new FormData();
       fd.append('title', title);
       fd.append('content', content);
       fd.append('tags', tags);
-      fd.append('template', template); // "my" / "partner"
-      if(imgFile) fd.append('image', imgFile);
+      fd.append('template', template);
+      if(mainImage) fd.append('image', mainImage.file);
 
       const btn = $('publishToDiscord');
       const oldText = btn.textContent;
@@ -967,7 +1447,6 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
       }
     }
 
-    // Publisher buttons
     $('savePublisherSettings').addEventListener('click', ()=>{
       savePublisherSettings();
       $('savePublisherSettings').textContent = '✅ Sauvegardé !';
@@ -980,13 +1459,15 @@ Salut à tous ! La version française de **[Name_game]** est enfin là et prête
 
     $('clearPublisherKey').addEventListener('click', clearPublisherKey);
     $('publishToDiscord').addEventListener('click', ()=>{
-      // sauvegarde pratique avant d'envoyer
       savePublisherSettings();
       publishCurrentToDiscord();
     });
+    
     // Initialize
+    renderTemplateRadios();
     renderVariablesGrid();
     updatePreview();
+    updatePublisherTemplateInfo();
     loadPublisherSettings();
   </script>
 </body>
