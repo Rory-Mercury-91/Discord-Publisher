@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Générateur de publications - Master</title>
+  <title>Générateur de publications</title>
   <style>
     :root{
       --bg:#0b0f12;
@@ -18,1278 +18,2051 @@
     }
     *{box-sizing:border-box}
     html,body{height:100%;margin:0;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text)}
-    .container{max-width:1050px;margin:20px auto;padding:24px}
+    .container{max-width:1000px;margin:20px auto;padding:24px}
     h1{margin:0 0 20px;font-size:22px;font-weight:600}
-    .section{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px}
-    .section.disabled{opacity:0.45;pointer-events:none;filter:grayscale(0.85)}
-    .section.hidden{display:none}
-    .section-title{font-size:14px;font-weight:650;margin-bottom:12px;color:var(--accent)}
+    
+    .section{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:16px}
+    .section.disabled{opacity:0.5;pointer-events:none}
+    .section-title{font-size:14px;font-weight:600;margin-bottom:12px;color:var(--accent)}
+    
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    .field{display:flex;flex-direction:column;gap:6px;position:relative}
-    .field label{font-size:13px;color:var(--muted);font-weight:550}
+    .field{display:flex;flex-direction:column;gap:4px;position:relative}
+    .field label{font-size:13px;color:var(--muted);font-weight:500}
     .field input,.field textarea,.field select{
-      background:var(--bg);border:1px solid var(--border);padding:9px 10px;border-radius:8px;color:var(--text);font-size:14px;
+      background:var(--bg);
+      border:1px solid var(--border);
+      padding:8px 10px;
+      border-radius:6px;
+      color:var(--text);
+      font-size:14px;
+      font-family:inherit;
     }
-    .field textarea{min-height:90px;resize:vertical}
-    .hint{font-size:12px;color:var(--muted);margin-top:6px}
-    button{
-      background:var(--panel);border:1px solid var(--border);padding:8px 14px;border-radius:8px;color:var(--accent);cursor:pointer;font-weight:600
+    .field input:focus,.field textarea:focus,.field select:focus{
+      outline:none;
+      border-color:var(--accent);
     }
-    button:hover{border-color:rgba(125,211,252,0.5);background:rgba(125,211,252,0.06)}
-    button.success{color:var(--success)}
-    button.danger{color:var(--danger)}
-    button.secondary{color:var(--accent-2)}
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    .spacer{height:8px}
-
-    /* Template Radios */
-    .template-radio-group{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
-    .template-radio-item{position:relative}
-    .template-radio-item input{position:absolute;opacity:0;width:0;height:0}
-    .template-radio-label{
-      display:inline-block;background:var(--bg);border:2px solid var(--border);
-      padding:10px 14px;border-radius:8px;cursor:pointer;font-size:14px;transition:0.2s;
-      user-select:none
-    }
-    .template-radio-item input:checked + .template-radio-label{
-      border-color:var(--accent);color:var(--accent);background:rgba(125,211,252,0.10);
-    }
-
-    /* Preview */
-    .preview{
-      background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:16px;
-      font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
-      white-space:pre-wrap;max-height:420px;overflow-y:auto;font-size:13px;line-height:1.6
-    }
-
-    /* Tags chips */
-    .tag-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-    .tag-chip{
-      background:var(--bg);border:1px solid var(--border);padding:5px 10px;border-radius:999px;
-      font-size:12px;cursor:pointer;transition:0.2s;user-select:none
-    }
-    .tag-chip:hover{border-color:rgba(125,211,252,0.55)}
-    .tag-chip.active{background:var(--accent);color:#000;border-color:var(--accent)}
-    .tag-chip small{opacity:.8}
-
-    /* Images */
-    .image-gallery{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
-    .image-preview-item{width:110px;height:110px;border:2px solid var(--border);border-radius:10px;position:relative;cursor:pointer;overflow:hidden}
-    .image-preview-item.main{border-color:var(--accent);box-shadow:0 0 10px rgba(125,211,252,0.35)}
-    .image-preview-item img{width:100%;height:100%;object-fit:cover}
-    .image-badge-bottom{
+    .field textarea{resize:vertical;min-height:80px}
+    
+    .field.custom{border:1px dashed var(--accent-2);padding:8px;border-radius:6px;background:rgba(244,114,182,0.05)}
+    .field.custom label{color:var(--accent-2)}
+    
+    .remove-var{
       position:absolute;
-      bottom:6px;
-      left:50%;
-      transform:translateX(-50%);
+      top:0;
+      right:0;
+      background:transparent;
+      border:none;
+      color:var(--accent-2);
+      cursor:pointer;
+      padding:0;
+      width:20px;
+      height:20px;
+      font-size:16px;
+    }
+    .remove-var:hover{color:#ff6b9d}
+    
+    .template-radio-group{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+    .template-radio-item{position:relative}
+    .template-radio-item input[type="radio"]{
+      position:absolute;
+      opacity:0;
+      width:0;
+      height:0;
+    }
+    .template-radio-label{
+      display:inline-block;
+      background:var(--bg);
+      border:2px solid var(--border);
+      padding:10px 16px;
+      border-radius:6px;
+      cursor:pointer;
+      font-size:14px;
+      font-weight:500;
+      transition:all 0.2s;
+    }
+    .template-radio-item input[type="radio"]:checked + .template-radio-label{
+      background:rgba(125,211,252,0.15);
+      border-color:var(--accent);
+      color:var(--accent);
+    }
+    .template-radio-label:hover{
+      border-color:var(--accent);
+      background:rgba(125,211,252,0.08);
+    }
+    
+    .checkbox-group{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+    .checkbox-group input[type="checkbox"]{width:18px;height:18px;cursor:pointer}
+    .checkbox-group label{margin:0;cursor:pointer;font-size:14px}
+    
+    button{
+      background:var(--panel);
+      border:1px solid var(--border);
+      padding:8px 16px;
+      border-radius:6px;
+      color:var(--accent);
+      font-size:14px;
+      cursor:pointer;
+      font-weight:500;
+      transition:all 0.2s;
+    }
+    button:hover{background:rgba(125,211,252,0.1);border-color:var(--accent)}
+    button:active{transform:scale(0.98)}
+    button.success{color:var(--success)}
+    button.secondary{color:var(--accent-2)}
+    button.danger{color:var(--danger)}
+    button:disabled{opacity:0.5;cursor:not-allowed}
+    
+    .btn-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+    
+    .preview{
+      background:var(--bg);
+      border:1px solid var(--border);
+      border-radius:6px;
+      padding:16px;
+      font-family:monospace;
+      font-size:13px;
+      white-space:pre-wrap;
+      word-wrap:break-word;
+      max-height:400px;
+      overflow-y:auto;
+      line-height:1.6;
+    }
+    
+    .image-gallery{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+    .image-preview-item{
+      position:relative;
+      width:120px;
+      height:120px;
+      border:2px solid var(--border);
+      border-radius:6px;
+      overflow:hidden;
+      cursor:pointer;
+      transition:all 0.2s;
+    }
+    .image-preview-item:hover{border-color:var(--accent)}
+    .image-preview-item.main{border-color:var(--accent);box-shadow:0 0 12px rgba(125,211,252,0.4)}
+    .image-preview-item img{width:100%;height:100%;object-fit:cover}
+    .image-preview-badge{
+      position:absolute;
+      top:4px;
+      left:4px;
       background:var(--accent);
       color:var(--bg);
-      padding:2px 8px;
-      border-radius:999px;
+      padding:2px 6px;
+      border-radius:4px;
       font-size:10px;
-      font-weight:800;
-      pointer-events:none;
+      font-weight:600;
     }
-    .image-remove{
-      position:absolute;top:6px;right:6px;background:rgba(239,68,68,0.9);color:white;border:none;
-      width:24px;height:24px;border-radius:7px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center
+    .image-preview-remove{
+      position:absolute;
+      top:4px;
+      right:4px;
+      background:rgba(239,68,68,0.9);
+      color:white;
+      border:none;
+      width:24px;
+      height:24px;
+      border-radius:4px;
+      cursor:pointer;
+      font-size:14px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
     }
-
-    /* Modals */
-    .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1000;overflow:auto;padding:24px}
-    .modal-content{background:var(--panel);max-width:900px;margin:0 auto;border:1px solid var(--border);border-radius:12px;padding:18px;position:relative}
-    .modal-close{position:absolute;top:14px;right:14px;background:transparent;border:none;color:var(--muted);font-size:22px;cursor:pointer}
-    .modal h3{margin:0 0 12px;font-size:18px;color:var(--accent)}
-    .muted{color:var(--muted);font-size:12px;line-height:1.4}
-
-    .list-row{display:grid;grid-template-columns:1.4fr 0.9fr 1fr auto;gap:8px;margin:8px 0}
-    .list-row input,.list-row select{width:100%}
-    .list-row.compact{grid-template-columns:1.2fr 1fr auto}
-    .list-row.tags{grid-template-columns:1.2fr 1fr 1fr auto}
-
-    @media(max-width:820px){
+    .image-preview-remove:hover{background:var(--danger)}
+    
+    .tag-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+    .tag-item{
+      background:var(--bg);
+      border:1px solid var(--border);
+      padding:6px 10px;
+      border-radius:6px;
+      font-size:13px;
+      display:flex;
+      align-items:center;
+      gap:6px;
+    }
+    .tag-item button{
+      padding:0;
+      width:16px;
+      height:16px;
+      font-size:12px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      border:none;
+      background:transparent;
+      color:var(--danger);
+    }
+    
+    .modal{
+      display:none;
+      position:fixed;
+      top:0;
+      left:0;
+      width:100%;
+      height:100%;
+      background:rgba(0,0,0,0.8);
+      z-index:1000;
+      overflow-y:auto;
+    }
+    .modal-content{
+      max-width:800px;
+      margin:40px auto;
+      background:var(--panel);
+      border-radius:8px;
+      padding:24px;
+      position:relative;
+    }
+    .modal-close{
+      position:absolute;
+      top:16px;
+      right:16px;
+      background:transparent;
+      border:none;
+      color:var(--muted);
+      font-size:24px;
+      cursor:pointer;
+      padding:0;
+      width:32px;
+      height:32px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .modal-close:hover{color:var(--text)}
+    
+    .modal h2{color:var(--accent);font-size:20px;margin:0 0 16px}
+    
+    .saved-item{
+      background:var(--bg);
+      border:1px solid var(--border);
+      padding:10px;
+      border-radius:6px;
+      margin-bottom:8px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      cursor:pointer;
+      transition:all 0.2s;
+    }
+    .saved-item:hover{border-color:var(--accent);background:rgba(125,211,252,0.05)}
+    .saved-item-name{font-size:14px;font-weight:500}
+    .saved-item-actions{display:flex;gap:8px}
+    .saved-item-actions button{padding:4px 8px;font-size:12px}
+    
+    .template-editor{margin-top:12px}
+    .template-editor textarea{width:100%;min-height:300px;font-family:monospace;font-size:13px}
+    
+    .template-manager{margin-bottom:16px}
+    .template-list{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+    .template-item{
+      background:var(--bg);
+      border:1px solid var(--border);
+      padding:12px;
+      border-radius:6px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+    }
+    .template-item-name{font-size:14px;font-weight:500}
+    
+    .warning-box{
+      background:rgba(239,68,68,0.1);
+      border:1px solid var(--danger);
+      border-radius:6px;
+      padding:12px;
+      margin-bottom:12px;
+      font-size:13px;
+      color:var(--danger);
+    }
+    
+    @media(max-width:768px){
       .grid{grid-template-columns:1fr}
-      .list-row{grid-template-columns:1fr}
-      .list-row.compact{grid-template-columns:1fr}
-      .list-row.tags{grid-template-columns:1fr}
+      .container{padding:16px;margin:10px}
     }
   </style>
 </head>
 <body>
-<div class="container">
-  <h1>🇫🇷 Générateur de Publications</h1>
-
-  <div class="section">
-    <div class="section-title">📦 Configuration Globale (Tout-en-un)</div>
-    <div class="row">
-      <button id="exportGlobal">📤 Exporter Config complète</button>
-      <button id="importGlobal" class="secondary">📥 Importer Config</button>
-      <input type="file" id="globalFileSelector" style="display:none" accept=".json">
-      <button id="resetLocal" class="danger">🧹 Reset local</button>
+  <div class="container">
+    <h1>🇫🇷 Générateur de Publications</h1>
+    
+    <!-- Global Config -->
+    <div class="section">
+      <div class="section-title">⚙️ Configuration globale</div>
+      <div class="btn-row">
+        <button id="openDiscordConfig" class="secondary">⚙️ Configuration Discord</button>
+        <button id="editTemplates" class="secondary">✏️ Gérer les templates</button>
+        <button id="manageTagsBtn" class="secondary">🏷️ Gérer les tags</button>
+        <button id="exportTemplates" class="secondary">📤 Exporter templates</button>
+        <button id="importTemplates" class="secondary">📥 Importer templates</button>
+        <button id="exportConfig">📤 Exporter la configuration</button>
+        <button id="importConfig" class="secondary">📥 Importer une configuration</button>
+      </div>
     </div>
-    <div class="hint">Export/Import inclut : templates, variables, traducteurs, tags, URL API + clé API (si renseignée).</div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">1. Type de publication</div>
-    <div id="templateRadios" class="template-radio-group"></div>
-    <div class="row">
-      <button id="openTemplateManager" class="secondary">✏️ Gérer les templates</button>
-      <button id="duplicateTpl" class="secondary">🧬 Dupliquer le template</button>
+    
+    <!-- Template Selection -->
+    <div class="section">
+      <div class="section-title">Type de publication</div>
+      <div class="template-radio-group" id="templateRadioGroup">
+        <!-- Les boutons radio seront générés dynamiquement ici -->
+      </div>
     </div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">2. Variables</div>
-    <div id="varsGrid" class="grid"></div>
-    <div class="row" style="margin-top:10px">
-      <button id="openVarManager" class="secondary">➕ Ajouter Variable</button>
-      <button id="openTranslatorManager" class="secondary">👤 Traducteurs</button>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">3. Aperçu (Brut)</div>
-    <div id="preview" class="preview"></div>
-    <div class="row" style="margin-top:10px">
-      <button id="copyPreview">📋 Copier le message</button>
-    </div>
-  </div>
-
-  <div class="section" id="discordSection">
-    <div class="section-title">4. Publication Discord (API)</div>
-
-    <div id="discordDisabledMsg" class="field" style="display:none;color:var(--danger)">
-      ⚠️ Le template actuel n'est pas compatible publication (type <strong>my</strong> ou <strong>partner</strong> requis).
-    </div>
-
-    <div id="discordEnabledFields">
+    
+    
+    <!-- Discord Post Content (always visible) -->
+    <div class="section" id="postContentSection">
+      <div class="section-title">📝 Contenu du post Discord</div>
       <div class="grid">
         <div class="field">
-          <label>URL API Publisher</label>
-          <input type="text" id="publisherApiUrl" placeholder="https://votre-api-publisher.com/api/forum-post">
+          <label>Titre du post (optionnel)</label>
+          <input type="text" id="publisherTitle" placeholder="Par défaut: Nom du jeu">
         </div>
         <div class="field">
-          <label>Clé API</label>
-          <input type="password" id="publisherApiKey" placeholder="(stockée en local dans ton navigateur)">
+          <label>Tags Discord</label>
+          <select id="publisherTagsSelect">
+            <option value="">-- Sélectionner un tag --</option>
+          </select>
+          <div class="tag-list" id="publisherTagsList"></div>
+        </div>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Images (cliquez sur une image pour la définir comme principale)</label>
+        <input type="file" id="publisherImage" accept="image/*" multiple>
+        <div class="image-gallery" id="imageGallery"></div>
+      </div>
+
+      <div id="publisherStatus" style="margin-top:12px;font-size:14px"></div>
+      <div style="margin-top:10px;color:var(--muted);font-size:13px;line-height:1.5">
+        💡 Ces champs font partie du post envoyé sur Discord. L'envoi restera impossible sans URL + clé API configurées.
+      </div>
+    </div>
+
+    <!-- Variables Grid -->
+    <div class="section">
+      <div class="section-title">Données</div>
+      <div class="grid" id="variablesGrid">
+        <!-- Variables will be added here -->
+      </div>
+        <div class="btn-row">
+        <button id="addVariable" class="secondary">➕ Ajouter une variable personnalisée</button>
+        <button id="openPreviewModal">👁️ Aperçu</button>
+        <button id="publishToDiscord">🚀 Publier sur Discord</button>
+        <button id="resetFields" class="danger">🗑️ Réinitialiser tous les champs</button>
+      </div>
+
+    <!-- Discord Publish -->
+      </div>
+  <!-- Modals -->
+  
+  <!-- Save Instructions Modal -->
+  <div id="saveInstrModal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeSaveInstr">✕</button>
+      <h2>💾 Sauvegarder les instructions</h2>
+      <div class="field">
+        <label>Nom du preset</label>
+        <input type="text" id="instrName" placeholder="Ex: Installation standard">
+      </div>
+      <div class="btn-row">
+        <button id="confirmSaveInstr">Sauvegarder</button>
+        <button id="cancelSaveInstr" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load Instructions Modal -->
+  <div id="loadInstrModal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeLoadInstr">✕</button>
+      <h2>📂 Charger des instructions</h2>
+      <div id="savedInstrList"></div>
+    </div>
+  </div>
+
+  <!-- Add Variable Modal -->
+  <div id="addVarModal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeAddVar">✕</button>
+      <h2>➕ Ajouter une variable personnalisée</h2>
+      <div class="field">
+        <label>Nom de la variable (sans crochets)</label>
+        <input type="text" id="varName" placeholder="Ex: developer">
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Label affiché</label>
+        <input type="text" id="varLabel" placeholder="Ex: Développeur">
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Type de champ</label>
+        <select id="varType">
+          <option value="text">Texte court</option>
+          <option value="textarea">Texte long</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <button id="confirmAddVar">Ajouter</button>
+        <button id="cancelAddVar" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Templates Modal -->
+  <div id="editTemplatesModal" class="modal">
+    <div class="modal-content" style="max-width:1000px">
+      <button class="modal-close" id="closeEditTemplates">✕</button>
+      <h2>✏️ Gérer les templates</h2>
+      
+      <div style="background:rgba(125,211,252,0.1);border:1px solid var(--accent);border-radius:6px;padding:12px;margin-bottom:16px">
+        <div style="font-weight:600;margin-bottom:8px;color:var(--accent)">📝 Variables disponibles :</div>
+        <div id="availableVars" style="font-family:monospace;font-size:13px;line-height:1.8;color:var(--text)">
+        </div>
+        <div style="margin-top:8px;font-size:13px;color:var(--muted)">
+          💡 Utilisez ces variables entre crochets pour qu'elles soient remplacées automatiquement
+        </div>
+      </div>
+      
+      <div class="template-manager">
+        <div class="section-title">Templates existants</div>
+        <div class="template-list" id="templateList"></div>
+      </div>
+      
+      <div class="btn-row">
+        <button id="addNewTemplate" class="secondary">➕ Nouveau template</button>
+        <button id="saveAllTemplates">💾 Sauvegarder tout</button>
+        <button id="cancelEditTemplates" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Template Editor Modal -->
+  <div id="templateEditorModal" class="modal">
+    <div class="modal-content" style="max-width:900px">
+      <button class="modal-close" id="closeTemplateEditor">✕</button>
+      <h2 id="templateEditorTitle">Nouveau template</h2>
+      <div class="field">
+        <label>Nom du template</label>
+        <input type="text" id="templateEditorName" placeholder="Ex: Mon template custom">
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Clé du template (pour identification interne)</label>
+        <input type="text" id="templateEditorKey" placeholder="Ex: mon_template" disabled>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Type de publication Discord</label>
+        <select id="templateEditorType">
+          <option value="">Autres</option>
+          <option value="my">Mes traductions</option>
+          <option value="partner">Traductions partenaire</option>
+        </select>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Contenu du template</label>
+        <textarea id="templateEditorContent" class="template-editor"></textarea>
+      </div>
+      <div class="btn-row">
+        <button id="saveTemplateEditor">💾 Sauvegarder</button>
+        <button id="cancelTemplateEditor" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Save Traductor Modal -->
+  <div id="saveTraductorModal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeSaveTraductor">✕</button>
+      <h2>💾 Sauvegarder le traducteur</h2>
+      <div class="field">
+        <label>Nom du traducteur</label>
+        <input type="text" id="traductorName" placeholder="Ex: Rory Mercury 91">
+      </div>
+      <div class="btn-row">
+        <button id="confirmSaveTraductor">Sauvegarder</button>
+        <button id="cancelSaveTraductor" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Templates Modal -->
+  <div id="importTemplatesModal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeImportTemplates">✕</button>
+      <h2>📥 Importer des templates</h2>
+      <div class="field">
+        <label>Coller le JSON des templates</label>
+        <textarea id="importTemplatesText" style="min-height:200px;font-family:monospace;font-size:12px"></textarea>
+      </div>
+      <div class="btn-row">
+        <button id="confirmImportTemplates">Importer</button>
+        <button id="cancelImportTemplates" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import Config Modal -->
+  <div id="importConfigModal" class="modal">
+    <div class="modal-content">
+      <button class="modal-close" id="closeImportConfig">✕</button>
+      <h2>📥 Importer une configuration</h2>
+      <div class="field">
+        <label>Coller le JSON de configuration</label>
+        <textarea id="importConfigText" style="min-height:200px;font-family:monospace;font-size:12px"></textarea>
+      </div>
+      <div class="btn-row">
+        <button id="confirmImportConfig">Importer</button>
+        <button id="cancelImportConfig" class="secondary">Annuler</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manage Tags Modal -->
+  <div id="manageTagsModal" class="modal">
+    <div class="modal-content" style="max-width:900px">
+      <button class="modal-close" id="closeManageTags">✕</button>
+      <h2>🏷️ Gérer les tags sauvegardés</h2>
+
+      <div class="grid">
+        <div class="field">
+          <label>Nom du tag</label>
+          <input type="text" id="newTagName" placeholder="Ex: En cours 🎮">
         </div>
         <div class="field">
-          <label for="postTitle">Titre du post</label>
-          <input type="text" id="postTitle" placeholder="Ex : Traduction de XXX – Chapitre 1">
+          <label>ID Discord du tag</label>
+          <input type="text" id="newTagId" placeholder="Ex: 123456789012345678">
         </div>
         <div class="field">
-          <label>Template envoyé au bot</label>
-          <input type="text" id="publisherTemplateInfo" value="" disabled>
+          <label>Template</label>
+          <select id="newTagTemplate"></select>
         </div>
       </div>
 
-      <div class="spacer"></div>
+      <div class="btn-row">
+        <button id="addNewTag">➕ Ajouter</button>
+      </div>
 
-      <div class="field">
-        <label>Tags Discord (selon le template)</label>
-        <div id="tagContainer" class="tag-list"></div>
-        <div class="row" style="margin-top:8px">
-          <button id="openTagManager" class="secondary">🏷️ Gérer les Tags</button>
-          <button id="clearActiveTags" class="secondary">🧽 Vider la sélection</button>
+      <div style="margin-top:16px">
+        <div class="section-title">Tags sauvegardés</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 90px;gap:8px;margin-bottom:10px;color:var(--muted);font-size:12px">
+          <div>Noms du tag</div>
+          <div>ID Discord du tag</div>
+          <div>Template</div>
+          <div>Actions</div>
         </div>
-        <div class="hint">Les tags sont sauvegardés avec : nom + scope (my/partner) + tagId. On n'affiche ici que ceux compatibles avec le template courant.</div>
-      </div>
 
-      <div class="spacer"></div>
-
-      <div class="field">
-        <label>Images</label>
-        <input type="file" id="publisherImage" multiple accept="image/*">
-        <div id="imageGallery" class="image-gallery"></div>
-        <div class="hint">Clique une image pour la définir comme principale.</div>
-      </div>
-
-      <div class="row" style="margin-top:14px">
-        <button id="publishToDiscord" class="success">🚀 Publier sur Discord</button>
-        <button id="savePublisherSettings" class="secondary">💾 Sauvegarder API</button>
-        <button id="clearPublisherKey" class="secondary">🧹 Effacer la clé</button>
-      </div>
-      <div id="publisherStatus" style="margin-top:10px"></div>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL: Templates -->
-<div id="modalTemplates" class="modal">
-  <div class="modal-content">
-    <button class="modal-close" onclick="closeModal('modalTemplates')">✕</button>
-    <h3>✏️ Gérer les Templates</h3>
-    <div class="muted">Un template = un nom + un type (my/partner/other) + du contenu. Les variables sont au format <code>[MA_VAR]</code>.</div>
-    <div id="templateManagerList" style="margin-top:12px"></div>
-    <div class="row" style="margin-top:12px">
-      <button id="addNewTemplateBtn">➕ Nouveau Template</button>
-      <button id="saveTemplatesBtn" class="success">Sauvegarder</button>
-    </div>
-  </div>
-</div>
-
-<!-- MODAL: Add/Edit Var -->
-<div id="modalVars" class="modal">
-  <div class="modal-content">
-    <button class="modal-close" onclick="closeModal('modalVars')">✕</button>
-    <h3>🧩 Gérer les variables</h3>
-
-    <div class="hint">Ici tu peux créer/supprimer des variables et choisir sur quels templates elles apparaissent.</div>
-
-    <div id="varManagerList" style="margin-top:12px"></div>
-
-    <hr style="border:none;border-top:1px solid var(--border);margin:14px 0">
-
-    <h4 style="margin:0 0 8px 0">➕ Ajouter une variable</h4>
-    <div class="grid">
-      <div class="field">
-        <label>Clé (sans crochets)</label>
-        <input id="newVarKey" type="text" placeholder="Ex: DEV_NAME">
-      </div>
-      <div class="field">
-        <label>Label</label>
-        <input id="newVarLabel" type="text" placeholder="Ex: Développeur">
+        <div id="savedTagsList"></div>
       </div>
     </div>
+  </div>
+  </div>
 
-    <div class="field" style="margin-top:10px">
-      <label>Afficher sur</label>
-      <div id="newVarTemplates" class="row" style="gap:10px;flex-wrap:wrap"></div>
-      <div class="hint" style="margin-top:6px">Astuce : tu peux aussi changer ça après via la liste au-dessus.</div>
+  <!-- Discord Config Modal -->
+  <div id="discordConfigModal" class="modal">
+    <div class="modal-content" style="max-width:900px">
+      <button class="modal-close" id="closeDiscordConfig">✕</button>
+      <h2>⚙️ Configuration Discord</h2>
+      <div class="section" id="publishSection">
+      <div class="section-title">Publication directe sur Discord (Forum)</div>
+      <div id="publishDisabledWarning" class="warning-box" style="display:none">
+        ⚠️ Publication désactivée : Le template actuel n'est pas compatible avec la publication Discord automatique. Seuls les templates "Mes traductions" (my) et "Traductions partenaire" (partner) sont supportés.
+      </div>
+      <div id="publishContent">
+        <div class="grid">
+          <div class="field">
+            <label>URL de l'API Publisher</label>
+            <input type="text" id="publisherApiUrl" placeholder="https://votre-api-publisher.com/api/forum-post">
+          </div>
+          <div class="field">
+            <label>Clé API (X-API-KEY)</label>
+            <input type="password" id="publisherApiKey" placeholder="(stockée en local dans ton navigateur)">
+          </div>
+          <div class="field">
+            <label>Template utilisé pour la publication</label>
+            <input type="text" id="publisherTemplateInfo" value="" disabled>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button id="savePublisherSettings" class="secondary">💾 Sauvegarder API/clé</button>
+          <button id="clearPublisherKey" class="secondary">🧹 Effacer la clé</button>
+        </div>
+        <div style="margin-top:10px;color:var(--muted);font-size:13px;line-height:1.5">
+          💡 Astuce : Votre URL d'API et votre clé sont stockées localement dans votre navigateur. Personne d'autre ne peut y accéder.
+        </div>
+      </div>
     </div>
-
-    <div class="row" style="margin-top:12px">
-      <button id="addVarConfirm" class="success">Ajouter</button>
-      <button onclick="closeModal('modalVars')" class="secondary">Fermer</button>
     </div>
   </div>
-</div>
 
-<!-- MODAL: Translators -->
-<div id="modalTranslators" class="modal">
-  <div class="modal-content">
-    <button class="modal-close" onclick="closeModal('modalTranslators')">✕</button>
-    <h3>👤 Traducteurs</h3>
-    <div class="muted">Liste sauvegardée en local. Clique un nom pour remplir automatiquement une variable <code>[traductor]</code> ou <code>[MY_NAME]</code> si elles existent.</div>
-    <div id="translatorManagerList" style="margin-top:12px"></div>
-    <div class="row" style="margin-top:12px">
-      <button id="addTranslatorBtn">➕ Ajouter</button>
-      <button id="saveTranslatorsBtn" class="success">Sauvegarder</button>
+  <!-- Preview Modal -->
+  <div id="previewModal" class="modal">
+    <div class="modal-content" style="max-width:900px">
+      <button class="modal-close" id="closePreviewModal">✕</button>
+      <h2>👁️ Aperçu</h2>
+      <div class="preview" id="preview">Remplissez les variables ci-dessus...</div>
+      <div class="btn-row">
+        <button id="copyPreview">📋 Copier la publication</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- MODAL: Tags -->
-<div id="modalTags" class="modal">
-  <div class="modal-content">
-    <button class="modal-close" onclick="closeModal('modalTags')">✕</button>
-    <h3>🏷️ Configurer les Tags Discord</h3>
-    <div class="muted">Format : <strong>Nom</strong> + <strong>scope</strong> (my/partner) + <strong>tagId</strong>. (IDs = Snowflakes Discord)</div>
-    <div id="tagManagerList" style="margin-top:12px"></div>
-    <div class="row" style="margin-top:12px">
-      <button id="addNewTagBtn">➕ Ajouter un Tag</button>
-      <button id="saveTagsBtn" class="success">Sauvegarder</button>
-    </div>
-  </div>
-</div>
-
-<script>
-const $ = (id) => document.getElementById(id);
-
-// --- STORAGE KEYS ---
-const LS = {
-  STATE: 'pub_gen_state_v2',
-  API_URL: 'publisherApiUrl',
-  API_KEY: 'publisherApiKey'};
-
-// --- DEFAULTS ---
-// NOTE: Tout est gérable par l'utilisateur (création/suppression/import/export).
-// Les valeurs ci-dessous ne sont qu'un état initial.
-const DEFAULT_STATE = {
-  templates: {},
-  vars: [],
-  translators: [],
-  // tags: [{id, name, scope, tagId}]
-  tags: [],
-  currentTemplateKey: null,
-  selectedImages: [],
-  mainImageIdx: 0,
-  activeTagIds: []
-};
-
-
-function uid(prefix='v'){
-  return prefix + '_' + Math.random().toString(36).slice(2,9) + '_' + Date.now().toString(36);
-}
-
-function migrateState(s){
-  // Ensure vars have stable ids
-  s.vars = Array.isArray(s.vars) ? s.vars : [];
-  s.vars = s.vars.map(v => {
-    const id = v.id || uid('v');
-    return { id, key: v.key || '', label: v.label || v.key || 'Variable', value: v.value || '' };
-  });
-
-  // Ensure templates structure + varsAllowed uses ids
-  s.templates = s.templates && typeof s.templates === 'object' ? s.templates : {};
-  for(const k of Object.keys(s.templates)){
-    const tpl = s.templates[k] || {};
-    if(!Array.isArray(tpl.varsAllowed)){
-      // Backward compatibility: if template has varsAllowedKeys, map keys -> ids; else infer from content.
-      const usedKeys = extractVarKeysFromContent(String(tpl.content || ''));
-      const idByKey = new Map(s.vars.map(v => [String(v.key||'').toLowerCase(), v.id]));
-      tpl.varsAllowed = usedKeys.map(key => idByKey.get(String(key).toLowerCase())).filter(Boolean);
-    }else{
-      // Filter unknown ids
-      const known = new Set(s.vars.map(v => v.id));
-      tpl.varsAllowed = tpl.varsAllowed.filter(id => known.has(id));
-    }
-    tpl.name = tpl.name || k;
-    tpl.type = tpl.type || 'other';
-    tpl.content = tpl.content || '';
-    s.templates[k] = tpl;
-  }
-
-  // Ensure currentTemplateKey valid
-  if(!s.currentTemplateKey || !s.templates[s.currentTemplateKey]){
-    s.currentTemplateKey = Object.keys(s.templates)[0] || null;
-  }
-
-  s.translators = Array.isArray(s.translators) ? s.translators : [];
-  s.tags = Array.isArray(s.tags) ? s.tags : [];
-  s.selectedImages = [];
-  s.mainImageIdx = 0;
-  s.activeTagIds = Array.isArray(s.activeTagIds) ? s.activeTagIds : [];
-
-  // Ensure tags structure (v3): {id, name, scope, tagId}
-  s.tags = Array.isArray(s.tags) ? s.tags : [];
-  s.tags = s.tags.map(t => ({
-    id: t.id || uid('t'),
-    name: t.name || '',
-    scope: (t.scope === 'partner' ? 'partner' : 'my'),
-    tagId: t.tagId || ''
-  }));
-
-  return s;
-}
-
-function extractVarKeysFromContent(content){
-  const matches = String(content||'').match(/\[([A-Za-z0-9_]+)\]/g) || [];
-  const keys = matches.map(m => m.slice(1,-1));
-  return Array.from(new Set(keys));
-}
-
-let state = migrateState(loadState());
-
-// --- CORE ---
-function init(){
-  renderTemplateRadios();
-  renderVars();
-  loadApiSettings();
-  updateDiscordUi();
-  renderTagsForForum();
-  renderImageGallery();
-  updatePreview();
-}
-
-function loadState(){
-  try{
-    const raw = localStorage.getItem(LS.STATE);
-    if(!raw) return structuredClone(DEFAULT_STATE);
-    const parsed = JSON.parse(raw);
-    // Merge shallow + ensure required fields exist
-    return {
-      ...structuredClone(DEFAULT_STATE),
-      ...parsed,
-      templates: { ...structuredClone(DEFAULT_STATE.templates), ...(parsed.templates || {}) },
-      vars: Array.isArray(parsed.vars) ? parsed.vars : structuredClone(DEFAULT_STATE.vars),
-      translators: Array.isArray(parsed.translators) ? parsed.translators : [],
-      tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-      selectedImages: [] // images never persisted
-    };
-  }catch(e){
-    return structuredClone(DEFAULT_STATE);
-  }
-}
-
-function saveState(){
-  // Never store File objects
-  const safe = { ...state, selectedImages: [], mainImageIdx: 0 };
-  localStorage.setItem(LS.STATE, JSON.stringify(safe));
-}
-
-function currentTemplate(){
-  return state.templates[state.currentTemplateKey] || null;
-}
-
-function isPublishableTemplate(tpl){
-  return tpl && (tpl.type === 'my' || tpl.type === 'partner');
-}
-
-function updatePreview(){
-  const tpl = currentTemplate();
-  if(!tpl){
-    $('preview').textContent = '⚠️ Aucun template.';
-    return;
-  }
-
-  let output = String(tpl.content || '');
-
-  // Replace vars
-  state.vars.forEach(v => {
-    const key = String(v.key || '').trim();
-    if(!key) return;
-    const val = (v.value ?? '').toString();
-    const rx = new RegExp('\\[' + escapeRegExp(key) + '\\]', 'g');
-    output = output.replace(rx, val.trim() ? val : `[${key}]`);
-  });
-
-  $('preview').textContent = output;
-}
-
-function updateDiscordUi(){
-  const tpl = currentTemplate();
-  const canPublish = isPublishableTemplate(tpl);
-
-  // Show/hide entire section content
-  $('discordEnabledFields').style.display = canPublish ? 'block' : 'none';
-  $('discordDisabledMsg').style.display = canPublish ? 'none' : 'block';
-  $('discordSection').classList.toggle('disabled', !canPublish);
-
-  // Template envoyé au bot:
-  // - Si l'utilisateur n'a pas les templates correspondants => on cache le champ (et on n'affiche pas la section)
-  // Ici: si non publishable => section désactivée + champ inutile => on ne le montre pas (en même temps que fields)
-  if(canPublish){
-    $('publisherTemplateInfo').value = `${tpl.name} (${tpl.type})`;
-    // Nettoyer les tags actifs selon le scope (my/partner)
-    const scope = currentTagScope();
-    const allowed = new Set(tagsForScope(scope).map(t => String(t.tagId||'').trim()).filter(Boolean));
-    state.activeTagIds = state.activeTagIds.filter(id => allowed.has(String(id).trim()));
-    saveState();
-  }else{
-    $('publisherTemplateInfo').value = '';
-    // Template non publiable => pas de tags actifs
-    state.activeTagIds = [];
-    saveState();
-  }
-
-  // Refresh tags list when template changes (scope my/partner)
-  renderTagsForForum();
-}
-
-function escapeRegExp(str){
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// --- RENDER: Templates ---
-function renderTemplateRadios(){
-  const root = $('templateRadios');
-  root.innerHTML = '';
-
-  Object.keys(state.templates).forEach(key => {
-    const t = state.templates[key];
-    const wrap = document.createElement('div');
-    wrap.className = 'template-radio-item';
-    wrap.innerHTML = `
-      <input type="radio" name="tpl" id="tpl_${key}">
-      <label class="template-radio-label" for="tpl_${key}">${escapeHtml(t?.name || key)}</label>
-    `;
-    const input = wrap.querySelector('input');
-    input.checked = state.currentTemplateKey === key;
-    input.addEventListener('change', ()=>{
-      state.currentTemplateKey = key;
-      saveState();
-      updateDiscordUi();
-      updatePreview();
-    });
-    root.appendChild(wrap);
-  });
-}
-
-function escapeHtml(s){
-  return String(s ?? '')
-    .replaceAll('&','&amp;')
-    .replaceAll('<','&lt;')
-    .replaceAll('>','&gt;')
-    .replaceAll('"','&quot;')
-    .replaceAll("'","&#39;");
-}
-
-// --- RENDER: Vars ---
-function getVisibleVarsForTemplate(templateKey){
-  const tpl = state.templates?.[templateKey];
-  if(!tpl) return [];
-  const allowed = new Set(Array.isArray(tpl.varsAllowed) ? tpl.varsAllowed : []);
-  return state.vars.filter(v => allowed.has(v.id));
-}
-
-function renderVars(){
-  const grid = $('varsGrid');
-  grid.innerHTML = '';
-  const tplKey = state.currentTemplateKey;
-  const visible = getVisibleVarsForTemplate(tplKey);
-
-  if(!tplKey){
-    grid.innerHTML = '<div class="hint">Aucun template sélectionné.</div>';
-    return;
-  }
-  if(visible.length === 0){
-    grid.innerHTML = '<div class="hint">Aucune variable affichée pour ce template. Utilise “Gérer les variables” pour en ajouter.</div>';
-    return;
-  }
-
-  visible.forEach((v)=>{
-    const div = document.createElement('div');
-    div.className = 'field';
-    div.innerHTML = `
-      <label>${escapeHtml(v.label || v.key || 'Variable')} <span class="pill">[${escapeHtml(v.key || '')}]</span></label>
-      <input type="text" value="${escapeHtml(v.value || '')}" placeholder="[${escapeHtml(v.key || '')}]">
-    `;
-    const input = div.querySelector('input');
-    input.addEventListener('input', ()=>{
-      const idx = state.vars.findIndex(x => x.id === v.id);
-      if(idx !== -1) state.vars[idx].value = input.value;
-      saveState();
-      updatePreview();
-    });
-    grid.appendChild(div);
-  });
-}
-
-// --- TAGS ---
-function currentTagScope(){
-  const tpl = state.currentTemplateKey ? state.templates[state.currentTemplateKey] : null;
-  const t = tpl && String(tpl.type || '').trim();
-  return (t === 'my' || t === 'partner') ? t : '';
-}
-
-function tagsForScope(scope){
-  const s = String(scope || '').trim();
-  if(!s) return [];
-  return state.tags.filter(t => String(t.scope || '').trim() === s);
-}
-
-function renderTagsForForum(){
-  const container = $('tagContainer');
-  container.innerHTML = '';
-
-  const scope = currentTagScope();
-  const list = tagsForScope(scope);
-
-  if(!scope){
-    container.innerHTML = `<span class="muted">Sélectionne un template publiable (type my/partner) pour gérer les tags.</span>`;
-    return;
-  }
-  if(list.length === 0){
-    container.innerHTML = `<span class="muted">Aucun tag sauvegardé pour scope: ${escapeHtml(scope)}.</span>`;
-    return;
-  }
-list.forEach(tag=>{
-    const tagId = String(tag.tagId || '').trim();
-    const isActive = state.activeTagIds.includes(tagId);
-    const chip = document.createElement('div');
-    chip.className = `tag-chip ${isActive ? 'active' : ''}`;
-    chip.innerHTML = `${escapeHtml(tag.name || 'Tag')} <small>(${escapeHtml(tagId)})</small>`;
-    chip.addEventListener('click', ()=>{
-      if(isActive){
-        state.activeTagIds = state.activeTagIds.filter(id => id !== tagId);
-      }else{
-        state.activeTagIds.push(tagId);
-      }
-      saveState();
-      renderTagsForForum();
-    });
-    container.appendChild(chip);
-  });
-}
-
-// --- IMAGES ---
-function renderImageGallery(){
-  const root = $('imageGallery');
-  root.innerHTML = '';
-
-  state.selectedImages.forEach((img, idx)=>{
-    const div = document.createElement('div');
-    div.className = `image-preview-item ${state.mainImageIdx === idx ? 'main' : ''}`;
-
-    div.innerHTML = `
-      <img src="${img.preview}" alt="">
-      <button class="image-remove" title="Retirer">✕</button>
-      ${
-        state.mainImageIdx === idx
-          ? `<div class="image-badge-bottom">PRINCIPALE</div>`
-          : ``
-      }
-    `;
-
-    // clic image = définir comme principale
-    div.addEventListener('click', (e)=>{
-      if(e.target.classList.contains('image-remove')) return;
-      state.mainImageIdx = idx;
-      renderImageGallery();
-    });
-
-    // suppression image
-    div.querySelector('.image-remove').addEventListener('click', (e)=>{
-      e.stopPropagation();
-      state.selectedImages.splice(idx, 1);
-      if(state.mainImageIdx >= state.selectedImages.length){
-        state.mainImageIdx = Math.max(0, state.selectedImages.length - 1);
-      }
-      renderImageGallery();
-    });
-
-    root.appendChild(div);
-  });
-}
-
-// --- PUBLISHER SETTINGS ---
-function loadApiSettings(){
-  $('publisherApiUrl').value = localStorage.getItem(LS.API_URL) || '';
-  $('publisherApiKey').value = localStorage.getItem(LS.API_KEY) || '';
-}
-
-function saveApiSettings(){
-  localStorage.setItem(LS.API_URL, $('publisherApiUrl').value.trim());
-  localStorage.setItem(LS.API_KEY, $('publisherApiKey').value);
-}
-
-function clearApiKey(){
-  if(!confirm('Effacer la clé API enregistrée ?')) return;
-  localStorage.removeItem(LS.API_KEY);
-  $('publisherApiKey').value = '';
-}
-
-// --- PUBLISH ---
-async function publishToDiscord(){
-  const tpl = currentTemplate();
-  const status = $('publisherStatus');
-  status.textContent = '';
-
-  if(!isPublishableTemplate(tpl)){
-    status.textContent = "❌ Le template actuel n'est pas publiable.";
-    return;
-  }
-
-  const apiUrl   = $('publisherApiUrl')?.value?.trim() || '';
-  const apiKey   = $('publisherApiKey')?.value?.trim() || '';
-  const postTitle = $('postTitle')?.value?.trim() || '';
-
-  if(!apiUrl){
-    status.textContent = "❌ Renseigne l'URL de l'API Publisher.";
-    return;
-  }
-  if(!postTitle){
-    status.textContent = "❌ Renseigne le titre du post.";
-    return;
-  }
-  if(!apiKey){
-    status.textContent = "❌ Renseigne la clé API.";
-    return;
-  }
-
-  // Scope = my/partner (tpl.type)
-  const scope = tpl.type;
-
-  // Tags compatibles avec ce scope, envoyés en "id1,id2,id3"
-  const allowed = new Set(
-    tagsForScope(scope)
-      .map(t => String(t.tagId || '').trim())
-      .filter(Boolean)
-  );
-  const active = (state.activeTagIds || [])
-    .map(x => String(x).trim())
-    .filter(x => allowed.has(x));
-
-  const tagsCsv = active.join(',');
-
-  const btn = $('publishToDiscord');
-  const oldText = btn?.textContent || 'Publier';
-  if(btn){
-    btn.disabled = true;
-    btn.textContent = '⏳ Publication...';
-  }
-
-  try{
-    const fd = new FormData();
-
-    // Champs attendus par publisher_api.py
-    fd.append('title', postTitle);
-    fd.append('content', $('preview')?.textContent || ' ');
-    fd.append('tags', tagsCsv);
-    fd.append('template', scope); // IMPORTANT: "template" (my/partner), pas "type"
-
-    // Une seule image attendue: part.name == "image"
-    // On prend l'image principale si elle existe, sinon la 1ère.
-    const imgs = state.selectedImages || [];
-    const mainIdx = Number.isFinite(state.mainImageIdx) ? state.mainImageIdx : 0;
-    const pick = imgs[mainIdx] || imgs[0];
-
-    if(pick && pick.file){
-      fd.append('image', pick.file, pick.file.name);
-    }
-
-    const res = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'X-API-KEY': apiKey, // IMPORTANT: le backend lit ici
-      },
-      body: fd
-    });
-
-    const data = await res.json().catch(()=>null);
-
-    if(!res.ok || !data || !data.ok){
-      const err =
-        (data && (data.error || data.message))
-          ? (data.error || data.message)
-          : ('HTTP ' + res.status);
-      status.textContent = '❌ Échec : ' + err;
-      return;
-    }
-
-    try{ localStorage.setItem('lastPostTitle', postTitle); }catch(e){}
-
-    if(data.thread_url){
-      const safeUrl = String(data.thread_url);
-      status.innerHTML = `✅ Succès ! <a href="${safeUrl}" target="_blank" rel="noopener" style="color:var(--accent)">Voir le post</a>`;
-    }else{
-      status.textContent = '✅ Succès !';
-    }
-
-  }catch(e){
-    status.textContent = '❌ Erreur réseau.';
-  }finally{
-    if(btn){
-      btn.disabled = false;
-      btn.textContent = oldText;
-    }
-  }
-}
-
-// --- GLOBAL IMPORT/EXPORT ---
-function exportGlobalConfig(){
-  const fullConfig = {
-    version: 3,
-    exportedAt: new Date().toISOString(),
-    state: { ...state, selectedImages: [], mainImageIdx: 0 },
-    apiSettings: {
-      url: $('publisherApiUrl').value.trim(),
-      key: $('publisherApiKey').value,
-    }
-  };
-  const blob = new Blob([JSON.stringify(fullConfig, null, 2)], { type:'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `config_generateur_${new Date().toISOString().split('T')[0]}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function importGlobalConfig(file){
-  const reader = new FileReader();
-  reader.onload = (event)=>{
+  <script>
+  const $ = id => document.getElementById(id);
+    
+    // Default variables configuration
+    const defaultVarsConfig = [
+      {name: 'Name_game', label: 'Nom du jeu', placeholder: 'Lost Solace', type: 'text', templates: ['mes', 'partenaire']},
+      {name: 'Game_version', label: 'Version du jeu', placeholder: 'v0.1', type: 'text', templates: ['mes', 'partenaire', 'f95']},
+      {name: 'Translate_version', label: 'Version de la traduction', placeholder: 'v0.1', type: 'text', templates: ['mes', 'partenaire', 'f95']},
+      {name: 'Game_link', label: 'Lien du jeu', placeholder: 'https://...', type: 'text', templates: ['mes', 'partenaire', 'f95']},
+      {name: 'Translate_link', label: 'Lien de la traduction', placeholder: 'https://...', type: 'text', templates: ['mes', 'partenaire', 'f95']},
+      {name: 'traductor', label: 'Traducteur', placeholder: 'Rory Mercury 91', type: 'text', templates: ['partenaire', 'f95'], hasSaveLoad: true},
+      {name: 'overview', label: 'Synopsis', placeholder: 'Synopsis du jeu...', type: 'textarea', templates: ['mes', 'partenaire']},
+      {name: 'install_instructions', label: "Instructions d'installation", placeholder: "1. Téléchargez le jeu...", type: 'textarea', templates: ['mes','partenaire','f95'], domId: 'instrText', fullWidth: true, showInAvailableVars: false, hasSaveLoad: true, saveLoad: 'instructions', hasIncludeToggle: true}
+    ];
+    
+    // Load custom variables
+    let customVars = [];
     try{
-      const imported = JSON.parse(event.target.result);
+      const saved = localStorage.getItem('customVariables');
+      if(saved) customVars = JSON.parse(saved);
+    }catch(e){}
+    
+    const allVarsConfig = [...defaultVarsConfig, ...customVars];
 
-      // Support: allow direct state object too
-      const incomingState = imported.state ? imported.state : imported;
+    // Default templates
+    const defaultTemplates = {
+      mes: {
+        name: 'Mes traductions',
+        type: 'my',
+        content: `## :flag_fr: [Name_game] est disponible en français ! :tada:
 
-      if(incomingState && typeof incomingState === 'object'){
-        state = {
-          ...structuredClone(DEFAULT_STATE),
-          ...incomingState,
-          templates: { ...structuredClone(DEFAULT_STATE.templates), ...(incomingState.templates || {}) },
-          vars: Array.isArray(incomingState.vars) ? incomingState.vars : structuredClone(DEFAULT_STATE.vars),
-          translators: Array.isArray(incomingState.translators) ? incomingState.translators : [],
-          tags: Array.isArray(incomingState.tags) ? incomingState.tags : [],
-          selectedImages: [],
-          mainImageIdx: 0
-        };
+Salut l'équipe ! Le patch est enfin prêt, vous pouvez l'installer dès maintenant pour profiter du titre dans notre langue. Bon jeu à tous ! :point_down:
 
-        if(imported.apiSettings){
-          $('publisherApiUrl').value = imported.apiSettings.url || '';
-          $('publisherApiKey').value = imported.apiSettings.key || '';
-        }
-        saveState();
-        saveApiSettings();
-        init();
-        alert('✅ Configuration importée !');
-      }else{
-        alert('❌ Fichier JSON invalide.');
+### :computer: Infos du Mod & Liens de Téléchargement
+* **Titre du jeu :** [Name_game]
+* **Version du jeu :** [Game_version]
+* **Version traduite :** [Translate_version]
+* **Lien du jeu (VO) :** [Accès au jeu original]([Game_link])
+* **Lien de la Traduction :** [Téléchargez la traduction FR ici !]([Translate_link])
+> **Synopsis du jeu :**
+> [overview]
+
+### :sparkling_heart: Soutenez le Traducteur !
+
+Pour m'encourager et soutenir mes efforts :
+* **Soutien au Traducteur (Moi !) :** [Offrez-moi un café pour le temps passé !](https://discord.com/channels/1417811606674477139/1433930090349330493)`
+      },
+      partenaire: {
+        name: 'Traductions partenaire',
+        type: 'partner',
+        content: `## :flag_fr: [Name_game] est disponible en français ! :tada:
+
+Salut l'équipe ! Le patch est enfin prêt, vous pouvez l'installer dès maintenant pour profiter du titre dans notre langue. Bon jeu à tous ! :point_down:
+
+### :computer: Infos du Mod & Liens de Téléchargement
+* **Traducteur :** [traductor]
+* **Titre du jeu :** [Name_game]
+* **Version du jeu :** [Game_version]
+* **Version traduite :** [Translate_version]
+* **Lien du jeu (VO) :** [Accès au jeu original]([Game_link])
+* **Lien de la Traduction :** [Téléchargez la traduction FR ici !]([Translate_link])
+> **Synopsis du jeu :**
+> [overview]`
+      }
+    };
+
+    // Load templates
+    let templates = {};
+    try{
+      const saved = localStorage.getItem('customTemplates');
+      if(saved) {
+        templates = JSON.parse(saved);
+      } else {
+        templates = {...defaultTemplates};
       }
     }catch(e){
-      alert('❌ Fichier JSON invalide.');
+      templates = {...defaultTemplates};
     }
-  };
-  reader.readAsText(file);
-}
+    
+    let currentTemplate = Object.keys(templates)[0] || 'mes';
+    let currentEditingTemplateKey = null;
+    let uploadedImages = [];
+    let savedTraductors = [];
+    let currentTags = [];
+    let savedTags = [];
+    
+    // Load saved data
+    try{
+      const saved = localStorage.getItem('savedTraductors');
+      if(saved) savedTraductors = JSON.parse(saved);
+    }catch(e){}
+    
+    try{
+      const saved = localStorage.getItem('savedTags');
+      if(saved) savedTags = JSON.parse(saved);
+    }catch(e){}
 
-function resetLocal(){
-  if(!confirm('Tout effacer en local (config + API) ?')) return;
-  localStorage.removeItem(LS.STATE);
-  localStorage.removeItem(LS.API_URL);
-  localStorage.removeItem(LS.API_KEY);
-  state = structuredClone(DEFAULT_STATE);
-  loadApiSettings();
-  saveState();
-  init();
-  alert('✅ Reset effectué.');
-}
+    // Migration: ancien format = tableau de strings
+    if(Array.isArray(savedTags) && savedTags.length && typeof savedTags[0] === 'string'){
+      savedTags = savedTags.map(name => ({ name, id: '', template: currentTemplate || '' }));
+      localStorage.setItem('savedTags', JSON.stringify(savedTags));
+    }
+    if(!Array.isArray(savedTags)) savedTags = [];
 
-// --- MODALS ---
-function closeModal(id){ $(id).style.display = 'none'; }
-function openModal(id){ $(id).style.display = 'block'; }
-
-// Templates modal
-function renderTemplateManager(){
-  const root = $('templateManagerList');
-  root.innerHTML = '';
-  Object.keys(state.templates).forEach((key)=>{
-    const t = state.templates[key];
-    const row = document.createElement('div');
-    row.className = 'list-row';
-    row.innerHTML = `
-      <input type="text" placeholder="Nom" value="${escapeHtml(t?.name || '')}">
-      <select>
-        <option value="my">my</option>
-        <option value="partner">partner</option>
-        <option value="other">other</option>
-      </select>
-      <input type="text" placeholder="Clé interne (unique)" value="${escapeHtml(key)}" disabled>
-      <button class="danger" title="Supprimer">🗑️</button>
-
-      <div style="grid-column:1/-1" class="field">
-        <label>Contenu</label>
-        <textarea style="width:100%"></textarea>
-      </div>
-    `;
-    const inputs = row.querySelectorAll('input');
-    const nameInput = inputs[0];
-    const keyInput = inputs[1]; // disabled key
-    const typeSelect = row.querySelector('select');
-    const ta = row.querySelector('textarea');
-    const del = row.querySelector('button.danger');
-
-    typeSelect.value = (t && t.type) ? t.type : 'other';
-    ta.value = t?.content || '';
-
-    nameInput.addEventListener('input', ()=>{ state.templates[key].name = nameInput.value; });
-    typeSelect.addEventListener('change', ()=>{ state.templates[key].type = typeSelect.value; });
-    ta.addEventListener('input', ()=>{ state.templates[key].content = ta.value; });
-
-    del.addEventListener('click', ()=>{
-      if(!confirm(`Supprimer "${t?.name || key}" ?`)) return;
-      delete state.templates[key];
-      if(state.currentTemplateKey === key){
-        state.currentTemplateKey = Object.keys(state.templates)[0] || 'my';
+    // Render template radio buttons
+    function renderTemplateRadios(){
+      const container = $('templateRadioGroup');
+      container.innerHTML = '';
+      
+      Object.keys(templates).forEach(key => {
+        const item = document.createElement('div');
+        item.className = 'template-radio-item';
+        
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'templateType';
+        radio.value = key;
+        radio.id = 'template_' + key;
+        radio.checked = currentTemplate === key;
+        
+        const label = document.createElement('label');
+        label.className = 'template-radio-label';
+        label.htmlFor = 'template_' + key;
+        label.textContent = templates[key].name || key;
+        
+        radio.addEventListener('change', ()=>{
+          currentTemplate = key;
+          renderVariablesGrid();
+          updatePreview();
+          updatePublisherTemplateInfo();
+          checkPublishAvailability();
+          updatePublisherTagSelect();
+        });
+        
+        item.appendChild(radio);
+        item.appendChild(label);
+        container.appendChild(item);
+      });
+    }
+    
+    // Check if current template supports Discord publishing
+    function checkPublishAvailability(){
+      const template = templates[currentTemplate];
+      const canPublish = template && (template.type === 'my' || template.type === 'partner');
+      
+      const section = $('publishSection');
+      const warning = $('publishDisabledWarning');
+      const content = $('publishContent');
+      
+            const publishBtn = $('publishToDiscord');
+if(canPublish){
+        warning.style.display = 'none';
+        content.style.display = 'block';
+        section.classList.remove('disabled');
+        if(publishBtn) publishBtn.disabled = false;
+      } else {
+        warning.style.display = 'block';
+        content.style.display = 'none';
+        section.classList.add('disabled');
+        if(publishBtn) publishBtn.disabled = true;
       }
-      renderTemplateManager();
+    }
+    
+    // Render variables grid
+    function renderVariablesGrid(){
+      const grid = $('variablesGrid');
+      grid.innerHTML = '';
+
+      // ✅ Objectif: afficher les champs sur TOUS les templates
+      // - Si varConfig.templates est absent → visible partout
+      // - Si varConfig.templates est présent → on essaie de matcher:
+      //   1) la clé du template (currentTemplate)
+      //   2) le type du template (templates[currentTemplate].type) si défini
+      // - Et si malgré ça rien ne matche, on bascule en "visible quand même" (fallback)
+      //   pour garantir "visible sur tout les template directement".
+      const tpl = templates[currentTemplate] || {};
+      const tplType = (tpl.type || '').trim();
+
+      // Collecte des "clés" possibles qui peuvent apparaître dans varConfig.templates
+      const keysToMatch = new Set([currentTemplate]);
+      if(tplType) keysToMatch.add(tplType);
+
+      const visibleVars = allVarsConfig.slice();
+
+
+      visibleVars.forEach((varConfig) => {
+        const isCustom = !defaultVarsConfig.includes(varConfig);
+        const field = document.createElement('div');
+        field.className = isCustom ? 'field custom' : 'field';
+        if(varConfig.fullWidth) field.style.gridColumn = '1/-1';
+
+        const labelContainer = document.createElement('div');
+        labelContainer.style.display = 'flex';
+        labelContainer.style.justifyContent = 'space-between';
+        labelContainer.style.alignItems = 'center';
+
+        const label = document.createElement('label');
+        label.textContent = varConfig.label;
+        labelContainer.appendChild(label);
+
+        // Instructions include toggle + copy button (for the instructions field)
+        if(varConfig.name === 'install_instructions'){
+          const right = document.createElement('div');
+          right.style.display = 'flex';
+          right.style.alignItems = 'center';
+          right.style.gap = '8px';
+          right.style.flexWrap = 'wrap';
+
+          const toggleWrap = document.createElement('div');
+          toggleWrap.className = 'checkbox-group';
+          toggleWrap.style.margin = '0';
+
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.id = 'includeInstr';
+          cb.checked = true;
+          cb.addEventListener('change', updatePreview);
+
+          const cbLabel = document.createElement('label');
+          cbLabel.htmlFor = 'includeInstr';
+          cbLabel.textContent = "Inclure dans la publication";
+
+          toggleWrap.appendChild(cb);
+          toggleWrap.appendChild(cbLabel);
+
+          const copyBtn = document.createElement('button');
+          copyBtn.id = 'copyInstr';
+          copyBtn.textContent = '📋';
+          copyBtn.style.padding = '2px 6px';
+          copyBtn.style.fontSize = '12px';
+          copyBtn.title = 'Copier les instructions';
+          copyBtn.onclick = async (e) => {
+            e.preventDefault();
+            try{
+              await navigator.clipboard.writeText($('instrText').value);
+              copyBtn.textContent = '✅';
+              copyBtn.classList.add('success');
+              setTimeout(()=>{ copyBtn.textContent = '📋'; copyBtn.classList.remove('success'); }, 1200);
+            }catch(err){ alert('Erreur copie'); }
+          };
+
+          right.appendChild(toggleWrap);
+          right.appendChild(copyBtn);
+          labelContainer.appendChild(right);
+        }
+
+        if(varConfig.hasSaveLoad){
+          const btnGroup = document.createElement('div');
+          btnGroup.style.display = 'flex';
+          btnGroup.style.gap = '4px';
+
+          const saveBtn = document.createElement('button');
+          saveBtn.textContent = '💾';
+          saveBtn.style.padding = '2px 6px';
+          saveBtn.style.fontSize = '12px';
+
+          const loadBtn = document.createElement('button');
+          loadBtn.textContent = '📂';
+          loadBtn.style.padding = '2px 6px';
+          loadBtn.style.fontSize = '12px';
+
+          if(varConfig.saveLoad === 'instructions'){
+            saveBtn.id = 'saveInstr';
+            loadBtn.id = 'loadInstr';
+            saveBtn.title = "Sauvegarder ces instructions";
+            loadBtn.title = "Charger des instructions";
+            saveBtn.onclick = (e)=>{ e.preventDefault(); $('instrName').value=''; $('saveInstrModal').style.display='block'; };
+            loadBtn.onclick = (e)=>{ e.preventDefault(); openLoadInstrModal(); };
+          } else {
+            saveBtn.title = 'Sauvegarder ce traducteur';
+            loadBtn.title = 'Charger un traducteur';
+            saveBtn.onclick = (e) => { e.preventDefault(); openSaveTraductorModal(); };
+            loadBtn.onclick = (e) => { e.preventDefault(); showTraductorDropdown(field); };
+          }
+
+          btnGroup.appendChild(saveBtn);
+          btnGroup.appendChild(loadBtn);
+          labelContainer.appendChild(btnGroup);
+        }
+
+        let input;
+
+        if(varConfig.type === 'select'){
+          input = document.createElement('select');
+          const emptyOption = document.createElement('option');
+          emptyOption.value = '';
+          emptyOption.textContent = '-- Sélectionner --';
+          input.appendChild(emptyOption);
+          (varConfig.options || []).forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt;
+            input.appendChild(option);
+          });
+        } else if(varConfig.type === 'textarea'){
+          input = document.createElement('textarea');
+        } else {
+          input = document.createElement('input');
+          input.type = 'text';
+        }
+
+        input.id = (varConfig.domId || ('var_' + varConfig.name));
+        if(varConfig.placeholder) input.placeholder = varConfig.placeholder;
+
+        const existingInput = document.getElementById(varConfig.domId || ('var_' + varConfig.name));
+        if(existingInput) {
+          input.value = existingInput.value;
+        }
+
+        input.addEventListener('input', updatePreview);
+        input.addEventListener('change', updatePreview);
+
+        field.appendChild(labelContainer);
+        field.appendChild(input);
+
+        if(isCustom){
+          const removeBtn = document.createElement('button');
+          removeBtn.className = 'remove-var';
+          removeBtn.textContent = '✕';
+          const customIndex = customVars.findIndex(v => v.name === varConfig.name);
+          removeBtn.onclick = () => removeCustomVariable(customIndex);
+          field.appendChild(removeBtn);
+        }
+
+        grid.appendChild(field);
+      });
+
+      updateAvailableVarsDisplay();
+    }
+    
+    function showTraductorDropdown(parentField){
+      if(savedTraductors.length === 0){
+        alert('Aucun traducteur sauvegardé');
+        return;
+      }
+      
+      const select = document.createElement('select');
+      select.style.marginTop = '4px';
+      
+      const emptyOpt = document.createElement('option');
+      emptyOpt.value = '';
+      emptyOpt.textContent = '-- Choisir un traducteur --';
+      select.appendChild(emptyOpt);
+      
+      savedTraductors.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+      
+      select.addEventListener('change', (e) => {
+        const traductorInput = $('var_traductor');
+        if(traductorInput && e.target.value){
+          traductorInput.value = e.target.value;
+          updatePreview();
+        }
+        select.remove();
+      });
+      
+      parentField.appendChild(select);
+      select.focus();
+    }
+    
+    function openSaveTraductorModal(){
+      const traductorInput = $('var_traductor');
+      if(traductorInput){
+        $('traductorName').value = traductorInput.value;
+      }
+      $('saveTraductorModal').style.display = 'block';
+    }
+    
+    function updateAvailableVarsDisplay(){
+      const display = $('availableVars');
+      if(!display) return;
+      
+      display.innerHTML = allVarsConfig.filter(v => v.showInAvailableVars !== false).map(v => 
+        `<code>[${v.name}]</code> → ${v.label}`
+      ).join('<br>');
+    }
+    
+    function removeCustomVariable(index){
+      if(!confirm('Supprimer cette variable personnalisée ?')) return;
+      const varToRemove = customVars[index];
+      customVars.splice(index, 1);
+      localStorage.setItem('customVariables', JSON.stringify(customVars));
+      
+      const allIndex = allVarsConfig.findIndex(v => v.name === varToRemove.name);
+      if(allIndex !== -1) {
+        allVarsConfig.splice(allIndex, 1);
+      }
+      
+      renderVariablesGrid();
+      updatePreview();
+    }
+    
+    function updatePreview(){
+      const template = templates[currentTemplate];
+      if(!template) return;
+
+      const format = template.format || 'markdown'; // défaut: markdown
+
+      let content = template.content;
+
+      // 1) Remplacement variables (fixes + custom)
+      allVarsConfig.forEach(varConfig => {
+        const input = $(varConfig.domId || ('var_' + varConfig.name));
+        if(!input) return;
+
+        let val = input.value.trim();
+
+        // ⚠️ Seulement pour Markdown natif (Discord)
+        if(format === 'markdown' && varConfig.name === 'overview' && val){
+          const lines = val.split('\n').map(l=>l.trim()).filter(Boolean);
+          val = lines.join('\n> ');
+        }
+
+        content = content.split(`[${varConfig.name}]`).join(val || `[${varConfig.name}]`);
+      });
+
+      // 2) Instructions (si cochées)
+      if($('includeInstr')?.checked){
+        const instr = $('instrText').value.trim();
+        if(instr){
+          const lines = instr.split('\n').map(l=>l.trim()).filter(Boolean);
+
+          if(format === 'markdown'){
+            content += '\n\n**Instructions d\'installation :**\n' + lines.map(l=>'* '+l).join('\n');
+          } else {
+            // BBCode pour F95
+            content += `\n\n[SPOILER="INSTALLATION"]\n[LIST=1]\n` +
+              lines.map(l=>`[*]${l}`).join('\n') +
+              `\n[/LIST]\n[/SPOILER]`;
+          }
+        }
+      }
+
+      $('preview').textContent = content;
+    }
+    
+    function updatePublisherTemplateInfo(){
+      const template = templates[currentTemplate];
+      if(!template) return;
+      
+      const type = template.type;
+      let displayValue = '';
+      
+      if(type === 'my' || type === 'partner'){
+        displayValue = `${template.name} (${type})`;
+      } else {
+        displayValue = 'Non publiable automatiquement';
+      }
+      
+      $('publisherTemplateInfo').value = displayValue;
+    }
+
+    // Image handling
+    function handleImageUpload(files){
+      Array.from(files).forEach(file => {
+        if(!file.type.startsWith('image/')) return;
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          uploadedImages.push({
+            file: file,
+            dataUrl: e.target.result,
+            isMain: uploadedImages.length === 0
+          });
+          renderImageGallery();
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+    
+    function renderImageGallery(){
+      const gallery = $('imageGallery');
+      gallery.innerHTML = '';
+      
+      uploadedImages.forEach((img, index) => {
+        const item = document.createElement('div');
+        item.className = 'image-preview-item' + (img.isMain ? ' main' : '');
+        
+        const imgEl = document.createElement('img');
+        imgEl.src = img.dataUrl;
+        
+        if(img.isMain){
+          const badge = document.createElement('div');
+          badge.className = 'image-preview-badge';
+          badge.textContent = 'PRINCIPALE';
+          item.appendChild(badge);
+        }
+        
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'image-preview-remove';
+        removeBtn.textContent = '✕';
+        removeBtn.onclick = (e) => {
+          e.stopPropagation();
+          uploadedImages.splice(index, 1);
+          if(uploadedImages.length > 0 && img.isMain){
+            uploadedImages[0].isMain = true;
+          }
+          renderImageGallery();
+        };
+        
+        item.onclick = () => {
+          uploadedImages.forEach(i => i.isMain = false);
+          img.isMain = true;
+          renderImageGallery();
+        };
+        
+        item.appendChild(imgEl);
+        item.appendChild(removeBtn);
+        gallery.appendChild(item);
+      });
+    }
+    
+    // Tags management
+    function getTemplateOptions(){
+      return Object.keys(templates).map(key => ({
+        key,
+        name: (templates[key] && templates[key].name) ? templates[key].name : key
+      }));
+    }
+
+    function renderNewTagTemplateSelect(){
+      const sel = $('newTagTemplate');
+      if(!sel) return;
+      sel.innerHTML = '';
+      const opts = getTemplateOptions();
+      opts.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.key;
+        opt.textContent = `${o.name} (${o.key})`;
+        sel.appendChild(opt);
+      });
+      if(opts.length) sel.value = currentTemplate || opts[0].key;
+    }
+
+    function updatePublisherTagSelect(){
+      const sel = $('publisherTagsSelect');
+      if(!sel) return;
+
+      sel.innerHTML = '';
+      const empty = document.createElement('option');
+      empty.value = '';
+      empty.textContent = '-- Sélectionner un tag --';
+      sel.appendChild(empty);
+
+      // Tags actifs = tags dont template === currentTemplate
+      const active = savedTags.filter(t => t && t.template === currentTemplate);
+
+      active.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = (t.id || '').trim();
+        opt.textContent = t.id ? `${t.name} — ${t.id}` : t.name;
+        opt.dataset.name = t.name;
+        sel.appendChild(opt);
+      });
+    }
+
+    function renderTagsList(){
+      const list = $('publisherTagsList');
+      list.innerHTML = '';
+
+      currentTags.forEach((tagObj, index) => {
+        const item = document.createElement('div');
+        item.className = 'tag-item';
+
+        const name = document.createElement('span');
+        name.textContent = tagObj && tagObj.name ? tagObj.name : (tagObj.id || '');
+
+        const removeBtn = document.createElement('button');
+        removeBtn.textContent = '✕';
+        removeBtn.onclick = () => {
+          currentTags.splice(index, 1);
+          renderTagsList();
+        };
+
+        item.appendChild(name);
+        item.appendChild(removeBtn);
+        list.appendChild(item);
+      });
+    }
+
+    function persistSavedTags(){
+      localStorage.setItem('savedTags', JSON.stringify(savedTags));
+      updatePublisherTagSelect();
+    }
+
+    function renderSavedTagsList(){
+      const list = $('savedTagsList');
+      list.innerHTML = '';
+
+      if(savedTags.length === 0){
+        list.innerHTML = '<p style="color:var(--muted)">Aucun tag sauvegardé</p>';
+        return;
+      }
+
+      savedTags.forEach((tag, index) => {
+        const row = document.createElement('div');
+        row.style.display = 'grid';
+        row.style.gridTemplateColumns = '1fr 1fr 1fr 90px';
+        row.style.gap = '8px';
+        row.style.marginBottom = '8px';
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.value = tag.name || '';
+        nameInput.placeholder = 'Nom du tag';
+
+        const idInput = document.createElement('input');
+        idInput.type = 'text';
+        idInput.value = tag.id || '';
+        idInput.placeholder = 'ID Discord';
+
+        const tplSelect = document.createElement('select');
+        getTemplateOptions().forEach(o => {
+          const opt = document.createElement('option');
+          opt.value = o.key;
+          opt.textContent = `${o.name} (${o.key})`;
+          tplSelect.appendChild(opt);
+        });
+        tplSelect.value = tag.template || currentTemplate;
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.gap = '8px';
+        actions.style.alignItems = 'center';
+
+        const useBtn = document.createElement('button');
+        useBtn.textContent = 'Utiliser';
+        useBtn.onclick = () => addTagFromSavedIndex(index);
+
+        const delBtn = document.createElement('button');
+        delBtn.textContent = 'Supprimer';
+        delBtn.className = 'danger';
+        delBtn.onclick = () => deleteTag(index);
+
+        actions.appendChild(useBtn);
+        actions.appendChild(delBtn);
+
+        const sync = () => {
+          savedTags[index] = {
+            name: nameInput.value.trim(),
+            id: idInput.value.trim(),
+            template: tplSelect.value
+          };
+          persistSavedTags();
+        };
+
+        nameInput.addEventListener('change', sync);
+        idInput.addEventListener('change', sync);
+        tplSelect.addEventListener('change', sync);
+
+        row.appendChild(nameInput);
+        row.appendChild(idInput);
+        row.appendChild(tplSelect);
+        row.appendChild(actions);
+
+        list.appendChild(row);
+      });
+    }
+
+    function addTagFromSavedIndex(index){
+      const t = savedTags[index];
+      if(!t) return;
+
+      // Empêche les doublons par ID si dispo, sinon par nom
+      const key = (t.id || t.name || '').trim();
+      if(!key) return;
+
+      const exists = currentTags.some(x => ((x.id || x.name || '').trim() === key));
+      if(!exists){
+        currentTags.push({ name: t.name || t.id, id: t.id || t.name });
+        renderTagsList();
+      }
+
+      // reset select UI si présent
+      const sel = $('publisherTagsSelect');
+      if(sel) sel.value = '';
+    }
+
+    window.deleteTag = function(index){
+      if(!confirm('Supprimer ce tag ?')) return;
+      savedTags.splice(index, 1);
+      persistSavedTags();
+      renderSavedTagsList();
+    };
+
+    // Template management
+
+    function renderTemplateList(){
+      const list = $('templateList');
+      list.innerHTML = '';
+      
+      Object.keys(templates).forEach(key => {
+        const item = document.createElement('div');
+        item.className = 'template-item';
+        
+        const nameEl = document.createElement('div');
+        nameEl.className = 'template-item-name';
+        nameEl.textContent = templates[key].name || key;
+        
+        const typeInfo = document.createElement('div');
+        typeInfo.style.fontSize = '12px';
+        typeInfo.style.color = 'var(--muted)';
+        if(templates[key].type === 'my') typeInfo.textContent = '(Mes traductions)';
+        else if(templates[key].type === 'partner') typeInfo.textContent = '(Partenaire)';
+        else typeInfo.textContent = '(Manuel uniquement)';
+        
+        const nameContainer = document.createElement('div');
+        nameContainer.appendChild(nameEl);
+        nameContainer.appendChild(typeInfo);
+        
+        const actions = document.createElement('div');
+        actions.className = 'saved-item-actions';
+        
+        const editBtn = document.createElement('button');
+        editBtn.textContent = 'Modifier';
+        editBtn.onclick = () => openTemplateEditor(key);
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Supprimer';
+        deleteBtn.className = 'danger';
+        deleteBtn.onclick = () => deleteTemplate(key);
+        
+        actions.appendChild(editBtn);
+        actions.appendChild(deleteBtn);
+        
+        item.appendChild(nameContainer);
+        item.appendChild(actions);
+        list.appendChild(item);
+      });
+    }
+    
+    function openTemplateEditor(key = null){
+      currentEditingTemplateKey = key;
+      
+      if(key){
+        $('templateEditorTitle').textContent = 'Modifier le template';
+        $('templateEditorName').value = templates[key].name || key;
+        $('templateEditorKey').value = key;
+        $('templateEditorType').value = templates[key].type || '';
+        $('templateEditorContent').value = templates[key].content || '';
+      } else {
+        $('templateEditorTitle').textContent = 'Nouveau template';
+        $('templateEditorName').value = '';
+        $('templateEditorKey').value = '';
+        $('templateEditorType').value = '';
+        $('templateEditorContent').value = '';
+      }
+      
+      $('editTemplatesModal').style.display = 'none';
+      $('templateEditorModal').style.display = 'block';
+    }
+    
+    function deleteTemplate(key){
+      if(!confirm(`Supprimer le template "${templates[key].name || key}" ?`)) return;
+      
+      delete templates[key];
+      localStorage.setItem('customTemplates', JSON.stringify(templates));
+      
+      if(currentTemplate === key){
+        currentTemplate = Object.keys(templates)[0] || 'mes';
+      }
+      
+      renderTemplateList();
+      renderTemplateRadios();
+      updatePreview();
+      updatePublisherTemplateInfo();
+      checkPublishAvailability();
+    }
+    
+    // Global config export/import
+    function exportGlobalConfig(){
+      const config = {
+        templates: templates,
+        customVariables: customVars,
+        savedInstructions: JSON.parse(localStorage.getItem('savedInstructions') || '{}'),
+        savedTraductors: savedTraductors,
+        savedTags: savedTags,
+        publisherApiUrl: localStorage.getItem('publisherApiUrl') || '',
+        version: '2.0'
+      };
+      
+      const json = JSON.stringify(config, null, 2);
+      navigator.clipboard.writeText(json).then(()=>{
+        alert('✅ Configuration exportée dans le presse-papier !');
+      }).catch(()=>{
+        const blob = new Blob([json], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'config_publication_generator.json';
+        a.click();
+        alert('✅ Configuration téléchargée !');
+      });
+    }
+    
+    function importGlobalConfig(configJson){
+      try{
+        const config = JSON.parse(configJson);
+        
+        if(config.templates) {
+          templates = config.templates;
+          localStorage.setItem('customTemplates', JSON.stringify(templates));
+        }
+        
+        if(config.customVariables) {
+          customVars = config.customVariables;
+          localStorage.setItem('customVariables', JSON.stringify(customVars));
+        }
+        
+        if(config.savedInstructions) {
+          localStorage.setItem('savedInstructions', JSON.stringify(config.savedInstructions));
+        }
+        
+        if(config.savedTraductors) {
+          savedTraductors = config.savedTraductors;
+          localStorage.setItem('savedTraductors', JSON.stringify(savedTraductors));
+        }
+        
+        if(config.savedTags) {
+          savedTags = config.savedTags;
+          localStorage.setItem('savedTags', JSON.stringify(savedTags));
+        }
+        
+        if(config.publisherApiUrl) {
+          localStorage.setItem('publisherApiUrl', config.publisherApiUrl);
+        }
+        
+        location.reload();
+      }catch(e){
+        alert('❌ Erreur : Configuration invalide');
+      }
+    }
+
+    // Reset all fields (silent)
+    function resetAllFields(){
+
+      // Reset all variable inputs
+      allVarsConfig.forEach(varConfig => {
+        const input = $('var_' + varConfig.name);
+        if(input) input.value = '';
+      });
+
+      // Reset instructions to default
+      $('instrText').value = ``;
+
+      // Reset include instructions checkbox
+      $('includeInstr').checked = true;
+
+      // Reset publisher fields
+      $('publisherTitle').value = '';
+
+      // Reset tags
+      currentTags = [];
+      renderTagsList();
+
+      // Reset images
+      uploadedImages = [];
+      renderImageGallery();
+      $('publisherImage').value = '';
+
+      // Refresh preview
+      updatePreview();
+    }
+
+    // Event listeners
+    if($('includeInstr')) $('includeInstr').addEventListener('change', updatePreview);
+    if($('instrText')) $('instrText').addEventListener('input', updatePreview);
+    
+    $('publisherImage').addEventListener('change', (e) => {
+      handleImageUpload(e.target.files);
+    });
+    
+    $('publisherTagsSelect').addEventListener('change', (e) => {
+      const id = (e.target.value || '').trim();
+      if(!id) return;
+
+      const opt = e.target.options[e.target.selectedIndex];
+      const name = opt && opt.dataset && opt.dataset.name ? opt.dataset.name : id;
+
+      const exists = currentTags.some(t => (t.id || '').trim() === id);
+      if(!exists){
+        currentTags.push({ name, id });
+        renderTagsList();
+      }
+      e.target.value = '';
+    });
+    
+    // Reset fields button
+    $('resetFields').addEventListener('click', resetAllFields);
+
+
+
+    // Discord config modal
+    if($('openDiscordConfig')) $('openDiscordConfig').addEventListener('click', ()=>{
+      $('discordConfigModal').style.display = 'block';
     });
 
-    root.appendChild(row);
-  });
-}
+    if($('closeDiscordConfig')) $('closeDiscordConfig').addEventListener('click', ()=>{
+      $('discordConfigModal').style.display = 'none';
+    });
 
-function addNewTemplate(){
-  const base = 'nouveau_template';
-  let key = base;
-  let i = 1;
-  while(state.templates[key]){ key = base + '_' + i; i++; }
-  state.templates[key] = { name:'Nouveau Template', type:'other', content:'## [NAME_GAME]\n\n[DESC_GAME]' };
-  state.currentTemplateKey = key;
-  renderTemplateManager();
-}
+    if($('discordConfigModal')) $('discordConfigModal').addEventListener('click', (e)=>{
+      if(e.target === $('discordConfigModal')) $('discordConfigModal').style.display = 'none';
+    });
 
-// Vars modal
-function addVar(){
-  const key = ($('newVarKey').value || '').trim();
-  const label = ($('newVarLabel').value || '').trim();
-  if(!key || !label){
-    alert('Renseigne la clé et le label.');
-    return;
-  }
-  if(state.vars.some(v => (v.key || '').toLowerCase() === key.toLowerCase())){
-    alert('Cette variable existe déjà.');
-    return;
-  }
+    // Preview modal
+    $('openPreviewModal').addEventListener('click', ()=>{
+      updatePreview();
+      $('previewModal').style.display = 'block';
+    });
 
-  const id = uid('v');
-  const v = { id, key, label, value: '' };
-  state.vars.push(v);
+    $('closePreviewModal').addEventListener('click', ()=>{
+      $('previewModal').style.display = 'none';
+    });
 
-  // Apply to selected templates
-  const checks = document.querySelectorAll('#newVarTemplates input[type="checkbox"][data-template]');
-  const selected = Array.from(checks).filter(c => c.checked).map(c => c.getAttribute('data-template'));
-  selected.forEach(tk => {
-    const tpl = state.templates[tk];
-    if(!tpl) return;
-    tpl.varsAllowed = Array.isArray(tpl.varsAllowed) ? tpl.varsAllowed : [];
-    if(!tpl.varsAllowed.includes(id)) tpl.varsAllowed.push(id);
-  });
+    // Close preview modal when clicking outside content
+    $('previewModal').addEventListener('click', (e)=>{
+      if(e.target === $('previewModal')) $('previewModal').style.display = 'none';
+    });
 
-  saveState();
-  renderVars();
-  updatePreview();
-  renderVarManager();
-  $('newVarKey').value = '';
-  $('newVarLabel').value = '';
-  // reset checks
-  document.querySelectorAll('#newVarTemplates input[type="checkbox"][data-template]').forEach(c => c.checked = false);
-}
 
-function deleteVar(varId){
-  const v = state.vars.find(x => x.id === varId);
-  if(!v) return;
-  if(!confirm(`Supprimer la variable ${v.key} ?`)) return;
 
-  // Remove from vars
-  state.vars = state.vars.filter(x => x.id !== varId);
+    // Copy buttons
+    if($('copyInstr')) $('copyInstr').addEventListener('click', async ()=>{
+      try{
+        await navigator.clipboard.writeText($('instrText').value);
+        $('copyInstr').textContent = '✅ Copié !';
+        $('copyInstr').classList.add('success');
+        setTimeout(()=>{
+          $('copyInstr').textContent = '📋 Copier instructions';
+          $('copyInstr').classList.remove('success');
+        },1500);
+      }catch(e){alert('Erreur copie')}
+    });
+    
+    $('copyPreview').addEventListener('click', async ()=>{
+      try{
+        await navigator.clipboard.writeText($('preview').textContent);
+        $('copyPreview').textContent = '✅ Copié !';
+        $('copyPreview').classList.add('success');
+        setTimeout(()=>{
+          $('copyPreview').textContent = '📋 Copier la publication';
+          $('copyPreview').classList.remove('success');
+        },1500);
+      }catch(e){alert('Erreur copie')}
+    });
+    
+    
+    function openLoadInstrModal(){
+      let saved = {};
+      try{
+        const data = localStorage.getItem('savedInstructions');
+        if(data) saved = JSON.parse(data);
+      }catch(e){}
 
-  // Remove from templates
-  for(const tk of Object.keys(state.templates)){
-    const tpl = state.templates[tk];
-    tpl.varsAllowed = (tpl.varsAllowed || []).filter(id => id !== varId);
-  }
+      const list = $('savedInstrList');
+      list.innerHTML = '';
 
-  // If current template has now zero vars, keep it as-is (UI will show hint)
-  saveState();
-  renderVars();
-  updatePreview();
-  renderVarManager();
-}
+      if(Object.keys(saved).length === 0){
+        list.innerHTML = '<p style="color:var(--muted)">Aucune instruction sauvegardée</p>';
+      } else {
+        Object.keys(saved).forEach(name => {
+          const item = document.createElement('div');
+          item.className = 'saved-item';
+          item.innerHTML = `
+            <div class="saved-item-name">${name}</div>
+            <div class="saved-item-actions">
+              <button onclick="loadInstruction('${name.replace(/'/g, "\\'")}')">Charger</button>
+              <button class="danger" onclick="deleteInstruction('${name.replace(/'/g, "\\'")}')">Supprimer</button>
+            </div>
+          `;
+          list.appendChild(item);
+        });
+      }
 
-function setVarAllowedOnTemplate(varId, templateKey, allowed){
-  const tpl = state.templates?.[templateKey];
-  if(!tpl) return;
-  tpl.varsAllowed = Array.isArray(tpl.varsAllowed) ? tpl.varsAllowed : [];
-  const set = new Set(tpl.varsAllowed);
-  allowed ? set.add(varId) : set.delete(varId);
-  tpl.varsAllowed = [...set];
-  saveState();
-  renderVars();
-  updatePreview();
-}
+      $('loadInstrModal').style.display = 'block';
+    }
 
-function renderVarManager(){
-  const host = $('varManagerList');
-  if(!host) return;
-  host.innerHTML = '';
-
-  const templateKeys = Object.keys(state.templates || {});
-  if(state.vars.length === 0){
-    host.innerHTML = '<div class="hint">Aucune variable. Ajoute-en une ci-dessous.</div>';
-    return;
-  }
-
-  state.vars.forEach(v => {
-    const row = document.createElement('div');
-    row.className = 'card';
-    row.style.padding = '10px';
-    row.style.marginBottom = '10px';
-    row.innerHTML = `
-      <div class="row" style="gap:10px;align-items:flex-end;flex-wrap:wrap">
-        <div class="field" style="flex:1;min-width:180px">
-          <label>Clé</label>
-          <input type="text" value="${escapeHtml(v.key || '')}" data-k="key">
-        </div>
-        <div class="field" style="flex:1;min-width:220px">
-          <label>Label</label>
-          <input type="text" value="${escapeHtml(v.label || '')}" data-k="label">
-        </div>
-        <div class="field" style="flex:1;min-width:220px">
-          <label>Valeur</label>
-          <input type="text" value="${escapeHtml(v.value || '')}" data-k="value">
-        </div>
-        <button class="danger" data-action="del">Supprimer</button>
-      </div>
-      <div style="margin-top:8px">
-        <div class="hint" style="margin:0 0 6px 0">Afficher sur :</div>
-        <div class="row" style="gap:10px;flex-wrap:wrap" data-templates></div>
-      </div>
-    `;
-
-    // Bind edits
-    row.querySelectorAll('input[data-k]').forEach(inp => {
-      inp.addEventListener('input', ()=>{
-        const idx = state.vars.findIndex(x => x.id === v.id);
-        if(idx === -1) return;
-        const k = inp.getAttribute('data-k');
-        state.vars[idx][k] = inp.value;
-        saveState();
-        renderVars();
+// Save/Load Instructions
+    if($('saveInstr')) $('saveInstr').addEventListener('click', ()=>{
+      $('instrName').value = '';
+      $('saveInstrModal').style.display = 'block';
+    });
+    
+    $('closeSaveInstr').addEventListener('click', ()=>{
+      $('saveInstrModal').style.display = 'none';
+    });
+    
+    $('cancelSaveInstr').addEventListener('click', ()=>{
+      $('saveInstrModal').style.display = 'none';
+    });
+    
+    $('confirmSaveInstr').addEventListener('click', ()=>{
+      const name = $('instrName').value.trim();
+      if(!name){
+        alert('Veuillez entrer un nom');
+        return;
+      }
+      
+      const instr = $('instrText').value;
+      let saved = {};
+      try{
+        const data = localStorage.getItem('savedInstructions');
+        if(data) saved = JSON.parse(data);
+      }catch(e){}
+      
+      saved[name] = instr;
+      localStorage.setItem('savedInstructions', JSON.stringify(saved));
+      
+      $('saveInstrModal').style.display = 'none';
+      alert('Instructions sauvegardées !');
+    });
+    
+    if($('loadInstr')) $('loadInstr').addEventListener('click', ()=>{ openLoadInstrModal(); });
+$('closeLoadInstr').addEventListener('click', ()=>{
+      $('loadInstrModal').style.display = 'none';
+    });
+    
+    window.loadInstruction = function(name){
+      try{
+        const data = localStorage.getItem('savedInstructions');
+        const saved = JSON.parse(data);
+        $('instrText').value = saved[name] || '';
+        $('loadInstrModal').style.display = 'none';
         updatePreview();
+      }catch(e){alert('Erreur de chargement')}
+    };
+    
+    window.deleteInstruction = function(name){
+      if(!confirm(`Supprimer "${name}" ?`)) return;
+      try{
+        const data = localStorage.getItem('savedInstructions');
+        const saved = JSON.parse(data);
+        delete saved[name];
+        localStorage.setItem('savedInstructions', JSON.stringify(saved));
+        $('loadInstr').click();
+      }catch(e){alert('Erreur de suppression')}
+    };
+    
+    // Save Traductor
+    $('closeSaveTraductor').addEventListener('click', ()=>{
+      $('saveTraductorModal').style.display = 'none';
+    });
+    
+    $('cancelSaveTraductor').addEventListener('click', ()=>{
+      $('saveTraductorModal').style.display = 'none';
+    });
+    
+    $('confirmSaveTraductor').addEventListener('click', ()=>{
+      const name = $('traductorName').value.trim();
+      if(!name){
+        alert('Veuillez entrer un nom');
+        return;
+      }
+      
+      if(!savedTraductors.includes(name)){
+        savedTraductors.push(name);
+        localStorage.setItem('savedTraductors', JSON.stringify(savedTraductors));
+      }
+      
+      const traductorInput = $('var_traductor');
+      if(traductorInput){
+        traductorInput.value = name;
+        updatePreview();
+      }
+      
+      $('saveTraductorModal').style.display = 'none';
+      alert('Traducteur sauvegardé !');
+    });
+    
+    // Add Variable
+    $('addVariable').addEventListener('click', ()=>{
+      $('varName').value = '';
+      $('varLabel').value = '';
+      $('varType').value = 'text';
+      $('addVarModal').style.display = 'block';
+    });
+    
+    $('closeAddVar').addEventListener('click', ()=>{
+      $('addVarModal').style.display = 'none';
+    });
+    
+    $('cancelAddVar').addEventListener('click', ()=>{
+      $('addVarModal').style.display = 'none';
+    });
+    
+    $('confirmAddVar').addEventListener('click', ()=>{
+      const name = $('varName').value.trim();
+      const label = $('varLabel').value.trim();
+      const type = $('varType').value;
+      
+      if(!name || !label){
+        alert('Veuillez remplir tous les champs');
+        return;
+      }
+      
+      if(allVarsConfig.some(v => v.name === name)){
+        alert('Cette variable existe déjà');
+        return;
+      }
+      
+      const newVar = {
+        name: name,
+        label: label,
+        placeholder: '',
+        type: type
+      };
+      
+      customVars.push(newVar);
+      allVarsConfig.push(newVar);
+      localStorage.setItem('customVariables', JSON.stringify(customVars));
+      
+      $('addVarModal').style.display = 'none';
+      renderVariablesGrid();
+      updatePreview();
+    });
+
+    // Edit Templates
+    $('editTemplates').addEventListener('click', ()=>{
+      updateAvailableVarsDisplay();
+      renderTemplateList();
+      $('editTemplatesModal').style.display = 'block';
+    });
+    
+    $('closeEditTemplates').addEventListener('click', ()=>{
+      $('editTemplatesModal').style.display = 'none';
+    });
+    
+    $('cancelEditTemplates').addEventListener('click', ()=>{
+      $('editTemplatesModal').style.display = 'none';
+    });
+    
+    $('addNewTemplate').addEventListener('click', ()=>{
+      openTemplateEditor(null);
+    });
+    
+    $('saveAllTemplates').addEventListener('click', ()=>{
+      localStorage.setItem('customTemplates', JSON.stringify(templates));
+      $('editTemplatesModal').style.display = 'none';
+      alert('Templates sauvegardés !');
+    });
+    
+    // Template Editor
+    $('closeTemplateEditor').addEventListener('click', ()=>{
+      $('templateEditorModal').style.display = 'none';
+      $('editTemplatesModal').style.display = 'block';
+    });
+    
+    $('cancelTemplateEditor').addEventListener('click', ()=>{
+      $('templateEditorModal').style.display = 'none';
+      $('editTemplatesModal').style.display = 'block';
+    });
+    
+    $('templateEditorName').addEventListener('input', (e) => {
+      if(!currentEditingTemplateKey){
+        const key = e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        $('templateEditorKey').value = key;
+      }
+    });
+    
+    $('saveTemplateEditor').addEventListener('click', ()=>{
+      const name = $('templateEditorName').value.trim();
+      const content = $('templateEditorContent').value;
+      const type = $('templateEditorType').value;
+      
+      if(!name){
+        alert('Veuillez entrer un nom pour le template');
+        return;
+      }
+      
+      let key = currentEditingTemplateKey;
+      
+      if(!key){
+        key = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+        let counter = 1;
+        while(templates[key]){
+          key = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') + '_' + counter;
+          counter++;
+        }
+      }
+      
+      templates[key] = {
+        name: name,
+        type: type || null,
+        content: content
+      };
+      
+      localStorage.setItem('customTemplates', JSON.stringify(templates));
+      
+      $('templateEditorModal').style.display = 'none';
+      $('editTemplatesModal').style.display = 'block';
+      
+      renderTemplateList();
+      renderTemplateRadios();
+      updatePreview();
+      updatePublisherTemplateInfo();
+      checkPublishAvailability();
+    });
+    
+    // Export/Import Templates
+    $('exportTemplates').addEventListener('click', ()=>{
+      const json = JSON.stringify(templates, null, 2);
+      navigator.clipboard.writeText(json).then(()=>{
+        alert('Templates exportés dans le presse-papier !');
+      }).catch(()=>{
+        const blob = new Blob([json], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'templates.json';
+        a.click();
       });
     });
+    
+    $('importTemplates').addEventListener('click', ()=>{
+      $('importTemplatesText').value = '';
+      $('importTemplatesModal').style.display = 'block';
+    });
+    
+    $('closeImportTemplates').addEventListener('click', ()=>{
+      $('importTemplatesModal').style.display = 'none';
+    });
+    
+    $('cancelImportTemplates').addEventListener('click', ()=>{
+      $('importTemplatesModal').style.display = 'none';
+    });
+    
+    $('confirmImportTemplates').addEventListener('click', ()=>{
+      const json = $('importTemplatesText').value.trim();
+      if(!json){
+        alert('Veuillez coller le JSON des templates');
+        return;
+      }
+      
+      try{
+        const imported = JSON.parse(json);
+        
+        if(confirm('Voulez-vous fusionner avec les templates existants ?\n(Annuler = remplacer tous les templates)')){
+          Object.assign(templates, imported);
+        } else {
+          templates = imported;
+        }
+        
+        localStorage.setItem('customTemplates', JSON.stringify(templates));
+        
+        $('importTemplatesModal').style.display = 'none';
+        renderTemplateRadios();
+        updatePreview();
+        updatePublisherTemplateInfo();
+        checkPublishAvailability();
+        alert('Templates importés !');
+      }catch(e){
+        alert('Erreur : JSON invalide');
+      }
+    });
+    
+    // Global Config
+    $('exportConfig').addEventListener('click', exportGlobalConfig);
+    
+    $('importConfig').addEventListener('click', ()=>{
+      $('importConfigText').value = '';
+      $('importConfigModal').style.display = 'block';
+    });
+    
+    $('closeImportConfig').addEventListener('click', ()=>{
+      $('importConfigModal').style.display = 'none';
+    });
+    
+    $('cancelImportConfig').addEventListener('click', ()=>{
+      $('importConfigModal').style.display = 'none';
+    });
+    
+    $('confirmImportConfig').addEventListener('click', ()=>{
+      const json = $('importConfigText').value.trim();
+      if(!json){
+        alert('Veuillez coller le JSON de configuration');
+        return;
+      }
+      
+      if(confirm('⚠️ Cela va remplacer TOUTE votre configuration actuelle. Continuer ?')){
+        importGlobalConfig(json);
+      }
+    });
+    
+    // Manage Tags
+    $('manageTagsBtn').addEventListener('click', ()=>{
+      renderNewTagTemplateSelect();
+      renderSavedTagsList();
+      $('manageTagsModal').style.display = 'block';
+    });
+    
+    $('closeManageTags').addEventListener('click', ()=>{
+      $('manageTagsModal').style.display = 'none';
+    });
+    
+    $('addNewTag').addEventListener('click', ()=>{
+      const name = $('newTagName').value.trim();
+      const id = $('newTagId').value.trim();
+      const templateKey = $('newTagTemplate').value;
 
-    // Delete
-    row.querySelector('[data-action="del"]').addEventListener('click', ()=> deleteVar(v.id));
+      if(!name){
+        alert('Veuillez entrer un nom de tag');
+        return;
+      }
+      if(!id){
+        alert('Veuillez entrer l’ID Discord du tag');
+        return;
+      }
+      if(!templateKey){
+        alert('Veuillez sélectionner un template');
+        return;
+      }
 
-    // Template checkboxes
-    const tplBox = row.querySelector('[data-templates]');
-    templateKeys.forEach(tk => {
-      const tpl = state.templates[tk];
-      const checked = (tpl.varsAllowed || []).includes(v.id);
-      const label = document.createElement('label');
-      label.className = 'check';
-      label.style.display = 'inline-flex';
-      label.style.alignItems = 'center';
-      label.style.gap = '6px';
-      label.innerHTML = `<input type="checkbox" ${checked ? 'checked' : ''}> <span>${escapeHtml(tpl?.name || tk)}</span>`;
-      const cb = label.querySelector('input');
-      cb.addEventListener('change', ()=> setVarAllowedOnTemplate(v.id, tk, cb.checked));
-      tplBox.appendChild(label);
+      const exists = savedTags.some(t => (t.id || '').trim() === id || (t.name || '').trim().toLowerCase() === name.toLowerCase());
+      if(exists){
+        alert('Ce tag existe déjà (même nom ou même ID)');
+        return;
+      }
+
+      savedTags.push({ name, id, template: templateKey });
+      persistSavedTags();
+      renderSavedTagsList();
+
+      $('newTagName').value = '';
+      $('newTagId').value = '';
+      if($('newTagTemplate')) $('newTagTemplate').value = currentTemplate || templateKey;
     });
 
-    host.appendChild(row);
-  });
-}
+    // Publisher functions
+    function loadPublisherSettings(){
+      try{
+        const savedUrl = localStorage.getItem('publisherApiUrl');
+        const savedKey = localStorage.getItem('publisherApiKey');
+        if(savedUrl && savedUrl.trim()) $('publisherApiUrl').value = savedUrl.trim();
+        if(savedKey && savedKey.trim()) $('publisherApiKey').value = savedKey;
+      }catch(e){}
+    }
 
+    function savePublisherSettings(){
+      try{
+        localStorage.setItem('publisherApiUrl', $('publisherApiUrl').value.trim());
+        localStorage.setItem('publisherApiKey', $('publisherApiKey').value);
+      }catch(e){}
+    }
 
-// Translators modal
-function renderTranslatorManager(){
-  const root = $('translatorManagerList');
-  root.innerHTML = '';
-  if(state.translators.length === 0){
-    root.innerHTML = '<div class="muted">Aucun traducteur sauvegardé.</div>';
-    return;
-  }
-  state.translators.forEach((name, idx)=>{
-    const row = document.createElement('div');
-    row.className = 'list-row compact';
-    row.innerHTML = `
-      <input type="text" value="${escapeHtml(name)}">
-      <button class="secondary">⤵️ Utiliser</button>
-      <button class="danger">🗑️</button>
-    `;
-    const input = row.querySelector('input');
-    const useBtn = row.querySelector('button.secondary');
-    const del = row.querySelector('button.danger');
+    function clearPublisherKey(){
+      if(!confirm('Effacer la clé API enregistrée ?')) return;
+      try{
+        localStorage.removeItem('publisherApiKey');
+        $('publisherApiKey').value = '';
+      }catch(e){}
+    }
 
-    input.addEventListener('input', ()=>{ state.translators[idx] = input.value; });
+    function mapTemplateForPublisher(){
+      const template = templates[currentTemplate];
+      return template ? template.type : null;
+    }
 
-    useBtn.addEventListener('click', ()=>{
-      const val = input.value.trim();
-      if(!val) return;
-      // Fill best-effort variables
-      const v1 = state.vars.find(v => (v.key||'') === 'traductor');
-      const v2 = state.vars.find(v => (v.key||'') === 'MY_NAME');
-      if(v1) v1.value = val;
-      else if(v2) v2.value = val;
-      saveState();
-      renderVars();
-      updatePreview();
-      closeModal('modalTranslators');
+    function guessDefaultTitle(){
+      const override = $('publisherTitle').value.trim();
+      if(override) return override;
+      const nameGame = $('var_Name_game') ? $('var_Name_game').value.trim() : '';
+      const nameGame2 = $('var_NAME_GAME') ? $('var_NAME_GAME').value.trim() : '';
+      return nameGame || nameGame2 || 'Nouvelle publication';
+    }
+
+    async function publishCurrentToDiscord(){
+      const statusEl = $('publisherStatus');
+      statusEl.textContent = '';
+
+      const apiUrl = $('publisherApiUrl').value.trim();
+      const apiKey = $('publisherApiKey').value;
+      const template = mapTemplateForPublisher();
+
+      if(!apiUrl){
+        statusEl.textContent = "❌ Renseigne l'URL de l'API Publisher.";
+        return;
+      }
+      if(!apiKey || !apiKey.trim()){
+        statusEl.textContent = "❌ Renseigne la clé API (X-API-KEY).";
+        return;
+      }
+      if(!template){
+        statusEl.textContent = "❌ Le template actuel n'est pas publiable automatiquement.";
+        return;
+      }
+
+      const title = guessDefaultTitle();
+      const content = $('preview').textContent;
+      const tags = currentTags.map(t => (t && t.id ? t.id : '')).filter(Boolean).join(', ');
+      
+      const mainImage = uploadedImages.find(img => img.isMain);
+      
+      const fd = new FormData();
+      fd.append('title', title);
+      fd.append('content', content);
+      fd.append('tags', tags);
+      fd.append('template', template);
+      if(mainImage) fd.append('image', mainImage.file);
+
+      const btn = $('publishToDiscord');
+      const oldText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '⏳ Publication...';
+
+      try{
+        const headers = {'X-API-KEY': apiKey};
+
+        const res = await fetch(apiUrl, {method:'POST', headers, body: fd});
+        const data = await res.json().catch(()=>null);
+
+        if(!res.ok || !data || !data.ok){
+          const details = data && (data.error || (data.details && JSON.stringify(data.details))) ? (data.error || JSON.stringify(data.details)) : 'Erreur inconnue';
+          statusEl.textContent = '❌ Échec : ' + details;
+          return;
+        }
+
+        const url = data.thread_url || '';
+        statusEl.innerHTML = url 
+          ? `✅ Post créé : <a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`
+          : '✅ Post créé.';
+
+      }catch(e){
+        statusEl.textContent = '❌ Erreur réseau : ' + (e && e.message ? e.message : e);
+      }finally{
+        btn.disabled = false;
+        btn.textContent = oldText;
+      }
+    }
+
+    $('savePublisherSettings').addEventListener('click', ()=>{
+      savePublisherSettings();
+      $('savePublisherSettings').textContent = '✅ Sauvegardé !';
+      $('savePublisherSettings').classList.add('success');
+      setTimeout(()=>{
+        $('savePublisherSettings').textContent = '💾 Sauvegarder API/clé';
+        $('savePublisherSettings').classList.remove('success');
+      },1500);
     });
 
-    del.addEventListener('click', ()=>{
-      if(!confirm('Supprimer ce traducteur ?')) return;
-      state.translators.splice(idx,1);
-      renderTranslatorManager();
+    $('clearPublisherKey').addEventListener('click', clearPublisherKey);
+    $('publishToDiscord').addEventListener('click', ()=>{
+      savePublisherSettings();
+      publishCurrentToDiscord();
     });
-
-    root.appendChild(row);
-  });
-}
-
-function addTranslator(){
-  state.translators.push('Nouveau traducteur');
-  renderTranslatorManager();
-}
-
-// Tags modal
-function renderTagManager(){
-  const root = $('tagManagerList');
-  root.innerHTML = '';
-  if(state.tags.length === 0){
-    root.innerHTML = '<div class="muted">Aucun tag sauvegardé.</div>';
-  }
-  state.tags.forEach((tag, idx)=>{
-    const row = document.createElement('div');
-    row.className = 'list-row tags';
-    row.innerHTML = `
-      <input type="text" placeholder="Nom" value="${escapeHtml(tag.name || '')}">
-      <select title="scope">
-        <option value="my" ${String(tag.scope||'')==='my'?'selected':''}>my</option>
-        <option value="partner" ${String(tag.scope||'')==='partner'?'selected':''}>partner</option>
-      </select>
-      <input type="text" placeholder="tagId" value="${escapeHtml(tag.tagId || '')}">
-      <button class="danger" title="Supprimer">🗑️</button>
-    `;
-    const nameI = row.querySelectorAll('input')[0];
-    const scopeS = row.querySelector('select');
-    const tagI = row.querySelectorAll('input')[1];
-    const del = row.querySelector('button.danger');
-
-    nameI.addEventListener('input', ()=>{ state.tags[idx].name = nameI.value; });
-    scopeS.addEventListener('change', ()=>{ state.tags[idx].scope = forumI.value; });
-    tagI.addEventListener('input', ()=>{ state.tags[idx].tagId = tagI.value; });
-
-    del.addEventListener('click', ()=>{
-      if(!confirm('Supprimer ce tag ?')) return;
-      state.tags.splice(idx,1);
-      renderTagManager();
-    });
-
-    root.appendChild(row);
-  });
-}
-
-function addNewTag(){
-  state.tags.push({ id: uid('t'), name:'Nouveau Tag', scope: currentTagScope() || 'my', tagId:'' });
-  renderTagManager();
-}
-
-// --- EVENTS ---
-$('copyPreview').addEventListener('click', async ()=>{
-  try{
-    await navigator.clipboard.writeText($('preview').textContent);
-    $('copyPreview').textContent = '✅ Copié !';
-    setTimeout(()=> $('copyPreview').textContent = '📋 Copier le message', 1100);
-  }catch(e){
-    alert('Erreur copie.');
-  }
-});
-
-$('publisherImage').addEventListener('change', (e)=>{
-  const files = Array.from(e.target.files || []);
-  files.forEach(file=>{
-    if(!file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = (ev)=>{
-      state.selectedImages.push({ file, preview: ev.target.result });
-      if(state.selectedImages.length === 1) state.mainImageIdx = 0;
-      renderImageGallery();
-    };
-    reader.readAsDataURL(file);
-  });
-  // reset input (allow selecting same file again)
-  e.target.value = '';
-});
-
-
-$('savePublisherSettings').addEventListener('click', ()=>{
-  saveApiSettings();
-  $('savePublisherSettings').textContent = '✅ Sauvegardé !';
-  setTimeout(()=> $('savePublisherSettings').textContent = '💾 Sauvegarder API', 1200);
-});
-
-$('clearPublisherKey').addEventListener('click', clearApiKey);
-
-$('publishToDiscord').addEventListener('click', ()=>{
-  saveApiSettings();
-  publishToDiscord();
-});
-
-$('clearActiveTags').addEventListener('click', ()=>{
-  state.activeTagIds = [];
-  saveState();
-  renderTagsForForum();
-});
-
-// Global import/export
-$('exportGlobal').addEventListener('click', exportGlobalConfig);
-$('importGlobal').addEventListener('click', ()=> $('globalFileSelector').click());
-$('globalFileSelector').addEventListener('change', (e)=>{
-  const file = e.target.files && e.target.files[0];
-  if(!file) return;
-  importGlobalConfig(file);
-  e.target.value = '';
-});
-$('resetLocal').addEventListener('click', resetLocal);
-
-// Open modals
-$('openTemplateManager').addEventListener('click', ()=>{
-  renderTemplateManager();
-  openModal('modalTemplates');
-});
-$('addNewTemplateBtn').addEventListener('click', addNewTemplate);
-$('saveTemplatesBtn').addEventListener('click', ()=>{
-  saveState();
-  renderTemplateRadios();
-  updateDiscordUi();
-  updatePreview();
-  closeModal('modalTemplates');
-});
-
-$('duplicateTpl').addEventListener('click', ()=>{
-  const tpl = currentTemplate();
-  if(!tpl) return;
-  const base = (tpl.name || 'template').toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
-  let key = base || 'template';
-  let i = 1;
-  while(state.templates[key]){ key = (base || 'template') + '_' + i; i++; }
-  state.templates[key] = { name: (tpl.name || 'Template') + ' (copie)', type: tpl.type || 'other', content: tpl.content || '' };
-  state.currentTemplateKey = key;
-  saveState();
-  renderTemplateRadios();
-  updateDiscordUi();
-  updatePreview();
-});
-
-$('openVarManager').addEventListener('click', ()=>{
-  // Build template checklist for "add variable"
-  const host = $('newVarTemplates');
-  host.innerHTML = '';
-  Object.keys(state.templates || {}).forEach(tk => {
-    const tpl = state.templates[tk];
-    const label = document.createElement('label');
-    label.className = 'check';
-    label.style.display = 'inline-flex';
-    label.style.alignItems = 'center';
-    label.style.gap = '6px';
-    label.innerHTML = `<input type="checkbox" data-template="${escapeHtml(tk)}"> <span>${escapeHtml(tpl?.name || tk)}</span>`;
-    host.appendChild(label);
-  });
-
-  $('newVarKey').value = '';
-  $('newVarLabel').value = '';
-  renderVarManager();
-  openModal('modalVars');
-});
-$('addVarConfirm').addEventListener('click', addVar);
-
-$('openTranslatorManager').addEventListener('click', ()=>{
-  renderTranslatorManager();
-  openModal('modalTranslators');
-});
-$('addTranslatorBtn').addEventListener('click', addTranslator);
-$('saveTranslatorsBtn').addEventListener('click', ()=>{
-  // sanitize
-  state.translators = state.translators.map(s => String(s||'').trim()).filter(Boolean);
-  saveState();
-  closeModal('modalTranslators');
-});
-
-$('openTagManager').addEventListener('click', ()=>{
-  renderTagManager();
-  openModal('modalTags');
-});
-$('addNewTagBtn').addEventListener('click', addNewTag);
-$('saveTagsBtn').addEventListener('click', ()=>{
-  // sanitize tags
-  state.tags = state.tags
-    .map(t => ({ name:String(t.name||'').trim(), scope:String(t.scope||'my').trim(), tagId:String(t.tagId||'').trim() }))
-    .filter(t => t.name && t.scope && t.tagId);
-  saveState();
-  // keep only allowed active tags
-  const allowed = new Set(tagsForScope(currentTagScope()).map(t => String(t.tagId||'').trim()).filter(Boolean));
-  state.activeTagIds = state.activeTagIds.filter(id => allowed.has(String(id).trim()));
-  saveState();
-  renderTagsForForum();
-  closeModal('modalTags');
-});
-
-// Close modals on outside click
-['modalTemplates','modalVars','modalTranslators','modalTags'].forEach(id=>{
-  $(id).addEventListener('click', (e)=>{
-    if(e.target === $(id)) closeModal(id);
-  });
-});
-
-// Kickoff
-init();
-</script>
+    
+    // Initialize
+    renderTemplateRadios();
+    renderVariablesGrid();
+    updatePreview();
+    updatePublisherTemplateInfo();
+    checkPublishAvailability();
+    loadPublisherSettings();
+    updatePublisherTagSelect();
+  </script>
 </body>
 </html>
