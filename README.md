@@ -1,282 +1,535 @@
-# Bot Discord - Annonces de Traductions
+# 🇫🇷 Système de Gestion de Traductions Discord
 
-Bot Discord qui surveille des salons de type **Forum** et envoie automatiquement des notifications dans des canaux dédiés.
+Système complet pour gérer et publier automatiquement des traductions de jeux sur Discord. Comprend 3 bots Discord indépendants et une interface web de génération de publications.
 
-## 🚀 Deux fonctionnalités distinctes
+## 📋 Table des matières
 
-### 1️⃣ Discord Principal : Annonces de traductions complètes
-**Objectif :** Annoncer les nouvelles traductions et mises à jour avec tous les détails
+- [Vue d'ensemble](#vue-densemble)
+- [Architecture](#architecture)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Utilisation](#utilisation)
+- [Déploiement](#déploiement)
+- [Maintenance](#maintenance)
 
-**Fonctionnement :**
-- Détecte les nouveaux threads dans le forum avec tags
-- Détecte les modifications du contenu
-- Envoie une annonce complète avec :
-  - Titre du jeu (cliquable)
-  - Version du jeu et de la traduction
-  - État (Terminé, En cours)
-  - Image du jeu
-- Distinction "Nouvelle traduction" vs "Mise à jour"
-- Anti-spam : supprime les doublons récents
+---
 
-**Exemple de notification :**
+## 🎯 Vue d'ensemble
+
+Le projet se compose de **4 composants principaux** :
+
+### 1. **Bot Discord Serveur 1** (`bot_discord_server1.py`)
+- 🎮 **Fonction** : Annonces complètes de traductions sur le serveur principal
+- 📢 **Surveille** : Forums de traductions (personnelles + partenaires)
+- ✅ **Actions** : Détecte les nouveaux threads, modifications de tags et contenu, puis publie des annonces formatées
+
+### 2. **Bot Discord Serveur 2** (`bot_discord_server2.py`)
+- 📅 **Fonction** : Rappels de publication F95fr
+- 🔔 **Surveille** : Forums semi-automatiques et automatiques
+- ⏰ **Actions** : Envoie des notifications de rappel avec timestamp pour les threads marqués "MAJ"
+
+### 3. **API Publisher** (`publisher_api.py`)
+- 🚀 **Fonction** : API REST pour créer des posts de forum Discord
+- 🔌 **Endpoint** : `/api/forum-post` (POST)
+- 🖼️ **Support** : Titre, contenu markdown, tags, images
+
+### 4. **Interface Web** (`Publication_template_discord.html`)
+- 🎨 **Fonction** : Générateur de publications avec templates personnalisables
+- 💾 **Stockage** : Local (localStorage) - gestion de templates, tags, variables
+- 📤 **Publication** : Directe sur Discord via l'API Publisher
+
+---
+
+## 🏗️ Architecture
+
 ```
-🎮 Publication d'une nouvelle traduction
-
-Nom du jeu : [Step Bi Step](lien)
-Version du jeu : v1.0 SE
-Version de la traduction : v1.0 SE
-État : ✅ Terminé
-
-[Image du jeu]
+📦 Projet
+├── 🤖 bot_discord_server1.py    # Bot annonces serveur principal
+├── 🤖 bot_discord_server2.py    # Bot rappels F95fr
+├── 🌐 publisher_api.py          # API création de posts
+├── 🎨 Publication_template_discord.html  # Interface web
+├── 📄 requirements.txt          # Dépendances Python
+├── 🔐 .env                      # Variables d'environnement
+└── 📖 README.md                 # Ce fichier
 ```
 
-### 2️⃣ Discord F95fr : Rappels de publication
-**Objectif :** Notifier qu'une traduction doit être ajoutée sur F95fr dans 14 jours
+### Flux de données
 
-**Fonctionnement :**
-- Surveille 2 forums (Traduction Semi-Auto et Traduction Auto)
-- Envoie une notification lors de la création d'un thread
-- **Envoie une notification lors de la modification du premier post**
-- Format simple avec timestamp Discord dynamique
-- Le compte à rebours se met à jour automatiquement
-- **Anti-spam :** Supprime l'ancienne notification lors d'une modification
-
-**Exemple de notification :**
 ```
-Pseudo : A7up Red
-Traduction Semi-Auto :
-King's Revolt v0.1.1 dans 14 jours
+[Interface Web] 
+    ↓ (HTTP POST avec image)
+[API Publisher] 
+    ↓ (Discord API)
+[Serveur Discord 1]
+    ↓ (Thread créé avec tags)
+[Bot Serveur 1] 
+    ↓ (Détection)
+[Canal Annonces]
 ```
 
-Le timestamp Discord affiche automatiquement le temps restant : "dans 14 jours" → "dans 7 jours" → "dans 1 jour" → "il y a 1 jour"
+---
 
-**Note :** Si le premier post est modifié, l'ancienne notification est supprimée et une nouvelle est envoyée (évite les doublons).
+## 🛠️ Installation
 
-## 📦 Installation locale
+### Prérequis
 
-1. Clone le repo
-2. Installe les dépendances :
+- Python 3.10+
+- Compte Discord avec accès développeur
+- Tokens de bot Discord (3 bots séparés recommandés)
+- Serveurs Discord configurés avec forums
+
+### Étapes
+
+1. **Cloner le projet**
+```bash
+git clone <votre-repo>
+cd <nom-projet>
+```
+
+2. **Installer les dépendances**
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Crée un fichier `.env` à la racine du projet :
-```env
-# Token du bot Discord
-DISCORD_TOKEN=ton_token_discord
-
-# Discord Principal : Annonces complètes
-FORUM_CHANNEL_ID=id_du_forum_traductions
-ANNOUNCE_CHANNEL_ID=id_salon_annonces
-
-# Discord F95fr : Rappels de publication (optionnel)
-FORUM_SEMI_AUTO_ID=id_forum_semi_auto
-FORUM_AUTO_ID=id_forum_auto
-NOTIFICATION_CHANNEL_F95_ID=id_salon_rappels
-DAYS_BEFORE_PUBLICATION=14
-```
-
-4. Lance le bot :
+3. **Configurer les variables d'environnement**
 ```bash
-python bot_discord.py
+cp .env.example .env
+# Éditer .env avec vos valeurs
 ```
 
-## 🌐 Déploiement sur Railway.app
+4. **Tester les composants**
+```bash
+# Test Bot Serveur 1
+python bot_discord_server1.py
 
-### 💰 Coûts Railway
-Railway offre un plan gratuit avec :
-- **Essai gratuit** : 30 jours avec **5$ de crédits**
-- **Après l'essai** : **1$ par mois** de crédits inclus
-- Limites : jusqu'à 0.5 GB RAM, 1 vCPU par service, 0.5 GB de stockage
+# Test Bot Serveur 2
+python bot_discord_server2.py
 
-Ce bot consomme très peu de ressources, le plan gratuit est donc largement suffisant ! 🎉
+# Test API Publisher
+python publisher_api.py
+```
 
-### Étape 1 : Préparer ton repo GitHub
-1. Crée un nouveau repo GitHub (ou utilise un repo existant)
-2. Upload tous les fichiers de ce projet **SAUF le fichier `.env`**
-   - ⚠️ **IMPORTANT** : Ne jamais commit le fichier `.env` (il contient ton token Discord secret)
-   - Les fichiers nécessaires : `bot_discord.py`, `requirements.txt`, `Procfile`, `README.md`
-
-### Étape 2 : Configurer Railway
-1. Va sur [railway.app](https://railway.app) et connecte-toi avec GitHub
-2. Clique sur "New Project" → "Deploy from GitHub repo"
-3. Sélectionne ton repo GitHub
-4. Dans l'onglet "Variables", ajoute les variables d'environnement :
-
-**Obligatoires (Discord Principal) :**
-- `DISCORD_TOKEN` = ton token Discord
-- `FORUM_CHANNEL_ID` = ID du forum à surveiller
-- `ANNOUNCE_CHANNEL_ID` = ID du salon d'annonces
-
-**Optionnelles (Discord F95fr) :**
-- `FORUM_SEMI_AUTO_ID` = 1330273160456568955
-- `FORUM_AUTO_ID` = 1331302157844221984
-- `NOTIFICATION_CHANNEL_F95_ID` = 1376218427890339861
-- `DAYS_BEFORE_PUBLICATION` = 14
-
-5. Railway va automatiquement détecter le `Procfile` et déployer ton bot ! 🚀
-
-### Étape 3 : Vérifier que ça marche
-- Va dans l'onglet "Logs" de ton projet Railway
-- Tu devrais voir : "Bot prêt : [nom de ton bot]"
-- Le bot devrait maintenant surveiller le forum et envoyer des annonces automatiquement
+---
 
 ## ⚙️ Configuration
 
-### Variables d'environnement
+### 📋 Fichier `.env`
 
-| Variable | Obligatoire | Description |
-|----------|-------------|-------------|
-| `DISCORD_TOKEN` | ✅ Oui | Token du bot Discord |
-| `FORUM_CHANNEL_ID` | ✅ Oui | Forum Discord Principal (annonces complètes) |
-| `ANNOUNCE_CHANNEL_ID` | ✅ Oui | Salon pour les annonces complètes |
-| `FORUM_SEMI_AUTO_ID` | ⚠️ Optionnel | Forum Semi-Auto (rappels F95fr) |
-| `FORUM_AUTO_ID` | ⚠️ Optionnel | Forum Auto (rappels F95fr) |
-| `NOTIFICATION_CHANNEL_F95_ID` | ⚠️ Optionnel | Salon pour les rappels F95fr |
-| `DAYS_BEFORE_PUBLICATION` | ⚠️ Optionnel | Délai avant publication (défaut: 14) |
+Créez un fichier `.env` à la racine du projet avec les variables suivantes :
 
-**Comment obtenir les IDs :**
-1. Active le "Mode développeur" dans Discord (Paramètres → Avancés → Mode développeur)
-2. Clic droit sur le salon/forum → "Copier l'identifiant"
+#### 🤖 Bot Serveur 1 - Annonces principales
+```env
+# Token du bot Discord principal
+DISCORD_TOKEN=votre_token_bot_1
 
-### Inviter le bot sur plusieurs Discord
+# ID du forum surveillé (traductions personnelles)
+FORUM_CHANNEL_ID=1234567890123456789
 
-**Important :** Le bot doit être présent sur les deux serveurs Discord pour fonctionner.
+# ID du canal où publier les annonces
+ANNOUNCE_CHANNEL_ID=1234567890123456789
 
-1. [Discord Developer Portal](https://discord.com/developers/applications) → Ton bot
-2. OAuth2 → URL Generator
-3. Cocher : `bot`
-4. Permissions : `View Channels`, `Send Messages`, `Read Message History`, `Manage Messages`
-5. Copier l'URL et inviter sur chaque serveur Discord
-
-## 📋 Format attendu des posts
-
-### Titre du thread
-Format recommandé : `Nom du jeu [Version] [Auteur]`
-Exemple : `Step Bi Step [v1.0 SE] [Dumb Koala Games]`
-
-### Contenu du post
-Le bot extrait automatiquement les informations des posts qui suivent ce format :
-
-```
-### :computer: Infos du Jeu & Liens de Téléchargement :
-* **Titre du jeu :** [Nom du jeu]
-* **Version du jeu :** [Version] (optionnel, sinon extrait du titre)
-* **Version traduite :** [Version de la traduction]
-* **Lien du jeu (VO) :** [Lien vers le jeu]
-* **Lien de la Traduction 1 :** [Lien]
-* **Lien de la Traduction 2 (Backup) :** [Lien]
+# ID du forum partenaires (optionnel)
+FORUM_PARTNER_ID=1234567890123456789
 ```
 
-Le bot génère alors une annonce avec :
-- Nom du jeu (titre du thread, cliquable vers le thread)
-- Version du jeu (extraite du titre ou du contenu)
-- Version de la traduction
-- État (basé sur les tags : Terminé, En cours)
-- Image du post (si présente)
+#### 🤖 Bot Serveur 2 - Rappels F95fr
+```env
+# Token du bot Discord F95fr
+DISCORD_TOKEN_F95=votre_token_bot_2
 
-### Déclenchement des annonces
+# ID du forum semi-automatique
+FORUM_SEMI_AUTO_ID=1234567890123456789
 
-Le bot envoie une annonce dans les cas suivants :
-- ✅ Lors de la création d'un nouveau thread **avec des tags**
-- ✅ Lors de l'**ajout** d'un tag (pas lors du retrait)
-- ✅ Lors de la modification du contenu du premier message du thread
+# ID du forum automatique
+FORUM_AUTO_ID=1234567890123456789
 
-**Important** : Le bot attend **5 secondes** après une modification avant d'envoyer l'annonce. Si vous faites plusieurs modifications rapidement, une seule annonce sera envoyée avec l'état final.
+# ID du canal de notifications
+NOTIFICATION_CHANNEL_F95_ID=1234567890123456789
 
-## 🚀 Déploiement rapide
+# Nombre de jours avant publication (défaut: 14)
+DAYS_BEFORE_PUBLICATION=14
+```
 
-### 1. Push le code
+#### 🌐 API Publisher - Création de posts
+```env
+# Token du bot Discord pour l'API
+DISCORD_PUBLISHER_TOKEN=votre_token_bot_3
+
+# Clé API pour sécuriser l'endpoint
+PUBLISHER_API_KEY=votre_cle_secrete_aleatoire
+
+# ID du forum "Mes traductions"
+PUBLISHER_FORUM_MY_ID=1234567890123456789
+
+# ID du forum "Partenaires"
+PUBLISHER_FORUM_PARTNER_ID=1234567890123456789
+
+# Port de l'API (défaut: 8080)
+PORT=8080
+
+# Origines CORS autorisées (* = toutes, ou liste séparée par virgules)
+PUBLISHER_ALLOWED_ORIGINS=*
+```
+
+### 🔍 Comment obtenir les IDs Discord ?
+
+1. Activez le **Mode Développeur** dans Discord :
+   - Paramètres → Avancés → Mode développeur
+
+2. Clic droit sur le canal/forum → **Copier l'identifiant**
+
+### 🤖 Créer des bots Discord
+
+1. Allez sur [Discord Developer Portal](https://discord.com/developers/applications)
+2. Créez 3 applications (une par bot recommandé)
+3. Pour chaque application :
+   - Onglet **Bot** → Créer un bot
+   - Copiez le **Token** (ne le partagez jamais !)
+   - Activez les **Intents** : `MESSAGE CONTENT`, `GUILDS`
+4. Onglet **OAuth2** → **URL Generator** :
+   - Scopes : `bot`
+   - Permissions : `Send Messages`, `Read Messages`, `Manage Threads`, `Attach Files`
+5. Utilisez l'URL générée pour inviter chaque bot sur son serveur
+
+---
+
+## 🚀 Utilisation
+
+### Démarrer les bots
+
+#### Option 1 : Manuellement (développement)
 ```bash
-git add .
-git commit -m "Configuration bot Discord"
-git push
+# Terminal 1 - Bot Serveur 1
+python bot_discord_server1.py
+
+# Terminal 2 - Bot Serveur 2
+python bot_discord_server2.py
+
+# Terminal 3 - API Publisher
+python publisher_api.py
 ```
 
-### 2. Variables Railway
-Sur Railway, ajouter les variables obligatoires + optionnelles si besoin.
+#### Option 2 : Avec screen (production Linux)
+```bash
+# Bot Serveur 1
+screen -dmS bot1 python bot_discord_server1.py
 
-### 3. Inviter le bot
-Inviter le bot sur les deux serveurs Discord (Principal + F95fr).
+# Bot Serveur 2
+screen -dmS bot2 python bot_discord_server2.py
 
-### 4. Tester
-- **Discord Principal :** Créer un thread avec tags → Annonce complète
-- **Discord F95fr :** Créer un thread → Notification simple avec compte à rebours
+# API Publisher
+screen -dmS api python publisher_api.py
 
-### 📝 Comment poster correctement une traduction
+# Vérifier les sessions
+screen -ls
 
-#### 1️⃣ **Créer le thread**
-- **Titre** : `Nom du jeu [Version] [Auteur]`
-  - Exemple : `Step Bi Step [v1.0 SE] [Dumb Koala Games]`
-
-#### 2️⃣ **Rédiger le contenu**
-Utilisez ce format dans le premier message :
-
-```
-### :computer: Infos du Jeu & Liens de Téléchargement :
-* **Titre du jeu :** Step Bi Step
-* **Version du jeu :** v1.0 SE (optionnel si déjà dans le titre)
-* **Version traduite :** v1.0 SE (la dernière version stable)
-* **Lien du jeu (VO) :** [Accès au jeu original](https://example.com)
-* **Lien de la Traduction 1 :** [LewdCorner](https://example.com)
-* **Lien de la Traduction 2 (Backup) :** [Proton Drive](https://example.com)
+# Se reconnecter à une session
+screen -r bot1
 ```
 
-#### 3️⃣ **Ajouter une image**
-Joignez une image du jeu (bannière, logo, etc.)
+#### Option 3 : Avec systemd (production Linux)
 
-#### 4️⃣ **Ajouter le tag "En cours"**
-Dès que vous ajoutez ce tag, le bot enverra une annonce après 5 secondes.
+Créez 3 fichiers service dans `/etc/systemd/system/` :
 
-#### 5️⃣ **Mettre à jour la traduction**
-- Modifiez le contenu (version traduite, liens, etc.)
-- Le bot détecte automatiquement et envoie une mise à jour après 5 secondes
+**bot1.service** :
+```ini
+[Unit]
+Description=Bot Discord Serveur 1
+After=network.target
 
-#### 6️⃣ **Marquer comme terminé**
-Quand la traduction est complète :
-1. Retirez le tag "En cours" (pas d'annonce)
-2. Ajoutez le tag "Terminé" (annonce envoyée après 5 secondes)
+[Service]
+Type=simple
+User=votre_user
+WorkingDirectory=/chemin/vers/projet
+ExecStart=/usr/bin/python3 bot_discord_server1.py
+Restart=always
+RestartSec=10
 
-**Astuce** : Vous pouvez faire toutes vos modifications (contenu + tags) en 5 secondes, et le bot n'enverra qu'une seule annonce avec l'état final ! 🎯
-
-### ⚙️ Logique des annonces
-
-| Situation | Tag avant | Tag après | Annonce ? |
-|-----------|-----------|-----------|-----------|
-| Nouveau thread | Aucun | En cours | ✅ Oui |
-| Modification contenu | En cours | En cours | ✅ Oui |
-| Retrait tag | En cours | Aucun | ❌ Non |
-| Ajout tag | Aucun | Terminé | ✅ Oui |
-| Changement tag | En cours | Terminé | ✅ Oui |
-| Modification contenu | Terminé | Terminé | ✅ Oui |
-
-## 🔒 Sécurité
-
-⚠️ **IMPORTANT** : Ne commit JAMAIS ton fichier `.env` ou ton token Discord !
-Le fichier `.gitignore` est configuré pour protéger tes secrets.
-
-## 📝 Structure du projet
-
-```
-Bot_Discord/
-├── bot_discord.py      # Code principal du bot
-├── requirements.txt    # Dépendances Python
-├── Procfile           # Configuration pour Railway
-├── .env               # Tes secrets (NE PAS COMMIT)
-├── .gitignore         # Fichiers à ignorer par Git
-└── README.md          # Ce fichier
+[Install]
+WantedBy=multi-user.target
 ```
 
-## 🐛 Dépannage
+Puis :
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable bot1 bot2 api
+sudo systemctl start bot1 bot2 api
+sudo systemctl status bot1
+```
 
-**Le bot ne démarre pas :**
-- Vérifier les 3 variables obligatoires sur Railway
-- Consulter les logs Railway
+### Utiliser l'interface web
 
-**Pas de notifications :**
-- Vérifier que le bot est invité sur les deux Discord
-- Vérifier les IDs des forums/salons (Mode développeur)
-- Vérifier les permissions du bot
+1. **Ouvrir** `Publication_template_discord.html` dans un navigateur
 
-**Token invalide :**
-- Régénérer le token sur Discord Developer Portal
+2. **Configuration initiale** :
+   - Cliquez sur "⚙️ Configuration Discord"
+   - Entrez l'URL de l'API : `http://votre-serveur:8080/api/forum-post`
+   - Entrez votre clé API (celle définie dans `.env`)
+   - Cliquez sur "💾 Sauvegarder API/clé"
+
+3. **Gérer les templates** :
+   - Cliquez sur "✏️ Gérer les templates"
+   - Modifiez ou créez de nouveaux templates
+   - Utilisez `[Name_game]`, `[Game_version]`, etc. comme variables
+
+4. **Gérer les tags** :
+   - Cliquez sur "🏷️ Gérer les tags"
+   - Ajoutez des tags avec leur nom et ID Discord
+   - Associez-les à un template
+
+5. **Créer une publication** :
+   - Sélectionnez un template
+   - Remplissez les champs
+   - Ajoutez des images (la première est principale)
+   - Sélectionnez des tags
+   - Prévisualisez avec "👁️ Aperçu"
+   - Publiez avec "🚀 Publier sur Discord"
+
+### Workflow complet
+
+1. **Publication via interface web** :
+   - L'utilisateur crée un post dans l'interface
+   - → Envoi vers l'API Publisher
+   - → Création du thread Discord avec tags et image
+   
+2. **Détection par Bot Serveur 1** :
+   - Le bot détecte le nouveau thread
+   - → Extrait les informations (titre, versions, traducteur, synopsis)
+   - → Publie une annonce formatée dans le canal dédié
+
+3. **Rappel F95fr (optionnel)** :
+   - Bot Serveur 2 détecte le tag "MAJ"
+   - → Envoie une notification avec timestamp
+   - → Rappel X jours avant publication
+
+---
+
+## 🌐 Déploiement
+
+### Railway.app (recommandé pour l'API)
+
+1. **Créer un compte** sur [Railway.app](https://railway.app)
+
+2. **Nouveau projet** → **Deploy from GitHub**
+
+3. **Ajouter les variables d'environnement** :
+   - Allez dans Variables
+   - Ajoutez toutes les variables du fichier `.env`
+
+4. **Configuration du service** :
+   - Start Command : `python publisher_api.py`
+   - Port : Railway attribue automatiquement `PORT`
+
+5. **Déployer** : Railway détecte automatiquement `requirements.txt`
+
+### Heroku
+
+1. **Installer Heroku CLI**
+```bash
+heroku login
+heroku create votre-app-publisher
+```
+
+2. **Configurer les variables**
+```bash
+heroku config:set DISCORD_PUBLISHER_TOKEN=xxx
+heroku config:set PUBLISHER_API_KEY=xxx
+# ... toutes les autres
+```
+
+3. **Créer un Procfile**
+```
+web: python publisher_api.py
+```
+
+4. **Déployer**
+```bash
+git push heroku main
+```
+
+### VPS (serveur dédié)
+
+Utilisez **systemd** (voir section Utilisation) ou **Docker** :
+
+**Dockerfile** :
+```dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+CMD ["python", "publisher_api.py"]
+```
+
+**docker-compose.yml** :
+```yaml
+version: '3.8'
+services:
+  bot1:
+    build: .
+    command: python bot_discord_server1.py
+    env_file: .env
+    restart: always
+
+  bot2:
+    build: .
+    command: python bot_discord_server2.py
+    env_file: .env
+    restart: always
+
+  api:
+    build: .
+    command: python publisher_api.py
+    env_file: .env
+    ports:
+      - "8080:8080"
+    restart: always
+```
+
+Lancer avec :
+```bash
+docker-compose up -d
+```
+
+---
+
+## 🔧 Maintenance
+
+### Logs et debugging
+
+#### Vérifier les logs
+```bash
+# Screen
+screen -r bot1
+# Ctrl+A puis D pour détacher
+
+# Systemd
+sudo journalctl -u bot1 -f
+
+# Docker
+docker-compose logs -f bot1
+```
+
+#### Messages de debug
+
+Les bots affichent des messages avec emojis :
+- ✅ Succès
+- ❌ Erreur
+- ⭐️ Information
+- 🔄 Mise à jour
+- 📅 Notification
+- 🗑️ Suppression
+
+### Problèmes courants
+
+#### Bot ne démarre pas
+```
+❌ DISCORD_TOKEN manquant
+```
+→ Vérifiez que `.env` contient bien le token
+
+#### Pas d'annonce publiée
+1. Vérifiez que le bot a les permissions sur le canal
+2. Vérifiez que `ANNOUNCE_CHANNEL_ID` est correct
+3. Regardez les logs : le bot détecte-t-il le thread ?
+
+#### API Publisher erreur 401
+→ Vérifiez que `X-API-KEY` dans l'interface web correspond à `PUBLISHER_API_KEY` dans `.env`
+
+#### Tags non appliqués
+→ Vérifiez que les IDs de tags dans l'interface web correspondent aux vrais IDs Discord (mode développeur)
+
+### Sauvegardes
+
+L'interface web stocke tout en **localStorage** du navigateur. Pour sauvegarder :
+
+1. Cliquez sur "📤 Exporter la configuration"
+2. Sauvegardez le JSON généré
+3. Pour restaurer : "📥 Importer une configuration"
+
+---
+
+## 📊 Fonctionnalités avancées
+
+### Variables personnalisées
+
+Ajoutez vos propres variables dans l'interface web :
+1. "➕ Ajouter une variable personnalisée"
+2. Définissez nom, label et type
+3. Utilisez `[nom_variable]` dans vos templates
+
+### Templates multiples
+
+Créez différents templates pour différents types de traductions :
+- Traductions personnelles
+- Traductions partenaires
+- Publications F95fr
+- Mises à jour rapides
+
+### Gestion des traducteurs
+
+Sauvegardez vos traducteurs fréquents :
+1. Remplissez le champ "Traducteur"
+2. Cliquez sur 💾
+3. Rechargez rapidement avec 📂
+
+### Instructions réutilisables
+
+Sauvegardez des instructions d'installation standards :
+1. Rédigez vos instructions
+2. Cliquez sur 💾 dans le champ Instructions
+3. Rechargez avec 📂
+
+---
+
+## 🤝 Contribution
+
+Les contributions sont bienvenues ! Pour contribuer :
+
+1. Forkez le projet
+2. Créez une branche (`git checkout -b feature/amelioration`)
+3. Committez vos changements (`git commit -am 'Ajout fonctionnalité'`)
+4. Pushez (`git push origin feature/amelioration`)
+5. Créez une Pull Request
+
+---
+
+## 📜 Licence
+
+Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+
+---
+
+## 🙏 Support
+
+Pour toute question ou problème :
+- Ouvrez une **Issue** sur GitHub
+- Consultez les **logs** des bots
+- Vérifiez la **configuration** dans `.env`
+
+---
+
+## 🔄 Mises à jour
+
+### v2.0 - Restructuration complète
+- ✅ Séparation en 3 fichiers Python distincts
+- ✅ Bot Serveur 1 : Annonces principales
+- ✅ Bot Serveur 2 : Rappels F95fr
+- ✅ API Publisher : Création de posts
+- ✅ Documentation complète
+
+### v1.0 - Version initiale
+- Bot Discord unifié
+- Interface web de génération
+- API Publisher basique
+
+---
+
+## 📞 Contact
+
+Pour toute question technique ou suggestion d'amélioration, n'hésitez pas à ouvrir une issue sur GitHub.
+
+**Bon courage avec vos traductions ! 🎮🇫🇷**
