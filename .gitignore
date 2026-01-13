@@ -8,6 +8,10 @@ daitenshi_bot_discord.py
 Procfile_daitenshi
 publisher_config.json
 
+# Python embarqué (téléchargé automatiquement)
+python-embed/
+*.zip
+
 # Tokens et clés API
 *_token.txt
 *_key.txt

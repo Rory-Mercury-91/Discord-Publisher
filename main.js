@@ -17,6 +17,23 @@ function checkPythonInstalled() {
   });
 }
 
+// Obtenir le chemin vers Python (système ou embarqué)
+function getPythonExecutable() {
+  const isDev = process.env.VITE_DEV_SERVER_URL != null;
+  const isStandalone = process.env.BUILD_STANDALONE === 'true' || fs.existsSync(path.join(process.resourcesPath, 'python-embed', 'python.exe'));
+  
+  if (isDev) {
+    return 'python'; // Python système en dev
+  }
+  
+  if (isStandalone) {
+    // Python embarqué en production standalone
+    return path.join(process.resourcesPath, 'python-embed', 'python.exe');
+  }
+  
+  return 'python'; // Python système par défaut
+}
+
 function startPythonBots() {
   // En production, les fichiers Python sont dans resources/python
   // En dev, ils sont dans le dossier python à la racine
@@ -33,9 +50,12 @@ function startPythonBots() {
 
   console.log('🤖 Démarrage des bots Discord...');
   
+  const pythonExe = getPythonExecutable();
+  const workDir = isDev ? __dirname : process.resourcesPath;
+  
   // Lancer le processus Python
-  pythonBotsProcess = spawn('python', [pythonScript], {
-    cwd: isDev ? __dirname : process.resourcesPath,
+  pythonBotsProcess = spawn(pythonExe, [pythonScript], {
+    cwd: workDir,
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -70,9 +90,12 @@ function startPythonApi() {
 
   console.log('🚀 Démarrage de l\'API Publisher...');
   
+  const pythonExe = getPythonExecutable();
+  const workDir = isDev ? __dirname : process.resourcesPath;
+  
   // Lancer le processus Python
-  pythonApiProcess = spawn('python', [pythonScript], {
-    cwd: isDev ? __dirname : process.resourcesPath,
+  pythonApiProcess = spawn(pythonExe, [pythonScript], {
+    cwd: workDir,
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -145,22 +168,32 @@ app.whenReady().then(async () => {
   const imagesDir = path.join(app.getPath('userData'), 'images');
   await fsp.mkdir(imagesDir, { recursive: true });
   
-  // Vérifier si Python est installé
-  const pythonInstalled = await checkPythonInstalled();
-  if (!pythonInstalled) {
-    console.error('❌ Python n\'est pas installé ou pas dans le PATH');
-    dialog.showErrorBox(
-      'Python requis',
-      'Python n\'est pas installé ou n\'est pas accessible.\n\n' +
-      'Veuillez installer Python 3.10+ depuis https://www.python.org/downloads/\n' +
-      'Et cochez "Add Python to PATH" pendant l\'installation.\n\n' +
-      'Puis installez les dépendances avec:\n' +
-      'pip install -r requirements.txt'
-    );
-  } else {
-    // Démarrer les services Python en arrière-plan
+  // Vérifier si c'est un build standalone (avec Python embarqué)
+  const isStandalone = fs.existsSync(path.join(process.resourcesPath, 'python-embed', 'python.exe'));
+  
+  if (isStandalone) {
+    console.log('🎯 Mode standalone détecté - Python embarqué inclus');
+    // Démarrer directement les services Python
     startPythonBots();
     startPythonApi();
+  } else {
+    // Vérifier si Python est installé sur le système
+    const pythonInstalled = await checkPythonInstalled();
+    if (!pythonInstalled) {
+      console.error('❌ Python n\'est pas installé ou pas dans le PATH');
+      dialog.showErrorBox(
+        'Python requis',
+        'Python n\'est pas installé ou n\'est pas accessible.\n\n' +
+        'Veuillez installer Python 3.10+ depuis https://www.python.org/downloads/\n' +
+        'Et cochez "Add Python to PATH" pendant l\'installation.\n\n' +
+        'Puis installez les dépendances avec:\n' +
+        'pip install -r requirements.txt'
+      );
+    } else {
+      // Démarrer les services Python en arrière-plan
+      startPythonBots();
+      startPythonApi();
+    }
   }
   
   createWindow();
