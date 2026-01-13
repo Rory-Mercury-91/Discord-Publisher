@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use std::fs;
 use tauri::{Manager, State, AppHandle};
 use serde::{Deserialize, Serialize};
+use base64::{Engine as _, engine::general_purpose};
 
 // État global des processus Python
 struct PythonProcesses {
@@ -20,18 +21,23 @@ struct PublishPayload {
     images: Vec<String>,
 }
 
-// Obtenir le chemin Python (externe au dossier python/)
+// Obtenir le chemin Python (externe au dossier python-portable/)
 fn get_python_path(app: &AppHandle) -> PathBuf {
     if cfg!(debug_assertions) {
-        // Dev: Python système
-        PathBuf::from("python")
+        // Dev: Python portable local (chemin absolu)
+        let workdir = std::env::current_dir()
+            .expect("Failed to get current dir")
+            .parent()
+            .expect("Failed to get parent")
+            .to_path_buf();
+        workdir.join("python-portable").join("python.exe")
     } else {
-        // Production: Python dans dossier python/ à côté de l'exe
+        // Production: Python portable à côté de l'exe
         app.path().resource_dir()
             .expect("Failed to get resource dir")
             .parent()
             .expect("Failed to get parent dir")
-            .join("python")
+            .join("python-portable")
             .join("python.exe")
     }
 }
@@ -39,11 +45,10 @@ fn get_python_path(app: &AppHandle) -> PathBuf {
 // Obtenir le dossier de travail Python
 fn get_python_workdir(app: &AppHandle) -> PathBuf {
     if cfg!(debug_assertions) {
-        // Dev: racine du projet
-        app.path().resource_dir()
-            .expect("Failed to get resource dir")
-            .parent()
-            .expect("Failed to get parent")
+        // Dev: racine du projet (D:\Bot_Discord)
+        // En dev, on est dans src-tauri/, donc on remonte d'un niveau
+        std::env::current_dir()
+            .expect("Failed to get current dir")
             .parent()
             .expect("Failed to get parent")
             .to_path_buf()
@@ -180,7 +185,7 @@ async fn read_image(app: AppHandle, image_path: String) -> Result<String, String
     let bytes = fs::read(&full_path)
         .map_err(|e| format!("Erreur lecture image: {}", e))?;
 
-    Ok(format!("data:image/png;base64,{}", base64::encode(&bytes)))
+    Ok(format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&bytes)))
 }
 
 // Commande: Supprimer une image
@@ -234,16 +239,20 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|event| {
-            if let tauri::WindowEvent::Destroyed = event.event() {
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
                 // Arrêter les processus Python à la fermeture
-                let state: State<PythonProcesses> = event.window().state();
+                let state: State<PythonProcesses> = window.state();
+                
+                // Kill bots process
                 if let Some(mut child) = state.bots.lock().unwrap().take() {
-                    let _ = child.kill();
-                }
+                    let _: Result<(), std::io::Error> = child.kill();
+                };
+                
+                // Kill API process
                 if let Some(mut child) = state.api.lock().unwrap().take() {
-                    let _ = child.kill();
-                }
+                    let _: Result<(), std::io::Error> = child.kill();
+                };
             }
         })
         .invoke_handler(tauri::generate_handler![

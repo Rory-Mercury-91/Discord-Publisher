@@ -8,11 +8,15 @@
     "start": "electron .",
     "start:dev": "cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
     "dev": "concurrently \"npm --prefix frontend run dev\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "dev:frontend": "npm --prefix frontend run dev",
     "build:frontend": "npm --prefix frontend run build",
     "build:win": "powershell -ExecutionPolicy Bypass -File ./build-windows.ps1",
     "build:standalone": "powershell -ExecutionPolicy Bypass -File ./build-standalone.ps1",
     "test": "npm --prefix frontend run type-check && npm --prefix frontend run build",
-    "pack": "npm run build:frontend && electron-builder"
+    "pack": "npm run build:frontend && electron-builder",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "devDependencies": {
     "@flydotio/dockerfile": "^0.7.10",
