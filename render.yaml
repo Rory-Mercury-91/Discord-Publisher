@@ -1,0 +1,67 @@
+# Configuration Render.com pour Discord Publisher
+# Documentation : https://render.com/docs/yaml-spec
+
+services:
+  # Service 1 : Bots Discord combinés (Background Worker)
+  - type: worker
+    name: discord-bots
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python python/main_bots.py
+    envVars:
+      # Bot 1 - Serveur 1 (Annonces)
+      - key: DISCORD_TOKEN
+        sync: false  # À configurer manuellement dans le dashboard Render
+      - key: FORUM_CHANNEL_ID
+        sync: false
+      - key: ANNOUNCE_CHANNEL_ID
+        sync: false
+      - key: FORUM_PARTNER_ID
+        sync: false
+      
+      # Bot 2 - Serveur 2 (Rappels F95)
+      - key: DISCORD_TOKEN_F95
+        sync: false
+      - key: FORUM_SEMI_AUTO_ID
+        sync: false
+      - key: FORUM_AUTO_ID
+        sync: false
+      - key: NOTIFICATION_CHANNEL_F95_ID
+        sync: false
+      - key: DAYS_BEFORE_PUBLICATION
+        value: "14"  # Valeur par défaut
+    
+    # Health check désactivé pour les workers
+    healthCheckPath: null
+    
+    # Redémarrage automatique en cas de crash
+    autoDeploy: true
+
+  # Service 2 : API Publisher (Web Service)
+  - type: web
+    name: publisher-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python python/publisher_api.py
+    envVars:
+      # API Configuration
+      - key: DISCORD_PUBLISHER_TOKEN
+        sync: false
+      - key: PUBLISHER_API_KEY
+        sync: false
+      - key: PUBLISHER_FORUM_MY_ID
+        sync: false
+      - key: PUBLISHER_FORUM_PARTNER_ID
+        sync: false
+      - key: PUBLISHER_ALLOWED_ORIGINS
+        value: "*"  # À restreindre en production
+      - key: PORT
+        value: "8080"
+    
+    # Health check pour l'API
+    healthCheckPath: /health
+    
+    # Redémarrage automatique
+    autoDeploy: true

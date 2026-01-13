@@ -88,7 +88,8 @@ Application Electron moderne pour créer et gérer des publications de traductio
 ├── 📁 python/                       # Scripts Python (Bots Discord)
 │   ├── bot_discord_server1.py      # Bot annonces serveur principal
 │   ├── bot_discord_server2.py      # Bot rappels F95fr
-│   └── publisher_api.py            # API REST pour création/modification de posts
+│   ├── publisher_api.py            # API REST pour création/modification de posts
+│   └── main_bots.py                # Launcher combiné pour les 2 bots
 │
 ├── 📁 assets/                       # Ressources (icônes)
 │   └── icon.ico                    # Icône de l'application
@@ -98,8 +99,7 @@ Application Electron moderne pour créer et gérer des publications de traductio
 ├── 📄 build-windows.ps1             # Script de build Windows
 ├── 📄 package.json                  # Configuration npm
 ├── 📄 requirements.txt              # Dépendances Python
-├── 🔐 .env                          # Variables d'environnement (Python)
-└── 📖 README.md                     # Ce fichier
+└── 📄 render.yaml                   # Configuration Render.com (hébergement)
 ```
 
 ### Flux de Publication
@@ -169,6 +169,20 @@ source venv/bin/activate  # Linux/Mac
 # Installer les dépendances
 pip install -r requirements.txt
 ```
+
+### 🌐 Hébergement des Bots (Recommandé)
+
+Pour un fonctionnement 24/7, il est recommandé d'héberger les bots sur un service cloud gratuit :
+
+**Solution recommandée : [Render.com](https://render.com)** (gratuit)
+- 2 services gratuits (750h/mois chacun)
+- Déploiement Git automatique
+- Support Python + WebSocket
+- Configuration via `render.yaml` incluse
+
+**Voir le guide complet** : `docs_perso/DEPLOIEMENT_RENDER.md` (disponible après clonage)
+
+**Alternative :** [Fly.io](https://fly.io) (3 machines gratuites)
 
 ---
 

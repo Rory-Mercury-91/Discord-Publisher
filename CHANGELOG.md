@@ -6,6 +6,96 @@ Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/)
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ---
+## [1.0.2] - 2026-01-13
+
+### ✨ Ajouté
+
+#### 🌐 Hébergement et Déploiement
+- **Configuration Render.com** : Fichier `render.yaml` pour déploiement automatique
+  - Service 1 : Background Worker pour les 2 bots Discord combinés (750h/mois gratuit)
+  - Service 2 : Web Service pour l'API Publisher (750h/mois gratuit)
+  - Variables d'environnement configurables via dashboard
+- **Launcher de bots combiné** : `python/main_bots.py`
+  - Lance `bot_discord_server1.py` et `bot_discord_server2.py` en parallèle
+  - Gestion d'erreurs optimisée
+  - Optimisé pour hébergement cloud (Render.com / Fly.io)
+- **Documentation d'hébergement** : Guide complet de déploiement sur Render.com
+  - Configuration des services
+  - Variables d'environnement
+  - Vérification et debugging
+  - Astuces pour optimiser le plan gratuit
+
+### 🔄 Modifié
+
+#### 🔒 Sécurité et Gestion des Fichiers
+- **`.gitignore` amélioré** :
+  - Exclusion renforcée des fichiers sensibles (`.env.local`, `.env.*.local`, `*.env`)
+  - Exclusion des tokens (`*_token.txt`, `*_key.txt`)
+  - Exclusion des fichiers d'exemple (`*.example`)
+- **Organisation de la documentation** :
+  - Fichiers de documentation déplacés dans `docs_perso/` (non versionné)
+  - `.env.example` → `docs_perso/.env.example`
+  - Guide de déploiement disponible localement uniquement
+
+#### 📖 Documentation
+- **README.md mis à jour** :
+  - Section hébergement des bots avec recommandations
+  - Architecture mise à jour avec `main_bots.py` et `render.yaml`
+  - Lien vers le guide de déploiement Render.com
+
+### 📦 Fichiers ajoutés
+
+- `python/main_bots.py` - Launcher combiné pour les 2 bots Discord
+- `render.yaml` - Configuration de déploiement Render.com
+- `docs_perso/.env.example` - Template des variables d'environnement (non versionné)
+- `docs_perso/DEPLOIEMENT_RENDER.md` - Guide complet de déploiement (non versionné)
+
+---
+## [1.0.2] - 2026-01-13
+
+### ✨ Ajouté
+
+#### 🌐 Hébergement et Déploiement
+- **Configuration Render.com** : Fichier `render.yaml` pour déploiement automatique
+  - Service 1 : Background Worker pour les 2 bots Discord combinés (750h/mois gratuit)
+  - Service 2 : Web Service pour l'API Publisher (750h/mois gratuit)
+  - Variables d'environnement configurables via dashboard
+- **Launcher de bots combiné** : `python/main_bots.py`
+  - Lance `bot_discord_server1.py` et `bot_discord_server2.py` en parallèle
+  - Gestion d'erreurs optimisée
+  - Optimisé pour hébergement cloud (Render.com / Fly.io)
+- **Documentation d'hébergement** : Guide complet de déploiement sur Render.com
+  - Configuration des services
+  - Variables d'environnement
+  - Vérification et debugging
+  - Astuces pour optimiser le plan gratuit
+
+### 🔄 Modifié
+
+#### 🔒 Sécurité et Gestion des Fichiers
+- **`.gitignore` amélioré** :
+  - Exclusion renforcée des fichiers sensibles (`.env.local`, `.env.*.local`, `*.env`)
+  - Exclusion des tokens (`*_token.txt`, `*_key.txt`)
+  - Exclusion des fichiers d'exemple (`*.example`)
+- **Organisation de la documentation** :
+  - Fichiers de documentation déplacés dans `docs_perso/` (non versionné)
+  - `.env.example` → `docs_perso/.env.example`
+  - Guide de déploiement disponible localement uniquement
+
+#### 📖 Documentation
+- **README.md mis à jour** :
+  - Section hébergement des bots avec recommandations
+  - Architecture mise à jour avec `main_bots.py` et `render.yaml`
+  - Lien vers le guide de déploiement Render.com
+
+### 📦 Fichiers ajoutés
+
+- `python/main_bots.py` - Launcher combiné pour les 2 bots Discord
+- `render.yaml` - Configuration de déploiement Render.com
+- `docs_perso/.env.example` - Template des variables d'environnement (non versionné)
+- `docs_perso/DEPLOIEMENT_RENDER.md` - Guide complet de déploiement (non versionné)
+
+---
 
 ## [1.0.1] - 2026-01-12
 

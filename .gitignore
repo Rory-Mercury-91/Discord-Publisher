@@ -1,12 +1,20 @@
 # Fichiers sensibles - NE JAMAIS COMMIT
 .env
+.env.local
+.env.*.local
+*.env
 GUIDE_INSTALLATION.txt
 daitenshi_bot_discord.py
 Procfile_daitenshi
 publisher_config.json
 
+# Tokens et clés API
+*_token.txt
+*_key.txt
+
 # Documentation personnelle (non versionnée)
 docs_perso/
+*.example
 
 # Node modules
 node_modules/
