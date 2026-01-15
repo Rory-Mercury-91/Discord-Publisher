@@ -191,8 +191,14 @@ async def envoyer_annonce(thread, liste_tags_trads):
         messages = [msg async for msg in channel_annonce.history(limit=50)]
         for msg in messages:
             if msg.author == bot.user and str(thread.id) in msg.content:
-                await msg.delete()
-                print(f"🗑️ Ancienne annonce supprimée : {thread.name}")
+                try:
+                    await msg.delete()
+                    print(f"🗑️ Ancienne annonce supprimée : {thread.name}")
+                except discord.errors.NotFound:
+                    # Le message n'existe plus, on ignore l'erreur
+                    pass
+                except Exception as e:
+                    print(f"Erreur lors de la suppression de l'annonce : {e}")
                 break
         print(f"🔄 Changement de version : {titre_jeu}")
     elif deja_publie and not version_changee:

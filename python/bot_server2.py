@@ -58,8 +58,14 @@ async def envoyer_notification_f95(thread):
     messages = [msg async for msg in channel.history(limit=50)]
     for msg in messages:
         if msg.author == bot.user and str(thread.id) in msg.content:
-            await msg.delete()
-            print(f"🗑️ Ancienne notification F95 supprimée : {thread.name}")
+            try:
+                await msg.delete()
+                print(f"🗑️ Ancienne notification F95 supprimée : {thread.name}")
+            except discord.errors.NotFound:
+                # Le message n'existe plus, on ignore l'erreur
+                pass
+            except Exception as e:
+                print(f"Erreur lors de la suppression du message: {e}")
             break
     
     # Calculer timestamp Discord
