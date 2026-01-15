@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 use std::fs;
-use tauri::{Manager, AppHandle, GlobalShortcutManager};
+use tauri::{Manager, AppHandle};
 use tauri::menu::MenuBuilder;
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use serde::{Deserialize, Serialize};
@@ -278,23 +278,8 @@ pub fn run() {
             }
             let _ = tray_builder.build(handle);
             
-            // Activer les DevTools en production avec F12
-            let window_handle = app.get_webview_window("main").cloned();
-            
-            // Raccourci F12 pour ouvrir/fermer les DevTools
-            if let Ok(_) = app.global_shortcut_manager().register("F12", move |_app, _shortcut, _event| {
-                if let Some(win) = window_handle.as_ref() {
-                    if win.is_devtools_open() {
-                        let _ = win.close_devtools();
-                    } else {
-                        let _ = win.open_devtools();
-                    }
-                }
-            }) {
-                println!("✅ Raccourci F12 activé pour les DevTools");
-            } else {
-                println!("⚠️ Impossible d'enregistrer le raccourci F12");
-            }
+            // Les DevTools sont activées via "devtools: true" dans tauri.conf.json
+            // F12 fonctionne nativement grâce à cette configuration
             
             Ok(())
         })
