@@ -15,7 +15,8 @@ from publisher_api import (
     options_handler,
     configure,
     forum_post,
-    forum_post_update
+    forum_post_update,
+    get_history
 )
 
 if sys.platform == 'win32':
@@ -61,6 +62,9 @@ def make_app():
     
     # Route de santé du publisher
     app.router.add_get("/api/publisher/health", publisher_health)
+    
+    # Route historique des publications
+    app.router.add_get("/api/history", get_history)
     
     return app
 

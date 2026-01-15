@@ -10,7 +10,8 @@ import asyncio
 import logging
 import base64
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict
+from pathlib import Path
 import aiohttp
 from aiohttp import web
 from dotenv import load_dotenv
@@ -55,6 +56,66 @@ class Config:
         logger.info(f"✅ Configuration mise à jour (configured: {self.configured})")
 
 config = Config()
+
+# Chemin pour stocker l'historique des publications
+HISTORY_FILE = Path("publication_history.json")
+
+class PublicationHistory:
+    """Gestion de l'historique des publications"""
+    
+    def __init__(self, history_file: Path = HISTORY_FILE):
+        self.history_file = history_file
+        self._ensure_file_exists()
+    
+    def _ensure_file_exists(self):
+        """Crée le fichier d'historique s'il n'existe pas"""
+        if not self.history_file.exists():
+            try:
+                self.history_file.write_text(json.dumps([], ensure_ascii=False, indent=2), encoding='utf-8')
+            except Exception as e:
+                logger.warning(f"Impossible de créer le fichier d'historique: {e}")
+    
+    def add_post(self, post_data: Dict):
+        """Ajoute un post à l'historique"""
+        try:
+            if self.history_file.exists():
+                content = self.history_file.read_text(encoding='utf-8')
+                history = json.loads(content) if content.strip() else []
+            else:
+                history = []
+            
+            # Ajouter le nouveau post au début (plus récent en premier)
+            history.insert(0, post_data)
+            
+            # Limiter à 1000 posts maximum
+            if len(history) > 1000:
+                history = history[:1000]
+            
+            self.history_file.write_text(
+                json.dumps(history, ensure_ascii=False, indent=2),
+                encoding='utf-8'
+            )
+            logger.info(f"✅ Post ajouté à l'historique: {post_data.get('title', 'N/A')}")
+        except Exception as e:
+            logger.error(f"Erreur lors de l'ajout à l'historique: {e}")
+    
+    def get_posts(self, limit: Optional[int] = None) -> List[Dict]:
+        """Récupère les posts de l'historique"""
+        try:
+            if not self.history_file.exists():
+                return []
+            
+            content = self.history_file.read_text(encoding='utf-8')
+            history = json.loads(content) if content.strip() else []
+            
+            if limit:
+                return history[:limit]
+            return history
+        except Exception as e:
+            logger.error(f"Erreur lors de la lecture de l'historique: {e}")
+            return []
+
+history_manager = PublicationHistory()
 
 class RateLimitTracker:
     def __init__(self):
@@ -205,8 +266,14 @@ async def _create_forum_post(session, forum_id, title, content, tags_raw, images
 
     thread_id = data.get("id")
     guild_id = data.get("guild_id")
+    # Discord retourne le premier message dans la réponse de création de thread
+    message_id = data.get("id")  # Le thread_id est aussi le message_id du premier message dans un forum thread
+    # Mais pour être sûr, on peut aussi chercher dans les messages du thread
+    # Pour l'instant, on utilise thread_id comme message_id car dans Discord, le premier message d'un thread forum a le même ID que le thread
+    
     return True, {
         "thread_id": thread_id,
+        "message_id": thread_id,  # Dans Discord forum threads, le premier message ID = thread ID
         "guild_id": guild_id,
         "thread_url": f"https://discord.com/channels/{guild_id}/{thread_id}" if guild_id and thread_id else None,
     }
@@ -332,6 +399,21 @@ async def forum_post(request: web.Request):
 
     logger.info(f"✅ Publication réussie: {result.get('thread_url')}")
     
+    # Sauvegarder dans l'historique
+    history_entry = {
+        "id": f"post_{int(time.time())}_{hash(title) % 1000000}",
+        "timestamp": int(time.time() * 1000),  # Timestamp en millisecondes
+        "title": title,
+        "content": content,
+        "tags": tags,
+        "template": template,
+        "thread_id": result.get("thread_id"),
+        "message_id": result.get("message_id"),
+        "discord_url": result.get("thread_url"),
+        "forum_id": forum_id
+    }
+    history_manager.add_post(history_entry)
+    
     resp = web.json_response({
         "ok": True,
         "template": template,
@@ -347,4 +429,32 @@ async def forum_post_update(request: web.Request):
         "ok": False,
         "error": "not_implemented"
     }, status=501)
+    return _with_cors(request, resp)
+
+async def get_history(request: web.Request):
+    """
+    Endpoint GET /api/history
+    Retourne l'historique des publications
+    """
+    # Vérification clé API
+    api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
+    if not api_key or api_key != config.PUBLISHER_API_KEY:
+        resp = web.json_response({
+            "ok": False,
+            "error": "unauthorized",
+            "message": "Clé API invalide ou manquante."
+        }, status=401)
+        return _with_cors(request, resp)
+    
+    # Récupérer la limite optionnelle
+    limit = request.query.get("limit")
+    limit_int = int(limit) if limit and limit.isdigit() else None
+    
+    posts = history_manager.get_posts(limit=limit_int)
+    
+    resp = web.json_response({
+        "ok": True,
+        "posts": posts,
+        "count": len(posts)
+    })
     return _with_cors(request, resp)

@@ -66,17 +66,22 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
   const [error, setError] = useState<string | null>(null);
   
   // Forcer le refresh de l'historique à l'ouverture de la modale
+  // localStorage est la source principale, Koyeb est juste un backup
   useEffect(() => {
     setIsLoading(true);
     setError(null);
+    
+    // Récupérer depuis Koyeb (backup) pour synchroniser les posts récents
+    // Mais localStorage reste la source principale
     fetchHistoryFromAPI()
       .then(() => {
         setIsLoading(false);
       })
       .catch((e: any) => {
         setIsLoading(false);
-        setError('Erreur lors du chargement de l\'historique depuis l\'API');
-        console.error('Erreur chargement historique:', e);
+        // Ne pas afficher d'erreur si Koyeb n'est pas disponible
+        // localStorage est la source principale, Koyeb est juste un backup
+        console.log('ℹ️ Koyeb non disponible, utilisation de localStorage uniquement');
       });
   }, []); // Exécuté une seule fois à l'ouverture
 

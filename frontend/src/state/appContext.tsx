@@ -392,7 +392,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPublishedPosts(prev => prev.filter(post => post.id !== id));
   };
 
-  // Fonction pour récupérer l'historique depuis l'API
+  // Fonction pour récupérer l'historique depuis l'API (Koyeb = backup des 1000 derniers)
   async function fetchHistoryFromAPI() {
     try {
       const baseUrl = localStorage.getItem('apiBase') || defaultApiBase;
@@ -409,8 +409,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       if (!response.ok) {
         if (response.status === 404) {
-          // L'endpoint n'existe pas encore, on garde localStorage
-          console.log('⚠️ Endpoint /api/history non disponible, utilisation de localStorage');
+          // L'endpoint n'existe pas encore, on garde localStorage uniquement
+          console.log('⚠️ Endpoint /api/history non disponible, utilisation de localStorage uniquement');
           return;
         }
         throw new Error(`Erreur ${response.status}: ${response.statusText}`);
@@ -418,18 +418,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const data = await response.json();
       if (Array.isArray(data.posts) || Array.isArray(data)) {
-        const posts = Array.isArray(data.posts) ? data.posts : data;
-        // Fusionner avec l'historique local (éviter les doublons)
-        setPublishedPosts(prev => {
-          const existingIds = new Set(prev.map(p => p.id));
-          const newPosts = posts.filter((p: PublishedPost) => !existingIds.has(p.id));
-          return [...newPosts, ...prev].sort((a, b) => b.timestamp - a.timestamp);
+        const koyebPosts = Array.isArray(data.posts) ? data.posts : data;
+        
+        // Récupérer l'historique local actuel
+        const localPosts = publishedPosts;
+        const localIds = new Set(localPosts.map(p => p.id));
+        
+        // Fusionner : Koyeb (backup récent) + localStorage (complet)
+        // On ajoute seulement les posts de Koyeb qui ne sont pas déjà dans localStorage
+        const newPostsFromKoyeb = koyebPosts.filter((p: any) => {
+          // Vérifier par thread_id et message_id pour éviter les doublons même si l'ID local diffère
+          const koyebThreadId = p.thread_id || p.threadId;
+          const koyebMessageId = p.message_id || p.messageId;
+          
+          return !localPosts.some(local => 
+            (local.threadId === koyebThreadId && local.messageId === koyebMessageId) ||
+            local.id === p.id
+          );
         });
-        console.log(`✅ Historique récupéré: ${posts.length} posts`);
+        
+        if (newPostsFromKoyeb.length > 0) {
+          // Ajouter les nouveaux posts de Koyeb au début (plus récents)
+          setPublishedPosts(prev => {
+            const merged = [...newPostsFromKoyeb, ...prev].sort((a, b) => b.timestamp - a.timestamp);
+            return merged;
+          });
+          console.log(`✅ ${newPostsFromKoyeb.length} nouveaux posts récupérés depuis Koyeb (backup)`);
+        } else {
+          console.log('✅ Historique synchronisé : aucun nouveau post depuis Koyeb');
+        }
       }
     } catch (e: any) {
-      console.error('❌ Erreur lors de la récupération de l\'historique:', e);
-      // Ne pas bloquer l'utilisateur, on garde localStorage
+      console.error('❌ Erreur lors de la récupération de l\'historique depuis Koyeb:', e);
+      // Ne pas bloquer l'utilisateur, on garde localStorage uniquement
+      // Koyeb est juste un backup, localStorage est la source principale
     }
   }
 
@@ -641,11 +663,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (rateLimitCooldown !== null) {
         setRateLimitCooldown(null);
       }
-      
-      // Réinitialiser le cooldown en cas de succès
-      if (rateLimitCooldown !== null) {
-        setRateLimitCooldown(null);
-      }
 
       // Build success message
       let successMsg = isEditMode ? 'Mise à jour réussie' : 'Publication réussie';
@@ -653,8 +670,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // Logging removed – publication finished
 
+      // Debug: Log la réponse de l'API pour diagnostiquer
+      console.log('📋 Réponse API après publication:', res);
+
       // Save to history or update existing post
-      if (res.thread_id && res.message_id) {
+      // Accepter différents formats de réponse (thread_id/threadId, message_id/messageId)
+      const threadId = res.thread_id || res.threadId;
+      const messageId = res.message_id || res.messageId;
+      const threadUrl = res.thread_url || res.threadUrl || res.url || res.discordUrl || '';
+      const forumId = res.forum_id || res.forumId || (templateType === 'my' ? 1427703869844230317 : 1427703869844230318);
+
+      if (threadId && messageId) {
         if (isEditMode && editingPostId) {
           const updatedPost: Partial<PublishedPost> = {
             timestamp: Date.now(),
@@ -667,11 +693,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             isIntegrated,
             savedInputs: { ...inputs },
             templateId: templates[currentTemplateIdx]?.id,
-            discordUrl: res.thread_url || res.url || editingPostData.discordUrl
+            discordUrl: threadUrl || editingPostData.discordUrl
           };
           updatePublishedPost(editingPostId, updatedPost);
           setEditingPostId(null);
           setEditingPostData(null);
+          console.log('✅ Post mis à jour dans l\'historique:', updatedPost);
         } else {
           const newPost: PublishedPost = {
             id: `post_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -685,13 +712,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             isIntegrated,
             savedInputs: { ...inputs },
             templateId: templates[currentTemplateIdx]?.id,
-            threadId: res.thread_id,
-            messageId: res.message_id,
-            discordUrl: res.thread_url || res.url || '',
-            forumId: res.forum_id || (templateType === 'my' ? 1427703869844230317 : 1427703869844230318)
+            threadId: String(threadId),
+            messageId: String(messageId),
+            discordUrl: threadUrl,
+            forumId: typeof forumId === 'number' ? forumId : parseInt(String(forumId)) || 0
           };
+          // Sauvegarder IMMÉDIATEMENT dans localStorage (source principale)
           addPublishedPost(newPost);
+          console.log('✅ Nouveau post ajouté à l\'historique localStorage:', newPost);
+          // Note: Koyeb sauvegarde aussi en backup via publisher_api.py, mais localStorage est la source principale
         }
+      } else {
+        console.warn('⚠️ Réponse API ne contient pas thread_id/message_id. Réponse complète:', res);
+        // Sauvegarder quand même avec les données disponibles dans localStorage (source principale)
+        const newPost: PublishedPost = {
+          id: `post_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: Date.now(),
+          title,
+          content,
+          tags,
+          template: templateType,
+          imagePath: uploadedImages.find(i => i.isMain)?.path,
+          translationType,
+          isIntegrated,
+          savedInputs: { ...inputs },
+          templateId: templates[currentTemplateIdx]?.id,
+          threadId: threadId ? String(threadId) : 'unknown',
+          messageId: messageId ? String(messageId) : 'unknown',
+          discordUrl: threadUrl,
+          forumId: typeof forumId === 'number' ? forumId : parseInt(String(forumId)) || 0
+        };
+        // Sauvegarder IMMÉDIATEMENT dans localStorage (source principale)
+        addPublishedPost(newPost);
+        console.log('✅ Post ajouté à l\'historique localStorage (sans thread_id/message_id):', newPost);
       }
 
       return { ok: true, data: res };
