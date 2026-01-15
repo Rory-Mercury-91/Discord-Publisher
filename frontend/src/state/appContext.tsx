@@ -1,6 +1,8 @@
 import React, {createContext, useContext, useEffect, useMemo, useState} from 'react';
 import ErrorModal from '../components/ErrorModal';
 import { useDebounce } from '../hooks/useDebounce';
+import { tauriAPI } from '../lib/tauri-api';
+import { logger } from '../lib/logger';
 
 export type VarConfig = {
   name: string;
@@ -154,11 +156,29 @@ type AppContextValue = {
   setEditingPostId: (id: string | null) => void;
   loadPostForEditing: (post: PublishedPost) => void;
   loadPostForDuplication: (post: PublishedPost) => void;
+
+  // API status global
+  apiStatus: string;
+  setApiStatus: React.Dispatch<React.SetStateAction<string>>;
+
+  // Discord config global
+  discordConfig: any;
+  setDiscordConfig: React.Dispatch<React.SetStateAction<any>>;
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({children}: {children: React.ReactNode}){
+      // Discord config global
+      const [discordConfig, setDiscordConfig] = useState<any>(() => {
+        try {
+          const raw = localStorage.getItem('discordConfig');
+          if(raw) return JSON.parse(raw);
+        } catch {}
+        return {};
+      });
+    // API status global
+    const [apiStatus, setApiStatus] = useState<string>("unknown");
   const [templates, setTemplates] = useState<Template[]>(() => {
     try{
       const raw = localStorage.getItem('customTemplates');
@@ -272,6 +292,37 @@ export function AppProvider({children}: {children: React.ReactNode}){
   useEffect(()=>{ localStorage.setItem('postTitle', postTitle); },[postTitle]);
   useEffect(()=>{ localStorage.setItem('postTags', postTags); },[postTags]);
 
+  // Envoyer la configuration Discord à l'API au démarrage
+  useEffect(() => {
+    const sendConfigToAPI = async () => {
+      try {
+        const configStr = localStorage.getItem('discordConfig');
+        if (!configStr) return;
+        
+        const discordConfig = JSON.parse(configStr);
+        if (!discordConfig.discordPublisherToken) return;
+        
+        // FIX: URL correcte pour l'API locale
+        const response = await fetch('http://localhost:8080/api/configure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(discordConfig)
+        });
+        
+        if (response.ok) {
+          console.log('✅ Configuration Discord envoyée à l\'API');
+        } else {
+          console.warn('⚠️ Échec de l\'envoi de la configuration à l\'API');
+        }
+      } catch (error) {
+        console.error('❌ Erreur lors de l\'envoi de la configuration:', error);
+      }
+    };
+    
+    const timer = setTimeout(sendConfigToAPI, 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(()=>{
     localStorage.setItem('customTemplates', JSON.stringify(templates));
   },[templates]);
@@ -301,8 +352,19 @@ export function AppProvider({children}: {children: React.ReactNode}){
     const templateType = (templates[currentTemplateIdx]?.type) || '';
     const isEditMode = editingPostId !== null && editingPostData !== null;
 
+    // Log début de publication
+    await logger.publish('Démarrage', {
+      isEditMode,
+      title,
+      templateType,
+      tagsCount: tags.split(',').filter(t => t.trim()).length,
+      imagesCount: uploadedImages.length,
+      contentLength: content.length
+    });
+
     // Validation: titre obligatoire (uniquement postTitle)
     if(!title || title.length === 0){ 
+      await logger.error('Validation échouée: Titre manquant');
       setLastPublishResult('❌ Titre obligatoire');
       showErrorModal({
         code: 'VALIDATION_ERROR',
@@ -315,6 +377,7 @@ export function AppProvider({children}: {children: React.ReactNode}){
     
     // Validation: API endpoint requis (should always be available locally)
     if(!apiUrl || apiUrl.trim().length === 0){ 
+      await logger.error('Validation échouée: URL API manquante');
       setLastPublishResult('❌ Erreur interne : URL API manquante');
       showErrorModal({
         code: 'CONFIG_ERROR',
@@ -327,6 +390,7 @@ export function AppProvider({children}: {children: React.ReactNode}){
     
     // Validation: template type obligatoire (my/partner uniquement)
     if(templateType !== 'my' && templateType !== 'partner') {
+      await logger.error('Validation échouée: Type de template invalide', {templateType});
       setLastPublishResult('❌ Seuls les templates "Mes traductions" et "Traductions partenaire" peuvent être publiés');
       showErrorModal({
         code: 'VALIDATION_ERROR',
@@ -341,6 +405,7 @@ export function AppProvider({children}: {children: React.ReactNode}){
     setLastPublishResult(null);
 
     try{
+      await logger.info('Préparation du payload');
       const mainPayload: any = { title, content, tags, template: templateType };
       
       // Add edit mode info if updating
@@ -348,17 +413,22 @@ export function AppProvider({children}: {children: React.ReactNode}){
         mainPayload.threadId = editingPostData.threadId;
         mainPayload.messageId = editingPostData.messageId;
         mainPayload.isUpdate = true;
+        await logger.info('Mode édition activé', {
+          threadId: editingPostData.threadId,
+          messageId: editingPostData.messageId
+        });
       }
       
       // Process all images (not just main image)
       if(uploadedImages.length > 0) {
+        await logger.info(`Traitement de ${uploadedImages.length} image(s)`);
         const images = [];
         for(const img of uploadedImages) {
           if(!img.path) continue;
           try {
             // Read image from filesystem
-            const imgResult = await (window as any).electronAPI?.readImage?.(img.path);
-            if(imgResult?.ok && imgResult.buffer) {
+            const imgResult = await tauriAPI.readImage(img.path);
+            if(imgResult.ok && imgResult.buffer) {
               // Convert array back to Uint8Array then to base64
               const buffer = new Uint8Array(imgResult.buffer);
               const base64 = btoa(String.fromCharCode(...buffer));
@@ -384,11 +454,21 @@ export function AppProvider({children}: {children: React.ReactNode}){
         }
         if(images.length > 0) {
           mainPayload.images = images;
+          await logger.info(`${images.length} image(s) traitée(s) avec succès`);
         }
       }
 
-      const res = await (window as any).electronAPI?.publishPost?.(mainPayload);
-      if(!res){ 
+      await logger.api('POST', '/api/publish', mainPayload);
+      const res = await tauriAPI.publishPost(mainPayload);
+      
+      await logger.info('Réponse de l\'API reçue', {
+        ok: res.ok,
+        status: res.status,
+        hasData: !!res.data,
+        error: res.error
+      });
+      
+      if(!res.ok){ 
         setLastPublishResult('Erreur interne');
         showErrorModal({
           code: 'INTERNAL_ERROR',
@@ -420,9 +500,16 @@ export function AppProvider({children}: {children: React.ReactNode}){
       // Build success message with rate limit info
       let successMsg = isEditMode ? 'Mise à jour réussie' : 'Publication réussie';
       if(res.rateLimit?.remaining !== null && res.rateLimit?.limit !== null) {
-        successMsg += ` (${res.rateLimit.remaining}/${res.rateLimit.limit} requêtes restantes)`;
+        successMsg += ` (${res.rateLimit?.remaining ?? 0}/${res.rateLimit?.limit ?? 0} requêtes restantes)`;
       }
       setLastPublishResult(successMsg);
+      
+      await logger.success('Publication terminée', {
+        threadId: res.data?.thread_id,
+        messageId: res.data?.message_id,
+        discordUrl: res.data?.thread_url || res.data?.url,
+        rateLimit: res.rateLimit
+      });
       
       // Save to history or update existing post
       if(res.data && res.data.thread_id && res.data.message_id) {
@@ -463,6 +550,7 @@ export function AppProvider({children}: {children: React.ReactNode}){
       
       return {ok:true, data: res.data};
     }catch(e:any){
+      await logger.error('Exception lors de la publication', e);
       setLastPublishResult('Erreur envoi: '+String(e?.message || e));
       showErrorModal({
         code: 'NETWORK_ERROR',
@@ -632,8 +720,8 @@ export function AppProvider({children}: {children: React.ReactNode}){
         const processedFile = await compressImage(file);
         
         // Save image to filesystem via IPC
-        const result = await (window as any).electronAPI?.saveImage?.((processedFile as any).path || (file as any).path);
-        if(result?.ok && result.fileName) {
+        const result = await tauriAPI.saveImage((processedFile as any).path || (file as any).path);
+        if(result.ok && result.fileName) {
           setUploadedImages(prev => {
             const next = [...prev, {id: Date.now().toString(), path: result.fileName, isMain: prev.length===0}];
             return next;
@@ -650,7 +738,7 @@ export function AppProvider({children}: {children: React.ReactNode}){
     if(img?.path) {
       try {
         // Delete image file from filesystem
-        await (window as any).electronAPI?.deleteImage?.(img.path);
+        await tauriAPI.deleteImage(img.path);
       } catch(e) {
         console.error('Failed to delete image:', e);
       }
@@ -753,31 +841,29 @@ export function AppProvider({children}: {children: React.ReactNode}){
     editingPostId,
     setEditingPostId,
     loadPostForEditing: (post: PublishedPost) => {
-      // Load post data into editor for updating
       setEditingPostId(post.id);
-      setEditingPostData(post); // Store original post data
+      setEditingPostData(post);
       setPostTitle(post.title);
       setPostTags(post.tags);
-      
-      // Find and set template
       const templateIdx = templates.findIndex(t => t.type === post.template);
       if(templateIdx !== -1) setCurrentTemplateIdx(templateIdx);
-      
-      // Parse content to extract variables (basic extraction, may need refinement)
-      // For now, we'll just leave inputs as is since content is already generated
-      // User will need to manually adjust if needed
     },
     loadPostForDuplication: (post: PublishedPost) => {
-      // Load post data but clear editing mode (creates new post)
       setEditingPostId(null);
       setEditingPostData(null);
       setPostTitle(post.title);
       setPostTags(post.tags);
-      
-      // Find and set template
       const templateIdx = templates.findIndex(t => t.type === post.template);
       if(templateIdx !== -1) setCurrentTemplateIdx(templateIdx);
-    }
+    },
+
+    // API status global
+    apiStatus,
+    setApiStatus,
+
+    // Discord config global
+    discordConfig,
+    setDiscordConfig
   };
 
   return (

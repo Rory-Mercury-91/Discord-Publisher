@@ -2,6 +2,7 @@ import React, {useState, useEffect} from 'react';
 import { AppProvider, useApp } from './state/appContext';
 import { ToastProvider, useToast } from './components/ToastProvider';
 import PublicationType from './components/PublicationType';
+import LogsModal from './components/LogsModal';
 import ContentEditor from './components/ContentEditor';
 import Preview from './components/Preview';
 import TemplatesModal from './components/TemplatesModal';
@@ -16,20 +17,32 @@ import ShortcutsHelpModal from './components/ShortcutsHelpModal';
 import { useConfirm } from './hooks/useConfirm';
 
 function AppContentInner() {
-  const { preview, uploadedImages, allVarsConfig, setInput } = useApp();
+  // A. On extrait UNIQUEMENT ce qui existe dans appContext.tsx
+  const { 
+    preview, 
+    uploadedImages, 
+    allVarsConfig, 
+    setInput,
+    apiStatus,
+    setApiStatus
+  } = useApp();
+
   const { showToast } = useToast();
   const { confirm } = useConfirm();
+  
+  // B. On garde tes états LOCAUX (ils sont bien ici)
   const [openTemplates, setOpenTemplates] = useState(false);
   const [openTags, setOpenTags] = useState(false);
   const [openConfig, setOpenConfig] = useState(false);
   const [openInstructions, setOpenInstructions] = useState(false);
   const [openTraductors, setOpenTraductors] = useState(false);
-  const [openHistory, setOpenHistory] = useState(false);
+  const [openHistory, setOpenHistory] = useState(false); // <--- openHistory est ICI
   const [openStats, setOpenStats] = useState(false);
   const [openShortcutsHelp, setOpenShortcutsHelp] = useState(false);
+  const [openLogs, setOpenLogs] = useState(false);
   const [previewMode, setPreviewMode] = useState<'raw' | 'styled'>('raw');
-  
-  // Theme management: dark by default
+
+  // C. État local du Thème (il est bien ici aussi)
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try {
       const saved = localStorage.getItem('theme');
@@ -39,33 +52,53 @@ function AppContentInner() {
     }
   });
 
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  };
+
+  // --- TES EFFETS ---
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
-  };
-
-  // Raccourcis clavier globaux
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+H : Ouvrir Historique
       if (e.ctrlKey && e.key === 'h') {
         e.preventDefault();
-        setOpenHistory(true);
+        setOpenHistory(true); // Utilise l'état local
       }
-      // Ctrl+T : Basculer thème
       if (e.ctrlKey && e.key === 't') {
         e.preventDefault();
         toggleTheme();
       }
     };
-    
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [theme]);
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      const storedUrl = localStorage.getItem('apiUrl');
+      if (!storedUrl) {
+        setApiStatus('disconnected');
+        return;
+      }
+      try {
+        const cleanUrl = storedUrl.endsWith('/') ? storedUrl.slice(0, -1) : storedUrl;
+        const response = await fetch(`${cleanUrl}/api/status`);
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        setApiStatus(data); 
+      } catch (err) {
+        setApiStatus('disconnected');
+      }
+    };
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 30000);
+    return () => clearInterval(interval);
+  }, [setApiStatus]);
 
   const handleCopyPreview = async () => {
     try { 
@@ -112,6 +145,7 @@ function AppContentInner() {
                 <button onClick={()=>setOpenHistory(true)}>📋 Historique</button>
                 <button onClick={()=>setOpenStats(true)}>📈 Statistiques</button>
                 <button onClick={()=>setOpenConfig(true)}>⚙️ Configuration API</button>
+                <button onClick={()=>setOpenLogs(true)}>📝 Voir les logs</button>
                 <ApiStatusBadge />
                 <button 
                   onClick={() => setOpenShortcutsHelp(true)}
@@ -170,6 +204,7 @@ function AppContentInner() {
           {openHistory && <HistoryModal onClose={()=>setOpenHistory(false)} />}
           {openStats && <StatsModal onClose={()=>setOpenStats(false)} />}
           {openShortcutsHelp && <ShortcutsHelpModal onClose={()=>setOpenShortcutsHelp(false)} />}
+          {openLogs && <LogsModal onClose={()=>setOpenLogs(false)} />}
         </div>
       </ToastProvider>
     </AppProvider>

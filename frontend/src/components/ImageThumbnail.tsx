@@ -1,5 +1,6 @@
 import React from 'react';
 import { useImageLoader } from '../hooks/useImageLoader';
+import { tauriAPI } from '../lib/tauri-api';
 
 interface ImageThumbnailProps {
   imagePath: string;
@@ -27,8 +28,8 @@ export default function ImageThumbnail({ imagePath, isMain, onSetMain, onCopyNam
     
     (async () => {
       try {
-        const result = await (window as any).electronAPI?.getFileSize?.(imagePath);
-        if (result?.size) {
+        const result = await tauriAPI.getImageSize(imagePath);
+        if (result.ok && result.size) {
           setFileSize(result.size);
         }
       } catch (e) {

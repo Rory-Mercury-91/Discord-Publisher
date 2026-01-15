@@ -1,74 +1,66 @@
-"""
-Main - Bots Discord combinés
-Lance bot_discord_server1.py et bot_discord_server2.py en parallèle
-Optimisé pour hébergement local avec Electron
-"""
-import asyncio
 import os
 import sys
+import asyncio
+import logging
+from aiohttp import web
 from dotenv import load_dotenv
 
-# Fix encoding pour Windows
+# Import direct des instances de bots
+from bot_server1 import bot as bot1
+from bot_server2 import bot as bot2
+
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
 load_dotenv()
 
-# Import des bots
-try:
-    from bot_discord_server1 import bot as bot1
-    from bot_discord_server2 import bot as bot2
-except ImportError as e:
-    print(f"❌ Erreur d'import : {e}")
-    sys.exit(1)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("orchestrator")
 
+PORT = int(os.getenv("PORT", 8080))
 
-async def run_bot1():
-    """Lance le bot 1 (Annonces de traductions)"""
-    token = os.getenv('DISCORD_TOKEN')
-    if not token:
-        print("❌ DISCORD_TOKEN manquant pour le bot 1")
-        return
-    
-    try:
-        print("🤖 Démarrage du Bot 1 (Serveur 1 - Annonces)...")
-        await bot1.start(token)
-    except Exception as e:
-        print(f"❌ Erreur Bot 1 : {e}")
+# Route /api/status pour Tauri
+async def health(request):
+    status = {
+        "status": "ok",
+        "bots": {
+            "server1": bot1.is_ready(),
+            "server2": bot2.is_ready()
+        }
+    }
+    return web.json_response(status)
 
+def make_app():
+    app = web.Application()
+    app.router.add_get("/health", health)
+    app.router.add_route("OPTIONS", "/api/status", lambda r: web.Response(status=204))
+    app.router.add_get("/api/status", health)
+    # Ajoute ici les autres routes de ton API Publisher si besoin
+    return app
 
-async def run_bot2():
-    """Lance le bot 2 (Rappels F95fr)"""
-    token = os.getenv('DISCORD_TOKEN_F95')
-    if not token:
-        print("❌ DISCORD_TOKEN_F95 manquant pour le bot 2")
-        return
-    
-    try:
-        print("🤖 Démarrage du Bot 2 (Serveur 2 - Rappels F95)...")
-        await bot2.start(token)
-    except Exception as e:
-        print(f"❌ Erreur Bot 2 : {e}")
+@bot1.event
+async def on_ready():
+    logger.info(f"🤖 Bot Serveur 1 prêt : {bot1.user}")
 
+@bot2.event
+async def on_ready():
+    logger.info(f"🤖 Bot Serveur 2 prêt : {bot2.user}")
 
-async def main():
-    """Lance les 2 bots en parallèle"""
-    print("🚀 Lancement des bots Discord...")
-    
-    # Lancer les 2 bots simultanément
+# Orchestrateur principal
+async def start():
+    TOKEN1 = os.getenv("DISCORD_TOKEN")
+    TOKEN2 = os.getenv("DISCORD_TOKEN_F95")
+    app = make_app()
     await asyncio.gather(
-        run_bot1(),
-        run_bot2(),
-        return_exceptions=True
+        web._run_app(app, port=PORT),
+        bot1.start(TOKEN1),
+        bot2.start(TOKEN2)
     )
 
-
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("\n⏹️  Arrêt des bots...")
-    except Exception as e:
-        print(f"❌ Erreur fatale : {e}")
-        sys.exit(1)
+    asyncio.run(start())

@@ -5,6 +5,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import ConfirmModal from './ConfirmModal';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
+import { tauriAPI } from '../lib/tauri-api';
 
 export default function TraductorsModal({onClose}:{onClose?:()=>void}){
   const { savedTraductors, saveTraductor, deleteTraductor } = useApp();
@@ -70,10 +71,10 @@ export default function TraductorsModal({onClose}:{onClose?:()=>void}){
 
   return (
     <div className="modal">
-      <div className="panel" onClick={e=>e.stopPropagation()} style={{maxWidth: 700, width: '90%'}}>
+      <div className="panel" onClick={e=>e.stopPropagation()} style={{maxWidth: 1000, width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column'}}>
         <h3>👥 Gestion des traducteurs</h3>
 
-        <div style={{display:'grid', gap:16}}>
+        <div style={{display:'grid', gap:16, overflowY: 'auto', flex: 1}}>
           {/* Liste des traducteurs existants */}
           <div>
             <h4>Traducteurs enregistrés ({savedTraductors.length})</h4>
@@ -106,7 +107,7 @@ export default function TraductorsModal({onClose}:{onClose?:()=>void}){
                           <strong 
                             onClick={async () => { 
                               try { 
-                                await (window as any).electronAPI.writeClipboard(t); 
+                                await tauriAPI.writeClipboard(t); 
                                 setCopiedIdx(idx);
                                 setTimeout(() => setCopiedIdx(null), 2000);
                               } catch(e) { 

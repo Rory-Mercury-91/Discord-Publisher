@@ -55,7 +55,7 @@ export default function ConfirmModal({
           border: '1px solid var(--border)',
           borderRadius: 12,
           padding: 24,
-          maxWidth: 450,
+          maxWidth: 550,
           width: '90%',
           boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
           animation: 'modalSlideIn 0.2s ease-out'

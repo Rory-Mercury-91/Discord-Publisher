@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { tauriAPI } from '../lib/tauri-api';
 
 /**
  * Hook pour charger une image depuis le filesystem via IPC
@@ -20,14 +21,16 @@ export function useImageLoader(imagePath: string | undefined) {
     let objectUrl: string | null = null;
 
     async function loadImage() {
+      if (!imagePath) return; // Guard supplémentaire pour TypeScript
+      
       try {
         setIsLoading(true);
         setError(null);
 
-        const result = await (window as any).electronAPI?.readImage?.(imagePath);
+        const result = await tauriAPI.readImage(imagePath);
         
-        if (!result?.ok || !result.buffer) {
-          throw new Error(result?.error || 'Failed to load image');
+        if (!result.ok || !result.buffer) {
+          throw new Error(result.error || 'Failed to load image');
         }
 
         if (!isMounted) return;

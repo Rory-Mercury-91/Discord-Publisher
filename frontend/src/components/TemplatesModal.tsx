@@ -6,6 +6,7 @@ import ConfirmModal from './ConfirmModal';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
 import MarkdownHelpModal from './MarkdownHelpModal';
+import { tauriAPI } from '../lib/tauri-api';
 
 export default function TemplatesModal({onClose}:{onClose?:()=>void}){
   const { templates, addTemplate, updateTemplate, deleteTemplate, allVarsConfig, addVarConfig, updateVarConfig, deleteVarConfig } = useApp();
@@ -28,7 +29,7 @@ export default function TemplatesModal({onClose}:{onClose?:()=>void}){
   const [varForm, setVarForm] = useState({name:'', label:'', type:'text' as 'text' | 'textarea' | 'select', templates: [] as string[]});
   const [showMarkdownHelp, setShowMarkdownHelp] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
-  const autosaveTimerRef = useRef<number | null>(null);
+  const autosaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Restauration automatique du brouillon au chargement
   useEffect(() => {
@@ -294,10 +295,10 @@ export default function TemplatesModal({onClose}:{onClose?:()=>void}){
   async function exportTemplate(idx: number){
     const t = templates[idx];
     try {
-      const res = await (window as any).electronAPI?.exportTemplateToFile?.(t);
-      if(res?.ok) {
-        showToast(`Template exporté : ${res.path}`, 'success');
-      } else if(!res?.canceled) {
+      const res = await tauriAPI.exportTemplateToFile(t);
+      if(res.ok) {
+        showToast('Template exporté avec succès', 'success');
+      } else if(!res.canceled) {
         showToast('Erreur lors de l\'export', 'error');
       }
     } catch(e) {
@@ -308,16 +309,16 @@ export default function TemplatesModal({onClose}:{onClose?:()=>void}){
   // Import template from file
   async function importTemplate(){
     try {
-      const res = await (window as any).electronAPI?.importTemplateFromFile?.();
+      const res = await tauriAPI.importTemplateFromFile();
       
-      if(res?.canceled) return;
+      if(res.canceled) return;
       
-      if(!res?.ok || !res?.template){
+      if(!res.ok || !res.config){
         showToast('Erreur lors de l\'import', 'error');
         return;
       }
       
-      const parsed = res.template;
+      const parsed = res.config;
       
       // Validate template structure
       if(!parsed.name || !parsed.content){
@@ -381,10 +382,10 @@ export default function TemplatesModal({onClose}:{onClose?:()=>void}){
 
   return (
     <div className="modal">
-      <div className="panel" onClick={e=>e.stopPropagation()} style={{maxWidth: 900, width: '95%', maxHeight: '90vh', overflowY: 'auto'}}>
+      <div className="panel" onClick={e=>e.stopPropagation()} style={{maxWidth: 1000, width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column'}}>
         <h3>📄 Gestion des templates & variables</h3>
 
-        <div style={{display:'grid', gap:16}}>
+        <div style={{display:'grid', gap:16, overflowY: 'auto', flex: 1}}>
           {/* Liste des templates existants */}
           <div>
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 8}}>

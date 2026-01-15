@@ -55,12 +55,7 @@ const discordEmojis: Record<string, string> = {
 function renderStyledPreview(text: string): string {
   let html = text;
   
-  // Convertir les émojis Discord :nom: en Unicode
-  html = html.replace(/:([a-zA-Z0-9_+-]+):/g, (match, emojiName) => {
-    return discordEmojis[emojiName] || match;
-  });
-  
-  // Convertir BBCode en HTML
+  // Convertir BBCode en HTML (AVANT les émojis pour que :flag_fr: dans **:flag_fr:** fonctionne)
   // [b]...[/b] → <strong>...</strong>
   html = html.replace(/\[b\](.*?)\[\/b\]/gi, '<strong>$1</strong>');
   // [i]...[/i] → <em>...</em>
@@ -104,6 +99,11 @@ function renderStyledPreview(text: string): string {
   html = html.replace(/(^> .*$(\n^> .*$)*)/gim, (match) => {
     const lines = match.split('\n').map(line => line.replace(/^> /, '')).join('<br>');
     return `<blockquote style="border-left:3px solid var(--accent);padding-left:12px;margin:8px 0;color:var(--muted);">${lines}</blockquote>`;
+  });
+  
+  // Convertir les émojis Discord :nom: en Unicode (APRÈS les styles pour éviter les conflits)
+  html = html.replace(/:([a-zA-Z0-9_+-]+):/g, (match, emojiName) => {
+    return discordEmojis[emojiName] || match;
   });
   
   // Sauts de ligne

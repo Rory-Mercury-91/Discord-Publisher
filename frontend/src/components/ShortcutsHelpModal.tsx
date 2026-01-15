@@ -36,10 +36,10 @@ export default function ShortcutsHelpModal({ onClose }: ShortcutsHelpModalProps)
 
   return (
     <div className="modal">
-      <div className="panel" onClick={e => e.stopPropagation()} style={{ maxWidth: 600, width: '90%' }}>
+      <div className="panel" onClick={e => e.stopPropagation()} style={{ maxWidth: 1000, width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         <h3>⌨️ Raccourcis clavier</h3>
 
-        <div style={{ display: 'grid', gap: 24, marginTop: 16 }}>
+        <div style={{ display: 'grid', gap: 24, marginTop: 16, overflowY: 'auto', flex: 1 }}>
           {shortcuts.map((section, idx) => (
             <div key={idx}>
               <h4 style={{ 

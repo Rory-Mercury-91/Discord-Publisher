@@ -73,7 +73,7 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
         className="panel" 
         onClick={e => e.stopPropagation()} 
         style={{ 
-          maxWidth: 800, 
+          maxWidth: 1000, 
           width: '95%', 
           maxHeight: '90vh', 
           display: 'flex', 

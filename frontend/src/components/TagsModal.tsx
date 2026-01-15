@@ -86,10 +86,10 @@ export default function TagsModal({onClose}:{onClose?:()=>void}){
 
   return (
     <div className="modal">
-      <div className="panel" onClick={e=>e.stopPropagation()} style={{maxWidth: 800, width: '90%'}}>
+      <div className="panel" onClick={e=>e.stopPropagation()} style={{maxWidth: 1000, width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column'}}>
         <h3>🏷️ Gestion des tags</h3>
 
-        <div style={{display:'grid', gap:16}}>
+        <div style={{display:'grid', gap:16, overflowY: 'auto', flex: 1}}>
           {/* Liste des tags existants */}
           <div>
             <h4>Tags sauvegardés ({savedTags.length})</h4>

@@ -1,303 +1,162 @@
-import React, {useState} from 'react';
+import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../state/appContext';
 import { useToast } from './ToastProvider';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
+import { logger } from '../lib/logger';
+import LogsModal from './LogsModal';
 
-export default function ConfigModal({onClose}:{onClose?:()=>void}){
-  const { 
-    apiUrl,
-    templates, savedTags, savedInstructions, savedTraductors, allVarsConfig
-  } = useApp();
+export default function ConfigModal({ onClose }: { onClose?: () => void }) {
   const { showToast } = useToast();
-  const [testing, setTesting] = useState(false);
-  const [debugMode, setDebugMode] = useState(() => {
-    try {
-      return localStorage.getItem('debugMode') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const { 
+    apiStatus, 
+    templates, 
+    savedTags, 
+    savedInstructions, 
+    savedTraductors, 
+    allVarsConfig 
+  } = useApp();
 
+  const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('apiUrl') || '');
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('apiKey') || '');
+  const [showLogs, setShowLogs] = useState(false);
+
+  // Hooks pour fermer avec Echap et bloquer le scroll du fond
   useEscapeKey(() => onClose?.(), true);
   useModalScrollLock();
 
-  const toggleDebugMode = () => {
-    const newMode = !debugMode;
-    setDebugMode(newMode);
-    localStorage.setItem('debugMode', String(newMode));
-    if (newMode) {
-      showToast('Mode debug activé - Les requêtes seront enregistrées', 'info');
-      addDebugLog('🔧 Mode debug activé');
-    } else {
-      showToast('Mode debug désactivé', 'info');
+  // Calcul du statut pour l'affichage des pastilles
+  const status = typeof apiStatus === 'object' && apiStatus !== null 
+    ? { 
+        connected: (apiStatus as any).status === 'ok', 
+        bot1: (apiStatus as any).bots?.server1 || false,
+        bot2: (apiStatus as any).bots?.server2 || false 
+      }
+    : { connected: false, bot1: false, bot2: false };
+
+  const handleSave = () => {
+    localStorage.setItem('apiUrl', apiUrl);
+    localStorage.setItem('apiKey', apiKey);
+    showToast("Configuration enregistrée !", "success");
+  };
+
+  const handleExportConfig = () => {
+    try {
+      const fullConfig = { 
+        templates, savedTags, savedInstructions, savedTraductors, 
+        allVarsConfig, apiUrl, apiKey 
+      };
+      const blob = new Blob([JSON.stringify(fullConfig, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'backup_config_discord.json';
+      a.click();
+      showToast("Sauvegarde téléchargée", "success");
+    } catch (err: any) {
+      logger.error(err?.message || "Erreur export");
+      showToast("Erreur lors de l'export", "error");
     }
   };
 
-  const addDebugLog = (message: string) => {
-    const timestamp = new Date().toLocaleTimeString('fr-FR');
-    setDebugLogs(prev => [`[${timestamp}] ${message}`, ...prev].slice(0, 100)); // Keep last 100 logs
-  };
-
-  const exportLogs = () => {
-    const logsText = debugLogs.join('\n');
-    const blob = new Blob([logsText], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `debug-logs-${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Logs exportés', 'success');
-  };
-
-  const clearLogs = () => {
-    setDebugLogs([]);
-    showToast('Logs effacés', 'info');
-  };
-
-  return (
-    <div className="modal">
-      <div className="panel" onClick={e=>e.stopPropagation()}>
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
-          <h3 style={{margin:0}}>Édition des configurations</h3>
-          <span style={{fontSize:11, color:'var(--muted)'}}>v1.0.0</span>
+  // Le contenu HTML de la modale
+  const modalContent = (
+    <div 
+      className="modal-overlay" 
+      onClick={onClose} 
+      style={{ 
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.8)', // Fond bien sombre
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 99999, // Z-index ultra élevé
+        backdropFilter: 'blur(3px)' // Petit flou derrière
+      }}
+    >
+      <div 
+        className="modal-container" 
+        onClick={(e) => e.stopPropagation()} 
+        style={{ 
+          background: 'var(--panel)', 
+          borderRadius: '12px', 
+          width: '90%', 
+          maxWidth: '500px',
+          border: '1px solid var(--border)',
+          boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        <div className="modal-header" style={{ padding: '16px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ margin: 0, fontSize: '1.2rem' }}>⚙️ Configuration Serveur</h2>
+          <button className="close-button" onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text)', fontSize: '24px', cursor: 'pointer' }}>&times;</button>
         </div>
 
-        <div style={{display:'grid', gap:8}}>
-          <div style={{
-            padding: 12,
-            background: 'rgba(74, 158, 255, 0.1)',
-            border: '1px solid rgba(74, 158, 255, 0.3)',
-            borderRadius: 6,
-            fontSize: 13
-          }}>
-            <div style={{fontWeight: 600, marginBottom: 4}}>🌐 API Publisher Locale</div>
-            <div style={{color: 'var(--muted)', fontSize: 12}}>
-              URL: <code style={{
-                background: 'var(--bg-secondary)',
-                padding: '2px 6px',
-                borderRadius: 3,
-                fontFamily: 'monospace'
-              }}>{apiUrl}</code>
+        <div className="modal-body" style={{ padding: '20px' }}>
+          {/* Section API */}
+          <div style={{ marginBottom: '25px' }}>
+            <h3 style={{ fontSize: '1rem', color: 'var(--accent)', marginBottom: '15px' }}>🌐 Connexion Koyeb</h3>
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>URL API</label>
+              <input 
+                type="text" 
+                value={apiUrl} 
+                onChange={(e) => setApiUrl(e.target.value)}
+                placeholder="https://votre-app.koyeb.app"
+                style={{ width: '100%', padding: '10px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '6px' }}
+              />
             </div>
-            <div style={{color: 'var(--muted)', fontSize: 11, marginTop: 4}}>
-              L'API démarre automatiquement au lancement de l'application
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>Clé API</label>
+              <input 
+                type="password" 
+                value={apiKey} 
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Votre clé secrète"
+                style={{ width: '100%', padding: '10px', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '6px' }}
+              />
             </div>
-          </div>
-
-          <div style={{marginTop: 8}}>
-            <button 
-              onClick={async ()=>{
-                setTesting(true);
-                try{
-                  const res = await (window as any).electronAPI?.testConnection?.();
-                  if(res?.ok){
-                    showToast('Connexion réussie ! API accessible', 'success');
-                  } else {
-                    showToast(`Échec : ${res?.error || 'API locale non accessible'}`, 'error');
-                  }
-                }catch(e){
-                  showToast('Erreur : API locale non accessible', 'error');
-                }
-                setTesting(false);
-              }}
-              disabled={testing}
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: testing ? 'var(--muted)' : 'var(--info)',
-                cursor: testing ? 'not-allowed' : 'pointer',
-                opacity: testing ? 0.6 : 1
-              }}
-            >
-              {testing ? '⏳ Test en cours...' : '🔌 Tester la connexion à l\'API locale'}
+            <button className="btn-primary" onClick={handleSave} style={{ width: '100%', padding: '10px' }}>
+              💾 Enregistrer les accès
             </button>
           </div>
 
-          {/* Debug Mode Section */}
-          <div style={{borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12}}>
-            <div style={{marginBottom: 12}}>
-              <label style={{display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none'}}>
-                <input
-                  type="checkbox"
-                  checked={debugMode}
-                  onChange={toggleDebugMode}
-                  style={{cursor: 'pointer'}}
-                />
-                <span style={{fontWeight: 600}}>🐛 Mode Debug</span>
-              </label>
-              <div style={{fontSize: 12, color: 'var(--muted)', marginTop: 4, marginLeft: 28}}>
-                Enregistre toutes les requêtes/réponses API pour le débogage
+          {/* Section Statut */}
+          <div style={{ marginBottom: '10px' }}>
+            <h3 style={{ fontSize: '1rem', color: 'var(--accent)', marginBottom: '15px' }}>🤖 État des Bots</h3>
+            <div style={{ padding: '15px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+              <div style={{ marginBottom: '10px' }}>
+                Serveur : <span style={{ color: status.connected ? 'var(--success)' : 'var(--error)', fontWeight: 'bold' }}>
+                  {status.connected ? "● EN LIGNE" : "○ HORS LIGNE"}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '20px', fontSize: '0.85rem' }}>
+                <span>Bot 1 : {status.bot1 ? "✅" : "❌"}</span>
+                <span>Bot 2 : {status.bot2 ? "✅" : "❌"}</span>
               </div>
             </div>
-
-            {debugMode && (
-              <div style={{
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                padding: 12
-              }}>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
-                  <span style={{fontSize: 13, fontWeight: 600}}>
-                    📋 Logs de débogage ({debugLogs.length})
-                  </span>
-                  <div style={{display: 'flex', gap: 4}}>
-                    <button
-                      onClick={exportLogs}
-                      disabled={debugLogs.length === 0}
-                      style={{
-                        fontSize: 11,
-                        padding: '4px 8px',
-                        opacity: debugLogs.length === 0 ? 0.5 : 1,
-                        cursor: debugLogs.length === 0 ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      💾 Exporter
-                    </button>
-                    <button
-                      onClick={clearLogs}
-                      disabled={debugLogs.length === 0}
-                      style={{
-                        fontSize: 11,
-                        padding: '4px 8px',
-                        opacity: debugLogs.length === 0 ? 0.5 : 1,
-                        cursor: debugLogs.length === 0 ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      🗑️ Effacer
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{
-                  maxHeight: 200,
-                  overflow: 'auto',
-                  background: 'var(--bg-main)',
-                  borderRadius: 4,
-                  padding: 8,
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  lineHeight: 1.5
-                }}>
-                  {debugLogs.length === 0 ? (
-                    <div style={{color: 'var(--muted)', textAlign: 'center', padding: 20}}>
-                      Aucun log pour le moment. Effectuez une action pour voir les logs.
-                    </div>
-                  ) : (
-                    debugLogs.map((log, idx) => (
-                      <div key={idx} style={{marginBottom: 4, color: 'var(--text-main)'}}>
-                        {log}
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div style={{
-                  marginTop: 8,
-                  padding: 8,
-                  background: 'rgba(74, 158, 255, 0.1)',
-                  borderRadius: 4,
-                  fontSize: 11,
-                  color: 'var(--muted)'
-                }}>
-                  💡 Les logs sont également enregistrés dans le fichier <code style={{
-                    background: 'var(--bg-main)',
-                    padding: '2px 4px',
-                    borderRadius: 2
-                  }}>errors.log</code> à la racine du projet
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div style={{borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 12}}>
-            <div style={{marginBottom: 8, padding: 8, background: 'rgba(74, 158, 255, 0.1)', borderRadius: 4, fontSize: 13}}>
-              <strong>💾 Export/Import complet</strong>
-              <div style={{color: 'var(--muted)', fontSize: 12, marginTop: 4}}>
-                Inclus : Config API, Templates personnalisés, Tags, Variables personnalisées, Traducteurs, Instructions sauvegardées
-              </div>
-            </div>
-
-            <div style={{display:'flex', gap:8, justifyContent:'space-between'}}>
-            <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-              <button 
-                onClick={async ()=>{
-                  if(!confirm('⚠️ ATTENTION : Cette action va supprimer TOUTES vos données (config, templates, tags, traducteurs, instructions, historique, images). Cette action est irréversible. Continuer ?')) return;
-                  try{
-                    // Clear all localStorage
-                    localStorage.clear();
-                    // Delete all images via IPC
-                    const images = await (window as any).electronAPI?.listImages?.();
-                    if(images?.ok && images.files){
-                      for(const file of images.files){
-                        await (window as any).electronAPI?.deleteImage?.(file);
-                      }
-                    }
-                    showToast('Application réinitialisée ! Rechargement...', 'success');
-                    setTimeout(() => window.location.reload(), 1500);
-                  }catch(e){
-                    showToast('Erreur lors de la réinitialisation', 'error');
-                  }
-                }}
-                style={{background:'var(--danger)', color:'white'}}
-              >
-                🔄 Réinitialiser l'application
-              </button>
-              <button onClick={async ()=>{ 
-                try{ 
-                  // Export complet : templates + tags + instructions + traducteurs + variables personnalisées
-                  const fullConfig = {
-                    customTemplates: templates,
-                    savedTags: savedTags,
-                    savedInstructions: savedInstructions,
-                    savedTraductors: savedTraductors,
-                    customVariables: allVarsConfig
-                  };
-                  const res = await (window as any).electronAPI?.exportConfigToFile?.(fullConfig); 
-                  if(res?.ok) alert('✅ Configuration complète exportée : ' + res.path); 
-                  else if(!res?.canceled) alert('❌ Erreur lors de l\'export'); 
-                }catch(e){ alert('❌ Erreur export : ' + e); } 
-              }}>📤 Exporter</button>
-              <button onClick={async ()=>{ 
-                try{ 
-                  const res = await (window as any).electronAPI?.importConfigFromFile?.(); 
-                  if(res?.ok && res.config){
-                    if(res.config.customTemplates) {
-                      localStorage.setItem('customTemplates', JSON.stringify(res.config.customTemplates));
-                    }
-                    if(res.config.savedTags) {
-                      localStorage.setItem('savedTags', JSON.stringify(res.config.savedTags));
-                    }
-                    if(res.config.savedInstructions) {
-                      localStorage.setItem('savedInstructions', JSON.stringify(res.config.savedInstructions));
-                    }
-                    if(res.config.savedTraductors) {
-                      localStorage.setItem('savedTraductors', JSON.stringify(res.config.savedTraductors));
-                    }
-                    if(res.config.customVariables) {
-                      localStorage.setItem('customVariables', JSON.stringify(res.config.customVariables));
-                    }
-                    
-                    alert('✅ Configuration complète importée ! Rechargez la page pour appliquer les changements.');
-                    window.location.reload();
-                  } else if(!res?.canceled) {
-                    alert('❌ Erreur lors de l\'import');
-                  }
-                }catch(e){ 
-                  alert('❌ Erreur import : ' + e); 
-                } 
-              }}>📥 Importer</button>
-            </div>
-            <div style={{display:'flex', gap:8}}>
-              <button onClick={onClose}>🚪 Fermer</button>
-            </div>
-          </div>
           </div>
         </div>
+
+        <div className="modal-footer" style={{ padding: '16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={handleExportConfig}>📤 Backup</button>
+            <button onClick={() => setShowLogs(true)}>📜 Logs</button>
+          </div>
+          <button onClick={onClose} className="btn-secondary">Fermer</button>
+        </div>
       </div>
+
+      {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
     </div>
   );
+
+  // On téléporte le tout dans le body pour être au premier plan
+  return createPortal(modalContent, document.body);
 }
