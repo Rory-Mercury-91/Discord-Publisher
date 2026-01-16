@@ -77,13 +77,24 @@ export default function Preview({
   mainImagePath
 }: PreviewProps) {
   // Récupérer l'image principale depuis le contexte si mainImagePath n'est pas fourni
-  const { uploadedImages } = useApp();
+  const { uploadedImages, inputs } = useApp();
   const mainImage = mainImagePath
     ? uploadedImages.find(img => img.path === mainImagePath)
     : uploadedImages.find(img => img.isMain);
 
   const imagePathToDisplay = mainImage?.path;
 
+  // Pré-traiter le texte pour remplacer les émojis et gérer les placeholders
+  let processedPreview = replaceEmojis(preview);
+  processedPreview = processedPreview.replace(
+    /\[([A-Za-z_][A-Za-z0-9_]*)\]/g,
+    (match, varName) => {
+      return `<span style="color:rgba(255,255,255,0.2); font-style:italic;">[${varName}]</span>`;
+    }
+  );
+
+  const characterCount = processedPreview.length;
+  const isOverLimit = characterCount > 2000;
   // Si le preview est vide, afficher un message
   if (!preview || preview.trim() === '') {
     return (
@@ -107,17 +118,6 @@ export default function Preview({
     );
   }
 
-  // Pré-traiter le texte pour remplacer les émojis et gérer les placeholders
-  let processedPreview = replaceEmojis(preview);
-
-  // Remplacer les placeholders vides [Variable] par un style Discord
-  processedPreview = processedPreview.replace(
-    /\[([A-Za-z_][A-Za-z0-9_]*)\]/g,
-    (match, varName) => {
-      return `<span style="color:rgba(255,255,255,0.2); font-style:italic;">[${varName}]</span>`;
-    }
-  );
-
   return (
     <div className="preview-section" style={{
       display: 'flex',
@@ -127,6 +127,35 @@ export default function Preview({
       minHeight: 0,
       background: 'var(--bg)'
     }}>
+      {/* Compteur de caractères */}
+      <div style={{
+        padding: '8px 12px',
+        background: isOverLimit ? 'rgba(239, 68, 68, 0.1)' : 'rgba(74, 158, 255, 0.1)',
+        border: `1px solid ${isOverLimit ? 'var(--error)' : 'rgba(74, 158, 255, 0.3)'}`,
+        borderRadius: 6,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexShrink: 0
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>
+          Compteur de caractères
+        </div>
+        <div style={{
+          fontSize: 14,
+          fontWeight: 700,
+          color: isOverLimit ? 'var(--error)' : 'var(--text)'
+        }}>
+          {characterCount} / 2000
+          {isOverLimit && (
+            <span style={{ marginLeft: 8, fontSize: 11 }}>
+              ⚠️ Limite dépassée de {characterCount - 2000}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Boutons de mode et actions */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: 4, background: 'var(--bg)', borderRadius: 6, padding: 2 }}>
           <button

@@ -609,6 +609,64 @@ export default function ContentEditor() {
               </label>
             </div>
 
+            {/* Nouvelle section : Jeu modé */}
+            <div style={{ gridColumn: '1 / -1', marginTop: 12 }}>
+              <div style={{
+                padding: 12,
+                background: 'rgba(168, 85, 247, 0.1)',
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+                borderRadius: 6
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    userSelect: 'none'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={inputs['is_modded_game'] === 'true'}
+                      onChange={e => setInput('is_modded_game', e.target.checked ? 'true' : 'false')}
+                      style={{ width: 18, height: 18, cursor: 'pointer' }}
+                    />
+                    <span>🎮 Jeu modé</span>
+                  </label>
+                </div>
+
+                {inputs['is_modded_game'] === 'true' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>
+                      Lien du mod
+                    </label>
+                    <input
+                      value={inputs['mod_link'] || ''}
+                      onChange={e => setInput('mod_link', e.target.value)}
+                      style={{ width: '100%' }}
+                      placeholder="https://..."
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Information sur le nettoyage automatique des liens */}
+            <div style={{
+              gridColumn: '1 / -1',
+              fontSize: 11,
+              color: 'var(--muted)',
+              fontStyle: 'italic',
+              padding: '8px 12px',
+              background: 'rgba(74, 158, 255, 0.05)',
+              borderRadius: 4,
+              border: '1px solid rgba(74, 158, 255, 0.2)'
+            }}>
+              💡 <strong>Info :</strong> Les liens F95Zone et LewdCorner sont automatiquement raccourcis (uniquement l'ID du thread est conservé).
+            </div>
+
             {/* Variables personnalisées (on filtre les nouveaux noms par défaut) */}
             {visibleVars.filter(v => !['Game_name', 'Game_version', 'Translate_version', 'Game_link', 'Translate_link', 'Traductor', 'Overview', 'instruction'].includes(v.name)).map((v, idx) => (
               <div key={v.name} style={v.fullWidth ? { gridColumn: '1 / -1' } : {}}>

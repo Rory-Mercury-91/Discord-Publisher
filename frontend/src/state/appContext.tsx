@@ -60,7 +60,9 @@ const defaultVarsConfig: VarConfig[] = [
   { name: 'Game_link', label: 'Lien du jeu', placeholder: 'https://...' },
   { name: 'Translate_link', label: 'Lien de la traduction', placeholder: 'https://...' },
   { name: 'Traductor', label: 'Traducteur', placeholder: 'Rory Mercury 91', hasSaveLoad: true },
-  { name: 'Overview', label: 'Synopsis', placeholder: 'Synopsis du jeu...', type: 'textarea' }
+  { name: 'Overview', label: 'Synopsis', placeholder: 'Synopsis du jeu...', type: 'textarea' },
+  { name: 'is_modded_game', label: 'Jeu modé', type: 'text' }, // Stocké comme "true"/"false"
+  { name: 'Mod_link', label: 'Lien du mod', placeholder: 'https://...' }
 ];
 
 const defaultTemplates: Template[] = [
@@ -223,9 +225,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [currentTemplateIdx, setCurrentTemplateIdx] = useState<number>(0);
 
   const [inputs, setInputs] = useState<Record<string, string>>(() => {
-    // load some defaults from localStorage if present
     const obj: Record<string, string> = {};
     allVarsConfig.forEach(v => obj[v.name] = '');
+    // Initialiser is_modded_game à "false" par défaut
+    obj['is_modded_game'] = 'false';
+    obj['mod_link'] = '';
+
     try {
       const raw = localStorage.getItem('savedInputs');
       if (raw) {
@@ -786,8 +791,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  function cleanGameLink(url: string): string {
+    if (!url || !url.trim()) return url;
+
+    const trimmed = url.trim();
+
+    // F95Zone - Garder uniquement https://f95zone.to/threads/ID/
+    const f95Match = trimmed.match(/f95zone\.to\/threads\/([^\/]+)/);
+    if (f95Match) {
+      return `https://f95zone.to/threads/${f95Match[1]}/`;
+    }
+
+    // LewdCorner - Garder uniquement https://lewdcorner.com/threads/ID/
+    const lewdMatch = trimmed.match(/lewdcorner\.com\/threads\/([^\/]+)/);
+    if (lewdMatch) {
+      return `https://lewdcorner.com/threads/${lewdMatch[1]}/`;
+    }
+
+    return trimmed;
+  }
+
   function setInput(name: string, value: string) {
-    setInputs(prev => ({ ...prev, [name]: value }));
+    let finalValue = value;
+
+    // Auto-nettoyage des liens
+    if (name === 'Game_link' || name === 'mod_link') {
+      finalValue = cleanGameLink(value);
+    }
+
+    setInputs(prev => ({ ...prev, [name]: finalValue }));
   }
 
   function addSavedTag(t: Tag) {
@@ -1005,21 +1037,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const val = (inputs[name] || '').trim();
       let finalVal = val;
 
-      // Formatage spécial pour 'overview' (minuscule dans legacy) ou 'Overview' (majuscule)
-      // Legacy utilise: lines.join('\n> ') qui ajoute > entre les lignes
+      // Formatage spécial pour 'overview' ou 'Overview'
       if ((name === 'overview' || name === 'Overview') && val) {
         const lines = val.split('\n').map(l => l.trim()).filter(Boolean);
-        // Legacy: join avec '\n> ' ajoute > entre les lignes (première ligne sans >)
         finalVal = lines.join('\n> ');
 
-        // Injecter les instructions directement après overview si présentes
+        // Injecter les instructions après overview
         const instructionContent = (inputs['instruction'] || '').trim();
         if (instructionContent) {
           const instructionLines = instructionContent.split('\n')
             .map(l => l.trim())
             .filter(Boolean);
 
-          // Numéroter les instructions (1, 2, 3...) et les formater dans un bloc de code
           const numberedInstructions = instructionLines
             .map((l, index) => `${index + 1}. ${l}`)
             .join('\n');
@@ -1034,28 +1063,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       content = content.split('[' + name + ']').join(finalVal || '[' + name + ']');
     });
 
-    // Remplacement de [Translation_Type] par la valeur actuelle
-    // Si isIntegrated est activé, afficher "Intégrée (Type)"
+    // Remplacement de [Translation_Type]
     const displayTranslationType = isIntegrated
       ? `${translationType} (Intégrée)`
       : translationType;
     content = content.split('[Translation_Type]').join(displayTranslationType);
 
-    // Logique Smart Integrated
+    // NOUVELLE LOGIQUE : Insertion de la ligne "Jeu modé" après "Type de traduction"
+    const isModded = inputs['is_modded_game'] === 'true';
+    const modLink = (inputs['mod_link'] || '').trim();
+
+    // Chercher la ligne "Type de traduction" et insérer après
+    const translationTypePattern = /(\*\*Type de traduction\*\*\s*:[^\n]+)/;
+    if (translationTypePattern.test(content)) {
+      let moddedLine = '';
+      if (isModded && modLink) {
+        moddedLine = `\n* **Jeu modé :** Oui [Lien du mod](${modLink})`;
+      } else if (isModded) {
+        moddedLine = `\n* **Jeu modé :** Oui`;
+      } else {
+        moddedLine = `\n* **Jeu modé :** Non`;
+      }
+
+      content = content.replace(translationTypePattern, `$1${moddedLine}`);
+    }
+
+    // Logique Smart Integrated (existante)
     if (isIntegrated) {
-      // Supprimer la ligne contenant [Translate_link] (peut être dans un lien markdown ou seul)
-      // Pattern: ligne complète contenant [Translate_link], avec ou sans markdown
       content = content.replace(/^.*\[Translate_link\].*$/gm, '');
-
-      // Supprimer aussi la ligne contenant le label "Lien de la Traduction" ou "Lien de la traduction"
-      // Gérer les variations avec ou sans majuscule, avec ou sans markdown
       content = content.replace(/^.*\*\s*\*\*Lien de la [Tt]raduction\s*:\s*\*\*.*$/gm, '');
-
-      // Nettoyer les lignes vides multiples qui pourraient résulter de la suppression
       content = content.replace(/\n\n\n+/g, '\n\n');
     }
 
-    // Supprimer [instruction] placeholder si pas déjà remplacé dans overview
+    // Supprimer [instruction] placeholder
     content = content.split('[instruction]').join('');
 
     return content;
