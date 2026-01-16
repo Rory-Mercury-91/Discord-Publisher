@@ -226,7 +226,7 @@ export default function ContentEditor() {
     }
   }
 
-return (
+  return (
     <div
       onDrop={onImageDrop}
       onDragOver={onDragOver}
@@ -302,9 +302,9 @@ return (
       )}
 
       <h4 style={{ marginBottom: 16 }}>📝 Contenu du post Discord</h4>
-      
+
       <div style={{ display: 'grid', gap: 16 }}>
-        
+
         {/* LIGNE 1 : TITRE, TAGS, IMAGE */}
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr auto', gap: 12, alignItems: 'end' }}>
           <div>
@@ -331,7 +331,7 @@ return (
                 <option value="">— Sélectionner un tag —</option>
                 {visibleTags.map((t, idx) => (<option key={idx} value={t.id || t.name}>{t.name}</option>))}
               </select>
-              <button 
+              <button
                 onClick={() => {
                   if (!selectedTagId) return;
                   const currentTags = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -391,7 +391,7 @@ return (
         )}
 
         {/* SECTION IMAGES */}
-        <div style={{ 
+        <div style={{
           padding: 12, background: 'var(--panel)', borderRadius: 8, border: '1px solid var(--border)',
           minHeight: '60px'
         }}>
@@ -429,48 +429,75 @@ return (
           {/* Nom & Traducteur */}
           <div>
             <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>Nom du jeu</label>
-            <input 
-              value={inputs['Game_name'] || ''} 
-              onChange={e => setInput('Game_name', e.target.value)} 
-              style={{ width: '100%' }} 
+            <input
+              value={inputs['Game_name'] || ''}
+              onChange={e => setInput('Game_name', e.target.value)}
+              style={{ width: '100%' }}
               placeholder="Nom du jeu"
             />
           </div>
           <div style={{ position: 'relative' }}>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>Traducteur</label>
+            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>
+              Traducteur
+            </label>
+
             <input
               type="text"
               value={traductorSearchQuery || inputs['Traductor'] || ''}
-              onChange={e => { setTraductorSearchQuery(e.target.value); setInput('Traductor', e.target.value); setShowTraductorSuggestions(true); }}
+              onChange={e => {
+                setTraductorSearchQuery(e.target.value);
+                setInput('Traductor', e.target.value);
+                setShowTraductorSuggestions(true);
+              }}
               onFocus={() => setShowTraductorSuggestions(true)}
               style={{ width: '100%' }}
               placeholder="Nom du traducteur..."
             />
+
             {showTraductorSuggestions && filteredTraductors.length > 0 && (
-               <div className="suggestions-dropdown">
-                  {filteredTraductors.map((t, idx) => (
-                    <div key={idx} className="suggestion-item" onClick={() => { setInput('Traductor', t); setTraductorSearchQuery(t); setShowTraductorSuggestions(false); }}>{t}</div>
-                  ))}
-               </div>
+              <div
+                className="suggestions-dropdown"
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 1001, // > overlay (999)
+                }}
+              >
+                {filteredTraductors.map((t, idx) => (
+                  <div
+                    key={idx}
+                    className="suggestion-item"
+                    onClick={() => {
+                      setInput('Traductor', t);
+                      setTraductorSearchQuery(t);
+                      setShowTraductorSuggestions(false);
+                    }}
+                  >
+                    {t}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
           {/* Versions */}
           <div>
             <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>Version du jeu</label>
-            <input 
-              value={inputs['Game_version'] || ''} 
-              onChange={e => setInput('Game_version', e.target.value)} 
-              style={{ width: '100%' }} 
+            <input
+              value={inputs['Game_version'] || ''}
+              onChange={e => setInput('Game_version', e.target.value)}
+              style={{ width: '100%' }}
               placeholder="v1.0.4"
             />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>Version Traduction</label>
-            <input 
-              value={inputs['Translate_version'] || ''} 
-              onChange={e => setInput('Translate_version', e.target.value)} 
-              style={{ width: '100%' }} 
+            <input
+              value={inputs['Translate_version'] || ''}
+              onChange={e => setInput('Translate_version', e.target.value)}
+              style={{ width: '100%' }}
               placeholder="v1.0"
             />
           </div>
@@ -478,11 +505,11 @@ return (
           {/* Liens */}
           <div>
             <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>Lien du jeu</label>
-            <input 
-              value={inputs['Game_link'] || ''} 
-              onChange={e => setInput('Game_link', e.target.value)} 
-              style={{ width: '100%' }} 
-              placeholder="https://f95zone.to/threads/..." 
+            <input
+              value={inputs['Game_link'] || ''}
+              onChange={e => setInput('Game_link', e.target.value)}
+              style={{ width: '100%' }}
+              placeholder="https://f95zone.to/threads/..."
             />
           </div>
           <div>
@@ -500,9 +527,9 @@ return (
         </div>
 
         {/* SECTION TYPE & INTEGRATION (STYLE HARMONISÉ) */}
-        <div style={{ 
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, 
-          padding: 12, background: 'var(--panel)', borderRadius: 8, border: '1px solid var(--border)' 
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16,
+          padding: 12, background: 'var(--panel)', borderRadius: 8, border: '1px solid var(--border)'
         }}>
           <div>
             <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>Type de traduction</label>
@@ -530,8 +557,8 @@ return (
         </div>
 
         {/* SECTION JEU MODÉ (STYLE HARMONISÉ) */}
-        <div style={{ 
-          padding: 12, background: 'var(--panel)', borderRadius: 8, border: '1px solid var(--border)' 
+        <div style={{
+          padding: 12, background: 'var(--panel)', borderRadius: 8, border: '1px solid var(--border)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: inputs['is_modded_game'] === 'true' ? 12 : 0 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none', fontSize: 14, fontWeight: 600 }}>
@@ -579,21 +606,48 @@ return (
           </div>
 
           <div style={{ position: 'relative' }}>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>Instructions d'installation (optionnelles)</label>
+            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>
+              Instructions d'installation (optionnelles)
+            </label>
+
             <input
               type="text"
               placeholder="Rechercher ou taper une instruction..."
               value={instructionSearchQuery || inputs['instruction'] || ''}
-              onChange={e => { setInstructionSearchQuery(e.target.value); setInput('instruction', e.target.value); setShowInstructionSuggestions(true); }}
+              onChange={e => {
+                setInstructionSearchQuery(e.target.value);
+                setInput('instruction', e.target.value);
+                setShowInstructionSuggestions(true);
+              }}
               onFocus={() => setShowInstructionSuggestions(true)}
               style={{ width: '100%' }}
             />
+
             {showInstructionSuggestions && filteredInstructions.length > 0 && (
-              <div className="suggestions-dropdown">
+              <div
+                className="suggestions-dropdown"
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 1001, // > overlay (999)
+                }}
+              >
                 {filteredInstructions.map((name, idx) => (
-                  <div key={idx} className="suggestion-item" onClick={() => { setInput('instruction', savedInstructions[name]); setInstructionSearchQuery(name); setShowInstructionSuggestions(false); }}>
+                  <div
+                    key={idx}
+                    className="suggestion-item"
+                    onClick={() => {
+                      setInput('instruction', savedInstructions[name]);
+                      setInstructionSearchQuery(name);
+                      setShowInstructionSuggestions(false);
+                    }}
+                  >
                     <div style={{ fontWeight: 600 }}>{name}</div>
-                    <div style={{ fontSize: 11, opacity: 0.7 }}>{savedInstructions[name].substring(0, 50)}...</div>
+                    <div style={{ fontSize: 11, opacity: 0.7 }}>
+                      {savedInstructions[name].substring(0, 50)}...
+                    </div>
                   </div>
                 ))}
               </div>
@@ -606,9 +660,9 @@ return (
           {rateLimitCooldown !== null && (
             <div style={{ color: 'var(--error)', fontSize: 13, fontWeight: 700 }}>⏳ Rate limit : {rateLimitRemaining}s</div>
           )}
-          
+
           {isEditMode && (
-            <button 
+            <button
               onClick={() => { setEditingPostId(null); setEditingPostData(null); }}
               style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)' }}
             >
@@ -619,15 +673,15 @@ return (
           <button
             disabled={publishInProgress || !canPublish}
             onClick={async () => {
-              const ok = await confirm({ 
-                title: isEditMode ? 'Mettre à jour' : 'Publier', 
-                message: isEditMode ? 'Modifier ce post sur Discord ?' : 'Envoyer ce nouveau post sur Discord ?' 
+              const ok = await confirm({
+                title: isEditMode ? 'Mettre à jour' : 'Publier',
+                message: isEditMode ? 'Modifier ce post sur Discord ?' : 'Envoyer ce nouveau post sur Discord ?'
               });
               if (ok) {
                 const res = await publishPost();
                 if (res.ok) {
-                    showToast('Terminé !', 'success');
-                    if (isEditMode) { setEditingPostId(null); setEditingPostData(null); }
+                  showToast('Terminé !', 'success');
+                  if (isEditMode) { setEditingPostId(null); setEditingPostData(null); }
                 }
               }
             }}
@@ -651,14 +705,14 @@ return (
               <span>⏳ Patientez...</span>
             ) : (
               <>
-                <img 
-                  src={DiscordIcon} 
-                  alt="Discord" 
-                  style={{ 
-                    width: 20, 
-                    height: 20, 
+                <img
+                  src={DiscordIcon}
+                  alt="Discord"
+                  style={{
+                    width: 20,
+                    height: 20,
                     filter: 'brightness(0) invert(1)' // Force l'icône en blanc
-                  }} 
+                  }}
                 />
                 <span>{isEditMode ? 'Mettre à jour' : 'Publier sur Discord'}</span>
               </>
