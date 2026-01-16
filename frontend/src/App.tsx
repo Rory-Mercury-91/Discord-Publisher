@@ -108,26 +108,17 @@ function AppContentInner() {
   }, [theme]);
 
   useEffect(() => {
-    const fetchStatus = async () => {
-      const storedUrl = localStorage.getItem('apiUrl');
+      // On vérifie juste si on a une URL enregistrée pour savoir si on est "configuré"
+      const storedUrl = localStorage.getItem('apiUrl') || localStorage.getItem('apiBase');
+      
       if (!storedUrl) {
         setApiStatus('disconnected');
-        return;
+      } else {
+        // On initialise à "checking". 
+        // C'est le composant ApiStatusBadge qui fera le VRAI travail réseau
+        setApiStatus('checking');
       }
-      try {
-        const cleanUrl = storedUrl.endsWith('/') ? storedUrl.slice(0, -1) : storedUrl;
-        const response = await fetch(`${cleanUrl}/api/status`);
-        if (!response.ok) throw new Error();
-        const data = await response.json();
-        setApiStatus(data);
-      } catch (err) {
-        setApiStatus('disconnected');
-      }
-    };
-    fetchStatus();
-    const interval = setInterval(fetchStatus, 30000);
-    return () => clearInterval(interval);
-  }, [setApiStatus]);
+    }, [setApiStatus]);
 
 
   return (
