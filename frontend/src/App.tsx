@@ -144,42 +144,43 @@ function AppContentInner() {
                 <button onClick={() => setOpenTags(true)}>🏷️ Gérer les Tags</button>
                 <button onClick={() => setOpenTraductors(true)}>👥 Gérer les Traducteurs</button>
                 <button onClick={() => setOpenInstructions(true)}>📋 Gérer les Instructions</button>
-                <button onClick={() => setOpenHistory(true)}>📋 Historique</button>
+                <button onClick={() => setOpenHistory(true)}>📜 Historique</button>
                 <button onClick={() => setOpenStats(true)}>📈 Statistiques</button>
                 <button onClick={() => setOpenConfig(true)}>⚙️ Configuration API</button>
-                {/* Removed logs button – Koyeb collects logs automatically */}
-                <ApiStatusBadge />
-                <button
-                  onClick={() => setOpenShortcutsHelp(true)}
-                  style={{
-                    marginLeft: 'auto',
-                    fontSize: 18,
-                    width: 36,
-                    height: 36,
-                    padding: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                  title="Aide des raccourcis clavier"
-                >
-                  ❓
-                </button>
-                <button
-                  onClick={toggleTheme}
-                  style={{
-                    fontSize: 20,
-                    width: 36,
-                    height: 36,
-                    padding: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                  title={theme === 'dark' ? 'Passer en mode jour' : 'Passer en mode nuit'}
-                >
-                  {theme === 'dark' ? '☀️' : '🌙'}
-                </button>
+                {/* Place ApiStatusBadge juste avant le bouton "?" */}
+                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <ApiStatusBadge />
+                  <button
+                    onClick={() => setOpenShortcutsHelp(true)}
+                    style={{
+                      fontSize: 18,
+                      width: 36,
+                      height: 36,
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title="Aide des raccourcis clavier"
+                  >
+                    ❓
+                  </button>
+                  <button
+                    onClick={toggleTheme}
+                    style={{
+                      fontSize: 20,
+                      width: 36,
+                      height: 36,
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title={theme === 'dark' ? 'Passer en mode jour' : 'Passer en mode nuit'}
+                  >
+                    {theme === 'dark' ? '☀️' : '🌙'}
+                  </button>
+                </span>
               </div>
             </div>
           </header>

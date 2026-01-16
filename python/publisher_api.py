@@ -38,7 +38,10 @@ class Config:
         self.FORUM_PARTNER_ID = int(os.getenv("PUBLISHER_FORUM_PARTNER_ID", "0")) if os.getenv("PUBLISHER_FORUM_PARTNER_ID") else 0
         self.ALLOWED_ORIGINS = os.getenv("PUBLISHER_ALLOWED_ORIGINS", "*")
         self.PORT = int(os.getenv("PORT", "8080"))
-        self.DISCORD_API_BASE = "https://discord.com/api"
+        
+        # On lit la variable d'env, sinon on utilise ton nouveau proxy par défaut
+        self.DISCORD_API_BASE = os.getenv("DISCORD_API_BASE", "https://api-proxy-koyeb.a-fergani91.workers.dev")
+        
         self.configured = bool(self.DISCORD_PUBLISHER_TOKEN and self.FORUM_MY_ID and self.FORUM_PARTNER_ID)
     
     def update_from_frontend(self, config_data: dict):

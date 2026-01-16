@@ -252,6 +252,29 @@ export default function ConfigModal({ onClose }: { onClose?: () => void }) {
               <li>Instructions sauvegardées</li>
               <li>Historique complet des publications</li>
             </ul>
+
+            {/* Info bulle pour le dossier de destination */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 12px',
+              background: 'rgba(255, 255, 255, 0.05)',
+              borderRadius: '6px',
+              marginBottom: '12px',
+              borderLeft: '3px solid #4a9eff'
+            }}>
+              <span style={{ fontSize: '14px' }}>ℹ️</span>
+              <p style={{ 
+                fontSize: '11px', 
+                color: 'var(--muted)', 
+                margin: 0,
+                fontStyle: 'italic' 
+              }}>
+                Le fichier sera enregistré automatiquement dans votre dossier <strong>"Téléchargements"</strong>.
+              </p>
+            </div>
+
             <button
               onClick={handleExportConfig}
               style={{
