@@ -153,3 +153,30 @@ button{background:transparent; border:1px solid var(--border); color:inherit; pa
 .suggestion-item:last-child{
   border-bottom: none;
 }
+
+/* Rendu des menus déroulants natifs (select) lisible en dark/light */
+select{
+  color-scheme: dark;            /* demande au navigateur un dropdown "dark" */
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+[data-theme="light"] select{
+  color-scheme: light;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+/* Options (support variable selon OS/navigateur, mais aide beaucoup) */
+select option,
+select optgroup{
+  background: var(--panel);
+  color: var(--text);
+}
+
+/* L'option placeholder (value="") reste plus discrète */
+select option[value=""]{
+  color: var(--placeholder);
+}

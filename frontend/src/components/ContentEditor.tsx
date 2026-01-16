@@ -38,21 +38,36 @@ export default function ContentEditor() {
 
     // Reset toutes les variables
     allVarsConfig.forEach(v => setInput(v.name, ''));
-    // Reset instruction
+
+    // Reset champs spécifiques hors config (si tu en as)
     setInput('instruction', '');
-    // Reset titre et tags
+    setInput('is_modded_game', 'false');
+    setInput('mod_link', '');
+
+    // Reset titre / tags
     setPostTitle('');
     setPostTags('');
-    // Reset images (supprimer toutes)
-    while (uploadedImages.length > 0) {
-      removeImage(0);
-    }
-    // Reset query states
+
+    // Reset sélection / recherches UI
+    setSelectedTagId('');
+    setTagSearchQuery('');
+    setShowTagSuggestions(false);
+
     setTraductorSearchQuery('');
+    setShowTraductorSuggestions(false);
+
     setInstructionSearchQuery('');
-    // Reset translation type and integration
+    setShowInstructionSuggestions(false);
+
+    // Reset type / intégration
     setTranslationType('Automatique');
     setIsIntegrated(false);
+
+    // Reset images (IMPORTANT: pas de while)
+    const count = uploadedImages.length; // snapshot
+    for (let i = 0; i < count; i++) {
+      removeImage(0);
+    }
 
     showToast('Tous les champs ont été réinitialisés', 'success');
   };
@@ -320,29 +335,79 @@ export default function ContentEditor() {
             />
           </div>
 
-          <div>
+          {/* TAGS (CUSTOM DROPDOWN) */}
+          <div style={{ position: 'relative' }}>
             <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>Tags</label>
+
             <div style={{ display: 'flex', gap: 8 }}>
-              <select
-                value={selectedTagId}
-                onChange={e => setSelectedTagId(e.target.value)}
-                style={{ flex: 1, color: selectedTagId ? 'inherit' : 'var(--placeholder)' }}
-              >
-                <option value="">— Sélectionner un tag —</option>
-                {visibleTags.map((t, idx) => (<option key={idx} value={t.id || t.name}>{t.name}</option>))}
-              </select>
+              <input
+                type="text"
+                value={tagSearchQuery}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setTagSearchQuery(v);
+                  setShowTagSuggestions(true);
+
+                  // si l'utilisateur retape, on ne garde pas un ancien id “sélectionné”
+                  if (!v.trim()) setSelectedTagId('');
+                }}
+                onFocus={() => setShowTagSuggestions(true)}
+                placeholder="Rechercher un tag..."
+                style={{ flex: 1, width: '100%' }}
+              />
+
               <button
+                type="button"
                 onClick={() => {
                   if (!selectedTagId) return;
+
                   const currentTags = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
                   if (!currentTags.includes(selectedTagId)) {
                     setPostTags([...currentTags, selectedTagId].join(','));
                   }
+
                   setSelectedTagId('');
+                  setTagSearchQuery('');
+                  setShowTagSuggestions(false);
                 }}
                 style={{ padding: '0 12px' }}
-              >➕</button>
+              >
+                ➕
+              </button>
             </div>
+
+            {showTagSuggestions && filteredTags.length > 0 && (
+              <div
+                className="suggestions-dropdown"
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 1001
+                }}
+              >
+                {filteredTags.map((t, idx) => {
+                  const tagId = (t.id || t.name);
+                  return (
+                    <div
+                      key={idx}
+                      className="suggestion-item"
+                      onMouseDown={(e) => {
+                        // onMouseDown évite les clics “perdus” si un blur se déclenche
+                        e.preventDefault();
+                        setSelectedTagId(tagId);
+                        setTagSearchQuery(t.name);
+                        setShowTagSuggestions(false);
+                      }}
+                    >
+                      <div style={{ fontWeight: 600 }}>{t.name}</div>
+                      {t.id && <div style={{ fontSize: 11, opacity: 0.7 }}>{t.id}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div>
@@ -370,25 +435,66 @@ export default function ContentEditor() {
 
         {/* AFFICHAGE TAGS ACTIFS */}
         {postTags && postTags.trim() && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '10px', background: 'var(--panel)', borderRadius: 6, border: '1px solid var(--border)' }}>
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+            padding: 10,
+            background: 'var(--panel)',
+            borderRadius: 8,
+            border: '1px solid var(--border)'
+          }}>
             {postTags.split(',').map(s => s.trim()).filter(Boolean).map((tagId, idx) => {
               const tag = savedTags.find(t => (t.id || t.name) === tagId);
+
               return (
-                <div key={idx} style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  background: 'rgba(88, 101, 242, 0.1)', border: '1px solid #5865F2',
-                  borderRadius: 4, padding: '2px 8px', fontSize: 12
-                }}>
-                  <span>{tag?.name || tagId}</span>
-                  <span onClick={() => {
-                    const newTags = postTags.split(',').map(s => s.trim()).filter(t => t !== tagId && t !== '');
-                    setPostTags(newTags.join(','));
-                  }} style={{ cursor: 'pointer', color: 'var(--error)', fontWeight: 'bold', marginLeft: 4 }}>✕</span>
+                <div
+                  key={idx}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '4px 10px',
+                    borderRadius: 999,
+                    background: 'rgba(99, 102, 241, 0.14)',        // proche de --accent (#6366f1)
+                    border: '1px solid rgba(99, 102, 241, 0.35)',
+                    fontSize: 12,
+                    lineHeight: 1
+                  }}
+                >
+                  <span style={{ color: 'var(--text)' }}>{tag?.name || tagId}</span>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newTags = postTags
+                        .split(',')
+                        .map(s => s.trim())
+                        .filter(t => t && t !== tagId);
+
+                      setPostTags(newTags.join(','));
+                    }}
+                    title="Retirer"
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--muted)',
+                      cursor: 'pointer',
+                      padding: 0,
+                      lineHeight: 1,
+                      fontSize: 14,
+                      display: 'inline-flex',
+                      alignItems: 'center'
+                    }}
+                  >
+                    ✕
+                  </button>
                 </div>
               );
             })}
           </div>
         )}
+
 
         {/* SECTION IMAGES */}
         <div style={{
@@ -528,23 +634,63 @@ export default function ContentEditor() {
 
         {/* SECTION TYPE & INTEGRATION (STYLE HARMONISÉ) */}
         <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16,
-          padding: 12, background: 'var(--panel)', borderRadius: 8, border: '1px solid var(--border)'
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 16,
+          padding: 12,
+          background: 'var(--panel)',
+          borderRadius: 8,
+          border: '1px solid var(--border)'
         }}>
           <div>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>Type de traduction</label>
-            <select
-              value={translationType}
-              onChange={e => setTranslationType(e.target.value)}
-              style={{ width: '100%' }}
-            >
-              <option value="Automatique">Automatique</option>
-              <option value="Semi-automatique">Semi-automatique</option>
-              <option value="Manuelle">Manuelle</option>
-            </select>
+            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>
+              Type de traduction
+            </label>
+
+            <div style={{
+              display: 'flex',
+              gap: 4,
+              padding: 4,
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+              background: 'rgba(255,255,255,0.03)'
+            }}>
+              {(['Automatique', 'Semi-automatique', 'Manuelle'] as const).map((opt) => {
+                const active = translationType === opt;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setTranslationType(opt)}
+                    style={{
+                      flex: 1,
+                      height: 34,
+                      borderRadius: 6,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: active ? 'var(--accent)' : 'transparent',
+                      color: active ? 'white' : 'var(--muted)',
+                      fontSize: 13,
+                      fontWeight: active ? 700 : 600
+                    }}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 8 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none', fontSize: 13 }}>
+
+          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              cursor: 'pointer',
+              userSelect: 'none',
+              fontSize: 13,
+              color: 'var(--text)'
+            }}>
               <input
                 type="checkbox"
                 checked={isIntegrated}
@@ -558,23 +704,46 @@ export default function ContentEditor() {
 
         {/* SECTION JEU MODÉ (STYLE HARMONISÉ) */}
         <div style={{
-          padding: 12, background: 'var(--panel)', borderRadius: 8, border: '1px solid var(--border)'
+          padding: 12,
+          background: 'var(--panel)',
+          borderRadius: 8,
+          border: '1px solid var(--border)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: inputs['is_modded_game'] === 'true' ? 12 : 0 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none', fontSize: 14, fontWeight: 600 }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            marginBottom: (inputs['is_modded_game'] === 'true') ? 10 : 0
+          }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              cursor: 'pointer',
+              userSelect: 'none',
+              fontSize: 13,
+              color: 'var(--text)'
+            }}>
               <input
                 type="checkbox"
                 checked={inputs['is_modded_game'] === 'true'}
                 onChange={e => setInput('is_modded_game', e.target.checked ? 'true' : 'false')}
                 style={{ width: 18, height: 18, cursor: 'pointer' }}
               />
-              <span>🎮 Jeu modé</span>
+              <span style={{ fontWeight: 700 }}>🎮 Jeu modé</span>
             </label>
           </div>
 
           {inputs['is_modded_game'] === 'true' && (
-            <div style={{ paddingLeft: 28 }}>
-              <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>Lien du mod</label>
+            <div style={{
+              padding: 10,
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+              background: 'rgba(255,255,255,0.03)'
+            }}>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
+                Lien du mod
+              </label>
               <input
                 value={inputs['mod_link'] || ''}
                 onChange={e => setInput('mod_link', e.target.value)}
