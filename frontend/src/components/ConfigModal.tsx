@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import ConfirmModal from './ConfirmModal';
+import { useConfirm } from '../hooks/useConfirm';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
 import { useApp } from '../state/appContext';
@@ -13,19 +15,25 @@ export default function ConfigModal({ onClose }: { onClose?: () => void }) {
     savedInstructions,
     savedTraductors,
     allVarsConfig,
-    publishedPosts
+    publishedPosts,
+    importFullConfig
   } = useApp();
-
-  const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('apiUrl') || '');
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
+  const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('apiUrl') || localStorage.getItem('apiBase') || '');
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('apiKey') || '');
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Hooks pour fermer avec Echap et bloquer le scroll du fond
   useEscapeKey(() => onClose?.(), true);
   useModalScrollLock();
 
   const handleSave = () => {
+    // compat: ton app lit apiBase, ton UI lit apiUrl -> on garde les deux
     localStorage.setItem('apiUrl', apiUrl);
+    localStorage.setItem('apiBase', apiUrl);
     localStorage.setItem('apiKey', apiKey);
+
     showToast("Configuration enregistrée !", "success");
   };
 
@@ -34,6 +42,7 @@ export default function ConfigModal({ onClose }: { onClose?: () => void }) {
       const fullConfig = {
         // Configuration API
         apiUrl,
+        apiBase: apiUrl, // compat
         apiKey,
 
         // Templates et variables
@@ -65,6 +74,42 @@ export default function ConfigModal({ onClose }: { onClose?: () => void }) {
     } catch (err: any) {
       console.error(err?.message || "Erreur export");
       showToast("Erreur lors de l'export", "error");
+    }
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    e.target.value = '';
+
+    const ok = await confirm({
+      title: '⚠️ Importer une sauvegarde',
+      message:
+        "Importer une sauvegarde va écraser tes données actuelles (templates, variables, tags, instructions, traducteurs, historique). Continuer ?",
+      confirmText: 'Importer',
+      cancelText: 'Annuler',
+      type: 'danger'
+    });
+    if (!ok) return;
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      importFullConfig(data);
+
+      setApiUrl(localStorage.getItem('apiUrl') || localStorage.getItem('apiBase') || '');
+      setApiKey(localStorage.getItem('apiKey') || '');
+
+      showToast('Sauvegarde importée avec succès !', 'success');
+    } catch (err: any) {
+      console.error(err?.message || err);
+      showToast("Erreur lors de l'import (fichier invalide ?)", 'error');
     }
   };
 
@@ -265,16 +310,51 @@ export default function ConfigModal({ onClose }: { onClose?: () => void }) {
               borderLeft: '3px solid #4a9eff'
             }}>
               <span style={{ fontSize: '14px' }}>ℹ️</span>
-              <p style={{ 
-                fontSize: '11px', 
-                color: 'var(--muted)', 
+              <p style={{
+                fontSize: '11px',
+                color: 'var(--muted)',
                 margin: 0,
-                fontStyle: 'italic' 
+                fontStyle: 'italic'
               }}>
                 Le fichier sera enregistré automatiquement dans votre dossier <strong>"Téléchargements"</strong>.
               </p>
             </div>
 
+            {/* IMPORT */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              onChange={handleImportFile}
+              style={{ display: 'none' }}
+            />
+
+            <button
+              onClick={handleImportClick}
+              style={{
+                width: '100%',
+                padding: '10px',
+                background: 'rgba(74, 255, 158, 0.12)',
+                border: '1px solid rgba(74, 255, 158, 0.25)',
+                color: 'var(--text)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 600,
+                marginBottom: '10px',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(74, 255, 158, 0.18)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(74, 255, 158, 0.12)';
+              }}
+            >
+              📥 Importer une sauvegarde
+            </button>
+
+            {/* EXPORT */}
             <button
               onClick={handleExportConfig}
               style={{
@@ -322,6 +402,16 @@ export default function ConfigModal({ onClose }: { onClose?: () => void }) {
             Fermer
           </button>
         </div>
+        <ConfirmModal
+          isOpen={confirmState.isOpen}
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmText={confirmState.confirmText}
+          cancelText={confirmState.cancelText}
+          type={confirmState.type}
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
+        />
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ import { useToast } from './ToastProvider';
 export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   const { templates, addTemplate, updateTemplate, deleteTemplate, restoreDefaultTemplates, allVarsConfig, addVarConfig, updateVarConfig, deleteVarConfig } = useApp();
   const { showToast } = useToast();
-  const { confirm, confirmState, closeConfirm } = useConfirm();
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
 
   useEscapeKey(() => onClose?.(), true);
   useModalScrollLock();
@@ -880,8 +880,8 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
         confirmText={confirmState.confirmText}
         cancelText={confirmState.cancelText}
         type={confirmState.type}
-        onConfirm={confirmState.onConfirm}
-        onCancel={closeConfirm}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
       />
 
       {showMarkdownHelp && <MarkdownHelpModal onClose={() => setShowMarkdownHelp(false)} />}

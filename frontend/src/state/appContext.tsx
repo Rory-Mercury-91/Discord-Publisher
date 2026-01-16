@@ -66,11 +66,11 @@ const defaultVarsConfig: VarConfig[] = [
 ];
 
 const defaultTemplates: Template[] = [
-    {
-      id: 'mes',
-      name: 'Mes traductions',
-      type: 'my',
-      content: `## :flag_fr: La traduction française de [Game_name] est disponible ! :tada:
+  {
+    id: 'mes',
+    name: 'Mes traductions',
+    type: 'my',
+    content: `## :flag_fr: La traduction française de [Game_name] est disponible ! :tada:
 
 Vous pouvez l'installer dès maintenant pour profiter du jeu dans notre langue. Bon jeu à tous ! :point_down:
 
@@ -89,12 +89,12 @@ Vous pouvez l'installer dès maintenant pour profiter du jeu dans notre langue. 
 ### :sparkling_heart: Soutenez le Traducteur !
 Pour m'encourager et soutenir mes efforts :
 * **Soutien au Traducteur (Moi !) :** [Offrez-moi un café pour le temps passé !](https://discord.com/channels/1417811606674477139/1433930090349330493)`
-    },
-    {
-      id: 'partenaire',
-      name: 'Traductions partenaire',
-      type: 'partner',
-      content: `## :flag_fr: La traduction française de [Game_name] est disponible ! :tada:
+  },
+  {
+    id: 'partenaire',
+    name: 'Traductions partenaire',
+    type: 'partner',
+    content: `## :flag_fr: La traduction française de [Game_name] est disponible ! :tada:
 
 Vous pouvez l'installer dès maintenant pour profiter du jeu dans notre langue. Bon jeu à tous ! :point_down:
 
@@ -111,8 +111,8 @@ Vous pouvez l'installer dès maintenant pour profiter du jeu dans notre langue. 
 > **Synopsis du jeu :**
 > [Overview]
 [instruction]`
-    }
-  ];
+  }
+];
 
 type AppContextValue = {
   templates: Template[];
@@ -136,6 +136,7 @@ type AppContextValue = {
   savedTags: Tag[];
   addSavedTag: (t: Tag) => void;
   deleteSavedTag: (idx: number) => void;
+  importFullConfig: (config: any) => void;
 
   savedInstructions: Record<string, string>;
   saveInstruction: (name: string, text: string) => void;
@@ -212,6 +213,75 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return defaultTemplates;
   });
 
+  function importFullConfig(config: any) {
+    if (!config || typeof config !== 'object') {
+      throw new Error('Fichier invalide (JSON attendu)');
+    }
+
+    // ⚠️ API (compat: ton UI parle de apiUrl, ton publish utilise apiBase)
+    const importedBase =
+      (typeof config.apiBase === 'string' && config.apiBase.trim()) ||
+      (typeof config.apiUrl === 'string' && config.apiUrl.trim()) ||
+      '';
+
+    if (importedBase) {
+      localStorage.setItem('apiBase', importedBase);
+      localStorage.setItem('apiUrl', importedBase); // compat avec ton App.tsx (check apiUrl)
+    }
+
+    if (typeof config.apiKey === 'string') {
+      localStorage.setItem('apiKey', config.apiKey);
+    }
+
+    // Données principales
+    if (Array.isArray(config.templates)) {
+      setTemplates(config.templates);
+    }
+
+    let importedVars = config.allVarsConfig;
+    if (Array.isArray(importedVars)) {
+      // Petite migration: retirer install_instructions si jamais présent (comme ton init)
+      importedVars = importedVars.filter((v: any) => v?.name !== 'install_instructions');
+      setAllVarsConfig(importedVars);
+    }
+
+    if (Array.isArray(config.savedTags)) {
+      setSavedTags(config.savedTags);
+    }
+
+    if (config.savedInstructions && typeof config.savedInstructions === 'object') {
+      setSavedInstructions(config.savedInstructions);
+    }
+
+    if (Array.isArray(config.savedTraductors)) {
+      setSavedTraductors(config.savedTraductors);
+    }
+
+    if (Array.isArray(config.publishedPosts)) {
+      setPublishedPosts(config.publishedPosts);
+    }
+
+    // Re-synchroniser inputs avec les variables importées (évite des champs manquants)
+    if (Array.isArray(importedVars)) {
+      setInputs(prev => {
+        const next: Record<string, string> = { ...prev };
+
+        for (const v of importedVars) {
+          if (v?.name && !(v.name in next)) next[v.name] = '';
+        }
+
+        // garantir ces clés
+        if (!('is_modded_game' in next)) next['is_modded_game'] = 'false';
+        if (!('Mod_link' in next)) next['Mod_link'] = '';
+
+        return next;
+      });
+    }
+
+    // Bonus: relancer un check API visuel
+    setApiStatus('checking');
+  }
+
   const [allVarsConfig, setAllVarsConfig] = useState<VarConfig[]>(() => {
     try {
       const raw = localStorage.getItem('customVariables');
@@ -231,7 +301,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     allVarsConfig.forEach(v => obj[v.name] = '');
     // Initialiser is_modded_game à "false" par défaut
     obj['is_modded_game'] = 'false';
-    obj['mod_link'] = '';
+    obj['Mod_link'] = '';
 
     try {
       const raw = localStorage.getItem('savedInputs');
@@ -817,7 +887,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let finalValue = value;
 
     // Auto-nettoyage des liens
-    if (name === 'Game_link' || name === 'mod_link') {
+    if (name === 'Game_link' || name === 'Mod_link') {
       finalValue = cleanGameLink(value);
     }
 
@@ -1027,7 +1097,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ============================================
   // Dépend directement de inputs (RAW state) et currentTemplateIdx
   // Logique simplifiée et robuste de la version legacy
-const preview = useMemo(() => {
+  const preview = useMemo(() => {
     const tpl = templates[currentTemplateIdx];
     if (!tpl) return '';
 
@@ -1036,13 +1106,13 @@ const preview = useMemo(() => {
     // 1. GESTION DU JEU MODÉ
     // On force le type en 'any' pour éviter l'erreur TS entre string et boolean
     const isModded = (inputs as any)['is_modded_game'] === true || (inputs as any)['is_modded_game'] === 'true';
-    const modLink = (inputs['mod_link'] || '').trim();
-    
+    const modLink = (inputs['Mod_link'] || '').trim();
+
     let moddedText = 'Non';
     if (isModded) {
       moddedText = modLink ? `Oui [Lien du mod](${modLink})` : 'Oui';
     }
-    
+
     // Remplace le tag [is_modded_game] dans le texte
     content = content.split('[is_modded_game]').join(moddedText);
 
@@ -1050,12 +1120,12 @@ const preview = useMemo(() => {
     allVarsConfig.forEach(varConfig => {
       const name = varConfig.name;
       // On ne traite pas ces deux là ici car gérés au dessus
-      if (name === 'is_modded_game' || name === 'mod_link') return;
+      if (name === 'is_modded_game' || name === 'Mod_link') return;
 
       const val = (inputs[name] || '').trim();
       let finalVal = val;
 
-      if ((name === 'overview' || name === 'Overview') && val) {
+      if (name === 'Overview' && val) {
         const lines = val.split('\n').map(l => l.trim()).filter(Boolean);
         finalVal = lines.join('\n> ');
 
@@ -1091,6 +1161,7 @@ const preview = useMemo(() => {
 
   const value: AppContextValue = {
     templates,
+    importFullConfig,
     addTemplate,
     updateTemplate,
     deleteTemplate,

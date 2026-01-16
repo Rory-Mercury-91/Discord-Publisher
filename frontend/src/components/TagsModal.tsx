@@ -12,7 +12,7 @@ export default function TagsModal({onClose}:{onClose?:()=>void}){
   
   useEscapeKey(() => onClose?.(), true);
   useModalScrollLock();
-  const { confirm, confirmState, closeConfirm } = useConfirm();
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
   const [form, setForm] = useState({name:'', id:'', template: 'mes'});
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
@@ -230,8 +230,8 @@ export default function TagsModal({onClose}:{onClose?:()=>void}){
         confirmText={confirmState.confirmText}
         cancelText={confirmState.cancelText}
         type={confirmState.type}
-        onConfirm={confirmState.onConfirm}
-        onCancel={closeConfirm}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
       />
     </div>
   );

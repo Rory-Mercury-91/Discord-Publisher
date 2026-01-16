@@ -1,55 +1,59 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 
-interface ConfirmOptions {
+export type ConfirmOptions = {
   title: string;
   message: string;
   confirmText?: string;
   cancelText?: string;
   type?: 'danger' | 'warning' | 'info';
-}
+};
 
-interface ConfirmState extends ConfirmOptions {
+type ConfirmState = {
   isOpen: boolean;
-  onConfirm: () => void;
-}
+  title: string;
+  message: string;
+  confirmText: string;
+  cancelText: string;
+  type: 'danger' | 'warning' | 'info';
+};
 
 export function useConfirm() {
   const [confirmState, setConfirmState] = useState<ConfirmState>({
     isOpen: false,
     title: '',
     message: '',
-    onConfirm: () => {}
+    confirmText: 'Confirmer',
+    cancelText: 'Annuler',
+    type: 'warning'
   });
 
-  const confirm = useCallback((options: ConfirmOptions): Promise<boolean> => {
-    return new Promise((resolve) => {
+  const [resolver, setResolver] = useState<((v: boolean) => void) | null>(null);
+
+  const confirm = useCallback((options: ConfirmOptions) => {
+    return new Promise<boolean>((resolve) => {
+      setResolver(() => resolve);
       setConfirmState({
         isOpen: true,
-        ...options,
-        onConfirm: () => {
-          resolve(true);
-          setConfirmState(prev => ({ ...prev, isOpen: false }));
-        }
+        title: options.title,
+        message: options.message,
+        confirmText: options.confirmText ?? 'Confirmer',
+        cancelText: options.cancelText ?? 'Annuler',
+        type: options.type ?? 'warning'
       });
-
-      // Set up cancel handler
-      const cancel = () => {
-        resolve(false);
-        setConfirmState(prev => ({ ...prev, isOpen: false }));
-      };
-
-      // Store cancel in state for the modal to use
-      setConfirmState(prev => ({ ...prev, onCancel: cancel } as any));
     });
   }, []);
 
-  const closeConfirm = useCallback(() => {
+  const handleConfirm = useCallback(() => {
+    resolver?.(true);
+    setResolver(null);
     setConfirmState(prev => ({ ...prev, isOpen: false }));
-  }, []);
+  }, [resolver]);
 
-  return {
-    confirm,
-    confirmState,
-    closeConfirm
-  };
+  const handleCancel = useCallback(() => {
+    resolver?.(false);
+    setResolver(null);
+    setConfirmState(prev => ({ ...prev, isOpen: false }));
+  }, [resolver]);
+
+  return { confirm, confirmState, handleConfirm, handleCancel };
 }

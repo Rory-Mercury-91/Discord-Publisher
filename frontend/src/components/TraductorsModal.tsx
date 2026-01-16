@@ -10,7 +10,7 @@ import { tauriAPI } from '../lib/tauri-api';
 export default function TraductorsModal({onClose}:{onClose?:()=>void}){
   const { savedTraductors, saveTraductor, deleteTraductor } = useApp();
   const { showToast } = useToast();
-  const { confirm, confirmState, closeConfirm } = useConfirm();
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
   
   useEscapeKey(() => onClose?.(), true);
   useModalScrollLock();
@@ -171,8 +171,8 @@ export default function TraductorsModal({onClose}:{onClose?:()=>void}){
         confirmText={confirmState.confirmText}
         cancelText={confirmState.cancelText}
         type={confirmState.type}
-        onConfirm={confirmState.onConfirm}
-        onCancel={closeConfirm}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
       />
     </div>
   );

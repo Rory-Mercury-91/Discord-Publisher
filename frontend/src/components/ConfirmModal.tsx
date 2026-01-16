@@ -1,4 +1,3 @@
-import React from 'react';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -44,7 +43,7 @@ export default function ConfirmModal({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 10000,
+        zIndex: 100000, // ✅ AU-DESSUS du ConfigModal (99999)
         backdropFilter: 'blur(4px)'
       }}
       onClick={onCancel}
@@ -62,15 +61,15 @@ export default function ConfirmModal({
         }}
         onClick={e => e.stopPropagation()}
       >
-        <h3 style={{ 
-          margin: '0 0 12px', 
+        <h3 style={{
+          margin: '0 0 12px',
           color: getTypeColor(),
           fontSize: 20,
           fontWeight: 600
         }}>
           {title}
         </h3>
-        
+
         <p style={{
           margin: '0 0 24px',
           color: 'var(--text)',
@@ -105,12 +104,9 @@ export default function ConfirmModal({
           >
             {cancelText}
           </button>
-          
+
           <button
-            onClick={() => {
-              onConfirm();
-              onCancel();
-            }}
+            onClick={onConfirm}
             style={{
               padding: '10px 20px',
               background: getTypeColor(),
@@ -123,17 +119,10 @@ export default function ConfirmModal({
               transition: 'all 0.2s',
               boxShadow: `0 2px 8px ${getTypeColor()}40`
             }}
-            onMouseEnter={e => {
-              e.currentTarget.style.transform = 'translateY(-1px)';
-              e.currentTarget.style.boxShadow = `0 4px 12px ${getTypeColor()}60`;
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = `0 2px 8px ${getTypeColor()}40`;
-            }}
           >
             {confirmText}
           </button>
+
         </div>
       </div>
 

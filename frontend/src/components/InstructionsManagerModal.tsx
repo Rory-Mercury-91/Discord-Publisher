@@ -9,7 +9,7 @@ import { useModalScrollLock } from '../hooks/useModalScrollLock';
 export default function InstructionsManagerModal({onClose}:{onClose?:()=>void}){
   const { savedInstructions, saveInstruction, deleteInstruction } = useApp();
   const { showToast } = useToast();
-  const { confirm, confirmState, closeConfirm } = useConfirm();
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
   
   useEscapeKey(() => onClose?.(), true);
   useModalScrollLock();
@@ -187,8 +187,8 @@ export default function InstructionsManagerModal({onClose}:{onClose?:()=>void}){
         confirmText={confirmState.confirmText}
         cancelText={confirmState.cancelText}
         type={confirmState.type}
-        onConfirm={confirmState.onConfirm}
-        onCancel={closeConfirm}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
       />
     </div>
   );

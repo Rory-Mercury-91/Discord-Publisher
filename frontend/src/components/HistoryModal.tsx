@@ -59,7 +59,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
   
   const { publishedPosts, deletePublishedPost, loadPostForEditing, loadPostForDuplication, fetchHistoryFromAPI } = useApp();
   const { showToast } = useToast();
-  const { confirm, confirmState, closeConfirm } = useConfirm();
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
 
   // Gestion des erreurs et états de chargement
   const [isLoading, setIsLoading] = useState(false);
@@ -230,6 +230,10 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
   }
 
   function handleOpen(url: string) {
+    if (!url || url.trim() === '') {
+      showToast('Lien Discord manquant ou invalide', 'error');
+      return;
+    }
     window.open(url, '_blank');
   }
 
@@ -522,20 +526,22 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
 
                 {/* Actions */}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button
-                    onClick={() => handleOpen(post.discordUrl)}
-                    style={{
-                      fontSize: 13,
-                      padding: '6px 12px',
-                      background: 'var(--info)',
-                      border: 'none',
-                      borderRadius: 4,
-                      cursor: 'pointer'
-                    }}
-                    title="Ouvrir dans Discord"
-                  >
-                    🔗 Ouvrir
-                  </button>
+                  {post.discordUrl && post.discordUrl.trim() !== '' && (
+                    <button
+                      onClick={() => handleOpen(post.discordUrl)}
+                      style={{
+                        fontSize: 13,
+                        padding: '6px 12px',
+                        background: 'var(--info)',
+                        border: 'none',
+                        borderRadius: 4,
+                        cursor: 'pointer'
+                      }}
+                      title="Ouvrir dans Discord"
+                    >
+                      🔗 Ouvrir
+                    </button>
+                  )}
                   <button
                     onClick={() => handleEdit(post)}
                     style={{
@@ -549,20 +555,6 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
                     title="Charger pour modification"
                   >
                     ✏️ Modifier
-                  </button>
-                  <button
-                    onClick={() => handleDuplicate(post)}
-                    style={{
-                      fontSize: 13,
-                      padding: '6px 12px',
-                      background: 'var(--panel)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 4,
-                      cursor: 'pointer'
-                    }}
-                    title="Copier le contenu pour créer un nouveau post"
-                  >
-                    📋 Copier le contenu
                   </button>
                   <button
                     onClick={() => handleDelete(post.id)}
@@ -598,8 +590,8 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
         confirmText={confirmState.confirmText}
         cancelText={confirmState.cancelText}
         type={confirmState.type}
-        onConfirm={confirmState.onConfirm}
-        onCancel={closeConfirm}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
       />
     </div>
   );
