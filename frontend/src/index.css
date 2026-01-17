@@ -180,3 +180,47 @@ select optgroup{
 select option[value=""]{
   color: var(--placeholder);
 }
+
+/* Scrollbar stylisée pour correspondre au thème de l'application */
+.styled-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.styled-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+}
+
+.styled-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.styled-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Firefox scrollbar */
+.styled-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="light"] .styled-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="light"] .styled-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .styled-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+[data-theme="light"] .styled-scrollbar {
+  scrollbar-color: var(--border) rgba(0, 0, 0, 0.03);
+}

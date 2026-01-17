@@ -56,7 +56,8 @@ function AppContentInner() {
     // Champs hors variables / spécifiques
     setInput('instruction', '');
     setInput('is_modded_game', 'false');
-    setInput('mod_link', '');
+    setInput('Mod_link', '');
+    setInput('Developpeur', '');
 
     // Reset titre et tags
     setPostTitle('');
@@ -215,8 +216,12 @@ function AppContentInner() {
           <div style={{
             height: '100%',
             overflowY: 'auto',
+            overflowX: 'hidden',
             borderRight: '1px solid var(--border)',
-            padding: 16
+            padding: 16,
+            boxSizing: 'border-box',
+            width: '100%',
+            maxWidth: '100%'
           }}>
             <ContentEditor />
           </div>

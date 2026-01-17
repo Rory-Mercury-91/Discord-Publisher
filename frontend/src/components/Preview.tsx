@@ -224,7 +224,7 @@ export default function Preview({
         </div>
       </div>
 
-      <div className="preview-body" style={{ flex: 1, overflow: 'auto' }}>
+      <div className="preview-body styled-scrollbar" style={{ flex: 1, overflow: 'auto' }}>
         {previewMode === 'raw' ? (
           <textarea
             readOnly
@@ -247,7 +247,7 @@ export default function Preview({
               width: '100%',
               minHeight: '100%',
               padding: '16px 0',
-              background: '#313338',
+              background: '#2f3136',
               borderRadius: 4,
               overflow: 'auto'
             }}
@@ -264,21 +264,22 @@ export default function Preview({
                 width: 40,
                 height: 40,
                 borderRadius: '50%',
-                background: 'linear-gradient(135deg, #5865F2 0%, #7289DA 100%)',
+                background: 'linear-gradient(135deg, #ED4245 0%, #3B3C42 100%)',
                 flexShrink: 0,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: 18,
                 fontWeight: 600,
-                color: 'white'
+                color: 'white',
+                position: 'relative'
               }}>
-                GP
+                <span style={{ fontFamily: 'Noto Color Emoji, Segoe UI Emoji' }}>🤖</span>
               </div>
 
               {/* Contenu du message */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                {/* En-tête du message (nom + badge BOT + timestamp) */}
+                {/* En-tête du message (nom + badge APP + timestamp) */}
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -287,29 +288,30 @@ export default function Preview({
                 }}>
                   <span style={{
                     fontSize: 16,
-                    fontWeight: 500,
+                    fontWeight: 600,
                     color: '#f2f3f5'
                   }}>
-                    Générateur de Post
+                    Système de Publication
                   </span>
                   <span style={{
                     fontSize: 10,
-                    fontWeight: 500,
+                    fontWeight: 700,
                     padding: '2px 6px',
-                    background: '#5865F2',
+                    background: '#3b82f6',
                     color: 'white',
                     borderRadius: 3,
                     textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
+                    letterSpacing: '0.5px',
+                    lineHeight: '14px'
                   }}>
-                    BOT
+                    APP
                   </span>
                   <span style={{
                     fontSize: 12,
-                    color: '#b9bbbe',
+                    color: '#72767d',
                     marginLeft: 4
                   }}>
-                    Aujourd'hui à {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    Hier à {new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
 
@@ -322,7 +324,7 @@ export default function Preview({
                   whiteSpace: 'pre-wrap',
                   fontFamily: "'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif"
                 }}
-                  className="discord-markdown-content"
+                  className="discord-markdown-content styled-scrollbar"
                 >
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
@@ -351,7 +353,7 @@ export default function Preview({
                         <h3 style={{
                           fontSize: 16,
                           fontWeight: 700,
-                          margin: '8px 0 4px 0',
+                          margin: '0px 0 0px 0',
                           color: '#dbdee1',
                           lineHeight: '1.375rem'
                         }}>{children}</h3>
@@ -367,36 +369,29 @@ export default function Preview({
                       // Listes - compactées pour style Discord
                       ul: ({ children }) => (
                         <ul style={{
-                          margin: 0,
+                          margin: '2px 0 8px 0',
                           paddingLeft: '20px',
-                          listStyle: 'none',
-                          marginBottom: '8px'
+                          listStyle: 'none'
                         }}>{children}</ul>
                       ),
                       ol: ({ children }) => (
                         <ol style={{
-                          margin: 0,
+                          margin: '2px 0 8px 0',
                           paddingLeft: '20px',
-                          listStyle: 'none',
-                          counterReset: 'list-counter',
-                          marginBottom: '8px'
+                          listStyle: 'decimal',
+                          color: '#b9bbbe'
                         }}>{children}</ol>
                       ),
                       li: ({ children }) => (
                         <li style={{
                           margin: 0,
-                          position: 'relative',
-                          paddingLeft: '8px',
+                          paddingLeft: '4px',
                           lineHeight: '1.375rem',
-                          marginBottom: '2px'
+                          marginTop: '2px',
+                          marginBottom: 0,
+                          color: '#dcddde',
+                          listStylePosition: 'outside'
                         }}>
-                          <span style={{
-                            position: 'absolute',
-                            left: '-16px',
-                            color: '#b9bbbe',
-                            fontSize: '16px',
-                            lineHeight: '1.375rem'
-                          }}>•</span>
                           {children}
                         </li>
                       ),
@@ -421,18 +416,22 @@ export default function Preview({
                           margin: '8px 0',
                           color: '#b9bbbe',
                           background: 'rgba(79, 84, 92, 0.1)',
-                          padding: '8px',
+                          padding: '8px 12px',
                           borderRadius: 4,
-                          lineHeight: '1.375rem'
+                          lineHeight: '1.375rem',
+                          paddingLeft: '16px'
                         }}>{children}</div>
                       ),
                       // Liens
                       a: ({ href, children }) => (
                         <a
                           href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           style={{
                             color: '#00aff4',
-                            textDecoration: 'none'
+                            textDecoration: 'none',
+                            cursor: 'pointer'
                           }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.textDecoration = 'underline';
@@ -470,16 +469,18 @@ export default function Preview({
                             </code>
                           );
                         }
-                        // Code inline
+                        // Code inline - style Discord badge arrondi
                         return (
                           <code
                             style={{
-                              background: 'rgba(79, 84, 92, 0.3)',
-                              padding: '2px 4px',
-                              borderRadius: 3,
+                              background: 'rgba(114, 118, 125, 0.3)',
+                              padding: '2px 6px',
+                              borderRadius: 4,
                               fontFamily: 'Consolas, "Courier New", monospace',
-                              fontSize: '0.9em',
-                              color: '#e3e4e6'
+                              fontSize: '0.875em',
+                              color: '#e3e4e6',
+                              border: 'none',
+                              fontWeight: 400
                             }}
                             {...props}
                           >

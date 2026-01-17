@@ -421,7 +421,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { localStorage.setItem('postTitle', postTitle); }, [postTitle]);
 
-  // Génération automatique du titre dynamique (Format strict)
+  // Génération automatique du titre dynamique
+  // Format : Nom du jeu [Version du jeu] [FR = Version de la trad] [Développeur]
   useEffect(() => {
     const gameName = inputs['Game_name']?.trim();
     const gameVersion = inputs['Game_version']?.trim();
@@ -430,22 +431,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     let titleParts: string[] = [];
 
-    // Format : [Game_name]
-    if (gameName) titleParts.push(`[${gameName}]`);
-    
-    // Format : [[Game_version]]
-    if (gameVersion) titleParts.push(`[[${gameVersion}]]`);
-    
-    // Format : [FR=[Translate_version]]
-    if (translateVersion) titleParts.push(`[FR=[${translateVersion}]]`);
-    
-    // Format : [[Developpeur]]
-    if (developpeur) titleParts.push(`[[${developpeur}]]`);
+    // Nom du jeu (sans crochets si présent)
+    if (gameName) {
+      const cleanName = gameName.replace(/^\[(.*)\]$/, '$1');
+      titleParts.push(cleanName);
+    }
+
+    // Version du jeu : [Version du jeu]
+    if (gameVersion) {
+      titleParts.push(`[${gameVersion}]`);
+    }
+
+    // Version de la trad : [FR = Version de la trad]
+    if (translateVersion) {
+      titleParts.push(`[FR = ${translateVersion}]`);
+    }
+
+    // Développeur : [Développeur]
+    if (developpeur) {
+      titleParts.push(`[${developpeur}]`);
+    }
 
     // On assemble le tout avec un espace
     const finalTitle = titleParts.join(' ');
     setPostTitle(finalTitle);
-    
+
   }, [inputs['Game_name'], inputs['Game_version'], inputs['Translate_version'], inputs['Developpeur']]);
 
   // Envoyer la configuration Discord à l'API au démarrage
@@ -1014,6 +1024,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Fonction pour ajouter une image depuis un chemin de fichier (bouton Parcourir)
+  // Une seule image : remplace l'ancienne si elle existe
   async function addImageFromPath(filePath: string) {
     try {
       // Sauvegarder l'image dans le dossier images/ via Tauri
@@ -1023,13 +1034,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const fileName = result.fileName.split(/[/\\]/).pop() || filePath.split(/[/\\]/).pop() || 'image';
 
         setUploadedImages(prev => {
-          const next = [...prev, {
+          // Supprimer l'ancienne image si elle existe
+          if (prev.length > 0 && prev[0].path) {
+            tauriAPI.deleteImage(prev[0].path).catch(e => console.error('Failed to delete old image:', e));
+          }
+
+          // Ajouter la nouvelle image (une seule)
+          return [{
             id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
             path: result.fileName,
             name: fileName,
-            isMain: prev.length === 0
+            isMain: true
           }];
-          return next;
         });
       }
     } catch (e) {
@@ -1038,64 +1054,71 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Fonction pour ajouter des images depuis File objects (drag & drop)
+  // Une seule image : ne traite que le premier fichier et remplace l'ancienne si elle existe
   async function addImages(files: FileList | File[]) {
     const fileArray = Array.from(files as any) as File[];
-    for (const file of fileArray) {
-      if (!file.type.startsWith('image/')) continue;
+    const file = fileArray[0]; // Prendre uniquement le premier fichier
+
+    if (!file || !file.type.startsWith('image/')) return;
+
+    try {
+      // Compresser l'image si nécessaire
+      const processedFile = await compressImage(file);
+
+      // Les File objects en JavaScript n'ont jamais de propriété path
+      // On doit toujours convertir en base64 et utiliser la commande Tauri
+      let result;
       try {
-        // Compresser l'image si nécessaire
-        const processedFile = await compressImage(file);
+        // Convertir le File en base64 avec FileReader (plus efficace et évite la récursion)
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            // Extraire la partie base64 (après "data:image/...;base64,")
+            const base64Data = dataUrl.split(',')[1];
+            resolve(base64Data);
+          };
+          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.readAsDataURL(processedFile);
+        });
 
-        // Les File objects en JavaScript n'ont jamais de propriété path
-        // On doit toujours convertir en base64 et utiliser la commande Tauri
-        let result;
-        try {
-          // Convertir le File en base64 avec FileReader (plus efficace et évite la récursion)
-          const base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const dataUrl = reader.result as string;
-              // Extraire la partie base64 (après "data:image/...;base64,")
-              const base64Data = dataUrl.split(',')[1];
-              resolve(base64Data);
-            };
-            reader.onerror = () => reject(new Error('Failed to read file'));
-            reader.readAsDataURL(processedFile);
-          });
+        // Utiliser tauriAPI pour sauvegarder depuis base64
+        result = await tauriAPI.saveImageFromBase64(
+          base64,
+          processedFile.name,
+          processedFile.type
+        );
 
-          // Utiliser tauriAPI pour sauvegarder depuis base64
-          result = await tauriAPI.saveImageFromBase64(
-            base64,
-            processedFile.name,
-            processedFile.type
-          );
-
-          if (!result.ok) {
-            throw new Error(result.error || 'Failed to save image from base64');
-          }
-        } catch (invokeError: any) {
-          console.error('Failed to save image from base64:', invokeError);
-          // Relancer l'erreur pour qu'elle soit gérée par le catch parent
-          throw invokeError;
+        if (!result.ok) {
+          throw new Error(result.error || 'Failed to save image from base64');
         }
-
-        if (result.ok && result.fileName) {
-          // Extraire le nom du fichier depuis le chemin sauvegardé
-          const fileName = result.fileName.split(/[/\\]/).pop() || file.name;
-
-          setUploadedImages(prev => {
-            const next = [...prev, {
-              id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
-              path: result.fileName,
-              name: fileName,
-              isMain: prev.length === 0
-            }];
-            return next;
-          });
-        }
-      } catch (e) {
-        console.error('Failed to save image:', e);
+      } catch (invokeError: any) {
+        console.error('Failed to save image from base64:', invokeError);
+        // Relancer l'erreur pour qu'elle soit gérée par le catch parent
+        throw invokeError;
       }
+
+      if (result.ok && result.fileName) {
+        // Extraire le nom du fichier depuis le chemin sauvegardé
+        const fileName = result.fileName.split(/[/\\]/).pop() || file.name;
+
+        setUploadedImages(prev => {
+          // Supprimer l'ancienne image si elle existe
+          if (prev.length > 0 && prev[0].path) {
+            tauriAPI.deleteImage(prev[0].path).catch(e => console.error('Failed to delete old image:', e));
+          }
+
+          // Ajouter la nouvelle image (une seule)
+          return [{
+            id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
+            path: result.fileName,
+            name: fileName,
+            isMain: true
+          }];
+        });
+      }
+    } catch (e) {
+      console.error('Failed to save image:', e);
     }
   }
 
