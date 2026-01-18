@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 use std::fs;
 use tauri::{Manager, AppHandle};
-use tauri::menu::MenuBuilder;
-use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+// use tauri::menu::MenuBuilder;
+// use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use serde::{Deserialize, Serialize};
 use base64::{Engine as _, engine::general_purpose};
 
@@ -235,64 +235,11 @@ async fn import_config(content: String) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|app| {
-            // Crée l'icône de tray avec les entrées Afficher et Quitter. Toute
-            // logique de gestion des processus Python a été retirée.
-            let handle = app.handle();
-            let tray_menu = MenuBuilder::new(handle)
-                .text("show", "Afficher")
-                .separator()
-                .text("quit", "Quitter")
-                .build()?;
-
-            let icon = app.default_window_icon().cloned();
-            let mut tray_builder = TrayIconBuilder::new()
-                .menu(&tray_menu)
-                .tooltip("Publication Generator")
-                .on_menu_event(|app, event| {
-                    match event.id().as_ref() {
-                        "show" => {
-                            if let Some(win) = app.get_webview_window("main") {
-                                let _ = win.show();
-                                let _ = win.set_focus();
-                            }
-                        }
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        _ => {}
-                    }
-                });
-            // Gérer le double-clic pour afficher la fenêtre
-            let handle2 = handle.clone();
-            tray_builder = tray_builder.on_tray_icon_event(move |_, ev| {
-                if let TrayIconEvent::DoubleClick { .. } = ev {
-                    if let Some(win) = handle2.get_webview_window("main") {
-                        let _ = win.show();
-                        let _ = win.set_focus();
-                    }
-                }
-            });
-            if let Some(ic) = icon {
-                tray_builder = tray_builder.icon(ic);
-            }
-            let _ = tray_builder.build(handle);
-            
-            // Les DevTools sont activées via "devtools: true" dans tauri.conf.json
-            // F12 fonctionne nativement grâce à cette configuration
-            
+        .setup(|_app| {
+            // Suppression du tray icon : aucune logique de menu système n'est ajoutée.
             Ok(())
         })
-        .on_window_event(|window, event| {
-            match event {
-                // Sur clic de fermeture, on masque la fenêtre et on empêche la fermeture
-                tauri::WindowEvent::CloseRequested { api, .. } => {
-                    let _ = window.hide();
-                    api.prevent_close();
-                }
-                _ => {}
-            }
-        })
+        // Suppression de la logique qui masque la fenêtre au lieu de la fermer
         .invoke_handler(tauri::generate_handler![
             test_api_connection,
             publish_post,
