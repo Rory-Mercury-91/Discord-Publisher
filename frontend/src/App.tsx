@@ -31,7 +31,8 @@ function AppContentInner() {
     translationType,
     setTranslationType,
     isIntegrated,
-    setIsIntegrated
+    setIsIntegrated,
+    setLinkConfigs
   } = useApp();
 
 
@@ -49,6 +50,7 @@ function AppContentInner() {
   };
 
   // Fonction pour réinitialiser tous les champs
+
   const handleResetFields = async () => {
     // Reset toutes les variables
     allVarsConfig.forEach(v => setInput(v.name, ''));
@@ -66,6 +68,13 @@ function AppContentInner() {
     // Reset type / intégration
     setTranslationType('Automatique');
     setIsIntegrated(false);
+
+    // NOUVEAU : Reset des configs de liens
+    setLinkConfigs({
+      Game_link: { source: 'F95', value: '' },
+      Translate_link: { source: 'F95', value: '' },
+      Mod_link: { source: 'F95', value: '' }
+    });
 
     // Reset images (IMPORTANT: pas de while)
     const count = uploadedImages.length;

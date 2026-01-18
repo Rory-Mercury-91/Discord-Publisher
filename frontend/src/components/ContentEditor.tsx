@@ -44,7 +44,7 @@ export default function ContentEditor() {
 
   const { showToast } = useToast();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
-
+  const { linkConfigs, setLinkConfig, /* autres... */ } = useApp();
   // 2️⃣ ENSUITE : Calculer les valeurs dérivées
   const currentTemplate = templates[currentTemplateIdx]; // ✅ UNE SEULE FOIS
   const canPublish = (currentTemplate?.type === 'my' || currentTemplate?.type === 'partner') &&
@@ -147,6 +147,110 @@ export default function ContentEditor() {
     const query = instructionSearchQuery.toLowerCase();
     return Object.keys(savedInstructions).filter(name => name.toLowerCase().includes(query));
   }, [savedInstructions, instructionSearchQuery]);
+
+function LinkField({
+  label,
+  linkName,
+  placeholder,
+  disabled
+}: {
+  label: string;
+  linkName: 'Game_link' | 'Translate_link' | 'Mod_link';
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  const config = linkConfigs[linkName];
+
+  // Nettoyage automatique des URLs collées
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value;
+    if (config.source !== 'Autre') {
+      const threadIdMatch = val.match(/threads\/.*\.(\d+)\/?/);
+      if (threadIdMatch && threadIdMatch[1]) {
+        val = threadIdMatch[1];
+      }
+    }
+    setLinkConfig(linkName, config.source, val);
+  };
+
+  // Calcul du lien final pour l'affichage
+  const finalUrl = config.source === 'F95'
+    ? `https://f95zone.to/threads/${config.value || '...'}/`
+    : config.source === 'Lewd'
+      ? `https://lewdcorner.com/threads/${config.value || '...'}/`
+      : config.value || '...';
+
+  return (
+    <div style={{ marginBottom: '20px' }}>
+      {/* LIGNE 1 : Label et Prévisualisation du lien final */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginBottom: 8 
+      }}>
+        <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
+          {label}
+        </label>
+        
+        {/* Ton lien nettoyé s'affiche ici, à droite du label */}
+        <div style={{
+          fontSize: 11,
+          color: '#5865F2', // Couleur Blurple Discord pour rappeler un lien
+          fontFamily: 'monospace',
+          padding: '2px 8px',
+          background: 'rgba(88, 101, 242, 0.1)',
+          borderRadius: 4,
+          maxWidth: '300px',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
+        }}>
+          🔗 {finalUrl}
+        </div>
+      </div>
+
+      {/* LIGNE 2 : Les contrôles (Dropdown + Input) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: 8 }}>
+        <select
+          value={config.source}
+          onChange={(e) => setLinkConfig(linkName, e.target.value as any, config.value)}
+          style={{
+            height: '38px',
+            borderRadius: 6,
+            padding: '0 8px',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+            fontSize: 13,
+            cursor: 'pointer'
+          }}
+        >
+          <option value="F95">F95</option>
+          <option value="Lewd">Lewd</option>
+          <option value="Autre">Autre</option>
+        </select>
+
+        <input
+          type="text"
+          value={config.value}
+          onChange={handleInputChange}
+          placeholder={config.source === 'Autre' ? placeholder : 'Collez l\'ID ou l\'URL complète'}
+          disabled={disabled}
+          style={{
+            height: '38px',
+            borderRadius: 6,
+            padding: '0 12px',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+            opacity: disabled ? 0.5 : 1
+          }}
+        />
+      </div>
+    </div>
+  );
+}
 
   // ============================================
   // DRAG & DROP SYSTEM - Global sur toute l'app
@@ -545,6 +649,7 @@ export default function ContentEditor() {
                 placeholder="Nom du développeur"
               />
             </div>
+
             <div>
               <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
                 Version du jeu
@@ -556,17 +661,15 @@ export default function ContentEditor() {
                 placeholder="v1.0.4"
               />
             </div>
+
             <div>
-              <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-                Lien du jeu
-              </label>
-              <input
-                value={inputs['Game_link'] || ''}
-                onChange={e => setInput('Game_link', e.target.value)}
-                style={{ width: '100%', height: '40px', borderRadius: 6, padding: '0 12px' }}
-                placeholder="https://f95zone.to/threads/..."
+              <LinkField
+                label="Lien du jeu"
+                linkName="Game_link"
+                placeholder="https://..."
               />
             </div>
+
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
@@ -672,6 +775,7 @@ export default function ContentEditor() {
                 </div>
               )}
             </div>
+
             <div>
               <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
                 Version de la trad
@@ -683,23 +787,27 @@ export default function ContentEditor() {
                 placeholder="v1.0"
               />
             </div>
+
             <div>
-              <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-                Lien de la trad {isIntegrated && <span style={{ color: 'var(--accent)', fontSize: 11 }}>(Fusionné)</span>}
-              </label>
-              <input
-                value={inputs['Translate_link'] || ''}
-                onChange={e => setInput('Translate_link', e.target.value)}
-                style={{ width: '100%', height: '40px', borderRadius: 6, padding: '0 12px', opacity: isIntegrated ? 0.5 : 1 }}
-                disabled={isIntegrated}
-                placeholder={isIntegrated ? "Inutile (Traduction intégrée)" : "https://mega.nz/..."}
+              <LinkField
+                label={isIntegrated ? "Lien de la trad (Fusionné)" : "Lien de la trad"}
+                linkName="Translate_link"
+                placeholder="https://..."
               />
             </div>
+
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
+              {/* Conteneur de l'en-tête (Label + Checkbox) */}
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                marginBottom: 6 
+              }}>
+                <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
                   Lien du mod
-                </label>
+                </span>
+
                 <label style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -708,7 +816,10 @@ export default function ContentEditor() {
                   userSelect: 'none',
                   fontSize: 12,
                   color: 'var(--text)',
-                  fontWeight: 700
+                  fontWeight: 700,
+                  background: 'rgba(255, 255, 255, 0.05)', // Un petit fond pour bien détacher l'option
+                  padding: '4px 8px',
+                  borderRadius: 4
                 }}>
                   <input
                     type="checkbox"
@@ -719,19 +830,13 @@ export default function ContentEditor() {
                   <span>Jeu modé</span>
                 </label>
               </div>
-              <input
-                value={inputs['Mod_link'] || ''}
-                onChange={e => setInput('Mod_link', e.target.value)}
+
+              {/* Le LinkField (qui sera grisé si la case n'est pas cochée) */}
+              <LinkField
+                label="" // On laisse vide ici car on a fait notre propre label au-dessus
+                linkName="Mod_link"
+                placeholder="ID du thread ou URL..."
                 disabled={inputs['is_modded_game'] !== 'true'}
-                style={{
-                  width: '100%',
-                  height: '40px',
-                  borderRadius: 6,
-                  padding: '0 12px',
-                  opacity: inputs['is_modded_game'] === 'true' ? 1 : 0.5,
-                  cursor: inputs['is_modded_game'] === 'true' ? 'text' : 'not-allowed'
-                }}
-                placeholder={inputs['is_modded_game'] === 'true' ? "https://..." : "Activez 'Jeu modé' pour saisir un lien"}
               />
             </div>
           </div>
@@ -759,7 +864,7 @@ export default function ContentEditor() {
         {/* LIGNE 5 : Grid 2 colonnes - Synopsis / Instructions */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           {/* Synopsis (gauche) */}
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
               Synopsis
             </label>
@@ -770,8 +875,8 @@ export default function ContentEditor() {
               onKeyDown={handleOverviewKeyDown}
               style={{
                 width: '100%',
-                minHeight: '120px',
-                maxHeight: '140px',
+                flex: 1,
+                minHeight: 0,
                 borderRadius: 6,
                 padding: '12px',
                 fontFamily: 'inherit',

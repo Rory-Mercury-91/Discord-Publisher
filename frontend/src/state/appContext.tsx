@@ -29,6 +29,11 @@ export type Template = {
   lastSavedAt?: number;       // Timestamp de dernière sauvegarde auto
 };
 
+export type LinkConfig = {
+  source: 'F95' | 'Lewd' | 'Autre';
+  value: string; // ID ou URL complète selon la source
+};
+
 export type Tag = { name: string; id?: string; template?: string };
 
 export type PublishedPost = {
@@ -177,6 +182,23 @@ type AppContextValue = {
   // Rate limit protection
   rateLimitCooldown: number | null;
 
+  // NOUVEAU : Gestion des liens
+  linkConfigs: {
+    Game_link: LinkConfig;
+    Translate_link: LinkConfig;
+    Mod_link: LinkConfig;
+  };
+  setLinkConfig: (
+    linkName: 'Game_link' | 'Translate_link' | 'Mod_link',
+    source: 'F95' | 'Lewd' | 'Autre',
+    value: string
+  ) => void;
+  setLinkConfigs: React.Dispatch<React.SetStateAction<{
+    Game_link: LinkConfig;
+    Translate_link: LinkConfig;
+    Mod_link: LinkConfig;
+  }>>;
+
   // Edit mode
   editingPostId: string | null;
   setEditingPostId: (id: string | null) => void;
@@ -282,6 +304,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Bonus: relancer un check API visuel
     setApiStatus('checking');
   }
+
+  const [linkConfigs, setLinkConfigs] = useState<{
+    Game_link: LinkConfig;
+    Translate_link: LinkConfig;
+    Mod_link: LinkConfig;
+  }>(() => {
+    try {
+      const raw = localStorage.getItem('linkConfigs');
+      if (raw) return JSON.parse(raw);
+    } catch (e) { }
+    return {
+      Game_link: { source: 'F95', value: '' },
+      Translate_link: { source: 'F95', value: '' },
+      Mod_link: { source: 'F95', value: '' }
+    };
+  });
 
   const [allVarsConfig, setAllVarsConfig] = useState<VarConfig[]>(() => {
     try {
@@ -423,6 +461,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [editingPostData, setEditingPostData] = useState<PublishedPost | null>(null);
 
   useEffect(() => { localStorage.setItem('postTitle', postTitle); }, [postTitle]);
+
+  useEffect(() => {
+    localStorage.setItem('linkConfigs', JSON.stringify(linkConfigs));
+  }, [linkConfigs]);
+
+  // Mettre à jour les inputs avec les liens construits pour le preview
+  useEffect(() => {
+    setInputs(prev => ({
+      ...prev,
+      Game_link: buildFinalLink(linkConfigs.Game_link),
+      Translate_link: buildFinalLink(linkConfigs.Translate_link),
+      Mod_link: buildFinalLink(linkConfigs.Mod_link)
+    }));
+  }, [linkConfigs]);
 
   // Génération automatique du titre dynamique
   // Format : Nom du jeu [Version du jeu] [FR = Version de la trad] [Développeur]
@@ -940,6 +992,57 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setInputs(prev => ({ ...prev, [name]: finalValue }));
   }
 
+  function extractIdFromUrl(url: string, source: 'F95' | 'Lewd'): string {
+    if (!url || !url.trim()) return '';
+
+    const trimmed = url.trim();
+
+    if (source === 'F95') {
+      // Extraire ID de f95zone.to/threads/nom.ID/ ou f95zone.to/threads/ID/
+      const match = trimmed.match(/f95zone\.to\/threads\/(?:[^.]+\.)?(\d+)/);
+      return match ? match[1] : trimmed;
+    }
+
+    if (source === 'Lewd') {
+      // Extraire ID de lewdcorner.com/threads/nom.ID/ ou lewdcorner.com/threads/ID/
+      const match = trimmed.match(/lewdcorner\.com\/threads\/(?:[^.]+\.)?(\d+)/);
+      return match ? match[1] : trimmed;
+    }
+
+    return trimmed;
+  }
+
+  function buildFinalLink(config: LinkConfig): string {
+    if (!config.value.trim()) return '';
+
+    switch (config.source) {
+      case 'F95':
+        return `https://f95zone.to/threads/${config.value.trim()}/`;
+      case 'Lewd':
+        return `https://lewdcorner.com/threads/${config.value.trim()}/`;
+      case 'Autre':
+        return config.value.trim();
+      default:
+        return config.value.trim();
+    }
+  }
+
+  // Fonction pour mettre à jour la config d'un lien
+  function setLinkConfig(linkName: 'Game_link' | 'Translate_link' | 'Mod_link', source: 'F95' | 'Lewd' | 'Autre', value: string) {
+    setLinkConfigs(prev => {
+      // Si on change de source F95/Lewd et qu'on a une URL, extraire l'ID
+      let processedValue = value;
+      if ((source === 'F95' || source === 'Lewd') && value.includes('http')) {
+        processedValue = extractIdFromUrl(value, source);
+      }
+
+      return {
+        ...prev,
+        [linkName]: { source, value: processedValue }
+      };
+    });
+  }
+
   function addSavedTag(t: Tag) {
     setSavedTags(prev => [...prev, t]);
   }
@@ -1223,6 +1326,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [templates, currentTemplateIdx, allVarsConfig, inputs, translationType, isIntegrated]);
 
   const value: AppContextValue = {
+    linkConfigs,
+    setLinkConfig,
+    setLinkConfigs,
     templates,
     importFullConfig,
     addTemplate,
