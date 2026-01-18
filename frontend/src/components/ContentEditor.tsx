@@ -148,109 +148,119 @@ export default function ContentEditor() {
     return Object.keys(savedInstructions).filter(name => name.toLowerCase().includes(query));
   }, [savedInstructions, instructionSearchQuery]);
 
-function LinkField({
-  label,
-  linkName,
-  placeholder,
-  disabled
-}: {
-  label: string;
-  linkName: 'Game_link' | 'Translate_link' | 'Mod_link';
-  placeholder: string;
-  disabled?: boolean;
-}) {
-  const config = linkConfigs[linkName];
+  function LinkField({
+    label,
+    linkName,
+    placeholder,
+    disabled,
+    showLabel = true,
+    customLabelContent
+  }: {
+    label: string;
+    linkName: 'Game_link' | 'Translate_link' | 'Mod_link';
+    placeholder: string;
+    disabled?: boolean;
+    showLabel?: boolean;
+    customLabelContent?: React.ReactNode;
+  }) {
+    const config = linkConfigs[linkName];
 
-  // Nettoyage automatique des URLs collées
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let val = e.target.value;
-    if (config.source !== 'Autre') {
-      const threadIdMatch = val.match(/threads\/.*\.(\d+)\/?/);
-      if (threadIdMatch && threadIdMatch[1]) {
-        val = threadIdMatch[1];
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      let val = e.target.value;
+      if (config.source !== 'Autre') {
+        const threadIdMatch = val.match(/threads\/.*\.(\d+)\/?/);
+        if (threadIdMatch && threadIdMatch[1]) {
+          val = threadIdMatch[1];
+        }
       }
-    }
-    setLinkConfig(linkName, config.source, val);
-  };
+      setLinkConfig(linkName, config.source, val);
+    };
 
-  // Calcul du lien final pour l'affichage
-  const finalUrl = config.source === 'F95'
-    ? `https://f95zone.to/threads/${config.value || '...'}/`
-    : config.source === 'Lewd'
-      ? `https://lewdcorner.com/threads/${config.value || '...'}/`
-      : config.value || '...';
+    const finalUrl = config.source === 'F95'
+      ? `https://f95zone.to/threads/${config.value || '...'}/`
+      : config.source === 'Lewd'
+        ? `https://lewdcorner.com/threads/${config.value || '...'}/`
+        : config.value || '...';
 
-  return (
-    <div style={{ marginBottom: '20px' }}>
-      {/* LIGNE 1 : Label et Prévisualisation du lien final */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        marginBottom: 8 
-      }}>
-        <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
-          {label}
-        </label>
-        
-        {/* Ton lien nettoyé s'affiche ici, à droite du label */}
-        <div style={{
-          fontSize: 11,
-          color: '#5865F2', // Couleur Blurple Discord pour rappeler un lien
-          fontFamily: 'monospace',
-          padding: '2px 8px',
-          background: 'rgba(88, 101, 242, 0.1)',
-          borderRadius: 4,
-          maxWidth: '300px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap'
-        }}>
-          🔗 {finalUrl}
+    return (
+      <div style={{ marginBottom: '20px' }}>
+        {/* LIGNE 1 : Label/Custom content et Prévisualisation du lien final */}
+        {(showLabel || customLabelContent) && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 8
+          }}>
+            {customLabelContent ? customLabelContent : (
+              <>
+                <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
+                  {label}
+                </label>
+
+                {/* Prévisualisation du lien final */}
+                <div style={{
+                  fontSize: 11,
+                  color: '#5865F2',
+                  fontFamily: 'monospace',
+                  padding: '2px 8px',
+                  background: 'rgba(88, 101, 242, 0.1)',
+                  borderRadius: 4,
+                  maxWidth: '300px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
+                  🔗 {finalUrl}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* LIGNE 2 : Les contrôles (Dropdown + Input) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: 8 }}>
+          <select
+            value={config.source}
+            onChange={(e) => setLinkConfig(linkName, e.target.value as any, config.value)}
+            disabled={disabled}
+            style={{
+              height: '38px',
+              borderRadius: 6,
+              padding: '0 8px',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid var(--border)',
+              color: 'var(--text)',
+              fontSize: 13,
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              opacity: disabled ? 0.5 : 1
+            }}
+          >
+            <option value="F95">F95</option>
+            <option value="Lewd">Lewd</option>
+            <option value="Autre">Autre</option>
+          </select>
+
+          <input
+            type="text"
+            value={config.value}
+            onChange={handleInputChange}
+            placeholder={config.source === 'Autre' ? placeholder : 'Collez l\'ID ou l\'URL complète'}
+            disabled={disabled}
+            style={{
+              height: '38px',
+              borderRadius: 6,
+              padding: '0 12px',
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid var(--border)',
+              color: 'var(--text)',
+              opacity: disabled ? 0.5 : 1
+            }}
+          />
         </div>
       </div>
-
-      {/* LIGNE 2 : Les contrôles (Dropdown + Input) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: 8 }}>
-        <select
-          value={config.source}
-          onChange={(e) => setLinkConfig(linkName, e.target.value as any, config.value)}
-          style={{
-            height: '38px',
-            borderRadius: 6,
-            padding: '0 8px',
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid var(--border)',
-            color: 'var(--text)',
-            fontSize: 13,
-            cursor: 'pointer'
-          }}
-        >
-          <option value="F95">F95</option>
-          <option value="Lewd">Lewd</option>
-          <option value="Autre">Autre</option>
-        </select>
-
-        <input
-          type="text"
-          value={config.value}
-          onChange={handleInputChange}
-          placeholder={config.source === 'Autre' ? placeholder : 'Collez l\'ID ou l\'URL complète'}
-          disabled={disabled}
-          style={{
-            height: '38px',
-            borderRadius: 6,
-            padding: '0 12px',
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid var(--border)',
-            color: 'var(--text)',
-            opacity: disabled ? 0.5 : 1
-          }}
-        />
-      </div>
-    </div>
-  );
-}
+    );
+  }
 
   // ============================================
   // DRAG & DROP SYSTEM - Global sur toute l'app
@@ -316,7 +326,7 @@ function LinkField({
 
   return (
     <div style={{ position: 'relative', height: '100%', minHeight: 0, overflow: 'auto', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
-      {/* Overlay drag & drop global */}
+      {/* Overlay drag & drop global - inchangé */}
       {isDragging && createPortal(
         <div style={{
           position: 'fixed',
@@ -348,7 +358,7 @@ function LinkField({
         document.body
       )}
 
-      {/* Badge mode édition */}
+      {/* Badge mode édition - inchangé */}
       {isEditMode && (
         <div style={{
           background: 'rgba(125, 211, 252, 0.1)',
@@ -388,10 +398,10 @@ function LinkField({
 
       <div style={{ display: 'grid', gap: 16, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
 
-        {/* LIGNE 2 : Grid 3 colonnes - Infos clés / Tags / Média */}
+        {/* LIGNES 2-3 : Grid 3 colonnes sur 2 lignes - Titre/Tags/Média + Nom du jeu */}
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: 12, width: '100%', maxWidth: '100%' }}>
 
-          {/* Col 1 : Infos clés */}
+          {/* Col 1 : Titre du post + Nom du jeu */}
           <div style={{ display: 'grid', gap: 12 }}>
             <div>
               <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
@@ -424,12 +434,11 @@ function LinkField({
             </div>
           </div>
 
-          {/* Col 2 : Tags (Dropdown) */}
+          {/* Col 2 : Tags */}
           <div style={{ position: 'relative' }}>
             <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
               Tags
             </label>
-            {/* Ligne 1 : Dropdown pour sélectionner un tag */}
             <div style={{ position: 'relative' }}>
               <div
                 className="suggestions-dropdown"
@@ -495,7 +504,7 @@ function LinkField({
               />
             </div>
 
-            {/* Ligne 2 : Tags actifs affichés (sans conteneur) */}
+            {/* Tags actifs affichés */}
             {postTags && postTags.trim() && (
               <div style={{
                 display: 'flex',
@@ -553,7 +562,7 @@ function LinkField({
             )}
           </div>
 
-          {/* Col 3 : Média (Taille de la vignette) */}
+          {/* Col 3 : Média */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
             <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
               Média
@@ -615,7 +624,6 @@ function LinkField({
               style={{ display: 'none' }}
               onChange={async (e) => {
                 if (e.target.files && e.target.files.length > 0) {
-                  // Une seule image : supprimer l'ancienne si elle existe, puis ajouter la nouvelle
                   if (uploadedImages.length > 0) {
                     removeImage(0);
                   }
@@ -633,216 +641,249 @@ function LinkField({
           </div>
         </div>
 
-        {/* LIGNE 3 : Grid 2 colonnes - Technique (Jeu / Traduction) */}
+        {/* LIGNE 4 : Développeur et Traducteur */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-
-          {/* Col 1 : Jeu */}
-          <div style={{ display: 'grid', gap: 12 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-                Développeur
-              </label>
-              <input
-                value={inputs['Developpeur'] || ''}
-                onChange={e => setInput('Developpeur', e.target.value)}
-                style={{ width: '100%', height: '40px', borderRadius: 6, padding: '0 12px' }}
-                placeholder="Nom du développeur"
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-                Version du jeu
-              </label>
-              <input
-                value={inputs['Game_version'] || ''}
-                onChange={e => setInput('Game_version', e.target.value)}
-                style={{ width: '100%', height: '40px', borderRadius: 6, padding: '0 12px' }}
-                placeholder="v1.0.4"
-              />
-            </div>
-
-            <div>
-              <LinkField
-                label="Lien du jeu"
-                linkName="Game_link"
-                placeholder="https://..."
-              />
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
-                  Type de traduction
-                </label>
-                <label style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  fontSize: 12,
-                  color: 'var(--text)',
-                  fontWeight: 600
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={isIntegrated}
-                    onChange={e => setIsIntegrated(e.target.checked)}
-                    style={{ width: 16, height: 16, cursor: 'pointer' }}
-                  />
-                  <span>Traduction intégrée (VF incluse)</span>
-                </label>
-              </div>
-              <div style={{
-                display: 'flex',
-                gap: 4,
-                padding: 4,
-                borderRadius: 8,
-                border: '1px solid var(--border)',
-                background: 'rgba(255,255,255,0.03)'
-              }}>
-                {(['Automatique', 'Semi-automatique', 'Manuelle'] as const).map((opt) => {
-                  const active = translationType === opt;
-                  return (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => setTranslationType(opt)}
-                      style={{
-                        flex: 1,
-                        height: 38,
-                        borderRadius: 6,
-                        border: 'none',
-                        cursor: 'pointer',
-                        background: active ? 'var(--accent)' : 'transparent',
-                        color: active ? 'white' : 'var(--muted)',
-                        fontSize: 13,
-                        fontWeight: active ? 700 : 600,
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                      {opt}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
+              Développeur
+            </label>
+            <input
+              value={inputs['Developpeur'] || ''}
+              onChange={e => setInput('Developpeur', e.target.value)}
+              style={{ width: '100%', height: '40px', borderRadius: 6, padding: '0 12px' }}
+              placeholder="Nom du développeur"
+            />
           </div>
 
-          {/* Col 2 : Traduction */}
-          <div style={{ display: 'grid', gap: 12 }}>
-            <div style={{ position: 'relative' }}>
-              <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-                Traducteur
-              </label>
-              <input
-                type="text"
-                value={traductorSearchQuery || inputs['Traductor'] || ''}
-                onChange={e => {
-                  setTraductorSearchQuery(e.target.value);
-                  setInput('Traductor', e.target.value);
-                  setShowTraductorSuggestions(true);
+          <div style={{ position: 'relative' }}>
+            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
+              Traducteur
+            </label>
+            <input
+              type="text"
+              value={traductorSearchQuery || inputs['Traductor'] || ''}
+              onChange={e => {
+                setTraductorSearchQuery(e.target.value);
+                setInput('Traductor', e.target.value);
+                setShowTraductorSuggestions(true);
+              }}
+              onFocus={() => setShowTraductorSuggestions(true)}
+              style={{ width: '100%', height: '40px', borderRadius: 6, padding: '0 12px' }}
+              placeholder="Nom du traducteur..."
+            />
+            {showTraductorSuggestions && filteredTraductors.length > 0 && (
+              <div
+                className="suggestions-dropdown"
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 1001
                 }}
-                onFocus={() => setShowTraductorSuggestions(true)}
-                style={{ width: '100%', height: '40px', borderRadius: 6, padding: '0 12px' }}
-                placeholder="Nom du traducteur..."
-              />
-              {showTraductorSuggestions && filteredTraductors.length > 0 && (
-                <div
-                  className="suggestions-dropdown"
-                  style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    zIndex: 1001
-                  }}
-                >
-                  {filteredTraductors.map((t, idx) => (
-                    <div
-                      key={idx}
-                      className="suggestion-item"
-                      onClick={() => {
-                        setInput('Traductor', t);
-                        setTraductorSearchQuery(t);
-                        setShowTraductorSuggestions(false);
-                      }}
-                    >
-                      {t}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-                Version de la trad
-              </label>
-              <input
-                value={inputs['Translate_version'] || ''}
-                onChange={e => setInput('Translate_version', e.target.value)}
-                style={{ width: '100%', height: '40px', borderRadius: 6, padding: '0 12px' }}
-                placeholder="v1.0"
-              />
-            </div>
-
-            <div>
-              <LinkField
-                label={isIntegrated ? "Lien de la trad (Fusionné)" : "Lien de la trad"}
-                linkName="Translate_link"
-                placeholder="https://..."
-              />
-            </div>
-
-            <div>
-              {/* Conteneur de l'en-tête (Label + Checkbox) */}
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                marginBottom: 6 
-              }}>
-                <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
-                  Lien du mod
-                </span>
-
-                <label style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  fontSize: 12,
-                  color: 'var(--text)',
-                  fontWeight: 700,
-                  background: 'rgba(255, 255, 255, 0.05)', // Un petit fond pour bien détacher l'option
-                  padding: '4px 8px',
-                  borderRadius: 4
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={inputs['is_modded_game'] === 'true'}
-                    onChange={e => setInput('is_modded_game', e.target.checked ? 'true' : 'false')}
-                    style={{ width: 16, height: 16, cursor: 'pointer' }}
-                  />
-                  <span>Jeu modé</span>
-                </label>
+              >
+                {filteredTraductors.map((t, idx) => (
+                  <div
+                    key={idx}
+                    className="suggestion-item"
+                    onClick={() => {
+                      setInput('Traductor', t);
+                      setTraductorSearchQuery(t);
+                      setShowTraductorSuggestions(false);
+                    }}
+                  >
+                    {t}
+                  </div>
+                ))}
               </div>
-
-              {/* Le LinkField (qui sera grisé si la case n'est pas cochée) */}
-              <LinkField
-                label="" // On laisse vide ici car on a fait notre propre label au-dessus
-                linkName="Mod_link"
-                placeholder="ID du thread ou URL..."
-                disabled={inputs['is_modded_game'] !== 'true'}
-              />
-            </div>
+            )}
           </div>
         </div>
 
-        {/* LIGNE 4 : Variables Custom (masquer si aucune) */}
+        {/* LIGNE 5 : Version du jeu et Version de la trad */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
+              Version du jeu
+            </label>
+            <input
+              value={inputs['Game_version'] || ''}
+              onChange={e => setInput('Game_version', e.target.value)}
+              style={{ width: '100%', height: '40px', borderRadius: 6, padding: '0 12px' }}
+              placeholder="v1.0.4"
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
+              Version de la trad
+            </label>
+            <input
+              value={inputs['Translate_version'] || ''}
+              onChange={e => setInput('Translate_version', e.target.value)}
+              style={{ width: '100%', height: '40px', borderRadius: 6, padding: '0 12px' }}
+              placeholder="v1.0"
+            />
+          </div>
+        </div>
+
+        {/* LIGNE 6 : Lien du jeu et Lien de la trad */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <LinkField
+            label="Lien du jeu"
+            linkName="Game_link"
+            placeholder="https://..."
+          />
+
+          <LinkField
+            label={isIntegrated ? "Lien de la trad (Fusionné)" : "Lien de la trad"}
+            linkName="Translate_link"
+            placeholder="https://..."
+          />
+        </div>
+
+        {/* LIGNE 7 : Type de traduction et Lien du mod */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 8,
+              height: '22px'  // ⬅️ Hauteur fixe pour aligner avec l'autre colonne
+            }}>
+              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
+                Type de traduction
+              </label>
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                userSelect: 'none',
+                fontSize: 12,
+                color: 'var(--text)',
+                fontWeight: 600
+              }}>
+                <input
+                  type="checkbox"
+                  checked={isIntegrated}
+                  onChange={e => setIsIntegrated(e.target.checked)}
+                  style={{ width: 16, height: 16, cursor: 'pointer' }}
+                />
+                <span>Traduction intégrée (VF incluse)</span>
+              </label>
+            </div>
+            <div style={{
+              display: 'flex',
+              gap: 4,
+              padding: 4,
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+              background: 'rgba(255,255,255,0.03)',
+              height: '40px'
+            }}>
+              {(['Automatique', 'Semi-automatique', 'Manuelle'] as const).map((opt) => {
+                const active = translationType === opt;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setTranslationType(opt)}
+                    style={{
+                      flex: 1,
+                      height: '32px',
+                      borderRadius: 6,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: active ? 'var(--accent)' : 'transparent',
+                      color: active ? 'white' : 'var(--muted)',
+                      fontSize: 13,
+                      fontWeight: active ? 700 : 600,
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <LinkField
+              label="Lien du mod"
+              linkName="Mod_link"
+              placeholder="ID du thread ou URL..."
+              disabled={inputs['is_modded_game'] !== 'true'}
+              customLabelContent={
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  width: '100%',
+                  height: '22px'  // ⬅️ Même hauteur que la ligne de gauche
+                }}>
+                  <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
+                    Lien du mod
+                  </span>
+
+                  {/* Groupe : Prévisualisation + Checkbox */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {/* Prévisualisation du lien */}
+                    <div style={{
+                      fontSize: 11,
+                      color: '#5865F2',
+                      fontFamily: 'monospace',
+                      padding: '2px 8px',
+                      background: 'rgba(88, 101, 242, 0.1)',
+                      borderRadius: 4,
+                      maxWidth: '200px',  // ⬅️ Réduit pour laisser place à la checkbox
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      🔗 {(() => {
+                        const config = linkConfigs['Mod_link'];
+                        return config.source === 'F95'
+                          ? `https://f95zone.to/threads/${config.value || '...'}/`
+                          : config.source === 'Lewd'
+                            ? `https://lewdcorner.com/threads/${config.value || '...'}/`
+                            : config.value || '...';
+                      })()}
+                    </div>
+
+                    {/* Checkbox */}
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,  // ⬅️ Réduit de 8 à 6
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      fontSize: 12,
+                      color: 'var(--text)',
+                      fontWeight: 700,
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      padding: '3px 8px',  // ⬅️ Réduit le padding vertical
+                      borderRadius: 4,
+                      whiteSpace: 'nowrap'
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={inputs['is_modded_game'] === 'true'}
+                        onChange={e => setInput('is_modded_game', e.target.checked ? 'true' : 'false')}
+                        style={{ width: 16, height: 16, cursor: 'pointer' }}
+                      />
+                      <span>Jeu modé</span>
+                    </label>
+                  </div>
+                </div>
+              }
+            />
+          </div>
+        </div>
+
+        {/* LIGNE 8 : Variables Custom (masquer si aucune) */}
         {visibleVars.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {visibleVars.map((v) => (
@@ -861,10 +902,10 @@ function LinkField({
           </div>
         )}
 
-        {/* LIGNE 5 : Grid 2 colonnes - Synopsis / Instructions */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          {/* Synopsis (gauche) */}
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* LIGNE 9 : Synopsis et Instructions */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
+          {/* Synopsis (gauche) - prend toute la hauteur */}
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '150px' }}>
             <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
               Synopsis
             </label>
@@ -890,67 +931,70 @@ function LinkField({
             />
           </div>
 
-          {/* Instructions (droite) */}
-          <div style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-              Instructions d'installation
-            </label>
-            <input
-              type="text"
-              placeholder="Rechercher une instruction..."
-              value={instructionSearchQuery}
-              onChange={e => {
-                setInstructionSearchQuery(e.target.value);
-                setShowInstructionSuggestions(true);
-              }}
-              onFocus={() => setShowInstructionSuggestions(true)}
-              style={{
-                width: '100%',
-                height: '40px',
-                borderRadius: 6,
-                padding: '0 12px',
-                marginBottom: 8
-              }}
-            />
-            {showInstructionSuggestions && filteredInstructions.length > 0 && (
-              <div
-                className="suggestions-dropdown"
-                style={{
-                  position: 'absolute',
-                  top: '74px',
-                  left: 0,
-                  right: 0,
-                  zIndex: 1001,
-                  maxHeight: '200px',
-                  overflowY: 'auto'
+          {/* Instructions (droite) - 2 lignes */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', minHeight: '150px' }}>
+            {/* Ligne 1 : Dropdown */}
+            <div style={{ position: 'relative' }}>
+              <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
+                Instructions d'installation
+              </label>
+              <input
+                type="text"
+                placeholder="Rechercher une instruction..."
+                value={instructionSearchQuery}
+                onChange={e => {
+                  setInstructionSearchQuery(e.target.value);
+                  setShowInstructionSuggestions(true);
                 }}
-              >
-                {filteredInstructions.map((name, idx) => (
-                  <div
-                    key={idx}
-                    className="suggestion-item"
-                    onClick={() => {
-                      setInput('instruction', savedInstructions[name]);
-                      setInstructionSearchQuery(name);
-                      setShowInstructionSuggestions(false);
-                    }}
-                  >
-                    <div style={{ fontWeight: 600 }}>{name}</div>
-                    <div style={{ fontSize: 11, opacity: 0.7 }}>
-                      {savedInstructions[name].substring(0, 50)}...
+                onFocus={() => setShowInstructionSuggestions(true)}
+                style={{
+                  width: '100%',
+                  height: '40px',
+                  borderRadius: 6,
+                  padding: '0 12px'
+                }}
+              />
+              {showInstructionSuggestions && filteredInstructions.length > 0 && (
+                <div
+                  className="suggestions-dropdown"
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    zIndex: 1001,
+                    maxHeight: '200px',
+                    overflowY: 'auto'
+                  }}
+                >
+                  {filteredInstructions.map((name, idx) => (
+                    <div
+                      key={idx}
+                      className="suggestion-item"
+                      onClick={() => {
+                        setInput('instruction', savedInstructions[name]);
+                        setInstructionSearchQuery(name);
+                        setShowInstructionSuggestions(false);
+                      }}
+                    >
+                      <div style={{ fontWeight: 600 }}>{name}</div>
+                      <div style={{ fontSize: 11, opacity: 0.7 }}>
+                        {savedInstructions[name].substring(0, 50)}...
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Ligne 2 : Textarea - prend la hauteur restante */}
             <textarea
               value={inputs['instruction'] || ''}
               onChange={e => setInput('instruction', e.target.value)}
               style={{
                 width: '100%',
                 flex: 1,
-                minHeight: '100px',
-                maxHeight: '140px',
+                minHeight: 0,
                 borderRadius: 6,
                 padding: '12px',
                 fontFamily: 'monospace',
@@ -965,7 +1009,7 @@ function LinkField({
           </div>
         </div>
 
-        {/* Footer & Publication */}
+        {/* LIGNE 10 : Footer & Publication */}
         <div style={{
           marginTop: 8,
           display: 'flex',
