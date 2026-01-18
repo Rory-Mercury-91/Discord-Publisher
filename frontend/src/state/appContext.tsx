@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import ErrorModal from '../components/ErrorModal';
 import { tauriAPI } from '../lib/tauri-api';
 // The local logger has been removed.  Koyeb collects logs automatically, so
@@ -121,6 +121,7 @@ Vous pouvez l'installer dès maintenant pour profiter du jeu dans notre langue. 
 ];
 
 type AppContextValue = {
+  resetAllFields: () => void;
   templates: Template[];
   addTemplate: (t: Template) => void;
   updateTemplate: (idx: number, t: Template) => void;
@@ -1251,6 +1252,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setUploadedImages(prev => prev.map((i, s) => ({ ...i, isMain: s === idx })));
   }
 
+  const resetAllFields = useCallback(() => {
+    allVarsConfig.forEach(v => setInput(v.name, ''));
+    setInput('instruction', '');
+    setInput('is_modded_game', 'false');
+    setInput('Mod_link', '');
+    setInput('Developpeur', '');
+    setPostTitle('');
+    setPostTags('');
+    setTranslationType('Automatique');
+    setIsIntegrated(false);
+    setLinkConfigs({
+      Game_link: { source: 'F95', value: '' },
+      Translate_link: { source: 'F95', value: '' },
+      Mod_link: { source: 'F95', value: '' }
+    });
+    const imagesToRemove = [...uploadedImages];
+    imagesToRemove.forEach(() => removeImage(0));
+  }, [allVarsConfig, uploadedImages, setTranslationType, setIsIntegrated, setPostTitle, setPostTags, setLinkConfigs]);
+
   // SUPPRESSION COMPLÈTE DU DEBOUNCE pour un rendu instantané
   // Le preview dépend directement de inputs et currentTemplateIdx
 
@@ -1326,6 +1346,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [templates, currentTemplateIdx, allVarsConfig, inputs, translationType, isIntegrated]);
 
   const value: AppContextValue = {
+    resetAllFields,
     linkConfigs,
     setLinkConfig,
     setLinkConfigs,

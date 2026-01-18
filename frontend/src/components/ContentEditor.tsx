@@ -63,7 +63,14 @@ export default function ContentEditor() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const overviewRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // 4️⃣ ENFIN : useEffect (maintenant setInput et currentTemplateIdx sont disponibles)
+  // 4️⃣ ENFIN : useEffect
+  useEffect(() => {
+    // Si les valeurs dans le contexte sont vides, on reset les barres de recherche locales
+    if (!inputs['Traductor']) setTraductorSearchQuery('');
+    if (!inputs['instruction']) setInstructionSearchQuery('');
+  }, [inputs['Traductor'], inputs['instruction']]);
+
+  // On garde celui-ci pour les changements de templates/posts
   useEffect(() => {
     setTraductorSearchQuery('');
     setInstructionSearchQuery('');

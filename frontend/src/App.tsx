@@ -16,6 +16,7 @@ import { AppProvider, useApp } from './state/appContext';
 
 function AppContentInner() {
   const {
+    resetAllFields,
     apiStatus,
     setApiStatus,
     preview,
@@ -52,37 +53,8 @@ function AppContentInner() {
   // Fonction pour réinitialiser tous les champs
 
   const handleResetFields = async () => {
-    // Reset toutes les variables
-    allVarsConfig.forEach(v => setInput(v.name, ''));
-
-    // Champs hors variables / spécifiques
-    setInput('instruction', '');
-    setInput('is_modded_game', 'false');
-    setInput('Mod_link', '');
-    setInput('Developpeur', '');
-
-    // Reset titre et tags
-    setPostTitle('');
-    setPostTags('');
-
-    // Reset type / intégration
-    setTranslationType('Automatique');
-    setIsIntegrated(false);
-
-    // NOUVEAU : Reset des configs de liens
-    setLinkConfigs({
-      Game_link: { source: 'F95', value: '' },
-      Translate_link: { source: 'F95', value: '' },
-      Mod_link: { source: 'F95', value: '' }
-    });
-
-    // Reset images (IMPORTANT: pas de while)
-    const count = uploadedImages.length;
-    for (let i = 0; i < count; i++) {
-      removeImage(0);
-    }
-
-    showToast('Tous les champs ont été réinitialisés', 'success');
+    resetAllFields();
+    showToast('Tous les champs ont été réinialisés', 'success');
   };
 
 
