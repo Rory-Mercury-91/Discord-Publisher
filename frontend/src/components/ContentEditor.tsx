@@ -1054,13 +1054,18 @@ export default function ContentEditor() {
             onClick={async () => {
               const ok = await confirm({
                 title: isEditMode ? 'Mettre à jour' : 'Publier',
-                message: isEditMode ? 'Modifier ce post sur Discord ?' : 'Envoyer ce nouveau post sur Discord ?'
+                message: isEditMode
+                  ? 'Modifier ce post sur Discord ?'
+                  : 'Envoyer ce nouveau post sur Discord ?'
               });
               if (ok) {
                 const res = await publishPost();
                 if (res.ok) {
                   showToast('Terminé !', 'success');
-                  if (isEditMode) { setEditingPostId(null); setEditingPostData(null); }
+                  if (isEditMode) {
+                    setEditingPostId(null);
+                    setEditingPostData(null);
+                  }
                 }
               }
             }}
@@ -1072,7 +1077,11 @@ export default function ContentEditor() {
               padding: '12px 32px',
               fontSize: 15,
               fontWeight: 700,
-              background: (publishInProgress || !canPublish) ? 'var(--muted)' : '#5865F2',
+              background: (publishInProgress || !canPublish)
+                ? 'var(--muted)'
+                : isEditMode
+                  ? '#f59e0b'  // Orange pour "Mettre à jour"
+                  : '#5865F2', // Bleu Discord pour "Publier"
               color: 'white',
               minWidth: '220px',
               cursor: (publishInProgress || !canPublish) ? 'not-allowed' : 'pointer',
@@ -1083,7 +1092,9 @@ export default function ContentEditor() {
             onMouseEnter={(e) => {
               if (!publishInProgress && canPublish) {
                 e.currentTarget.style.transform = 'translateY(-1px)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(88, 101, 242, 0.4)';
+                e.currentTarget.style.boxShadow = isEditMode
+                  ? '0 4px 12px rgba(245, 158, 11, 0.4)'
+                  : '0 4px 12px rgba(88, 101, 242, 0.4)';
               }
             }}
             onMouseLeave={(e) => {
@@ -1093,6 +1104,11 @@ export default function ContentEditor() {
           >
             {publishInProgress ? (
               <span>⏳ Patientez...</span>
+            ) : isEditMode ? (
+              <>
+                <span style={{ fontSize: 18 }}>✏️</span>
+                <span>Mettre à jour le post</span>
+              </>
             ) : (
               <>
                 <img
@@ -1104,7 +1120,7 @@ export default function ContentEditor() {
                     filter: 'brightness(0) invert(1)'
                   }}
                 />
-                <span>Publier</span>
+                <span>Publier sur Discord</span>
               </>
             )}
           </button>

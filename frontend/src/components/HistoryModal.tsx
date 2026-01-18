@@ -1,10 +1,10 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { useApp, PublishedPost } from '../state/appContext';
-import { useToast } from './ToastProvider';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useConfirm } from '../hooks/useConfirm';
-import ConfirmModal from './ConfirmModal';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
+import { PublishedPost, useApp } from '../state/appContext';
+import ConfirmModal from './ConfirmModal';
+import { useToast } from './ToastProvider';
 
 interface HistoryModalProps {
   onClose?: () => void;
@@ -56,7 +56,7 @@ const POSTS_PER_PAGE = 20;
 export default function HistoryModal({ onClose }: HistoryModalProps) {
   useEscapeKey(() => onClose?.(), true);
   useModalScrollLock();
-  
+
   const { publishedPosts, deletePublishedPost, loadPostForEditing, loadPostForDuplication, fetchHistoryFromAPI } = useApp();
   const { showToast } = useToast();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
@@ -64,33 +64,28 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
   // Gestion des erreurs et états de chargement
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Forcer le refresh de l'historique à l'ouverture de la modale
-  // localStorage est la source principale, Koyeb est juste un backup
   useEffect(() => {
     setIsLoading(true);
     setError(null);
-    
-    // Récupérer depuis Koyeb (backup) pour synchroniser les posts récents
-    // Mais localStorage reste la source principale
+
     fetchHistoryFromAPI()
       .then(() => {
         setIsLoading(false);
       })
       .catch((e: any) => {
         setIsLoading(false);
-        // Ne pas afficher d'erreur si Koyeb n'est pas disponible
-        // localStorage est la source principale, Koyeb est juste un backup
         console.log('ℹ️ Koyeb non disponible, utilisation de localStorage uniquement');
       });
-  }, []); // Exécuté une seule fois à l'ouverture
+  }, []);
 
   // États pour recherche et filtres
   const [searchQuery, setSearchQuery] = useState('');
-  const [dateFilter, setDateFilter] = useState('all'); // all, today, week, month, year
-  const [templateFilter, setTemplateFilter] = useState('all'); // all, my, partner
+  const [dateFilter, setDateFilter] = useState('all');
+  const [templateFilter, setTemplateFilter] = useState('all');
   const [translatorFilter, setTranslatorFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('date-desc'); // date-desc, date-asc, title-asc, title-desc
+  const [sortBy, setSortBy] = useState('date-desc');
   const [currentPage, setCurrentPage] = useState(1);
 
   // Extraire la liste des traducteurs uniques
@@ -98,9 +93,8 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
     const translators = new Set<string>();
     publishedPosts.forEach(post => {
       const content = post.content.toLowerCase();
-      // Chercher le traducteur dans le contenu
-      const translatorMatch = content.match(/traducteur[:\s]+([^\n]+)/i) || 
-                             content.match(/translator[:\s]+([^\n]+)/i);
+      const translatorMatch = content.match(/traducteur[:\s]+([^\n]+)/i) ||
+        content.match(/translator[:\s]+([^\n]+)/i);
       if (translatorMatch && translatorMatch[1]) {
         const translator = translatorMatch[1].trim();
         if (translator && translator.length > 0 && translator.length < 50) {
@@ -115,26 +109,23 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
   const filteredAndSortedPosts = useMemo(() => {
     let filtered = [...publishedPosts];
 
-    // Recherche par titre, contenu et nom du jeu
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(post => {
         const title = post.title?.toLowerCase() || '';
         const content = post.content?.toLowerCase() || '';
-        // Chercher le nom du jeu dans le contenu
-        const gameMatch = content.match(/nom du jeu[:\s]+([^\n]+)/i) || 
-                         content.match(/game[:\s]+([^\n]+)/i);
+        const gameMatch = content.match(/nom du jeu[:\s]+([^\n]+)/i) ||
+          content.match(/game[:\s]+([^\n]+)/i);
         const gameName = gameMatch ? gameMatch[1].toLowerCase() : '';
-        
+
         return title.includes(query) || content.includes(query) || gameName.includes(query);
       });
     }
 
-    // Filtre par date
     if (dateFilter !== 'all') {
       const now = Date.now();
       const day = 24 * 60 * 60 * 1000;
-      
+
       filtered = filtered.filter(post => {
         const postDate = post.timestamp;
         switch (dateFilter) {
@@ -152,17 +143,15 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
       });
     }
 
-    // Filtre par template
     if (templateFilter !== 'all') {
       filtered = filtered.filter(post => post.template === templateFilter);
     }
 
-    // Filtre par traducteur
     if (translatorFilter !== 'all') {
       filtered = filtered.filter(post => {
         const content = post.content.toLowerCase();
-        const translatorMatch = content.match(/traducteur[:\s]+([^\n]+)/i) || 
-                               content.match(/translator[:\s]+([^\n]+)/i);
+        const translatorMatch = content.match(/traducteur[:\s]+([^\n]+)/i) ||
+          content.match(/translator[:\s]+([^\n]+)/i);
         if (translatorMatch && translatorMatch[1]) {
           return translatorMatch[1].trim().toLowerCase() === translatorFilter.toLowerCase();
         }
@@ -170,7 +159,6 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
       });
     }
 
-    // Tri
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'date-desc':
@@ -205,7 +193,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
       title: 'Supprimer de l\'historique',
       message: 'Voulez-vous supprimer cette publication de l\'historique local ? (Le post Discord ne sera pas supprimé)',
       confirmText: 'Supprimer',
-      type: 'warning'
+      type: 'danger'
     });
     if (!ok) return;
     deletePublishedPost(id);
@@ -234,14 +222,24 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
       showToast('Lien Discord manquant ou invalide', 'error');
       return;
     }
-    window.open(url, '_blank');
+
+    // FIX: Utiliser window.open correctement
+    try {
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        showToast('Impossible d\'ouvrir le lien. Vérifiez que les popups ne sont pas bloqués.', 'warning');
+      }
+    } catch (e) {
+      showToast('Erreur lors de l\'ouverture du lien', 'error');
+      console.error('Erreur ouverture lien:', e);
+    }
   }
 
   function formatDate(timestamp: number) {
     const date = new Date(timestamp);
-    return date.toLocaleDateString('fr-FR', { 
-      year: 'numeric', 
-      month: 'short', 
+    return date.toLocaleDateString('fr-FR', {
+      year: 'numeric',
+      month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -256,45 +254,66 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
 
   return (
     <div className="modal">
-      <div className="panel" onClick={e => e.stopPropagation()} style={{ maxWidth: 1200, width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-        <h3>📋 Historique des publications</h3>
+      <div
+        className="panel"
+        onClick={e => e.stopPropagation()}
+        style={{
+          maxWidth: 1200,
+          width: '95%',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 16,
+          paddingBottom: 12,
+          borderBottom: '2px solid var(--border)'
+        }}>
+          <h3 style={{ margin: 0 }}>📋 Historique des publications</h3>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+            {publishedPosts.length} publication{publishedPosts.length > 1 ? 's' : ''} au total
+          </div>
+        </div>
 
         {/* Barre de recherche */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 12 }}>
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="🔍 Rechercher par titre, contenu ou nom du jeu..."
-            style={{ 
-              width: '100%', 
-              padding: '10px 14px', 
+            style={{
+              width: '100%',
+              padding: '10px 14px',
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid var(--border)',
               borderRadius: 6,
-              fontSize: 14,
+              fontSize: 13,
               color: 'white'
             }}
           />
         </div>
 
         {/* Filtres et tri */}
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', 
-          gap: 12, 
-          marginBottom: 16 
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 8,
+          marginBottom: 12
         }}>
-          {/* Filtre par date */}
           <select
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            style={{ 
-              padding: '8px 12px', 
+            style={{
+              padding: '8px 10px',
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid var(--border)',
               borderRadius: 6,
-              fontSize: 13,
+              fontSize: 12,
               color: 'white',
               cursor: 'pointer'
             }}
@@ -306,16 +325,15 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
             <option value="year">Cette année</option>
           </select>
 
-          {/* Filtre par template */}
           <select
             value={templateFilter}
             onChange={(e) => setTemplateFilter(e.target.value)}
-            style={{ 
-              padding: '8px 12px', 
+            style={{
+              padding: '8px 10px',
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid var(--border)',
               borderRadius: 6,
-              fontSize: 13,
+              fontSize: 12,
               color: 'white',
               cursor: 'pointer'
             }}
@@ -325,16 +343,15 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
             <option value="partner">🤝 Partenaires</option>
           </select>
 
-          {/* Filtre par traducteur */}
           <select
             value={translatorFilter}
             onChange={(e) => setTranslatorFilter(e.target.value)}
-            style={{ 
-              padding: '8px 12px', 
+            style={{
+              padding: '8px 10px',
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid var(--border)',
               borderRadius: 6,
-              fontSize: 13,
+              fontSize: 12,
               color: 'white',
               cursor: 'pointer',
               opacity: uniqueTranslators.length === 0 ? 0.5 : 1
@@ -347,16 +364,15 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
             ))}
           </select>
 
-          {/* Tri */}
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            style={{ 
-              padding: '8px 12px', 
+            style={{
+              padding: '8px 10px',
               background: 'rgba(255,255,255,0.05)',
               border: '1px solid var(--border)',
               borderRadius: 6,
-              fontSize: 13,
+              fontSize: 12,
               color: 'white',
               cursor: 'pointer'
             }}
@@ -368,7 +384,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
           </select>
         </div>
 
-        {/* Pagination et compteur de résultats */}
+        {/* Pagination */}
         {filteredAndSortedPosts.length > 0 && (
           <div style={{
             display: 'flex',
@@ -377,62 +393,62 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
             marginBottom: 12,
             padding: '8px 12px',
             background: 'rgba(255,255,255,0.03)',
-            borderRadius: 6
+            borderRadius: 6,
+            fontSize: 12
           }}>
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-              {filteredAndSortedPosts.length} publication{filteredAndSortedPosts.length > 1 ? 's' : ''}
-              {searchQuery || dateFilter !== 'all' || templateFilter !== 'all' || translatorFilter !== 'all' 
-                ? ` sur ${publishedPosts.length}` 
+            <div style={{ color: 'var(--muted)', fontWeight: 600 }}>
+              {filteredAndSortedPosts.length} résultat{filteredAndSortedPosts.length > 1 ? 's' : ''}
+              {(searchQuery || dateFilter !== 'all' || templateFilter !== 'all' || translatorFilter !== 'all')
+                ? ` sur ${publishedPosts.length}`
                 : ''}
-              {totalPages > 1 && ` • Page ${currentPage}/${totalPages}`}
             </div>
-            
+
             {totalPages > 1 && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
                   style={{
-                    fontSize: 12,
+                    fontSize: 11,
                     padding: '4px 10px',
-                    background: currentPage === 1 ? 'var(--muted)' : 'var(--panel)',
+                    background: currentPage === 1 ? 'rgba(255,255,255,0.03)' : 'var(--panel)',
                     border: '1px solid var(--border)',
                     borderRadius: 4,
                     cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
                     opacity: currentPage === 1 ? 0.5 : 1
                   }}
                 >
-                  ← Précédent
+                  ← Préc.
                 </button>
-                <span style={{ color: 'var(--muted)', fontSize: 12, fontWeight: 600 }}>
-                  {currentPage} / {totalPages}
+                <span style={{ color: 'var(--text)', fontSize: 11, fontWeight: 600, minWidth: 60, textAlign: 'center' }}>
+                  Page {currentPage} / {totalPages}
                 </span>
                 <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
                   style={{
-                    fontSize: 12,
+                    fontSize: 11,
                     padding: '4px 10px',
-                    background: currentPage === totalPages ? 'var(--muted)' : 'var(--panel)',
+                    background: currentPage === totalPages ? 'rgba(255,255,255,0.03)' : 'var(--panel)',
                     border: '1px solid var(--border)',
                     borderRadius: 4,
                     cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
                     opacity: currentPage === totalPages ? 0.5 : 1
                   }}
                 >
-                  Suivant →
+                  Suiv. →
                 </button>
               </div>
             )}
           </div>
         )}
 
-        {/* Liste scrollable */}
-        <div style={{ flex: 1, overflowY: 'auto', marginRight: -16, paddingRight: 16 }}>
+        {/* Liste scrollable en grille 2 colonnes */}
+        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
           {error && (
-            <div style={{ 
-              color: 'var(--error)', 
-              padding: 16, 
+            <div style={{
+              color: 'var(--error)',
+              padding: 16,
               textAlign: 'center',
               background: 'rgba(240, 71, 71, 0.1)',
               borderRadius: 8,
@@ -441,63 +457,92 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
               ⚠️ {error}
             </div>
           )}
+
           {isLoading && (
-            <div style={{ 
-              color: 'var(--muted)', 
-              padding: 40, 
-              textAlign: 'center' 
+            <div style={{
+              color: 'var(--muted)',
+              padding: 40,
+              textAlign: 'center'
             }}>
               ⏳ Chargement de l'historique...
             </div>
           )}
+
           {!isLoading && filteredAndSortedPosts.length === 0 ? (
-            <div style={{ 
-              color: 'var(--muted)', 
-              fontStyle: 'italic', 
-              padding: 40, 
+            <div style={{
+              color: 'var(--muted)',
+              fontStyle: 'italic',
+              padding: 40,
               textAlign: 'center',
               background: 'rgba(255,255,255,0.03)',
               borderRadius: 8
             }}>
               {searchQuery || dateFilter !== 'all' || templateFilter !== 'all' || translatorFilter !== 'all' ? (
                 <>
-                  Aucune publication ne correspond aux critères de recherche.
-                  <div style={{ fontSize: 13, marginTop: 8 }}>
-                    Essayez de modifier vos filtres ou votre recherche.
+                  Aucune publication ne correspond aux critères.
+                  <div style={{ fontSize: 12, marginTop: 8, opacity: 0.7 }}>
+                    Essayez de modifier vos filtres.
                   </div>
                 </>
               ) : (
                 <>
                   Aucune publication dans l'historique.
-                  <div style={{ fontSize: 13, marginTop: 8 }}>
-                    Les publications seront automatiquement sauvegardées ici après envoi.
+                  <div style={{ fontSize: 12, marginTop: 8, opacity: 0.7 }}>
+                    Les publications seront sauvegardées ici après envoi.
                   </div>
                 </>
               )}
             </div>
           ) : (
-            <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 10,
+              paddingRight: 8
+            }}>
               {paginatedPosts.map((post) => (
-              <div 
-                key={post.id} 
-                style={{
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  padding: 16,
-                  background: 'rgba(255,255,255,0.02)',
-                  display: 'grid',
-                  gap: 12
-                }}
-              >
-                {/* Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
+                <div
+                  key={post.id}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    padding: 12,
+                    background: 'rgba(255,255,255,0.02)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                  }}
+                >
+                  {/* Header */}
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, lineHeight: 1.3 }}>
                       {post.title}
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                      <span>{getTemplateLabel(post.template)}</span>
-                      <span>•</span>
+                    <div style={{
+                      fontSize: 11,
+                      color: 'var(--muted)',
+                      display: 'flex',
+                      gap: 8,
+                      flexWrap: 'wrap',
+                      alignItems: 'center'
+                    }}>
+                      <span style={{
+                        padding: '2px 8px',
+                        background: 'rgba(255,255,255,0.05)',
+                        borderRadius: 3,
+                        fontSize: 10
+                      }}>
+                        {getTemplateLabel(post.template)}
+                      </span>
                       <span>📅 {formatDate(post.timestamp)}</span>
                       {post.tags && (
                         <>
@@ -507,79 +552,102 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
                       )}
                     </div>
                   </div>
-                </div>
 
-                {/* Content preview */}
-                <div 
-                  style={{
-                    fontSize: 13,
-                    color: 'var(--muted)',
-                    maxHeight: 60,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    lineHeight: 1.4
-                  }}
-                >
-                  {post.content.substring(0, 200)}
-                  {post.content.length > 200 && '...'}
-                </div>
+                  {/* Content preview */}
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--muted)',
+                      maxHeight: 50,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      lineHeight: 1.4,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: 'vertical'
+                    }}
+                  >
+                    {post.content}
+                  </div>
 
-                {/* Actions */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {post.discordUrl && post.discordUrl.trim() !== '' && (
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 'auto' }}>
+                    {post.discordUrl && post.discordUrl.trim() !== '' && (
+                      <button
+                        onClick={() => handleOpen(post.discordUrl)}
+                        style={{
+                          fontSize: 11,
+                          padding: '5px 10px',
+                          background: '#5865F2',
+                          border: 'none',
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          flex: 1,
+                          minWidth: 70
+                        }}
+                        title="Ouvrir dans Discord"
+                      >
+                        🔗 Ouvrir
+                      </button>
+                    )}
                     <button
-                      onClick={() => handleOpen(post.discordUrl)}
+                      onClick={() => handleEdit(post)}
                       style={{
-                        fontSize: 13,
-                        padding: '6px 12px',
-                        background: 'var(--info)',
+                        fontSize: 11,
+                        padding: '5px 10px',
+                        background: 'var(--accent)',
                         border: 'none',
                         borderRadius: 4,
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        flex: 1,
+                        minWidth: 70
                       }}
-                      title="Ouvrir dans Discord"
+                      title="Charger pour modification"
                     >
-                      🔗 Ouvrir
+                      ✏️ Modifier
                     </button>
-                  )}
-                  <button
-                    onClick={() => handleEdit(post)}
-                    style={{
-                      fontSize: 13,
-                      padding: '6px 12px',
-                      background: 'var(--accent)',
-                      border: 'none',
-                      borderRadius: 4,
-                      cursor: 'pointer'
-                    }}
-                    title="Charger pour modification"
-                  >
-                    ✏️ Modifier
-                  </button>
-                  <button
-                    onClick={() => handleDelete(post.id)}
-                    style={{
-                      fontSize: 13,
-                      padding: '6px 12px',
-                      background: 'transparent',
-                      border: '1px solid var(--error)',
-                      color: 'var(--error)',
-                      borderRadius: 4,
-                      cursor: 'pointer'
-                    }}
-                    title="Supprimer de l'historique local"
-                  >
-                    🗑️ Supprimer
-                  </button>
+                    <button
+                      onClick={() => handleDelete(post.id)}
+                      style={{
+                        fontSize: 11,
+                        padding: '5px 10px',
+                        background: 'transparent',
+                        border: '1px solid var(--error)',
+                        color: 'var(--error)',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        minWidth: 50
+                      }}
+                      title="Supprimer de l'historique local"
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-          <button onClick={onClose}>🚪 Fermer</button>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: '1px solid var(--border)'
+        }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '8px 20px',
+              fontWeight: 600
+            }}
+          >
+            🚪 Fermer
+          </button>
         </div>
       </div>
 
