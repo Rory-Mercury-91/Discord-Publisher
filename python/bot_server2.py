@@ -390,26 +390,6 @@ async def envoyer_notification_f95(thread, is_update: bool = False):
 
 # ==================== COMMANDES SLASH ====================
 
-@bot.tree.command(name="check_help", description="Affiche la liste des commandes et leur utilité")
-async def check_help(interaction: discord.Interaction):
-    # Si tu veux restreindre l'accès à la même logique que tes checks :
-    if not _user_can_run_checks(interaction):
-        await interaction.response.send_message("⛔ Permission insuffisante.", ephemeral=True)
-        return
-
-    help_text = (
-        "**🧰 Commandes disponibles (Bot Publication Traduction)**\n\n"
-        "**/check_version** — Lance le contrôle complet des versions F95 (Auto + Semi-Auto).\n"
-        "**/check_auto** — Lance le contrôle des versions F95 uniquement sur le forum Auto.\n"
-        "**/check_semiauto** — Lance le contrôle des versions F95 uniquement sur le forum Semi-Auto.\n"
-        "**/check_count** — Compte les threads du forum (actifs + archivés) pour vérifier que le bot “voit tout”.\n"
-        "**/force_sync** — Force la synchronisation des commandes slash sur le serveur (admin uniquement).\n\n"
-        "ℹ️ *Astuce :* si les nombres sont trop bas, c’est souvent parce que beaucoup de posts sont **archivés**."
-    )
-
-    await interaction.response.send_message(help_text, ephemeral=True)
-
-
 # ✅ Accès direct autorisé (override permissions)
 ALLOWED_USER_ID = 394893413843206155
 
@@ -419,6 +399,30 @@ def _user_can_run_checks(interaction: discord.Interaction) -> bool:
         return True
     perms = getattr(interaction.user, "guild_permissions", None)
     return bool(perms and (perms.administrator or perms.manage_guild))
+
+@bot.tree.command(name="check_help", description="Affiche la liste des commandes et leur utilité")
+async def check_help(interaction: discord.Interaction):
+    # ✅ Ack immédiat (évite 404 Unknown interaction)
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except Exception:
+        pass
+
+    if not _user_can_run_checks(interaction):
+        await interaction.followup.send("⛔ Permission insuffisante.", ephemeral=True)
+        return
+
+    help_text = (
+        "**🧰 Commandes disponibles (Bot Publication Traduction)**\n\n"
+        "**/check_version** — Lance le contrôle complet des versions F95 (Auto + Semi-Auto).\n"
+        "**/check_auto** — Lance le contrôle des versions F95 uniquement sur le forum Auto.\n"
+        "**/check_semiauto** — Lance le contrôle des versions F95 uniquement sur le forum Semi-Auto.\n"
+        "**/check_count** — Compte les threads du forum (actifs + archivés) pour vérifier que le bot “voit tout”.\n"
+        "**/force_sync** — Force la synchronisation des commandes slash.\n"
+    )
+
+    await interaction.followup.send(help_text, ephemeral=True)
+
 
 
 @bot.tree.command(name="check_version", description="Contrôle les versions F95 (Auto + Semi-Auto)")
