@@ -133,6 +133,35 @@ class RateLimitTracker:
 
 rate_limiter = RateLimitTracker()
 
+
+def _b64decode_padded(s: str) -> bytes:
+    """Décodage base64 tolérant (padding manquant, espaces, etc.)."""
+    s = (s or "").strip()
+    if not s:
+        return b""
+    missing = (-len(s)) % 4
+    if missing:
+        s += "=" * missing
+    return base64.b64decode(s)
+
+
+def _decode_metadata_b64(metadata_b64: str) -> Optional[Dict]:
+    """Décode les métadonnées encodées en base64.
+
+    Schéma attendu (frontend/appContext.tsx): base64(UTF-8(JSON)).
+    Fallback compat: certains anciens posts peuvent être URL-encodés avant d'être base64.
+    """
+    if not metadata_b64:
+        return None
+    raw = _b64decode_padded(metadata_b64)
+    # On attend du UTF-8 (cf. TextEncoder côté frontend)
+    s = raw.decode("utf-8")
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        import urllib.parse
+        return json.loads(urllib.parse.unquote(s))
+
 def _auth_headers():
     return {"Authorization": f"Bot {config.DISCORD_PUBLISHER_TOKEN}"}
 
@@ -210,9 +239,8 @@ async def _create_forum_post(session, forum_id, title, content, tags_raw, images
     # ✅ NOUVEAU : Ajouter un embed invisible avec les métadonnées
     if metadata_b64:
         try:
-            # Décoder les métadonnées
-            metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
-            metadata = json.loads(metadata_json)
+            # Décoder les métadonnées (même schéma que bot_server1.py)
+            metadata = _decode_metadata_b64(metadata_b64) or {}
             
             # Créer un embed invisible (couleur #2b2d31 = fond Discord)
             # Le footer contient les métadonnées encodées
@@ -377,8 +405,8 @@ async def forum_post_update(request):
         
         if metadata_b64:
             try:
-                metadata_json = base64.b64decode(metadata_b64).decode('utf-8')
-                metadata = json.loads(metadata_json)
+                # Décoder les métadonnées (schéma cohérent avec le bot)
+                metadata = _decode_metadata_b64(metadata_b64) or {}
                 
                 metadata_embed = {
                     "color": 2829617,

@@ -37,6 +37,17 @@ def extraire_metadata_embed(message):
     """
     if not message.embeds:
         return None
+
+    def _b64decode_padded(s: str) -> bytes:
+        """Décodage base64 tolérant (padding manquant, espaces, etc.)."""
+        s = (s or "").strip()
+        if not s:
+            return b""
+        # Discord / certaines libs peuvent tronquer le padding (=)
+        missing = (-len(s)) % 4
+        if missing:
+            s += "=" * missing
+        return base64.b64decode(s)
     
     for embed in message.embeds:
         # Vérifier si c'est notre embed de métadonnées (footer commence par "metadata:")
@@ -48,12 +59,16 @@ def extraire_metadata_embed(message):
                     # Retirer les backticks du code block
                     json_b64 = field_value.replace("```json\n", "").replace("\n```", "").strip()
                     
-                    # Décoder le base64
-                    metadata_json = base64.b64decode(json_b64).decode('utf-8')
-                    # Parser le JSON (qui est URL-encodé)
-                    import urllib.parse
-                    metadata_str = urllib.parse.unquote(metadata_json)
-                    metadata = json.loads(metadata_str)
+                    # ✅ Décoder le base64 → JSON (schéma identique à publisher_api.py)
+                    raw = _b64decode_padded(json_b64)
+                    metadata_json = raw.decode('utf-8')
+
+                    # ✅ Parser le JSON (fallback: anciens posts URL-encodés)
+                    try:
+                        metadata = json.loads(metadata_json)
+                    except json.JSONDecodeError:
+                        import urllib.parse
+                        metadata = json.loads(urllib.parse.unquote(metadata_json))
                     
                     print(f"✅ Métadonnées structurées trouvées: {metadata.get('game_name', 'N/A')}")
                     return metadata

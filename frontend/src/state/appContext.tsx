@@ -222,6 +222,17 @@ type AppContextValue = {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  // Base64 UTF-8 (btoa seul ne supporte pas les caractères non-ASCII)
+  function b64EncodeUtf8(str: string): string {
+    const bytes = new TextEncoder().encode(str);
+    let binary = '';
+    const chunkSize = 0x8000; // éviter "Maximum call stack size" sur gros payloads
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+  }
   // Discord config global
   const [discordConfig, setDiscordConfig] = useState<any>(() => {
     try {
@@ -716,8 +727,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       formData.append('tags', tags);
       formData.append('template', templateType);
 
-      // ✅ NOUVEAU : Ajouter les métadonnées encodées en base64
-      formData.append('metadata', btoa(encodeURIComponent(JSON.stringify(metadata))));
+      // ✅ NOUVEAU : Ajouter les métadonnées encodées en base64 (UTF-8)
+      // Schéma cohérent avec publisher_api.py / bot_server1.py
+      formData.append('metadata', b64EncodeUtf8(JSON.stringify(metadata)));
 
       if (isEditMode && editingPostData) {
         formData.append('threadId', editingPostData.threadId);
