@@ -36,7 +36,7 @@ def a_tag_maj(thread):
 
 # --- ENVOI DE NOTIFICATION (OPTIMISÉ ANTI-429) ---
 
-async def envoyer_notification_f95(thread):
+async def envoyer_notification_f95(thread, is_update: bool = True):
     """Envoie un rappel pour la publication F95fr"""
     channel_notif = bot.get_channel(NOTIFICATION_CHANNEL_F95_ID)
     if not channel_notif:
@@ -52,24 +52,33 @@ async def envoyer_notification_f95(thread):
         if not message:
             await asyncio.sleep(1.5)
             message = thread.starter_message or await thread.fetch_message(thread.id)
-            
+
+        # ✅ Auteur du starter message (personne qui a posté le thread)
+        auteur = "Inconnu"
+        if message and message.author:
+            auteur = message.author.display_name
+
         # Calcul de la date (Ta logique originale)
         date_creation = thread.created_at
         date_publication = date_creation + datetime.timedelta(days=DAYS_BEFORE_PUBLICATION)
         timestamp_discord = int(date_publication.timestamp())
 
+        action_txt = "a été mis à jour" if is_update else "a été créé"
+
         msg_content = (
             f"🔔 **Rappel Publication F95fr**\n"
-            f"Le thread **{thread.name}** a été mis à jour.\n"
+            f"Le thread **{thread.name}** {action_txt}.\n"
+            f"**Traducteur :** {auteur}\n"
             f"📅 À publier le : <t:{timestamp_discord}:D> (<t:{timestamp_discord}:R>)\n"
             f"🔗 Lien : {thread.jump_url}"
         )
 
         await channel_notif.send(content=msg_content)
         print(f"✅ Notification F95 envoyée pour : {thread.name}")
-        
+
     except Exception as e:
         print(f"❌ Erreur notification F95 : {e}")
+
 
 # --- ÉVÉNEMENTS ---
 
@@ -79,12 +88,15 @@ async def on_ready():
 
 @bot.event
 async def on_thread_create(thread):
-    # On attend un peu que les tags soient bien appliqués par l'utilisateur/système
+    # On attend un peu que les tags + starter message soient bien disponibles
     if thread.parent_id in [FORUM_SEMI_AUTO_ID, FORUM_AUTO_ID]:
         await asyncio.sleep(5 + random.random() * 2)
         thread_actuel = bot.get_channel(thread.id)
-        if thread_actuel and a_tag_maj(thread_actuel):
-            await envoyer_notification_f95(thread_actuel)
+
+        if thread_actuel:
+            # ✅ Envoi toujours le rappel, MAJ ou non
+            await envoyer_notification_f95(thread_actuel, is_update=a_tag_maj(thread_actuel))
+
 
 @bot.event
 async def on_thread_update(before, after):
@@ -92,7 +104,7 @@ async def on_thread_update(before, after):
         # Si le tag MAJ vient d'être ajouté
         if a_tag_maj(after) and not a_tag_maj(before):
             print(f"✅ Tag MAJ détecté sur : {after.name}")
-            await envoyer_notification_f95(after)
+            await envoyer_notification_f95(after, is_update=True)
 
 @bot.event
 async def on_message_edit(before, after):
@@ -104,7 +116,7 @@ async def on_message_edit(before, after):
         if before.content != after.content:
             if after.channel.parent_id in [FORUM_SEMI_AUTO_ID, FORUM_AUTO_ID]:
                 if a_tag_maj(after.channel):
-                    await envoyer_notification_f95(after.channel)
+                    await envoyer_notification_f95(after.channel, is_update=True)
 
 if __name__ == "__main__":
     # On force l'URL officielle ici pour ignorer le proxy

@@ -28,6 +28,10 @@ pending_announcements = {}
 recent_threads = {}
 announcement_locks = {}
 
+# Nom du traducteur "principal" (pour ne pas afficher "de moi")
+# Peut être surchargé via la variable d'environnement OWNER_TRANSLATOR_NAME.
+OWNER_TRANSLATOR_NAME = os.getenv("OWNER_TRANSLATOR_NAME", "🏍️ Roadrenegat").strip()
+
 
 # ✅ NOUVELLE FONCTION : Extraire les métadonnées de l'embed invisible
 def extraire_metadata_embed(message):
@@ -50,28 +54,32 @@ def extraire_metadata_embed(message):
         return base64.b64decode(s)
     
     for embed in message.embeds:
-        # Vérifier si c'est notre embed de métadonnées (footer commence par "metadata:")
+        # Vérifier si c'est notre embed de métadonnées
+        # Ancien format: footer "metadata:..."
+        # Nouveau format: footer "metadata:v1:chunks=..." (ou similaire)
         if embed.footer and embed.footer.text and embed.footer.text.startswith("metadata:"):
             try:
-                # Extraire le JSON base64 du premier field
-                if embed.fields and len(embed.fields) > 0:
-                    field_value = embed.fields[0].value
-                    # Retirer les backticks du code block
-                    json_b64 = field_value.replace("```json\n", "").replace("\n```", "").strip()
-                    
-                    # ✅ Décoder le base64 → JSON (schéma identique à publisher_api.py)
-                    raw = _b64decode_padded(json_b64)
-                    metadata_json = raw.decode('utf-8')
+                if not embed.fields:
+                    return None
 
-                    # ✅ Parser le JSON (fallback: anciens posts URL-encodés)
-                    try:
-                        metadata = json.loads(metadata_json)
-                    except json.JSONDecodeError:
-                        import urllib.parse
-                        metadata = json.loads(urllib.parse.unquote(metadata_json))
-                    
-                    print(f"✅ Métadonnées structurées trouvées: {metadata.get('game_name', 'N/A')}")
-                    return metadata
+                # ✅ Nouveau: les données peuvent être découpées en plusieurs fields (chunks)
+                # On concatène tout pour reconstituer le base64 complet.
+                joined = "".join([f.value or "" for f in embed.fields]).strip()
+
+                # Compat ancien format où les données étaient dans un bloc ```json ...```
+                json_b64 = joined.replace("```json\n", "").replace("\n```", "").strip()
+
+                raw = _b64decode_padded(json_b64)
+                metadata_json = raw.decode("utf-8")
+
+                try:
+                    metadata = json.loads(metadata_json)
+                except json.JSONDecodeError:
+                    import urllib.parse
+                    metadata = json.loads(urllib.parse.unquote(metadata_json))
+
+                print(f"✅ Métadonnées structurées trouvées: {metadata.get('game_name', 'N/A')}")
+                return metadata
             except Exception as e:
                 print(f"⚠️ Erreur extraction métadonnées embed: {e}")
                 return None
@@ -91,6 +99,7 @@ def extraire_infos_post(message, metadata=None):
         'traducteur': str ou None,
         'version_jeu': str,
         'version_trad': str,
+        'translation_type': str,
         'is_integrated': bool
     }
     """
@@ -100,6 +109,7 @@ def extraire_infos_post(message, metadata=None):
         'traducteur': None,
         'version_jeu': 'Non spécifiée',
         'version_trad': 'Non spécifiée',
+        'translation_type': 'Non spécifié',
         'is_integrated': False
     }
     
@@ -109,6 +119,7 @@ def extraire_infos_post(message, metadata=None):
         infos['traducteur'] = metadata.get('traductor') or None
         infos['version_jeu'] = metadata.get('game_version', infos['version_jeu'])
         infos['version_trad'] = metadata.get('translate_version', infos['version_trad'])
+        infos['translation_type'] = metadata.get('translation_type', infos['translation_type'])
         infos['is_integrated'] = metadata.get('is_integrated', False)
         
         print(f"📊 Données extraites depuis métadonnées: {infos['titre_jeu']}")
@@ -251,6 +262,7 @@ async def envoyer_annonce(thread, liste_tags_trads):
         traducteur = infos['traducteur']
         version_jeu = infos['version_jeu']
         version_traduction = infos['version_trad']
+        translation_type = infos.get('translation_type', 'Non spécifié')
         is_integrated = infos['is_integrated']
         
     except Exception as e:
@@ -284,18 +296,28 @@ async def envoyer_annonce(thread, liste_tags_trads):
 
     # Construction du message d'annonce
     is_update = deja_publie
-    prefixe = f"🔄 **Mise à jour d'une traduction de {traducteur or 'moi'}**" if is_update else f"🎮 **Nouvelle traduction de {traducteur or 'moi'}**"
+    # ✅ Nouveau titre: si traducteur partenaire => "de <nom>", sinon pas de "de moi"
+    is_partner = bool(traducteur) and traducteur.strip().casefold() != OWNER_TRANSLATOR_NAME.casefold()
+    if is_update:
+        prefixe = f"🔄 **Mise à jour d'une traduction de {traducteur}**" if is_partner else "🔄 **Mise à jour d'une traduction**"
+    else:
+        prefixe = f"🎮 **Nouvelle traduction de {traducteur}**" if is_partner else "🎮 **Nouvelle traduction**"
     
     msg_content = f"{prefixe}\n\n"
     msg_content += f"**Nom du jeu :** [{titre_jeu}]({thread.jump_url})\n"
     if traducteur:
         msg_content += f"**Traducteur :** {traducteur}\n"
     msg_content += f"**Version du jeu :** {version_jeu}\n"
-    msg_content += f"**Version de la traduction :** {version_traduction}"
-    
-    # Indication si traduction intégrée
-    if is_integrated:
-        msg_content += " (Intégrée)"
+    msg_content += f"**Version de la traduction :** {version_traduction}\n"
+
+    # ✅ Type de traduction + intégration (affiché uniquement si renseigné)
+    translation_type_clean = (translation_type or "").strip()
+    if translation_type_clean and translation_type_clean.lower() not in ("non spécifié", "non specifie", "n/a", "na"):
+        if is_integrated is None:
+            msg_content += f"**Type de traduction :** {translation_type_clean}\n"
+        else:
+            integration_txt = "Intégrée" if is_integrated else "Non intégrée"
+            msg_content += f"**Type de traduction :** {translation_type_clean} ({integration_txt})\n"
     
     msg_content += f"\n**État :** {', '.join(liste_tags_trads)}"
 

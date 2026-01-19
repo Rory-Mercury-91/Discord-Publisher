@@ -710,16 +710,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         game_version: inputs['Game_version'] || '',
         translate_version: inputs['Translate_version'] || '',
         traductor: inputs['Traductor'] || '',
-        developpeur: inputs['Developpeur'] || '',
-        translation_type: translationType || 'Automatique',
-        is_integrated: isIntegrated || false,
-        is_modded: inputs['is_modded_game'] === 'true',
-        game_link: buildFinalLink(linkConfigs.Game_link),
-        translate_link: buildFinalLink(linkConfigs.Translate_link),
-        mod_link: buildFinalLink(linkConfigs.Mod_link),
-        overview: inputs['Overview'] || '',
+        translation_type: translationType || '',
+        is_integrated: isIntegrated,
+        etat: tags || '',
         timestamp: Date.now()
       };
+
 
       const formData = new FormData();
       formData.append('title', title);

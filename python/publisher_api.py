@@ -223,6 +223,27 @@ async def _discord_suppress_embeds(session, channel_id: str, message_id: str) ->
         logger.warning(f"⚠️ Exception SUPPRESS_EMBEDS: {e}")
         return False
 
+def _build_metadata_embed(metadata_b64: str) -> dict:
+    """
+    Embed "invisible" qui transporte metadata_b64 en respectant les limites Discord.
+    - field.value: max ~1024 caractères -> on découpe en chunks
+    - max 25 fields
+    """
+    # marge de sécurité
+    CHUNK_SIZE = 950
+    chunks = [metadata_b64[i:i + CHUNK_SIZE] for i in range(0, len(metadata_b64), CHUNK_SIZE)]
+    if len(chunks) > 25:
+        chunks = chunks[:25]
+
+    return {
+        "color": 2829617,  # #2b2d31 (quasi invisible en dark mode)
+        "footer": {"text": f"metadata:v1:chunks={len(chunks)}"},
+        "fields": [
+            {"name": "\u200b", "value": c, "inline": False}
+            for c in chunks
+        ]
+    }
+
 def _pick_forum_id(template):
     return config.FORUM_PARTNER_ID if template == "partner" else config.FORUM_MY_ID
 
@@ -245,79 +266,64 @@ async def _resolve_applied_tag_ids(session, forum_id, tags_raw):
 
 async def _create_forum_post(session, forum_id, title, content, tags_raw, images, metadata_b64=None):
     """
-    Crée un post de forum Discord avec un embed invisible contenant les métadonnées
-    
+    Crée un post de forum Discord avec un embed invisible contenant les métadonnées.
+
     Args:
         metadata_b64: Chaîne base64 encodée contenant les métadonnées JSON
     """
     applied_tag_ids = await _resolve_applied_tag_ids(session, forum_id, tags_raw)
-    
-    # Construction du payload de base
+
     payload = {
         "name": title,
         "message": {
             "content": content or " "
         }
     }
-    
-    # ✅ NOUVEAU : Ajouter un embed invisible avec les métadonnées
+
+    # ✅ Embed invisible avec metadata (sécurisé)
     if metadata_b64:
         try:
-            # Décoder les métadonnées (même schéma que bot_server1.py)
             metadata = _decode_metadata_b64(metadata_b64) or {}
-            
-            # Créer un embed invisible (couleur #2b2d31 = fond Discord)
-            # Le footer contient les métadonnées encodées
-            metadata_embed = {
-                "color": 2829617,  # #2b2d31 (invisible sur Discord dark mode)
-                "footer": {
-                    "text": f"metadata:{metadata_b64[:100]}..."  # Tronqué pour l'affichage
-                },
-                "fields": [
-                    {
-                        "name": "\u200b",  # Caractère invisible
-                        "value": f"```json\n{metadata_b64}\n```",  # Données complètes dans un bloc code caché
-                        "inline": False
-                    }
-                ]
-            }
-            
-            payload["message"]["embeds"] = [metadata_embed]
-            
+
+            # Si c'est absurdement long, on évite le 400 Discord
+            # (normalement avec tes métadonnées minimalistes ça n’arrivera jamais)
+            if len(metadata_b64) > 25000:
+                logger.warning("⚠️ metadata_b64 trop long, embed ignoré pour éviter un 400 Discord")
+            else:
+                payload["message"]["embeds"] = [_build_metadata_embed(metadata_b64)]
+
             logger.info(f"✅ Métadonnées structurées ajoutées: {metadata.get('game_name', 'N/A')}")
         except Exception as e:
             logger.error(f"❌ Erreur décodage métadonnées: {e}")
-    
+
     if applied_tag_ids:
         payload["applied_tags"] = applied_tag_ids
-    
+
     form = aiohttp.FormData()
     form.add_field("payload_json", json.dumps(payload), content_type="application/json")
-    
+
     if images:
         for i, img in enumerate(images):
-            form.add_field(f"files[{i}]", img["bytes"], filename=img["filename"], content_type=img["content_type"])
-    
+            form.add_field(
+                f"files[{i}]",
+                img["bytes"],
+                filename=img["filename"],
+                content_type=img["content_type"]
+            )
+
     status, data, _ = await _discord_post_form(session, f"/channels/{forum_id}/threads", form)
-    
+
     if status >= 300:
         return False, {"status": status, "discord": data}
-    
-    # return True, {
-    #     "thread_id": data.get("id"),
-    #     "message_id": data.get("id"),
-    #     "guild_id": data.get("guild_id"),
-    #     "thread_url": f"https://discord.com/channels/{data.get('guild_id')}/{data.get('id')}"
-    # }
 
     thread_id = data.get("id")
     message_id = (data.get("message") or {}).get("id") or data.get("message_id")
 
+    # ✅ Masquer l'embed dans l'UI
     if metadata_b64 and thread_id and message_id:
         await _discord_suppress_embeds(session, str(thread_id), str(message_id))
     else:
         logger.warning("⚠️ SUPPRESS_EMBEDS ignoré: message_id introuvable dans la réponse Discord")
-
 
     return True, {
         "thread_id": thread_id,
@@ -404,12 +410,12 @@ async def forum_post(request):
 async def forum_post_update(request):
     """Handler modifié pour la mise à jour avec métadonnées"""
     api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
-    if api_key != config.PUBLISHER_API_KEY: 
+    if api_key != config.PUBLISHER_API_KEY:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
 
     title, content, tags, template, images, thread_id, message_id, metadata_b64 = "", "", "", "my", [], None, None, None
     reader = await request.multipart()
-    
+
     async for part in reader:
         if part.name == "title":
             title = (await part.text()).strip()
@@ -423,7 +429,7 @@ async def forum_post_update(request):
             thread_id = (await part.text()).strip()
         elif part.name == "messageId":
             message_id = (await part.text()).strip()
-        elif part.name == "metadata":  # ✅ NOUVEAU
+        elif part.name == "metadata":
             metadata_b64 = (await part.text()).strip()
         elif part.name and part.name.startswith("image_") and part.filename:
             images.append({
@@ -436,49 +442,43 @@ async def forum_post_update(request):
         return _with_cors(request, web.json_response({"ok": False, "error": "threadId and messageId required"}, status=400))
 
     logger.info(f"🔄 Mise à jour post: {title} (thread: {thread_id})")
-    
+
     async with aiohttp.ClientSession() as session:
         message_path = f"/channels/{thread_id}/messages/{message_id}"
-        
-        # Construction du payload avec embed de métadonnées
+
         message_payload = {"content": content or " "}
-        
+
+        # ✅ Embed invisible avec metadata (sécurisé)
         if metadata_b64:
             try:
-                # Décoder les métadonnées (schéma cohérent avec le bot)
-                metadata = _decode_metadata_b64(metadata_b64) or {}
-                
-                metadata_embed = {
-                    "color": 2829617,
-                    "footer": {
-                        "text": f"metadata:{metadata_b64[:100]}..."
-                    },
-                    "fields": [
-                        {
-                            "name": "\u200b",
-                            "value": f"```json\n{metadata_b64}\n```",
-                            "inline": False
-                        }
-                    ]
-                }
-                message_payload["embeds"] = [metadata_embed]
+                _ = _decode_metadata_b64(metadata_b64) or {}
+
+                if len(metadata_b64) > 25000:
+                    logger.warning("⚠️ metadata_b64 trop long, embed ignoré pour éviter un 400 Discord")
+                else:
+                    message_payload["embeds"] = [_build_metadata_embed(metadata_b64)]
             except Exception as e:
                 logger.error(f"❌ Erreur décodage métadonnées: {e}")
-        
+
         # Mettre à jour le message
         if images:
             form = aiohttp.FormData()
             form.add_field("payload_json", json.dumps(message_payload), content_type="application/json")
             for i, img in enumerate(images):
-                form.add_field(f"files[{i}]", img["bytes"], filename=img["filename"])
+                form.add_field(
+                    f"files[{i}]",
+                    img["bytes"],
+                    filename=img["filename"],
+                    content_type=img.get("content_type", "image/png")
+                )
             status, data, _ = await _discord_patch_form(session, message_path, form)
         else:
             status, data = await _discord_patch_json(session, message_path, message_payload)
 
-        if status >= 300: 
+        if status >= 300:
             return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
 
-        # ✅ Option B: masquer l'embed de métadonnées dans l'UI
+        # ✅ masquer l'embed dans l'UI
         if metadata_b64:
             await _discord_suppress_embeds(session, str(thread_id), str(message_id))
 
@@ -488,22 +488,22 @@ async def forum_post_update(request):
             "name": title,
             "applied_tags": applied_tag_ids
         })
-        
+
         if status >= 300:
             return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
 
     history_manager.add_post({
-        "id": f"post_{int(time.time())}", 
-        "timestamp": int(time.time() * 1000), 
-        "title": title, 
-        "content": content, 
-        "tags": tags, 
-        "thread_id": thread_id, 
-        "updated": True, 
-        "message_id": message_id, 
+        "id": f"post_{int(time.time())}",
+        "timestamp": int(time.time() * 1000),
+        "title": title,
+        "content": content,
+        "tags": tags,
+        "thread_id": thread_id,
+        "updated": True,
+        "message_id": message_id,
         "template": template
     })
-    
+
     return _with_cors(request, web.json_response({"ok": True, "updated": True, "thread_id": thread_id}))
 
 async def get_history(request):
