@@ -93,7 +93,7 @@ def extraire_infos_post(message, metadata=None):
     Extrait les informations du post.
     Si metadata (dict) est fourni, utilise ces données en priorité.
     Sinon, fallback sur le parsing Regex du contenu.
-    
+
     Retourne: dict avec {
         'titre_jeu': str,
         'traducteur': str ou None,
@@ -103,67 +103,110 @@ def extraire_infos_post(message, metadata=None):
         'is_integrated': bool
     }
     """
+
+    def nettoyer_nom_jeu_depuis_thread_name(thread_name: str) -> str:
+        """
+        Nettoie un nom de thread du style:
+        "Forbidden Kin [v1.0 SE] [FR = v1.0 SE] [Dumb Koala Games]"
+        -> "Forbidden Kin"
+        """
+        if not thread_name:
+            return "Jeu inconnu"
+        s = thread_name.strip()
+        if "[" in s:
+            s = s.split("[", 1)[0].strip()
+        return s or "Jeu inconnu"
+
     # Valeurs par défaut
+    thread_name = message.channel.name if hasattr(message, "channel") else "Jeu inconnu"
     infos = {
-        'titre_jeu': message.channel.name if hasattr(message, 'channel') else 'Jeu inconnu',
-        'traducteur': None,
-        'version_jeu': 'Non spécifiée',
-        'version_trad': 'Non spécifiée',
-        'translation_type': 'Non spécifié',
-        'is_integrated': False
+        # ⚠️ IMPORTANT: par défaut on nettoie déjà le nom du thread
+        # pour éviter d'afficher le titre complet en "Nom du jeu" dans les annonces.
+        "titre_jeu": nettoyer_nom_jeu_depuis_thread_name(thread_name),
+        "traducteur": None,
+        "version_jeu": "Non spécifiée",
+        "version_trad": "Non spécifiée",
+        "translation_type": "Non spécifié",
+        "is_integrated": False,
     }
-    
+
     # ✅ PRIORITÉ 1 : Métadonnées structurées
     if metadata:
-        infos['titre_jeu'] = metadata.get('game_name', infos['titre_jeu'])
-        infos['traducteur'] = metadata.get('traductor') or None
-        infos['version_jeu'] = metadata.get('game_version', infos['version_jeu'])
-        infos['version_trad'] = metadata.get('translate_version', infos['version_trad'])
-        infos['translation_type'] = metadata.get('translation_type', infos['translation_type'])
-        infos['is_integrated'] = metadata.get('is_integrated', False)
-        
+        # Ici on garde tel quel (c'est la source de vérité: Game_name -> game_name)
+        titre_meta = (metadata.get("game_name") or "").strip()
+        if titre_meta:
+            infos["titre_jeu"] = titre_meta
+
+        trad_meta = (metadata.get("traductor") or "").strip()
+        infos["traducteur"] = trad_meta or None
+
+        vj_meta = (metadata.get("game_version") or "").strip()
+        if vj_meta:
+            infos["version_jeu"] = vj_meta
+
+        vt_meta = (metadata.get("translate_version") or "").strip()
+        if vt_meta:
+            infos["version_trad"] = vt_meta
+
+        tt_meta = (metadata.get("translation_type") or "").strip()
+        if tt_meta:
+            infos["translation_type"] = tt_meta
+
+        infos["is_integrated"] = bool(metadata.get("is_integrated", False))
+
         print(f"📊 Données extraites depuis métadonnées: {infos['titre_jeu']}")
         return infos
-    
+
     # ✅ PRIORITÉ 2 : Parsing Regex (fallback pour les anciens posts)
-    contenu = message.content
-    
+    contenu = message.content or ""
+
     # Traducteur
-    trad_match = re.search(r"(?:\*\*\s*)?Traducteur\s*:\s*(?:\*\*\s*)?(.+?)(?:\n|$)", contenu, re.IGNORECASE)
+    trad_match = re.search(
+        r"(?:\*\*\s*)?Traducteur\s*:\s*(?:\*\*\s*)?(.+?)(?:\n|$)",
+        contenu,
+        re.IGNORECASE,
+    )
     if trad_match:
         traducteur = trad_match.group(1).strip()
         if traducteur.lower() not in ["(traducteur)", "(nom)", "", "n/a", "na", "aucun"]:
-            infos['traducteur'] = traducteur
-    
-    # Titre du jeu
-    titre_match_message = re.search(r"TRADUCTION FR DISPONIBLE POUR\s*:\s*\*\*(.+?)\*\*", contenu, re.IGNORECASE)
+            infos["traducteur"] = traducteur
+
+    # Titre du jeu (si présent dans le contenu, il override le fallback nettoyé)
+    titre_match_message = re.search(
+        r"TRADUCTION FR DISPONIBLE POUR\s*:\s*\*\*(.+?)\*\*",
+        contenu,
+        re.IGNORECASE,
+    )
     if titre_match_message:
-        infos['titre_jeu'] = titre_match_message.group(1).strip()
+        infos["titre_jeu"] = titre_match_message.group(1).strip()
     else:
         titre_match = re.search(r"\*\*Titre du jeu\s*:\*\*\s*(.+?)(?:\n|$)", contenu)
         if titre_match:
             titre_extrait = titre_match.group(1).strip()
             if titre_extrait.lower() not in ["(titre du jeu)", "(titre)", ""]:
-                infos['titre_jeu'] = titre_extrait
-    
+                infos["titre_jeu"] = titre_extrait
+
     # Version du jeu
     version_jeu_match = re.search(r"\*\*Version du jeu\s*:\*\*\s*(.+?)(?:\n|$)", contenu)
     if version_jeu_match:
-        infos['version_jeu'] = version_jeu_match.group(1).strip()
+        infos["version_jeu"] = version_jeu_match.group(1).strip()
     else:
-        version_titre_match = re.search(r"\[([^\]]+)\]", message.channel.name)
+        # Fallback: essayer d'extraire le 1er crochet du nom du thread
+        version_titre_match = re.search(r"\[([^\]]+)\]", thread_name or "")
         if version_titre_match:
-            infos['version_jeu'] = version_titre_match.group(1).strip()
-    
+            infos["version_jeu"] = version_titre_match.group(1).strip()
+
     # Version de la traduction
-    version_trad_match = re.search(r"\*\*Version traduite\s*:\*\*\s*(.+?)(?:\n|$)", contenu)
+    version_trad_match = re.search(
+        r"\*\*Version traduite\s*:\*\*\s*(.+?)(?:\n|$)", contenu
+    )
     if version_trad_match:
-        infos['version_trad'] = version_trad_match.group(1).strip()
-    
+        infos["version_trad"] = version_trad_match.group(1).strip()
+
     # Détecter si traduction intégrée (mot-clé dans le contenu)
     if re.search(r"int[ée]gr[ée]e", contenu, re.IGNORECASE):
-        infos['is_integrated'] = True
-    
+        infos["is_integrated"] = True
+
     print(f"📊 Données extraites depuis Regex: {infos['titre_jeu']}")
     return infos
 
