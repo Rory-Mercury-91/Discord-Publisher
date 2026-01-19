@@ -24,7 +24,7 @@ TOKEN = os.getenv('DISCORD_TOKEN_F95')
 FORUM_SEMI_AUTO_ID = int(os.getenv('FORUM_SEMI_AUTO_ID')) if os.getenv('FORUM_SEMI_AUTO_ID') else None
 FORUM_AUTO_ID = int(os.getenv('FORUM_AUTO_ID')) if os.getenv('FORUM_AUTO_ID') else None
 NOTIFICATION_CHANNEL_F95_ID = int(os.getenv('NOTIFICATION_CHANNEL_F95_ID')) if os.getenv('NOTIFICATION_CHANNEL_F95_ID') else None
-WARNING_MAJ_CHANNEL_ID = int(os.getenv('WARNING_MAJ_CHANNEL_ID')) if os.getenv('WARNING_MAJ_CHANNEL_ID') else None
+WARNING_MAJ_CHANNEL_ID = int(os.getenv('WARNING_MAJ_CHANNEL_ID', '1436297589854310441'))
 DAYS_BEFORE_PUBLICATION = int(os.getenv('DAYS_BEFORE_PUBLICATION', '14'))
 CHECK_TIME_HOUR = int(os.getenv('VERSION_CHECK_HOUR', '6'))
 CHECK_TIME_MINUTE = int(os.getenv('VERSION_CHECK_MINUTE', '0'))
@@ -381,6 +381,23 @@ async def check_semiauto(interaction: discord.Interaction):
     try:
         await run_version_check_once(forum_filter="semiauto")
         await interaction.followup.send("✅ Contrôle Semi-Auto terminé.", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"❌ Erreur: {e}", ephemeral=True)
+
+@bot.tree.command(name="force_sync", description="Force la synchronisation des commandes (admin uniquement)")
+async def force_sync(interaction: discord.Interaction):
+    """Commande temporaire pour forcer le sync"""
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("⛔ Admin uniquement", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    try:
+        # Sync pour ce serveur spécifiquement (instantané)
+        guild = interaction.guild
+        bot.tree.copy_global_to(guild=guild)
+        await bot.tree.sync(guild=guild)
+        await interaction.followup.send("✅ Commandes synchronisées pour ce serveur !", ephemeral=True)
     except Exception as e:
         await interaction.followup.send(f"❌ Erreur: {e}", ephemeral=True)
 
