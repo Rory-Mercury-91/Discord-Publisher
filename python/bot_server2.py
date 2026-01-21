@@ -160,9 +160,12 @@ class VersionAlert:
 
 
 async def _group_and_send_alerts(channel: discord.TextChannel, alerts: List[VersionAlert]):
-    """Regroupe et envoie les alertes par catégorie (max 10 par message)"""
+    """Regroupe et envoie les alertes par catégorie en respectant la limite Discord (2000 chars)."""
     if not alerts:
         return
+
+    MAX_ITEMS_PER_MESSAGE = 5
+    MAX_CHARS = 1900  # marge de sécurité (<2000)
 
     groups = {
         "Auto_diff": [],
@@ -176,6 +179,35 @@ async def _group_and_send_alerts(channel: discord.TextChannel, alerts: List[Vers
         suffix = "diff" if alert.f95_version else "missing"
         groups[f"{prefix}_{suffix}"].append(alert)
 
+    async def send_chunked(title: str, items: List[str]):
+        """Envoie une liste de blocs (strings) en messages chunkés."""
+        base_header = title + "\n\n"
+        current = base_header
+
+        sent_any = False
+        for block in items:
+            # Si le bloc seul est énorme, on le tronque (rare mais possible)
+            if len(block) > MAX_CHARS:
+                block = block[:MAX_CHARS - 20] + "\n…(tronqué)\n"
+
+            # Si ça dépasse, on envoie le message courant et on recommence
+            if len(current) + len(block) > MAX_CHARS:
+                if current.strip() != title.strip():
+                    await channel.send(current)
+                    await asyncio.sleep(1.2)
+                    sent_any = True
+                current = base_header + block
+            else:
+                current += block
+
+        # envoie le reste
+        if current.strip() != title.strip():
+            await channel.send(current)
+            await asyncio.sleep(1.2)
+            sent_any = True
+
+        return sent_any
+
     for key, alert_list in groups.items():
         if not alert_list:
             continue
@@ -186,32 +218,33 @@ async def _group_and_send_alerts(channel: discord.TextChannel, alerts: List[Vers
         else:
             title = f"⚠️ **{forum_type} : Version indisponible sur F95** ({len(alert_list)} jeux)"
 
-        for i in range(0, len(alert_list), 10):
-            batch = alert_list[i:i+10]
-            msg_parts = [title, ""]
+        # Construire les blocs par jeu
+        blocks = []
+        for alert in alert_list:
+            trad_line = f"├ Version trad : `{alert.trad_version}`\n" if getattr(alert, "trad_version", None) else ""
 
-            for alert in batch:
-                # Ligne trad optionnelle
-                trad_line = f"├ Version trad : `{alert.trad_version}`\n" if alert.trad_version else ""
+            if alert.f95_version:
+                blocks.append(
+                    f"**{alert.thread_name}**\n"
+                    f"├ Version F95 : `{alert.f95_version}`\n"
+                    f"├ Version jeu (post) : `{alert.game_version or 'Non renseignée'}`\n"
+                    f"{trad_line}"
+                    f"└ Lien : {alert.thread_url}\n\n"
+                )
+            else:
+                blocks.append(
+                    f"**{alert.thread_name}**\n"
+                    f"├ Version jeu (post) : `{alert.game_version or 'Non renseignée'}`\n"
+                    f"{trad_line}"
+                    f"└ Lien : {alert.thread_url}\n\n"
+                )
 
-                if alert.f95_version:
-                    msg_parts.append(
-                        f"**{alert.thread_name}**\n"
-                        f"├ Version F95 : `{alert.f95_version}`\n"
-                        f"├ Version jeu (post) : `{alert.game_version or 'Non renseignée'}`\n"
-                        f"{trad_line}"
-                        f"└ Lien : {alert.thread_url}\n"
-                    )
-                else:
-                    msg_parts.append(
-                        f"**{alert.thread_name}**\n"
-                        f"├ Version jeu (post) : `{alert.game_version or 'Non renseignée'}`\n"
-                        f"{trad_line}"
-                        f"└ Lien : {alert.thread_url}\n"
-                    )
+        # 1) découpage par paquets de 5 jeux
+        for i in range(0, len(blocks), MAX_ITEMS_PER_MESSAGE):
+            batch = blocks[i:i + MAX_ITEMS_PER_MESSAGE]
+            # 2) envoi chunké avec limite de caractères
+            await send_chunked(title, batch)
 
-            await channel.send("\n".join(msg_parts))
-            await asyncio.sleep(1.5)
 
 
 
