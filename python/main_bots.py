@@ -13,8 +13,10 @@ from discord.http import Route
 from bot_server1 import bot as bot1
 from bot_server2 import bot as bot2
 
-# Import des handlers du publisher
+# Import des handlers + bot du publisher
 from publisher_api import (
+    bot as publisher_bot,
+    config as publisher_config,
     health as publisher_health,
     options_handler,
     configure,
@@ -22,6 +24,7 @@ from publisher_api import (
     forum_post_update,
     get_history
 )
+
 
 # Configuration de l'encodage pour Windows si nécessaire
 if sys.platform == "win32":
@@ -45,26 +48,37 @@ PORT = int(os.getenv("PORT", "8080"))
 async def health(request):
     status = {
         "status": "ok",
-        "bots": {"server1": bot1.is_ready(), "server2": bot2.is_ready()},
+        "bots": {
+            "server1": bot1.is_ready(),
+            "server2": bot2.is_ready(),
+            "publisher": publisher_bot.is_ready(),
+        },
+        "publisher_configured": bool(getattr(publisher_config, "configured", False)),
         "timestamp": int(asyncio.get_event_loop().time()),
     }
     return web.json_response(status)
 
+
 def make_app():
     app = web.Application()
 
+    # OPTIONS global (CORS) : couvre toutes les routes (status/health/history inclus)
+    app.router.add_route("OPTIONS", "/{tail:.*}", options_handler)
+
+    # Health / Status
     app.router.add_get("/", health)
     app.router.add_get("/api/status", health)
 
-    app.router.add_options("/api/configure", options_handler)
+    # Configure
     app.router.add_post("/api/configure", configure)
 
-    app.router.add_options("/api/forum-post", options_handler)
+    # Forum post
     app.router.add_post("/api/forum-post", forum_post)
 
-    app.router.add_options("/api/forum-post/update", options_handler)
+    # Forum post update
     app.router.add_post("/api/forum-post/update", forum_post_update)
 
+    # Publisher endpoints
     app.router.add_get("/api/publisher/health", publisher_health)
     app.router.add_get("/api/history", get_history)
 
@@ -129,7 +143,7 @@ async def start():
         logger.error("❌ DISCORD_TOKEN_F95 manquant dans .env")
         return
 
-    # 1) Serveur Web (healthchecks)
+    # 1) Serveur Web (API + healthchecks)
     app = make_app()
     runner = web.AppRunner(app)
     await runner.setup()
@@ -137,8 +151,9 @@ async def start():
     await site.start()
     logger.info(f"🚀 Serveur API et HealthCheck lancé sur le port {PORT}")
 
-    # 2) Démarrage réellement séquentiel:
-    #    Bot1 -> attendre READY -> Bot2
+
+    # 2) Démarrage séquentiel :
+    #    Bot1 -> READY -> Bot2 -> READY -> PublisherBot -> READY
     logger.info("🤖 Lancement Bot1 (séquentiel, avec backoff)...")
     bot1_task = asyncio.create_task(start_bot_with_backoff(bot1, TOKEN1, "Bot1"))
 
@@ -146,13 +161,48 @@ async def start():
         await wait_ready(bot1, "Bot1", timeout=180)
         logger.info("✅ Bot1 ready. Lancement Bot2...")
     except Exception as e:
-        # Si Bot1 n'arrive pas à être ready, on ne lance pas Bot2 (sinon on aggrave le 429)
         logger.error(f"⛔ Bot1 n'est pas ready, Bot2 ne sera pas lancé: {e}")
-        await bot1_task  # garde le process vivant sur Bot1 retries
+        await bot1_task
         return
 
-    # Lancer Bot2 seulement après Bot1 READY
-    await start_bot_with_backoff(bot2, TOKEN2, "Bot2")
+    bot2_task = asyncio.create_task(start_bot_with_backoff(bot2, TOKEN2, "Bot2"))
+
+    try:
+        await wait_ready(bot2, "Bot2", timeout=180)
+        logger.info("✅ Bot2 ready. Lancement Publisher Bot...")
+    except Exception as e:
+        logger.error(f"⛔ Bot2 n'est pas ready, Publisher Bot ne sera pas lancé: {e}")
+        await asyncio.gather(bot1_task, bot2_task)
+        return
+
+    # Token publisher : soit dans .env, soit injecté ensuite via /api/configure
+    TOKEN_PUB = os.getenv("DISCORD_PUBLISHER_TOKEN") or getattr(publisher_config, "DISCORD_PUBLISHER_TOKEN", "")
+
+    # Si tu comptes configurer via /api/configure après le boot, on attend un peu que le token arrive
+    waited = 0
+    while not TOKEN_PUB and waited < 180:
+        await asyncio.sleep(2)
+        waited += 2
+        TOKEN_PUB = os.getenv("DISCORD_PUBLISHER_TOKEN") or getattr(publisher_config, "DISCORD_PUBLISHER_TOKEN", "")
+
+    if not TOKEN_PUB:
+        logger.error("⛔ DISCORD_PUBLISHER_TOKEN manquant (env ou /api/configure). Publisher Bot non lancé.")
+        # On laisse bot1 + bot2 tourner
+        await asyncio.gather(bot1_task, bot2_task)
+        return
+
+    pub_task = asyncio.create_task(start_bot_with_backoff(publisher_bot, TOKEN_PUB, "PublisherBot"))
+
+    try:
+        await wait_ready(publisher_bot, "PublisherBot", timeout=180)
+        logger.info("✅ PublisherBot ready. ✅ Séquence terminée (Bot1 -> Bot2 -> PublisherBot).")
+    except Exception as e:
+        logger.error(f"⛔ PublisherBot n'est pas ready: {e}")
+        await asyncio.gather(bot1_task, bot2_task, pub_task)
+        return
+
+    # Garde le process vivant tant que les bots tournent
+    await asyncio.gather(bot1_task, bot2_task, pub_task)
 
 if __name__ == "__main__":
     try:
