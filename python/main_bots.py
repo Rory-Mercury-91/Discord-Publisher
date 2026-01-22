@@ -85,49 +85,176 @@ def make_app():
     return app
 
 # -------------------------
-# BOT START (anti 429)
+# BOT START (anti 429 + correction session)
 # -------------------------
 async def start_bot_with_backoff(bot: discord.Client, token: str, name: str):
     """
     Démarre un bot Discord avec retry/backoff.
-    IMPORTANT: sur échec, on ferme le bot pour éviter les "Unclosed client session".
+    CORRECTION: Réinitialise la session HTTP avant chaque tentative
     """
     delay = 30  # base plus safe que 15s
+    max_delay = 300  # max 5 minutes
+    attempt = 0
+    
     while True:
+        attempt += 1
         try:
-            logger.info(f"🔌 {name}: tentative de login...")
+            logger.info(f"🔌 {name}: tentative de login #{attempt}...")
+            
+            # ✅ CORRECTION CRITIQUE: Vérifier l'état de la session HTTP
+            if hasattr(bot, 'http') and bot.http._HTTPClient__session:
+                if bot.http._HTTPClient__session.closed:
+                    logger.warning(f"⚠️ {name}: Session HTTP fermée détectée, réinitialisation...")
+                    # Forcer la recréation de la session
+                    bot.http._HTTPClient__session = None
+            
+            # Tentative de connexion
             await bot.start(token)
             logger.info(f"✅ {name}: start() terminé (arrêt normal).")
             return
+            
         except discord.errors.HTTPException as e:
-            if getattr(e, "status", None) == 429:
-                logger.warning(f"⛔ {name}: 429 Too Many Requests. Retry dans {delay:.0f}s...")
+            status_code = getattr(e, "status", None)
+            
+            if status_code == 429:
+                # Rate limit Discord
+                retry_after = getattr(e, "retry_after", delay)
+                logger.warning(
+                    f"⛔ {name}: 429 Too Many Requests (tentative #{attempt}). "
+                    f"Retry dans {retry_after:.0f}s..."
+                )
+                await _cleanup_bot_session(bot, name)
+                await asyncio.sleep(retry_after + random.random() * 2)
+                
+            elif status_code in [502, 503, 504]:
+                # Erreurs serveur Discord temporaires
+                logger.warning(
+                    f"⚠️ {name}: Erreur serveur Discord {status_code} (tentative #{attempt}). "
+                    f"Retry dans {delay:.0f}s..."
+                )
+                await _cleanup_bot_session(bot, name)
+                jitter = random.random() * 5
+                await asyncio.sleep(delay + jitter)
+                delay = min(delay * 1.5, max_delay)
+                
             else:
-                logger.error(f"❌ {name}: HTTPException status={getattr(e,'status',None)}: {e}")
-                raise
+                # Autres erreurs HTTP
+                logger.error(
+                    f"❌ {name}: HTTPException status={status_code} (tentative #{attempt}): {e}",
+                    exc_info=True
+                )
+                await _cleanup_bot_session(bot, name)
+                
+                # Pour les erreurs non-temporaires, attendre plus longtemps
+                if attempt < 5:
+                    await asyncio.sleep(delay + random.random() * 5)
+                    delay = min(delay * 2, max_delay)
+                else:
+                    logger.critical(f"🛑 {name}: Trop d'échecs consécutifs, abandon.")
+                    raise
+                    
+        except RuntimeError as e:
+            error_msg = str(e)
+            
+            if "Session is closed" in error_msg:
+                # ✅ CORRECTION: Gérer spécifiquement l'erreur "Session is closed"
+                logger.error(
+                    f"❌ {name}: Session HTTP fermée (tentative #{attempt}). "
+                    f"Nettoyage et retry dans {delay:.0f}s..."
+                )
+                await _cleanup_bot_session(bot, name)
+                jitter = random.random() * 5
+                await asyncio.sleep(delay + jitter)
+                delay = min(delay * 2, max_delay)
+                
+            else:
+                # Autres RuntimeError
+                logger.error(
+                    f"❌ {name}: RuntimeError (tentative #{attempt}): {e}",
+                    exc_info=True
+                )
+                await _cleanup_bot_session(bot, name)
+                
+                if attempt < 5:
+                    await asyncio.sleep(delay + random.random() * 5)
+                    delay = min(delay * 2, max_delay)
+                else:
+                    logger.critical(f"🛑 {name}: Trop d'échecs consécutifs, abandon.")
+                    raise
+                    
         except Exception as e:
-            logger.error(f"❌ {name}: erreur au démarrage: {e}. Retry dans {delay:.0f}s...", exc_info=e)
+            # Toutes les autres exceptions
+            logger.error(
+                f"❌ {name}: Erreur inattendue (tentative #{attempt}): {type(e).__name__}: {e}",
+                exc_info=True
+            )
+            await _cleanup_bot_session(bot, name)
+            
+            if attempt < 5:
+                jitter = random.random() * 5
+                await asyncio.sleep(delay + jitter)
+                delay = min(delay * 2, max_delay)
+            else:
+                logger.critical(f"🛑 {name}: Trop d'échecs consécutifs, abandon.")
+                raise
 
-        # ✅ évite les fuites de sessions aiohttp lors des retry
-        try:
+
+async def _cleanup_bot_session(bot: discord.Client, name: str):
+    """
+    Nettoie proprement la session HTTP d'un bot Discord
+    """
+    try:
+        # Fermer le bot proprement
+        if not bot.is_closed():
+            logger.info(f"🧹 {name}: Fermeture du bot...")
             await bot.close()
-        except Exception:
-            pass
+            
+        # Attendre que la fermeture soit complète
+        await asyncio.sleep(1.0)
+        
+        # Réinitialiser la session HTTP si elle existe
+        if hasattr(bot, 'http') and hasattr(bot.http, '_HTTPClient__session'):
+            if bot.http._HTTPClient__session and not bot.http._HTTPClient__session.closed:
+                logger.info(f"🧹 {name}: Fermeture de la session HTTP...")
+                await bot.http._HTTPClient__session.close()
+            bot.http._HTTPClient__session = None
+            
+        logger.info(f"✅ {name}: Nettoyage terminé")
+        
+    except Exception as e:
+        logger.warning(f"⚠️ {name}: Erreur lors du nettoyage: {e}")
 
-        jitter = random.random() * 5
-        await asyncio.sleep(delay + jitter)
-        delay = min(delay * 2, 300)  # max 5 minutes
 
 async def wait_ready(bot: discord.Client, name: str, timeout: int = 180):
     """
     Attend que le bot soit ready (Gateway OK).
-    Si timeout, on considère que Discord bloque encore, mais on ne lance pas l'autre bot.
+    Si timeout, on considère que Discord bloque encore.
     """
     start_t = asyncio.get_event_loop().time()
+    check_interval = 2.0
+    
+    logger.info(f"⏳ {name}: Attente de l'état 'ready' (timeout: {timeout}s)...")
+    
     while not bot.is_ready():
-        if asyncio.get_event_loop().time() - start_t > timeout:
+        elapsed = asyncio.get_event_loop().time() - start_t
+        
+        if elapsed > timeout:
+            logger.error(
+                f"❌ {name}: Timeout après {timeout}s - le bot n'est pas ready. "
+                f"État actuel: is_closed={bot.is_closed()}"
+            )
             raise TimeoutError(f"{name} n'est pas ready après {timeout}s")
-        await asyncio.sleep(2)
+            
+        # Log périodique pour suivre la progression
+        if int(elapsed) % 30 == 0 and elapsed > 0:
+            logger.info(
+                f"⏳ {name}: Toujours en attente... "
+                f"({int(elapsed)}s/{timeout}s, is_closed={bot.is_closed()})"
+            )
+            
+        await asyncio.sleep(check_interval)
+    
+    logger.info(f"✅ {name}: Bot ready !")
 
 # -------------------------
 # ORCHESTRATOR
@@ -135,6 +262,7 @@ async def wait_ready(bot: discord.Client, name: str, timeout: int = 180):
 async def start():
     TOKEN1 = os.getenv("DISCORD_TOKEN")
     TOKEN2 = os.getenv("DISCORD_TOKEN_F95")
+    TOKEN_PUB = os.getenv("DISCORD_PUBLISHER_TOKEN")
 
     if not TOKEN1:
         logger.error("❌ DISCORD_TOKEN manquant dans .env")
@@ -143,66 +271,106 @@ async def start():
         logger.error("❌ DISCORD_TOKEN_F95 manquant dans .env")
         return
 
+    logger.info("🚀 Démarrage de l'orchestrateur...")
+    logger.info(f"📋 Configuration:")
+    logger.info(f"   - Bot1 (DISCORD_TOKEN): {'✓' if TOKEN1 else '✗'}")
+    logger.info(f"   - Bot2 (DISCORD_TOKEN_F95): {'✓' if TOKEN2 else '✗'}")
+    logger.info(f"   - Publisher (DISCORD_TOKEN_PUBLISHER): {'✓' if TOKEN_PUB else '✗'}")
+
     # 1) Serveur Web (API + healthchecks)
+    logger.info("🌐 Lancement du serveur Web...")
     app = make_app()
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
-    logger.info(f"🚀 Serveur API et HealthCheck lancé sur le port {PORT}")
+    logger.info(f"✅ Serveur API et HealthCheck lancé sur le port {PORT}")
 
-
-    # 2) Démarrage séquentiel :
-    #    Bot1 -> READY -> Bot2 -> READY -> PublisherBot -> READY
-    logger.info("🤖 Lancement Bot1 (séquentiel, avec backoff)...")
+    # 2) Démarrage séquentiel : Bot1 -> Bot2 -> PublisherBot
+    # Chaque bot doit être ready avant de lancer le suivant
+    
+    # --- BOT 1 ---
+    logger.info("=" * 60)
+    logger.info("🤖 ÉTAPE 1/3: Lancement Bot1 (Serveur 1)...")
+    logger.info("=" * 60)
+    
     bot1_task = asyncio.create_task(start_bot_with_backoff(bot1, TOKEN1, "Bot1"))
 
     try:
         await wait_ready(bot1, "Bot1", timeout=180)
-        logger.info("✅ Bot1 ready. Lancement Bot2...")
+        logger.info("✅ Bot1 prêt et opérationnel")
     except Exception as e:
-        logger.error(f"⛔ Bot1 n'est pas ready, Bot2 ne sera pas lancé: {e}")
-        await bot1_task
+        logger.error(f"⛔ Bot1 n'a pas pu démarrer: {e}")
+        logger.error("🛑 Arrêt de la séquence de démarrage")
+        bot1_task.cancel()
+        try:
+            await bot1_task
+        except asyncio.CancelledError:
+            pass
         return
 
+    # --- BOT 2 ---
+    logger.info("=" * 60)
+    logger.info("🤖 ÉTAPE 2/3: Lancement Bot2 (Serveur 2)...")
+    logger.info("=" * 60)
+    
     bot2_task = asyncio.create_task(start_bot_with_backoff(bot2, TOKEN2, "Bot2"))
 
     try:
         await wait_ready(bot2, "Bot2", timeout=180)
-        logger.info("✅ Bot2 ready. Lancement Publisher Bot...")
+        logger.info("✅ Bot2 prêt et opérationnel")
     except Exception as e:
-        logger.error(f"⛔ Bot2 n'est pas ready, Publisher Bot ne sera pas lancé: {e}")
-        await asyncio.gather(bot1_task, bot2_task)
+        logger.error(f"⛔ Bot2 n'a pas pu démarrer: {e}")
+        logger.error("🛑 Les bots suivants ne seront pas lancés")
+        await asyncio.gather(bot1_task, bot2_task, return_exceptions=True)
         return
 
-    # Token publisher : soit dans .env, soit injecté ensuite via /api/configure
-    TOKEN_PUB = os.getenv("DISCORD_PUBLISHER_TOKEN") or getattr(publisher_config, "DISCORD_PUBLISHER_TOKEN", "")
-
-    # Si tu comptes configurer via /api/configure après le boot, on attend un peu que le token arrive
-    waited = 0
-    while not TOKEN_PUB and waited < 180:
-        await asyncio.sleep(2)
-        waited += 2
-        TOKEN_PUB = os.getenv("DISCORD_PUBLISHER_TOKEN") or getattr(publisher_config, "DISCORD_PUBLISHER_TOKEN", "")
+    # --- PUBLISHER BOT ---
+    # Attendre le token si nécessaire (config via API)
+    if not TOKEN_PUB:
+        logger.warning("⚠️ DISCORD_PUBLISHER_TOKEN non défini, attente de configuration via /api/configure...")
+        waited = 0
+        while not TOKEN_PUB and waited < 180:
+            await asyncio.sleep(2)
+            waited += 2
+            TOKEN_PUB = os.getenv("DISCORD_PUBLISHER_TOKEN") or getattr(publisher_config, "DISCORD_PUBLISHER_TOKEN", "")
+            if TOKEN_PUB:
+                logger.info(f"✅ Token Publisher reçu après {waited}s")
 
     if not TOKEN_PUB:
-        logger.error("⛔ DISCORD_PUBLISHER_TOKEN manquant (env ou /api/configure). Publisher Bot non lancé.")
-        # On laisse bot1 + bot2 tourner
-        await asyncio.gather(bot1_task, bot2_task)
+        logger.error("⛔ DISCORD_PUBLISHER_TOKEN toujours manquant après 180s")
+        logger.warning("⚠️ Publisher Bot non lancé, mais Bot1 et Bot2 continuent de fonctionner")
+        await asyncio.gather(bot1_task, bot2_task, return_exceptions=True)
         return
 
+    logger.info("=" * 60)
+    logger.info("🤖 ÉTAPE 3/3: Lancement Publisher Bot...")
+    logger.info("=" * 60)
+    
     pub_task = asyncio.create_task(start_bot_with_backoff(publisher_bot, TOKEN_PUB, "PublisherBot"))
 
     try:
         await wait_ready(publisher_bot, "PublisherBot", timeout=180)
-        logger.info("✅ PublisherBot ready. ✅ Séquence terminée (Bot1 -> Bot2 -> PublisherBot).")
+        logger.info("✅ PublisherBot prêt et opérationnel")
     except Exception as e:
-        logger.error(f"⛔ PublisherBot n'est pas ready: {e}")
-        await asyncio.gather(bot1_task, bot2_task, pub_task)
+        logger.error(f"⛔ PublisherBot n'a pas pu démarrer: {e}")
+        logger.warning("⚠️ Bot1 et Bot2 continuent de fonctionner")
+        await asyncio.gather(bot1_task, bot2_task, pub_task, return_exceptions=True)
         return
 
+    # --- TOUS LES BOTS SONT PRÊTS ---
+    logger.info("=" * 60)
+    logger.info("🎉 TOUS LES BOTS SONT OPÉRATIONNELS")
+    logger.info("=" * 60)
+    logger.info(f"✅ Bot1 (Serveur 1): Ready")
+    logger.info(f"✅ Bot2 (Serveur 2): Ready")
+    logger.info(f"✅ PublisherBot: Ready")
+    logger.info(f"🌐 API REST: http://0.0.0.0:{PORT}")
+    logger.info("=" * 60)
+
     # Garde le process vivant tant que les bots tournent
-    await asyncio.gather(bot1_task, bot2_task, pub_task)
+    await asyncio.gather(bot1_task, bot2_task, pub_task, return_exceptions=True)
+
 
 if __name__ == "__main__":
     try:
@@ -213,3 +381,6 @@ if __name__ == "__main__":
         asyncio.run(start())
     except KeyboardInterrupt:
         logger.info("🛑 Arrêt de l'orchestrateur (KeyboardInterrupt)")
+    except Exception as e:
+        logger.critical(f"💥 Erreur fatale dans l'orchestrateur: {e}", exc_info=True)
+        sys.exit(1)
