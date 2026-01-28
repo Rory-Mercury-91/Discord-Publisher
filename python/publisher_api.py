@@ -1183,7 +1183,6 @@ async def _create_forum_post(session, forum_id, title, content, tags_raw, images
     applied_tag_ids = await _resolve_applied_tag_ids(session, forum_id, tags_raw)
 
     # Détecter une URL d'image dans le contenu (y compris query string complète)
-    import re
     image_exts = r"(?:jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)"
     image_url_pattern = re.compile(
         rf"https?://[^\s<>\"']+\.{image_exts}(?:\?[^\s<>\"']*)?",
