@@ -1073,6 +1073,64 @@ async def _discord_post_json(session, path, payload):
     status, data, headers = await _discord_request(session, "POST", path, headers=_auth_headers(), json_data=payload)
     return status, data, headers
 
+async def _discord_delete_message(session, channel_id: str, message_id: str):
+    """Supprime un message Discord"""
+    status, data, _ = await _discord_request(
+        session, "DELETE", f"/channels/{channel_id}/messages/{message_id}", headers=_auth_headers()
+    )
+    return status < 300
+
+async def _delete_old_metadata_messages(session, thread_id: str, keep_message_id: str = None):
+    """
+    Supprime tous les anciens messages de métadonnées dans un thread.
+    Garde uniquement le message spécifié (si fourni) ou le plus récent.
+    
+    Args:
+        session: Session aiohttp
+        thread_id: ID du thread
+        keep_message_id: ID du message à garder (optionnel)
+    
+    Returns:
+        Nombre de messages supprimés
+    """
+    try:
+        messages = await _discord_list_messages(session, thread_id, limit=50)
+        metadata_messages = []
+        
+        # Trouver tous les messages de métadonnées
+        for m in messages:
+            msg_id = m.get("id")
+            if not msg_id:
+                continue
+            
+            # Ignorer le message à garder
+            if keep_message_id and msg_id == keep_message_id:
+                continue
+            
+            # Vérifier si c'est un message de métadonnées
+            for e in (m.get("embeds") or []):
+                footer = (e.get("footer") or {}).get("text") or ""
+                if footer.startswith("metadata:v1:") or footer.startswith("metadata:"):
+                    metadata_messages.append(msg_id)
+                    break
+        
+        # Supprimer tous les anciens messages de métadonnées
+        deleted_count = 0
+        for msg_id in metadata_messages:
+            if await _discord_delete_message(session, thread_id, msg_id):
+                deleted_count += 1
+                logger.info(f"🗑️ Message metadata supprimé: {msg_id}")
+            else:
+                logger.warning(f"⚠️ Échec suppression message metadata: {msg_id}")
+        
+        if deleted_count > 0:
+            logger.info(f"✅ {deleted_count} ancien(s) message(s) metadata supprimé(s)")
+        
+        return deleted_count
+    except Exception as e:
+        logger.warning(f"⚠️ Exception suppression anciens messages metadata: {e}")
+        return 0
+
 async def _discord_suppress_embeds(session, channel_id: str, message_id: str) -> bool:
     try:
         status, msg = await _discord_get(session, f"/channels/{channel_id}/messages/{message_id}")
@@ -1172,11 +1230,15 @@ async def _create_forum_post(session, forum_id, title, content, tags_raw, images
     message_id = (data.get("message") or {}).get("id") or data.get("message_id")
 
     # Publier les métadonnées dans un 2e message puis SUPPRESS_EMBEDS sur ce 2e message
+    # Structure: Message 1 = contenu + image, Message 2 = métadonnées
     if metadata_b64 and thread_id:
         try:
             if len(metadata_b64) > 25000:
                 logger.warning("⚠️ metadata_b64 trop long, metadata message ignoré pour éviter un 400 Discord")
             else:
+                # Supprimer tous les anciens messages de métadonnées avant d'en créer un nouveau
+                await _delete_old_metadata_messages(session, str(thread_id))
+                
                 meta_payload = {
                     "content": " ",
                     "embeds": [_build_metadata_embed(metadata_b64)]
@@ -1346,6 +1408,7 @@ async def forum_post_update(request):
             return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
 
         # Mettre à jour/créer le message metadata séparé (et le SUPPRESS)
+        # Structure: Message 1 = contenu + image, Message 2 = métadonnées
         if metadata_b64:
             try:
                 if len(metadata_b64) > 25000:
@@ -1364,12 +1427,19 @@ async def forum_post_update(request):
 
                     meta_payload = {"content": " ", "embeds": [_build_metadata_embed(metadata_b64)]}
                     if metadata_message_id:
+                        # Mettre à jour le message existant
                         s3, d3 = await _discord_patch_json(session, f"/channels/{thread_id}/messages/{metadata_message_id}", meta_payload)
                         if s3 < 300:
                             await _discord_suppress_embeds(session, str(thread_id), str(metadata_message_id))
+                            # Supprimer les autres anciens messages de métadonnées (s'il y en a)
+                            await _delete_old_metadata_messages(session, str(thread_id), keep_message_id=str(metadata_message_id))
                         else:
                             logger.warning(f"⚠️ Échec update metadata message (status={s3}): {d3}")
                     else:
+                        # Supprimer tous les anciens messages de métadonnées avant d'en créer un nouveau
+                        await _delete_old_metadata_messages(session, str(thread_id))
+                        
+                        # Créer un nouveau message de métadonnées
                         s2, d2, _ = await _discord_post_json(session, f"/channels/{thread_id}/messages", meta_payload)
                         if s2 < 300 and isinstance(d2, dict) and d2.get("id"):
                             await _discord_suppress_embeds(session, str(thread_id), str(d2["id"]))
