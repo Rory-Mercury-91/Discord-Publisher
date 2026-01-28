@@ -745,8 +745,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
 
 
-      // Ajouter le lien d'image masqué à la fin du contenu si une image est présente
-      // Note: Discord ne supporte que les URLs HTTP/HTTPS pour les embeds automatiques
+      // Ajouter le lien d'image "masqué" à la fin du contenu si une image est présente.
+      // On utilise un spoiler Discord (||...||) : le lien est caché mais reste éditable dans le thread.
       let finalContent = content;
       if (uploadedImages.length > 0) {
         const mainImage = uploadedImages.find(img => img.isMain) || uploadedImages[0];
@@ -756,19 +756,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // URL externe (http:// ou https://), utiliser directement
           imageUrl = mainImage.url;
         } else if (mainImage.path) {
-          // Fichier local : Discord ne supporte pas les data URLs dans les embeds automatiques
-          // L'utilisateur doit utiliser une URL externe pour que l'embed fonctionne
-          console.warn('Les fichiers locaux ne peuvent pas être utilisés comme embeds Discord. Veuillez utiliser une URL externe.');
-          // On ne fait rien, l'image ne sera pas ajoutée
+          // Fichier local : sans hébergement, on ne peut pas générer une URL publique.
+          // L'utilisateur doit utiliser une URL externe pour que l'embed fonctionne.
+          console.warn('Les fichiers locaux ne peuvent pas être utilisés comme image embed Discord. Veuillez utiliser une URL externe.');
         }
 
-        // Ajouter le lien à la fin du contenu pour créer l'embed Discord
-        // Uniquement si c'est une URL HTTP/HTTPS valide
+        // Ajouter le lien en spoiler en bas du message.
         if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
-          // Pour que Discord crée un embed automatique, le lien doit être dans le contenu
-          // On ajoute le lien avec un caractère invisible avant pour le rendre moins visible
-          // Note: Discord peut toujours afficher le lien, mais l'embed sera créé
-          finalContent = content + '\n\u200b' + imageUrl;
+          finalContent = content + `\n||${imageUrl.trim()}||`;
         }
       }
 

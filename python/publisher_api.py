@@ -1040,6 +1040,18 @@ async def _discord_get(session, path):
     status, data, _ = await _discord_request(session, "GET", path, headers=_auth_headers())
     return status, data
 
+async def _discord_list_messages(session, channel_id: str, limit: int = 50):
+    """Liste les derniers messages d'un channel/thread (REST)."""
+    status, data, _ = await _discord_request(
+        session,
+        "GET",
+        f"/channels/{channel_id}/messages?limit={limit}",
+        headers=_auth_headers()
+    )
+    if status >= 300 or not isinstance(data, list):
+        return []
+    return data
+
 async def _discord_patch_json(session, path, payload):
     status, data, _ = await _discord_request(
         session, "PATCH", path,
@@ -1106,69 +1118,39 @@ async def _resolve_applied_tag_ids(session, forum_id, tags_raw):
 
 async def _create_forum_post(session, forum_id, title, content, tags_raw, images, metadata_b64=None):
     """
-    Crée un post de forum Discord avec un embed invisible contenant les métadonnées.
-    Les images sont maintenant gérées via des liens dans le contenu (embeds automatiques Discord).
+    Crée un post de forum Discord.
+    - L'image est affichée via un embed "image" sur le 1er message (sinon SUPPRESS_EMBEDS la masque).
+    - Les métadonnées sont stockées dans un 2e message (embed) puis SUPPRESS_EMBEDS sur ce 2e message.
     """
     applied_tag_ids = await _resolve_applied_tag_ids(session, forum_id, tags_raw)
 
-    # Détecter les liens d'images dans le contenu (URLs avec extensions d'images)
+    # Détecter une URL d'image dans le contenu (y compris query string complète)
     import re
-    image_extensions = r'\.(jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)(\?|&|$)'
-    image_url_pattern = re.compile(r'https?://[^\s<>"\']+' + image_extensions, re.IGNORECASE)
-    
-    # Extraire les URLs complètes
-    image_urls_full = []
-    for match in image_url_pattern.finditer(content):
-        image_urls_full.append(match.group(0))
-    
-    # Retirer les liens d'images du contenu pour les masquer (ils seront dans l'embed)
-    final_content = content
-    if image_urls_full:
-        for img_url in image_urls_full:
-            # Retirer le lien et les caractères invisibles qui l'entourent
-            final_content = re.sub(r'\s*\u200b*\s*' + re.escape(img_url) + r'\s*\u200b*\s*', '', final_content)
-            final_content = re.sub(r'\s*\u200b+\s*' + re.escape(img_url) + r'\s*\u200b+\s*', '', final_content)
-    
-    embeds = []
-    
-    # Embed invisible avec metadata
-    if metadata_b64:
-        try:
-            metadata = _decode_metadata_b64(metadata_b64) or {}
+    image_exts = r"(?:jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)"
+    image_url_pattern = re.compile(
+        rf"https?://[^\s<>\"']+\.{image_exts}(?:\?[^\s<>\"']*)?",
+        re.IGNORECASE
+    )
+    image_urls_full = [m.group(0) for m in image_url_pattern.finditer(content or "")]
 
-            if len(metadata_b64) > 25000:
-                logger.warning("⚠️ metadata_b64 trop long, embed ignoré pour éviter un 400 Discord")
-            else:
-                embeds.append(_build_metadata_embed(metadata_b64))
-
-            logger.info(f"✅ Métadonnées structurées ajoutées: {metadata.get('game_name', 'N/A')}")
-        except Exception as e:
-            logger.error(f"❌ Erreur décodage métadonnées: {e}")
-    
-    # Créer un embed avec l'image si un lien d'image est détecté
+    message_embeds = []
     if image_urls_full:
-        # Prendre la première image trouvée
         image_url = image_urls_full[0]
-        # Créer un embed avec l'image
-        image_embed = {
-            "image": {"url": image_url},
-            "color": 0  # Couleur transparente/noire pour que seul l'image soit visible
-        }
-        embeds.append(image_embed)
-        logger.info(f"✅ Embed image créé: {image_url[:50]}...")
+        message_embeds.append({"image": {"url": image_url}})
+        logger.info(f"✅ Embed image (message principal): {image_url[:60]}...")
+
+    message_payload = {"content": content or " "}
+    # Si pas d'image, on force embeds=[] pour nettoyer une éventuelle image précédente lors d'updates
+    message_payload["embeds"] = message_embeds if message_embeds else []
 
     payload = {
         "name": title,
-        "message": {
-            "content": final_content or " ",
-            "embeds": embeds if embeds else None
-        }
+        "message": message_payload
     }
 
     if applied_tag_ids:
         payload["applied_tags"] = applied_tag_ids
 
-    # Les images sont maintenant dans le contenu (liens masqués) et dans un embed
     status, data, _ = await _discord_post_json(session, f"/channels/{forum_id}/threads", payload)
 
     if status >= 300:
@@ -1177,11 +1159,23 @@ async def _create_forum_post(session, forum_id, title, content, tags_raw, images
     thread_id = data.get("id")
     message_id = (data.get("message") or {}).get("id") or data.get("message_id")
 
-    # Masquer l'embed dans l'UI
-    if metadata_b64 and thread_id and message_id:
-        await _discord_suppress_embeds(session, str(thread_id), str(message_id))
-    else:
-        logger.warning("⚠️ SUPPRESS_EMBEDS ignoré: message_id introuvable dans la réponse Discord")
+    # Publier les métadonnées dans un 2e message puis SUPPRESS_EMBEDS sur ce 2e message
+    if metadata_b64 and thread_id:
+        try:
+            if len(metadata_b64) > 25000:
+                logger.warning("⚠️ metadata_b64 trop long, metadata message ignoré pour éviter un 400 Discord")
+            else:
+                meta_payload = {
+                    "content": " ",
+                    "embeds": [_build_metadata_embed(metadata_b64)]
+                }
+                s2, d2, _ = await _discord_post_json(session, f"/channels/{thread_id}/messages", meta_payload)
+                if s2 < 300 and isinstance(d2, dict) and d2.get("id"):
+                    await _discord_suppress_embeds(session, str(thread_id), str(d2["id"]))
+                else:
+                    logger.warning(f"⚠️ Échec création message metadata (status={s2}): {d2}")
+        except Exception as e:
+            logger.warning(f"⚠️ Exception création/suppression metadata message: {e}")
 
     return True, {
         "thread_id": thread_id,
@@ -1306,64 +1300,59 @@ async def forum_post_update(request):
     async with aiohttp.ClientSession() as session:
         message_path = f"/channels/{thread_id}/messages/{message_id}"
 
-        # Détecter les liens d'images dans le contenu
+        # Détecter une URL d'image dans le contenu (y compris query string complète)
         import re
-        image_extensions = r'\.(jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)(\?|&|$)'
-        image_url_pattern = re.compile(r'https?://[^\s<>"\']+' + image_extensions, re.IGNORECASE)
-        
-        # Extraire les URLs complètes
-        image_urls_full = []
-        for match in image_url_pattern.finditer(content):
-            image_urls_full.append(match.group(0))
-        
-        # Retirer les liens d'images du contenu pour les masquer (ils seront dans l'embed)
-        final_content = content
-        if image_urls_full:
-            for img_url in image_urls_full:
-                # Retirer le lien et les caractères invisibles qui l'entourent
-                final_content = re.sub(r'\s*\u200b*\s*' + re.escape(img_url) + r'\s*\u200b*\s*', '', final_content)
-                final_content = re.sub(r'\s*\u200b+\s*' + re.escape(img_url) + r'\s*\u200b+\s*', '', final_content)
-        
-        embeds = []
-        
-        # Embed invisible avec metadata
-        if metadata_b64:
-            try:
-                _ = _decode_metadata_b64(metadata_b64) or {}
+        image_exts = r"(?:jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)"
+        image_url_pattern = re.compile(
+            rf"https?://[^\s<>\"']+\.{image_exts}(?:\?[^\s<>\"']*)?",
+            re.IGNORECASE
+        )
+        image_urls_full = [m.group(0) for m in image_url_pattern.finditer(content or "")]
 
-                if len(metadata_b64) > 25000:
-                    logger.warning("⚠️ metadata_b64 trop long, embed ignoré pour éviter un 400 Discord")
-                else:
-                    embeds.append(_build_metadata_embed(metadata_b64))
-            except Exception as e:
-                logger.error(f"❌ Erreur décodage métadonnées: {e}")
-        
-        # Créer un embed avec l'image si un lien d'image est détecté
+        message_embeds = []
         if image_urls_full:
-            # Prendre la première image trouvée
             image_url = image_urls_full[0]
-            # Créer un embed avec l'image
-            image_embed = {
-                "image": {"url": image_url},
-                "color": 0  # Couleur transparente/noire pour que seul l'image soit visible
-            }
-            embeds.append(image_embed)
-            logger.info(f"✅ Embed image créé pour mise à jour: {image_url[:50]}...")
+            message_embeds.append({"image": {"url": image_url}})
+            logger.info(f"✅ Embed image (update message principal): {image_url[:60]}...")
 
-        message_payload = {
-            "content": final_content or " ",
-            "embeds": embeds if embeds else None
-        }
-
-        # Les images sont maintenant dans le contenu (liens masqués) et dans un embed
+        message_payload = {"content": content or " ", "embeds": message_embeds if message_embeds else []}
         status, data = await _discord_patch_json(session, message_path, message_payload)
 
         if status >= 300:
             return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
 
-        # Masquer l'embed dans l'UI
+        # Mettre à jour/créer le message metadata séparé (et le SUPPRESS)
         if metadata_b64:
-            await _discord_suppress_embeds(session, str(thread_id), str(message_id))
+            try:
+                if len(metadata_b64) > 25000:
+                    logger.warning("⚠️ metadata_b64 trop long, metadata message ignoré pour éviter un 400 Discord")
+                else:
+                    messages = await _discord_list_messages(session, str(thread_id), limit=50)
+                    metadata_message_id = None
+                    for m in messages:
+                        for e in (m.get("embeds") or []):
+                            footer = (e.get("footer") or {}).get("text") or ""
+                            if footer.startswith("metadata:v1:") or footer.startswith("metadata:"):
+                                metadata_message_id = m.get("id")
+                                break
+                        if metadata_message_id:
+                            break
+
+                    meta_payload = {"content": " ", "embeds": [_build_metadata_embed(metadata_b64)]}
+                    if metadata_message_id:
+                        s3, d3 = await _discord_patch_json(session, f"/channels/{thread_id}/messages/{metadata_message_id}", meta_payload)
+                        if s3 < 300:
+                            await _discord_suppress_embeds(session, str(thread_id), str(metadata_message_id))
+                        else:
+                            logger.warning(f"⚠️ Échec update metadata message (status={s3}): {d3}")
+                    else:
+                        s2, d2, _ = await _discord_post_json(session, f"/channels/{thread_id}/messages", meta_payload)
+                        if s2 < 300 and isinstance(d2, dict) and d2.get("id"):
+                            await _discord_suppress_embeds(session, str(thread_id), str(d2["id"]))
+                        else:
+                            logger.warning(f"⚠️ Échec création metadata message (status={s2}): {d2}")
+            except Exception as e:
+                logger.warning(f"⚠️ Exception update/création metadata message: {e}")
 
         # Mettre à jour le titre et les tags du thread
         applied_tag_ids = await _resolve_applied_tag_ids(session, _pick_forum_id(template), tags)
