@@ -211,12 +211,18 @@ async def fetch_f95_rss_updates(session: aiohttp.ClientSession) -> Dict[str, str
 
 def extract_version_from_rss_title(title: str) -> Optional[str]:
     """
-    Extrait la version depuis titre RSS
-    "My Game [v0.5.2] [Author]" -> "v0.5.2"
+    Extrait la version / info depuis le titre RSS F95zone.
+    Format: "[TAG] Titre du jeu [Version ou Chapitre ou Libellé]"
+    Retourne le dernier segment entre crochets (après le titre), quel qu'en soit le format :
+    - versions : [v26.1.0a], [v1.0], [v.2 Release], [0.22]
+    - chapitres : [Ch. 1], [Ch.7]
+    - libellés : [Final], [Demo], [Alpha 0.15.2], [6000.0.24f1], etc.
     """
-    pattern = re.compile(r'\[([^\]]+)\]')
-    matches = pattern.findall(title)
-    return matches[0].strip() if matches else None
+    bracket_pattern = re.compile(r'\[([^\]]+)\]')
+    matches = bracket_pattern.findall(title)
+    if not matches:
+        return None
+    return matches[-1].strip()
 
 
 # ==================== COLLECTE THREADS ====================
@@ -280,11 +286,11 @@ async def send_grouped_alerts(channel: discord.TextChannel, alerts: List[Version
     
     # Envoyer Auto
     if auto_alerts:
-        await _send_alert_batch(channel, auto_alerts, "Mes traductions")
+        await _send_alert_batch(channel, auto_alerts, "Traductions Automatiques")
     
     # Envoyer Semi-Auto
     if semiauto_alerts:
-        await _send_alert_batch(channel, semiauto_alerts, "Traductions communautaires")
+        await _send_alert_batch(channel, semiauto_alerts, "Traductions Semi-Automatiques")
 
 
 async def _send_alert_batch(channel: discord.TextChannel, alerts: List[VersionAlert], forum_name: str):
