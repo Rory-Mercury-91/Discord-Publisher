@@ -1495,13 +1495,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const v = config.value.trim();
     if (!v) return '';
 
-    // Si la valeur est déjà une URL complète d'un autre domaine (Proton, etc.), ne pas préfixer F95/Lewd
-    if (v.toLowerCase().startsWith('http')) {
-      const lower = v.toLowerCase();
-      if (config.source === 'F95' && !lower.includes('f95zone.to')) return v;
-      if (config.source === 'Lewd' && !lower.includes('lewdcorner.com')) return v;
+    // Détecter si c'est une URL complète d'un autre domaine (Proton, etc.)
+    const isOtherFullUrl = v.toLowerCase().startsWith('http') &&
+      !v.toLowerCase().includes('f95zone.to') &&
+      !v.toLowerCase().includes('lewdcorner.com');
+
+    // Si c'est une URL d'un autre domaine, la retourner telle quelle, peu importe la source sélectionnée
+    if (isOtherFullUrl) {
+      return v;
     }
 
+    // Sinon, construire l'URL selon la source
     switch (config.source) {
       case 'F95':
         return `https://f95zone.to/threads/${v}/`;

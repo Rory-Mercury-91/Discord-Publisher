@@ -258,11 +258,13 @@ export default function ContentEditor() {
     // Ne pas préfixer F95/Lewd si la valeur est déjà une URL d'un autre domaine (Proton, etc.)
     const valueLower = (config.value || '').toLowerCase();
     const isOtherFullUrl = valueLower.startsWith('http') && !valueLower.includes('f95zone.to') && !valueLower.includes('lewdcorner.com');
+
+    // Construction de l'URL finale : uniquement préfixer F95/Lewd si la valeur n'est PAS déjà une URL d'un autre domaine
     const finalUrl = isOtherFullUrl
       ? config.value || '...'
-      : config.source === 'F95'
+      : config.source === 'F95' && !isOtherFullUrl
         ? `https://f95zone.to/threads/${config.value || '...'}/`
-        : config.source === 'Lewd'
+        : config.source === 'Lewd' && !isOtherFullUrl
           ? `https://lewdcorner.com/threads/${config.value || '...'}/`
           : config.value || '...';
 

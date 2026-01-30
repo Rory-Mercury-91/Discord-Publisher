@@ -74,8 +74,7 @@ export default function ImageThumbnail({ imagePath, isMain, onSetMain, onCopyNam
       <div style={{ padding: 4, display: 'flex', justifyContent: 'space-between', gap: 4, fontSize: 11 }}>
         {onChange ? (
           <div style={{ display: 'flex', gap: 2, width: '100%', justifyContent: 'space-between' }}>
-            <button onClick={onChange} style={{ fontSize: 10, padding: '2px 4px', flex: 1 }}>🔄 Changer</button>
-            <button onClick={onDelete} style={{ fontSize: 10, padding: '2px 4px', flex: 1 }}>🗑️ Poubelle</button>
+            <button onClick={onDelete} style={{ fontSize: 10, padding: '2px 4px', flex: 1 }}>🗑️</button>
           </div>
         ) : (
           <>

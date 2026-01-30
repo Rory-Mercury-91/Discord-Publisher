@@ -751,6 +751,7 @@ async def run_cleanup_empty_messages_once():
     """
     Parcourt les forums configurés et supprime les messages vides dans chaque thread.
     Ne supprime jamais le message de départ ni les messages contenant les métadonnées.
+    Traite les forums séquentiellement (My d'abord, puis Partner) avec des délais pour éviter le rate limit.
     """
     logger.info("🧹 Démarrage nettoyage quotidien des messages vides")
     forum_configs = []
@@ -761,20 +762,39 @@ async def run_cleanup_empty_messages_once():
     if not forum_configs:
         logger.warning("⚠️ Aucun forum configuré pour le nettoyage")
         return
+    
     total_deleted = 0
     async with aiohttp.ClientSession() as session:
-        for forum_id, forum_type in forum_configs:
+        for idx, (forum_id, forum_type) in enumerate(forum_configs):
+            # Délai entre les forums (sauf pour le premier)
+            if idx > 0:
+                logger.info(f"⏸️  Pause de 5 secondes avant le forum suivant...")
+                await asyncio.sleep(5.0)
+            
             forum = bot.get_channel(forum_id)
             if not forum:
                 logger.warning(f"⚠️ Forum {forum_id} introuvable")
                 continue
+            
             threads = await _collect_all_forum_threads(forum)
-            logger.info(f"🧹 Nettoyage [{forum_type}]: {len(threads)} threads")
-            for thread in threads:
-                await asyncio.sleep(0.5 + random.random() * 0.3)
+            logger.info(f"🧹 Nettoyage [{forum_type}]: {len(threads)} threads à traiter")
+            
+            forum_deleted = 0
+            for thread_idx, thread in enumerate(threads, 1):
+                # Délai entre chaque thread (1-2 secondes)
+                await asyncio.sleep(1.0 + random.random())
+                
                 n = await _clean_empty_messages_in_thread(session, str(thread.id))
+                forum_deleted += n
                 total_deleted += n
-    logger.info(f"✅ Nettoyage terminé : {total_deleted} message(s) vide(s) supprimé(s)")
+                
+                # Log de progression tous les 10 threads
+                if thread_idx % 10 == 0:
+                    logger.info(f"📊 Progression [{forum_type}]: {thread_idx}/{len(threads)} threads traités, {forum_deleted} messages supprimés")
+            
+            logger.info(f"✅ Forum [{forum_type}] terminé : {forum_deleted} message(s) vide(s) supprimé(s)")
+    
+    logger.info(f"✅ Nettoyage complet terminé : {total_deleted} message(s) vide(s) supprimé(s) au total")
 
 # ==================== TÂCHE QUOTIDIENNE ====================
 @tasks.loop(time=datetime.time(hour=config.VERSION_CHECK_HOUR, minute=config.VERSION_CHECK_MINUTE, tzinfo=ZoneInfo("Europe/Paris")))
@@ -1302,6 +1322,10 @@ async def _clean_empty_messages_in_thread(session, thread_id: str) -> int:
                 to_delete.append(msg_id)
         deleted = 0
         for msg_id in to_delete:
+            # Délai entre chaque suppression (0.5-1 seconde)
+            if deleted > 0:
+                await asyncio.sleep(0.5 + random.random() * 0.5)
+            
             if await _discord_delete_message(session, thread_id, msg_id):
                 deleted += 1
                 logger.info(f"🗑️ Message vide supprimé: {msg_id} (thread {thread_id})")
