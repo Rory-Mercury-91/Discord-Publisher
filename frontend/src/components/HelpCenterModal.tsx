@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
+import { tauriAPI } from '../lib/tauri-api';
+// Script Tampermonkey intégré au build (copie de Tampermonkey/DiscordPublisherDataExtractor.js)
+import scriptTampermonkeyRaw from '../assets/DiscordPublisherDataExtractor.js?raw';
 
 interface HelpCenterModalProps {
   onClose?: () => void;
@@ -154,6 +157,110 @@ export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
 }
 
 // ============================================
+// Section installation script Tampermonkey (intégré au build)
+// ============================================
+function TampermonkeyInstallSection() {
+  const [showGuide, setShowGuide] = useState(false);
+
+  const handleDownloadScript = () => {
+    const blob = new Blob([scriptTampermonkeyRaw], { type: 'text/javascript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'DiscordPublisherDataExtractor.user.js';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <button
+        type="button"
+        onClick={() => setShowGuide(v => !v)}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '10px 16px',
+          background: 'var(--accent)',
+          color: 'white',
+          border: 'none',
+          borderRadius: 8,
+          fontSize: 14,
+          fontWeight: 600,
+          cursor: 'pointer',
+          transition: 'opacity 0.2s'
+        }}
+        onMouseOver={e => (e.currentTarget.style.opacity = '0.9')}
+        onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+      >
+        {showGuide ? '▼' : '▶'} Installer le script Tampermonkey
+      </button>
+      {showGuide && (
+        <div style={{
+          marginTop: 12,
+          padding: 16,
+          background: 'rgba(0,0,0,0.15)',
+          borderRadius: 8,
+          fontSize: 13,
+          lineHeight: 1.7,
+          color: 'var(--text)'
+        }}>
+          <p style={{ margin: '0 0 12px 0', fontWeight: 600 }}>Guide d'installation :</p>
+          <ol style={{ margin: 0, paddingLeft: 20 }}>
+            <li style={{ marginBottom: 8 }}>
+              <strong>Installer Tampermonkey</strong> dans votre navigateur :
+              {' '}
+              <button
+                type="button"
+                onClick={() => tauriAPI.openUrl('https://www.tampermonkey.net/')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  color: 'var(--accent)',
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
+                  fontSize: 'inherit',
+                  fontFamily: 'inherit'
+                }}
+              >
+                tampermonkey.net
+              </button>
+              {' '}(Chrome, Firefox, Edge, etc.).
+            </li>
+            <li style={{ marginBottom: 8 }}>
+              <strong>Télécharger le script</strong> : cliquez sur le bouton ci-dessous pour enregistrer <code style={{ fontFamily: 'monospace', fontSize: 11 }}>DiscordPublisherDataExtractor.user.js</code> dans votre dossier Téléchargements.
+              <div style={{ marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={handleDownloadScript}
+                  style={{
+                    padding: '8px 14px',
+                    background: '#4ade80',
+                    color: '#0f172a',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  📥 Télécharger le script
+                </button>
+              </div>
+            </li>
+            <li>
+              <strong>Dans Tampermonkey</strong> : ouvrez le tableau de bord Tampermonkey → « Créer un nouveau script » → supprimez le contenu par défaut et collez le contenu du fichier téléchargé → enregistrez (Ctrl+S). Le script sera actif sur F95/Lewd ; utilisez le bouton « 📋 Copier données » sur une page thread pour copier le JSON dans le presse-papier, puis dans l'app cliquez sur « 📥 Importer Data ».
+            </li>
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
 // AIDE FORMULAIRE (vue d'ensemble, remplir le post)
 // ============================================
 function FormulaireHelp() {
@@ -164,7 +271,7 @@ function FormulaireHelp() {
           📝 Remplir le formulaire de publication
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          L'éditeur de contenu permet de préparer un post Discord (traduction, annonce) avant de le publier. Le contenu affiché dépend du <strong>template</strong> choisi : seuls les champs utilisés par ce template sont actifs ; les autres restent désactivés.
+          L'éditeur de contenu permet de préparer un post Discord (traduction, annonce) avant de le publier. Le contenu affiché dépend des informations saisies dans le template (modifiable depuis la modale « Gestion des templates ») : seuls les champs utilisés par ce template sont actifs ; les autres restent désactivés.
         </p>
       </section>
 
@@ -178,15 +285,14 @@ function FormulaireHelp() {
           Ordre recommandé
         </h4>
         <ol style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
-          <li><strong>Choisir le template</strong> (en haut de l'éditeur) : il définit la structure du message et les variables disponibles.</li>
-          <li><strong>Titre du post</strong> : généré automatiquement à partir du template et des champs (ex. nom du jeu + version). En lecture seule.</li>
+          <li><strong>Titre du post</strong> : généré automatiquement à partir des champs « Nom du jeu » et « Version du jeu ». Champ en lecture seule.</li>
           <li><strong>Tags</strong> : cliquer sur « ➕ Ajouter » pour associer des étiquettes Discord à la publication (voir section Tags).</li>
           <li><strong>Variables du template</strong> : nom du jeu, version du jeu, version traduite, lien du jeu (F95/Lewd/Autre), synopsis (Overview), instructions d'installation, image principale, liens mod/traduction additionnels si le template les inclut.</li>
-          <li><strong>Synopsis</strong> : décrire le jeu (résumé). Remplacer la variable <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[Overview]</code> dans le message final.</li>
+          <li><strong>Synopsis</strong> : décrire le jeu (résumé). Remplacera la variable <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[Overview]</code> dans le template par votre résumé.</li>
           <li><strong>Instructions d'installation</strong> : saisir du texte ou choisir une instruction enregistrée (voir section Instructions).</li>
-          <li><strong>Image(s)</strong> : ajouter une image principale (obligatoire pour l’annonce) et éventuellement d’autres ; une peut être définie comme « principale ».</li>
-          <li><strong>Aperçu</strong> : la colonne de droite affiche le rendu du message tel qu’il apparaîtra sur Discord.</li>
-          <li><strong>Publier</strong> : une fois tout renseigné, cliquer sur « Publier » pour envoyer le post (ou « Mettre à jour » en mode édition).</li>
+          <li><strong>Image</strong> : ajouter une image à votre publication à l'aide d'un lien URL (généralement : clic droit sur l'image → « Copier le lien de l'image ») puis en cliquant sur « Ajouter ».</li>
+          <li><strong>Aperçu</strong> : la colonne de droite affiche le rendu du message tel qu’il est écrit avant publication ; en cliquant sur « Aperçu Discord », vous verrez le rendu final.</li>
+          <li><strong>Publier</strong> : une fois tout renseigné, cliquer sur « Publier sur Discord » pour envoyer le post (ou « Mettre à jour » en mode édition).</li>
         </ol>
       </section>
 
@@ -197,11 +303,12 @@ function FormulaireHelp() {
         padding: 16
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
-          💡 Import depuis le presse-papier
+          📥 Importer Data
         </h4>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          Si vous utilisez un script ou une extension (ex. extracteur de données F95/Lewd), vous pouvez coller un JSON depuis le presse-papier : l'app remplit automatiquement le nom du jeu, la version et le lien du jeu. Cherchez le bouton d'import (presse-papier) dans la zone des champs de lien ou des variables.
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
+          Si vous utilisez le script Tampermonkey <code style={{ fontFamily: 'monospace', fontSize: 12 }}>DiscordPublisherDataExtractor.js</code>, vous pouvez coller un JSON depuis le presse-papier : l'app remplit automatiquement le nom du jeu, la version et le lien du jeu. Cherchez le bouton d'import <strong>📥 Importer Data</strong> en bas à gauche du formulaire.
         </p>
+        <TampermonkeyInstallSection />
       </section>
 
       <section>
@@ -209,7 +316,7 @@ function FormulaireHelp() {
           ✏️ Mode édition
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          Depuis l'historique, vous pouvez charger un post en mode édition. Les champs sont préremplis ; modifiez ce que vous souhaitez puis cliquez sur « Mettre à jour » pour mettre à jour le thread Discord et l'historique.
+          Depuis l'historique, vous pouvez charger un post en mode édition. Les champs sont préremplis (certains peuvent manquer — contrôlez avant publication) ; modifiez ce que vous souhaitez puis cliquez sur « ✏️ Mettre à jour le post » pour mettre à jour le thread Discord et l'historique.
         </p>
       </section>
     </div>
@@ -642,20 +749,6 @@ function TemplatesHelp() {
       </section>
 
       <section style={{
-        background: 'rgba(74, 158, 255, 0.08)',
-        border: '1px solid rgba(74, 158, 255, 0.25)',
-        borderRadius: 8,
-        padding: 16
-      }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4a9eff' }}>
-          Choisir un template
-        </h4>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          En haut de l'éditeur de contenu, un sélecteur permet de choisir le template à utiliser. Le titre du post et la liste des champs actifs (nom du jeu, synopsis, instruction, etc.) dépendent du template sélectionné. Les champs dont la variable n'apparaît pas dans le template sont désactivés.
-        </p>
-      </section>
-
-      <section style={{
         background: 'rgba(74, 222, 128, 0.08)',
         border: '1px solid rgba(74, 222, 128, 0.25)',
         borderRadius: 8,
@@ -665,7 +758,7 @@ function TemplatesHelp() {
           Gérer les templates
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
-          La fenêtre <strong>Gestion des templates</strong> (accessible depuis l'éditeur) permet de créer, modifier ou supprimer des templates personnalisés. Les templates peuvent être partagés via la base : dans Configuration, utilisez « Envoyer » / « Récupérer » pour les templates afin de les synchroniser avec Supabase.
+          Un seul template est actif à la fois ; il n'y a pas de sélecteur de template dans l'éditeur. La fenêtre <strong>Gestion des templates</strong> (bouton « Gérer les Templates ») permet de créer, modifier ou définir le template actif, et de supprimer des templates. Les templates peuvent être partagés via la base : dans Configuration, utilisez « Envoyer » / « Récupérer » pour les templates afin de les synchroniser avec Supabase.
         </p>
         <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
           Les variables disponibles (ex. <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Game_name]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Game_version]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[instruction]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Overview]</code>) sont documentées dans la modale Templates ou dans le Markdown d'aide du champ contenu.
