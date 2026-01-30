@@ -43,7 +43,11 @@ export default function ContentEditor() {
     additionalTranslationLinks,
     addAdditionalTranslationLink,
     updateAdditionalTranslationLink,
-    deleteAdditionalTranslationLink
+    deleteAdditionalTranslationLink,
+    additionalModLinks,
+    addAdditionalModLink,
+    updateAdditionalModLink,
+    deleteAdditionalModLink
   } = useApp();
 
   const { profile } = useAuth();
@@ -110,6 +114,17 @@ export default function ContentEditor() {
 
   const currentTemplateId = templates[currentTemplateIdx]?.id || templates[currentTemplateIdx]?.name;
 
+  // Variables présentes dans le contenu du template : champs désactivés si la variable n’y figure pas
+  const varsUsedInTemplate = useMemo(() => {
+    const content = currentTemplate?.content ?? '';
+    const matches = content.matchAll(/\[([^\]]+)\]/g);
+    const set = new Set<string>();
+    for (const m of matches) set.add((m[1] as string).trim());
+    if (content.includes('[TRANSLATION_LINKS_LINE]')) set.add('Translate_link');
+    if (content.includes('[MOD_LINKS_LINE]')) set.add('Mod_link');
+    return set;
+  }, [currentTemplate?.content]);
+
   // Variables déjà affichées en dur dans le formulaire (à exclure de visibleVars)
   const hardcodedVarNames = [
     'Game_name', 'Game_version', 'Game_link', 'Translate_version', 'Translate_link',
@@ -173,119 +188,18 @@ export default function ContentEditor() {
     return Object.keys(savedInstructions).filter(name => name.toLowerCase().includes(query));
   }, [savedInstructions, instructionSearchQuery]);
 
-  // Composant pour le label avec checkbox et prévisualisation du lien
-  function LinkFieldLabelWithCheckbox({
-    label,
-    linkName,
-    linkConfigs,
-    checked,
-    onCheckboxChange,
-    onLinkClick
-  }: {
-    label: string;
-    linkName: 'Game_link' | 'Translate_link' | 'Mod_link';
-    linkConfigs: Record<string, { source: string; value: string }>;
-    checked: boolean;
-    onCheckboxChange: (checked: boolean) => void;
-    onLinkClick: (url: string) => Promise<void>;
-  }) {
-    const config = linkConfigs[linkName];
-    const finalUrl = config.source === 'F95'
-      ? `https://f95zone.to/threads/${config.value || '...'}/`
-      : config.source === 'Lewd'
-        ? `https://lewdcorner.com/threads/${config.value || '...'}/`
-        : config.value || '...';
-
-    return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'flex-start', width: '100%', minHeight: 32 }}>
-        <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
-          {label}
-        </label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
-          {/* Prévisualisation du lien final */}
-          {finalUrl && !finalUrl.includes('...') ? (
-            <div
-              onClick={() => onLinkClick(finalUrl)}
-              style={{
-                fontSize: 11,
-                color: '#5865F2',
-                fontFamily: 'monospace',
-                padding: '2px 8px',
-                background: 'rgba(88, 101, 242, 0.1)',
-                borderRadius: 4,
-                maxWidth: '200px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                cursor: 'pointer',
-                display: 'inline-block',
-                transition: 'all 0.2s',
-                flexShrink: 1
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(88, 101, 242, 0.2)';
-                e.currentTarget.style.textDecoration = 'underline';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(88, 101, 242, 0.1)';
-                e.currentTarget.style.textDecoration = 'none';
-              }}
-              title="Cliquer pour ouvrir dans le navigateur externe"
-            >
-              🔗 {finalUrl}
-            </div>
-          ) : (
-            <div style={{
-              fontSize: 11,
-              color: '#5865F2',
-              fontFamily: 'monospace',
-              padding: '2px 8px',
-              background: 'rgba(88, 101, 242, 0.1)',
-              borderRadius: 4,
-              maxWidth: '200px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              flexShrink: 1
-            }}>
-              🔗 {finalUrl}
-            </div>
-          )}
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              cursor: 'pointer',
-              fontSize: 12,
-              color: 'var(--text)',
-              fontWeight: 700,
-              background: 'rgba(255, 255, 255, 0.05)',
-              padding: '3px 8px',
-              borderRadius: 4,
-              whiteSpace: 'nowrap',
-              flexShrink: 0
-            }}>
-            <input
-              type="checkbox"
-              checked={checked}
-              onChange={e => onCheckboxChange(e.target.checked)}
-              style={{ width: 16, height: 16, cursor: 'pointer' }}
-            />
-            <span>Masquer le lien</span>
-          </label>
-        </div>
-      </div>
-    );
-  }
-
   function LinkField({
     label,
     linkName,
     placeholder,
     disabled = false,
     showLabel = true,
-    customLabelContent
+    customLabelContent,
+    hideSourceSelect = true,
+    /** Met Label (col 1) et Lien (col 2) sur la même ligne. */
+    inlineFirstColumn,
+    /** Affiche uniquement l'input (pas de label ni prévisualisation au-dessus). */
+    inputOnly = false
   }: {
     label: string;
     linkName: 'Game_link' | 'Translate_link' | 'Mod_link';
@@ -293,13 +207,17 @@ export default function ContentEditor() {
     disabled?: boolean;
     showLabel?: boolean;
     customLabelContent?: React.ReactNode;
+    hideSourceSelect?: boolean;
+    inlineFirstColumn?: React.ReactNode;
+    inputOnly?: boolean;
   }) {
     const config = linkConfigs[linkName];
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       let val = e.target.value;
 
-      // Détection automatique du type (F95/Lewd) si une URL complète est collée
+      // Détection automatique du type : uniquement F95/Lewd si l'URL en fait partie
+      // Sinon (Proton, autre domaine, etc.) → Autre pour ne pas préfixer avec f95zone/lewdcorner
       const lowerVal = val.toLowerCase();
       let detectedSource: 'F95' | 'Lewd' | 'Autre' = config.source;
 
@@ -307,24 +225,134 @@ export default function ContentEditor() {
         detectedSource = 'F95';
       } else if (lowerVal.includes('lewdcorner.com')) {
         detectedSource = 'Lewd';
+      } else if (lowerVal.includes('http') || lowerVal.includes('://')) {
+        // URL d'un autre type (Proton, Drive, etc.) : forcer Autre
+        detectedSource = 'Autre';
       }
 
-      // Extraction de l'ID du thread si c'est une URL F95 ou Lewd
+      // Extraction de l'ID du thread si c'est une URL F95 ou Lewd (format threads/3281/ ou threads/xxx.3281/)
       if (detectedSource !== 'Autre') {
-        const threadIdMatch = val.match(/threads\/.*\.(\d+)\/?/);
+        const threadIdMatch = val.match(/threads\/(?:[^/]*\.)?(\d+)\/?/);
         if (threadIdMatch && threadIdMatch[1]) {
           val = threadIdMatch[1];
+        } else if (/^\d+$/.test(val.trim())) {
+          val = val.trim();
         }
       }
 
       setLinkConfig(linkName, detectedSource, val);
     };
 
-    const finalUrl = config.source === 'F95'
-      ? `https://f95zone.to/threads/${config.value || '...'}/`
-      : config.source === 'Lewd'
-        ? `https://lewdcorner.com/threads/${config.value || '...'}/`
-        : config.value || '...';
+    // Ne pas préfixer F95/Lewd si la valeur est déjà une URL d'un autre domaine (Proton, etc.)
+    const valueLower = (config.value || '').toLowerCase();
+    const isOtherFullUrl = valueLower.startsWith('http') && !valueLower.includes('f95zone.to') && !valueLower.includes('lewdcorner.com');
+    const finalUrl = isOtherFullUrl
+      ? config.value || '...'
+      : config.source === 'F95'
+        ? `https://f95zone.to/threads/${config.value || '...'}/`
+        : config.source === 'Lewd'
+          ? `https://lewdcorner.com/threads/${config.value || '...'}/`
+          : config.value || '...';
+
+    // Affichage dans le champ : URL complète nettoyée pour F95/Lewd, sinon valeur brute
+    const displayValue = isOtherFullUrl || config.source === 'Autre'
+      ? config.value
+      : (config.source === 'F95' || config.source === 'Lewd') && config.value.trim()
+        ? (config.source === 'F95' ? `https://f95zone.to/threads/${config.value.trim()}/` : `https://lewdcorner.com/threads/${config.value.trim()}/`)
+        : config.value;
+
+    const previewNode = finalUrl && !finalUrl.includes('...') ? (
+      <div
+        onClick={async () => {
+          const result = await tauriAPI.openUrl(finalUrl);
+          if (!result.ok) console.error('Erreur ouverture URL:', result.error);
+        }}
+        style={{
+          fontSize: 11,
+          color: '#5865F2',
+          fontFamily: 'monospace',
+          padding: '2px 8px',
+          background: 'rgba(88, 101, 242, 0.1)',
+          borderRadius: 4,
+          maxWidth: '100%',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          cursor: 'pointer',
+          display: 'inline-block',
+          transition: 'all 0.2s'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'rgba(88, 101, 242, 0.2)';
+          e.currentTarget.style.textDecoration = 'underline';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'rgba(88, 101, 242, 0.1)';
+          e.currentTarget.style.textDecoration = 'none';
+        }}
+        title="Cliquer pour ouvrir dans le navigateur externe"
+      >
+        🔗 {finalUrl}
+      </div>
+    ) : (
+      <div style={{
+        fontSize: 11,
+        color: '#5865F2',
+        fontFamily: 'monospace',
+        padding: '2px 8px',
+        background: 'rgba(88, 101, 242, 0.1)',
+        borderRadius: 4,
+        maxWidth: '100%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap'
+      }}>
+        🔗 {finalUrl}
+      </div>
+    );
+
+    const linkInput = (
+      <input
+        type="text"
+        value={displayValue}
+        onChange={handleInputChange}
+        placeholder={config.source === 'Autre' ? placeholder : 'Collez l\'ID ou l\'URL complète'}
+        disabled={disabled}
+        style={{
+          height: '40px',
+          boxSizing: 'border-box',
+          borderRadius: 6,
+          padding: '0 12px',
+          background: 'rgba(255,255,255,0.03)',
+          border: '1px solid var(--border)',
+          color: 'var(--text)',
+          opacity: disabled ? 0.5 : 1,
+          width: '100%'
+        }}
+      />
+    );
+
+    // Mode inputOnly : uniquement l'input (pour Lien du jeu + bouton 🔗 ou ligne Label|Lien|🔗|🗑️)
+    if (inputOnly) {
+      return (
+        <div style={{ minWidth: 0, width: '100%', height: 40, display: 'flex', alignItems: 'center' }}>
+          {linkInput}
+        </div>
+      );
+    }
+
+    // Mode inline : prévisualisation au-dessus, puis ligne Label | Lien
+    if (inlineFirstColumn != null) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', marginBottom: 0 }}>
+          <div style={{ minHeight: 28 }}>{previewNode}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'center' }}>
+            {inlineFirstColumn}
+            <div style={{ minWidth: 0 }}>{linkInput}</div>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', width: '100%' }}>
@@ -344,105 +372,39 @@ export default function ContentEditor() {
                 <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
                   {label}
                 </label>
-
-                {/* Prévisualisation du lien final */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-                  {finalUrl && !finalUrl.includes('...') ? (
-                    <div
-                      onClick={async () => {
-                        const result = await tauriAPI.openUrl(finalUrl);
-                        if (!result.ok) {
-                          console.error('Erreur ouverture URL:', result.error);
-                        }
-                      }}
-                      style={{
-                        fontSize: 11,
-                        color: '#5865F2',
-                        fontFamily: 'monospace',
-                        padding: '2px 8px',
-                        background: 'rgba(88, 101, 242, 0.1)',
-                        borderRadius: 4,
-                        maxWidth: '300px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        cursor: 'pointer',
-                        display: 'inline-block',
-                        transition: 'all 0.2s'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(88, 101, 242, 0.2)';
-                        e.currentTarget.style.textDecoration = 'underline';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(88, 101, 242, 0.1)';
-                        e.currentTarget.style.textDecoration = 'none';
-                      }}
-                      title="Cliquer pour ouvrir dans le navigateur externe"
-                    >
-                      🔗 {finalUrl}
-                    </div>
-                  ) : (
-                    <div style={{
-                      fontSize: 11,
-                      color: '#5865F2',
-                      fontFamily: 'monospace',
-                      padding: '2px 8px',
-                      background: 'rgba(88, 101, 242, 0.1)',
-                      borderRadius: 4,
-                      maxWidth: '300px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      🔗 {finalUrl}
-                    </div>
-                  )}
+                  {previewNode}
                 </div>
               </>
             )}
           </div>
         )}
 
-        {/* LIGNE 2 : Les contrôles (Dropdown + Input) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: 8, alignItems: 'start', width: '100%' }}>
-          <select
-            value={config.source}
-            onChange={(e) => setLinkConfig(linkName, e.target.value as any, config.value)}
-            disabled={disabled}
-            style={{
-              height: '38px',
-              borderRadius: 6,
-              padding: '0 8px',
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid var(--border)',
-              color: 'var(--text)',
-              fontSize: 13,
-              cursor: disabled ? 'not-allowed' : 'pointer',
-              opacity: disabled ? 0.5 : 1
-            }}
-          >
-            <option value="F95">F95</option>
-            <option value="Lewd">Lewd</option>
-            <option value="Autre">Autre</option>
-          </select>
-
-          <input
-            type="text"
-            value={config.value}
-            onChange={handleInputChange}
-            placeholder={config.source === 'Autre' ? placeholder : 'Collez l\'ID ou l\'URL complète'}
-            disabled={disabled}
-            style={{
-              height: '40px',
-              borderRadius: 6,
-              padding: '0 12px',
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid var(--border)',
-              color: 'var(--text)',
-              opacity: disabled ? 0.5 : 1
-            }}
-          />
+        {/* Ligne 2 : Input (select source masqué si hideSourceSelect, logique F95/Lewd conservée) */}
+        <div style={{ display: 'grid', gridTemplateColumns: hideSourceSelect ? '1fr' : '100px 1fr', gap: 8, alignItems: 'start', width: '100%' }}>
+          {!hideSourceSelect && (
+            <select
+              value={config.source}
+              onChange={(e) => setLinkConfig(linkName, e.target.value as any, config.value)}
+              disabled={disabled}
+              style={{
+                height: '38px',
+                borderRadius: 6,
+                padding: '0 8px',
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+                fontSize: 13,
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                opacity: disabled ? 0.5 : 1
+              }}
+            >
+              <option value="F95">F95</option>
+              <option value="Lewd">Lewd</option>
+              <option value="Autre">Autre</option>
+            </select>
+          )}
+          {linkInput}
         </div>
       </div>
     );
@@ -507,8 +469,40 @@ export default function ContentEditor() {
     setInput('Translate_version', gameVer);
   };
 
+  // Définir un lien principal à partir d'une URL brute (pour promotion d'un lien additionnel en premier)
+  const setTranslateLinkFromUrl = (url: string) => {
+    const u = url.trim();
+    let source: 'F95' | 'Lewd' | 'Autre' = 'Autre';
+    let value = u;
+    if (u.toLowerCase().includes('f95zone.to')) {
+      source = 'F95';
+      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)\/?/);
+      value = m?.[1] ?? u;
+    } else if (u.toLowerCase().includes('lewdcorner.com')) {
+      source = 'Lewd';
+      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)\/?/);
+      value = m?.[1] ?? u;
+    }
+    setLinkConfig('Translate_link', source, value);
+  };
+  const setModLinkFromUrl = (url: string) => {
+    const u = url.trim();
+    let source: 'F95' | 'Lewd' | 'Autre' = 'Autre';
+    let value = u;
+    if (u.toLowerCase().includes('f95zone.to')) {
+      source = 'F95';
+      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)\/?/);
+      value = m?.[1] ?? u;
+    } else if (u.toLowerCase().includes('lewdcorner.com')) {
+      source = 'Lewd';
+      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)\/?/);
+      value = m?.[1] ?? u;
+    }
+    setLinkConfig('Mod_link', source, value);
+  };
+
   return (
-    <div style={{ position: 'relative', height: '100%', minHeight: 0, overflow: 'auto', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
+    <div style={{ padding: '10px 15px', position: 'relative', height: '100%', minHeight: 0, overflow: 'auto', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
 
       {/* Badge mode édition - inchangé */}
       {isEditMode && (
@@ -573,7 +567,7 @@ export default function ContentEditor() {
             />
           </div>
 
-          {/* LIGNE 1 - Col 2 : Tags */}
+          {/* LIGNE 1 - Col 2 : Tags — bouton puis tags sur la même ligne */}
           <div>
             <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
               Tags
@@ -595,7 +589,8 @@ export default function ContentEditor() {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
-                  transition: 'all 0.2s'
+                  transition: 'all 0.2s',
+                  flexShrink: 0
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = 'rgba(74, 158, 255, 0.1)';
@@ -608,60 +603,50 @@ export default function ContentEditor() {
               >
                 ➕ Ajouter
               </button>
-
-              {/* Tags actifs affichés */}
-              {selectedTagIds.length > 0 && (
-                <div style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 6,
-                  alignItems: 'center'
-                }}>
-                  {selectedTagIds.map((tagId) => {
-                    const tag = savedTags.find(t => (t.id || t.name) === tagId);
-                    return (
-                      <div
-                        key={tagId}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          padding: '6px 14px',
-                          borderRadius: 999,
-                          background: 'rgba(99, 102, 241, 0.14)',
-                          border: '1px solid rgba(99, 102, 241, 0.35)',
-                          fontSize: 13,
-                          lineHeight: 1.2,
-                          fontWeight: 600
-                        }}
-                      >
-                        <span style={{ color: 'var(--text)' }}>{tag?.name || tagId}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newTags = selectedTagIds.filter(t => t !== tagId);
-                            setPostTags(newTags.join(','));
-                          }}
-                          title="Retirer"
-                          style={{
-                            border: 'none',
-                            background: 'transparent',
-                            color: 'var(--muted)',
-                            cursor: 'pointer',
-                            padding: 0,
-                            lineHeight: 1,
-                            fontSize: 14,
-                            display: 'inline-flex',
-                            alignItems: 'center'
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              {selectedTagIds.map((tagId) => {
+                const tag = savedTags.find(t => (t.id || t.name) === tagId);
+                return (
+                  <div
+                    key={tagId}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '6px 14px',
+                      borderRadius: 999,
+                      background: 'rgba(99, 102, 241, 0.14)',
+                      border: '1px solid rgba(99, 102, 241, 0.35)',
+                      fontSize: 13,
+                      lineHeight: 1.2,
+                      fontWeight: 600,
+                      flexShrink: 0
+                    }}
+                  >
+                    <span style={{ color: 'var(--text)' }}>{tag?.name || tagId}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newTags = selectedTagIds.filter(t => t !== tagId);
+                        setPostTags(newTags.join(','));
+                      }}
+                      title="Retirer"
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        color: 'var(--muted)',
+                        cursor: 'pointer',
+                        padding: 0,
+                        lineHeight: 1,
+                        fontSize: 14,
+                        display: 'inline-flex',
+                        alignItems: 'center'
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -711,6 +696,7 @@ export default function ContentEditor() {
             <input
               value={inputs['Game_name'] || ''}
               onChange={e => setInput('Game_name', e.target.value)}
+              disabled={!varsUsedInTemplate.has('Game_name')}
               style={{
                 width: '100%',
                 height: '40px',
@@ -718,7 +704,9 @@ export default function ContentEditor() {
                 padding: '0 12px',
                 background: 'rgba(255,255,255,0.03)',
                 border: '1px solid var(--border)',
-                color: 'var(--text)'
+                color: 'var(--text)',
+                opacity: varsUsedInTemplate.has('Game_name') ? 1 : 0.6,
+                cursor: varsUsedInTemplate.has('Game_name') ? 'text' : 'not-allowed'
               }}
               placeholder="Nom du jeu"
             />
@@ -792,6 +780,7 @@ export default function ContentEditor() {
             <input
               value={inputs['Game_version'] || ''}
               onChange={e => setInput('Game_version', e.target.value)}
+              disabled={!varsUsedInTemplate.has('Game_version')}
               style={{
                 width: '100%',
                 height: '40px',
@@ -799,7 +788,9 @@ export default function ContentEditor() {
                 padding: '0 12px',
                 background: 'rgba(255,255,255,0.03)',
                 border: '1px solid var(--border)',
-                color: 'var(--text)'
+                color: 'var(--text)',
+                opacity: varsUsedInTemplate.has('Game_version') ? 1 : 0.6,
+                cursor: varsUsedInTemplate.has('Game_version') ? 'text' : 'not-allowed'
               }}
               placeholder="v1.0.4"
             />
@@ -835,6 +826,7 @@ export default function ContentEditor() {
             <input
               value={inputs['Translate_version'] || ''}
               onChange={e => setInput('Translate_version', e.target.value)}
+              disabled={!varsUsedInTemplate.has('Translate_version')}
               style={{
                 width: '100%',
                 height: '40px',
@@ -842,182 +834,71 @@ export default function ContentEditor() {
                 padding: '0 12px',
                 background: 'rgba(255,255,255,0.03)',
                 border: '1px solid var(--border)',
-                color: 'var(--text)'
+                color: 'var(--text)',
+                opacity: varsUsedInTemplate.has('Translate_version') ? 1 : 0.6,
+                cursor: varsUsedInTemplate.has('Translate_version') ? 'text' : 'not-allowed'
               }}
               placeholder="v1.0"
             />
           </div>
         </div> {/* FIN LIGNE 5 */}
 
-        {/* LIGNE 6 : Lien du jeu et Lien de la trad */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
-          <LinkField
-            label="Lien du jeu"
-            linkName="Game_link"
-            placeholder="https://..."
-          />
-
-          <LinkField
-            label={isIntegrated ? "Lien de la trad (Fusionné)" : "Lien de la trad"}
-            linkName="Translate_link"
-            placeholder="https://..."
-            disabled={inputs['use_additional_links'] === 'true'}
-            customLabelContent={
-              <LinkFieldLabelWithCheckbox
-                label={isIntegrated ? "Lien de la trad (Fusionné)" : "Lien de la trad"}
-                linkName="Translate_link"
-                linkConfigs={linkConfigs}
-                checked={inputs['use_additional_links'] === 'true'}
-                onCheckboxChange={(checked) => setInput('use_additional_links', checked ? 'true' : 'false')}
-                onLinkClick={async (url) => {
-                  const result = await tauriAPI.openUrl(url);
-                  if (!result.ok) {
-                    console.error('Erreur ouverture URL:', result.error);
-                  }
-                }}
-              />
-            }
-          />
-        </div>
-
-        {/* LIGNE 6.5 : Header Liens additionnels */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
-            Liens additionnels (Saisons, Chapitres, Épisodes spéciaux, etc.)
-          </label>
-          <button
-            type="button"
-            onClick={addAdditionalTranslationLink}
-            style={{
-              padding: '6px 12px',
-              fontSize: 13,
-              height: 32,
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              cursor: 'pointer',
-              background: 'transparent',
-              color: 'var(--text)',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
-              e.currentTarget.style.borderColor = 'var(--accent)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.borderColor = 'var(--border)';
-            }}
-          >
-            ➕ Ajouter un lien additionnel
-          </button>
-        </div>
-
-        {/* LIGNE 6.6+ : Liens additionnels individuels */}
-        {additionalTranslationLinks.map((link, index) => (
-          <div
-            key={index}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr auto',
-              gap: 12,
-              alignItems: 'end',
-              marginBottom: 0
-            }}
-          >
-            <div>
-              {index === 0 && (
-                <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-                  Label
-                </label>
-              )}
-              {index > 0 && <div style={{ height: 0 }} />}
-              <input
-                type="text"
-                value={link.label}
-                onChange={(e) => updateAdditionalTranslationLink(index, { ...link, label: e.target.value })}
-                placeholder="Saison 1"
-                style={{
-                  width: '100%',
-                  height: '40px',
-                  borderRadius: 6,
-                  padding: '0 12px',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)'
-                }}
-              />
+        {/* Grille 2 colonnes : Lien du jeu (input + 🔗) | Type de traduction — labels et lignes input alignés */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'stretch' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ minHeight: 32, display: 'flex', alignItems: 'center' }}>
+              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600, margin: 0 }}>
+                Lien du jeu
+              </label>
             </div>
-            <div>
-              {index === 0 && (
-                <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-                  Lien
-                </label>
-              )}
-              {index > 0 && <div style={{ height: 0 }} />}
-              <input
-                type="text"
-                value={link.link}
-                onChange={(e) => updateAdditionalTranslationLink(index, { ...link, link: e.target.value })}
-                placeholder="https://..."
-                style={{
-                  width: '100%',
-                  height: '40px',
-                  borderRadius: 6,
-                  padding: '0 12px'
-                }}
-              />
-            </div>
-            <div>
-              {index === 0 && <div style={{ height: 26 }} />}
-              {index > 0 && <div style={{ height: 0 }} />}
+            <div style={{ height: 40, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0, height: 40, display: 'flex', alignItems: 'center' }}>
+                <LinkField
+                  label="Lien du jeu"
+                  linkName="Game_link"
+                  placeholder="https://..."
+                  disabled={!varsUsedInTemplate.has('Game_link')}
+                  inputOnly
+                />
+              </div>
               <button
                 type="button"
-                onClick={() => deleteAdditionalTranslationLink(index)}
+                onClick={async () => {
+                  const cfg = linkConfigs.Game_link;
+                  const url = cfg.source === 'F95' ? `https://f95zone.to/threads/${cfg.value || ''}/` : cfg.source === 'Lewd' ? `https://lewdcorner.com/threads/${cfg.value || ''}/` : cfg.value || '';
+                  if (url && !url.includes('...')) {
+                    const result = await tauriAPI.openUrl(url);
+                    if (!result.ok) console.error('Erreur ouverture URL:', result.error);
+                  }
+                }}
+                title="Ouvrir le lien"
                 style={{
-                  padding: '8px',
-                  height: '40px',
-                  width: '40px',
-                  border: '1px solid var(--border)',
+                  width: 40,
+                  height: 40,
+                  flexShrink: 0,
                   borderRadius: 6,
+                  border: '1px solid var(--border)',
+                  background: 'rgba(255,255,255,0.05)',
                   cursor: 'pointer',
-                  background: 'transparent',
-                  color: 'var(--error)',
+                  fontSize: 18,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 16
+                  justifyContent: 'center'
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
-                  e.currentTarget.style.borderColor = 'var(--error)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.borderColor = 'var(--border)';
-                }}
-                title="Supprimer ce lien"
               >
-                🗑️
+                🔗
               </button>
             </div>
           </div>
-        ))}
-
-        {/* LIGNE 7 : Type de traduction et Lien du mod */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{
+              minHeight: 32,
               display: 'grid',
               gridTemplateColumns: '1fr auto',
               gap: 8,
-              alignItems: 'center',
-              marginBottom: 8,
-              minHeight: 32
+              alignItems: 'center'
             }}>
-              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
+              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600, margin: 0 }}>
                 Type de traduction
               </label>
               <label style={{
@@ -1028,7 +909,8 @@ export default function ContentEditor() {
                 userSelect: 'none',
                 fontSize: 12,
                 color: 'var(--text)',
-                fontWeight: 600
+                fontWeight: 600,
+                margin: 0
               }}>
                 <input
                   type="checkbox"
@@ -1040,13 +922,14 @@ export default function ContentEditor() {
               </label>
             </div>
             <div style={{
+              height: 40,
               display: 'flex',
               gap: 4,
               padding: 4,
               borderRadius: 8,
               border: '1px solid var(--border)',
               background: 'rgba(255,255,255,0.03)',
-              height: '40px'
+              alignItems: 'center'
             }}>
               {(['Automatique', 'Semi-automatique', 'Manuelle'] as const).map((opt) => {
                 const active = translationType === opt;
@@ -1074,144 +957,395 @@ export default function ContentEditor() {
               })}
             </div>
           </div>
+        </div>
 
-          <div>
-            <LinkField
-              label="Lien du mod"
-              linkName="Mod_link"
-              placeholder="ID du thread ou URL..."
-              disabled={inputs['is_modded_game'] !== 'true'}
-              customLabelContent={
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr auto',
-                  gap: 8,
+        {/* Grille 2 colonnes : Traductions (label, lien, additionnels) | Mod (checkbox, label, lien, additionnels) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
+          {/* Colonne 1 : Traductions */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
+                Traductions
+              </label>
+              <button
+                type="button"
+                onClick={addAdditionalTranslationLink}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: 13,
+                  height: 32,
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  background: 'transparent',
+                  color: 'var(--text)',
+                  fontWeight: 600,
+                  display: 'flex',
                   alignItems: 'center',
-                  width: '100%',
-                  minHeight: 32
-                }}>
-                  <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
-                    Lien du mod
-                  </span>
-
-                  {/* Groupe : Prévisualisation + Checkbox */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {/* Prévisualisation du lien */}
-                    {(() => {
-                      const config = linkConfigs['Mod_link'];
-                      const modFinalUrl = config.source === 'F95'
-                        ? `https://f95zone.to/threads/${config.value || '...'}/`
-                        : config.source === 'Lewd'
-                          ? `https://lewdcorner.com/threads/${config.value || '...'}/`
-                          : config.value || '...';
-
-                      return modFinalUrl && !modFinalUrl.includes('...') ? (
-                        <div
-                          onClick={async () => {
-                            const result = await tauriAPI.openUrl(modFinalUrl);
-                            if (!result.ok) {
-                              console.error('Erreur ouverture URL:', result.error);
-                            }
-                          }}
-                          style={{
-                            fontSize: 11,
-                            color: '#5865F2',
-                            fontFamily: 'monospace',
-                            padding: '2px 8px',
-                            background: 'rgba(88, 101, 242, 0.1)',
-                            borderRadius: 4,
-                            maxWidth: '200px',  // ⬅️ Réduit pour laisser place à la checkbox
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            cursor: 'pointer',
-                            display: 'inline-block',
-                            transition: 'all 0.2s'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'rgba(88, 101, 242, 0.2)';
-                            e.currentTarget.style.textDecoration = 'underline';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'rgba(88, 101, 242, 0.1)';
-                            e.currentTarget.style.textDecoration = 'none';
-                          }}
-                          title="Cliquer pour ouvrir dans le navigateur externe"
-                        >
-                          🔗 {modFinalUrl}
-                        </div>
-                      ) : (
-                        <div style={{
-                          fontSize: 11,
-                          color: '#5865F2',
-                          fontFamily: 'monospace',
-                          padding: '2px 8px',
-                          background: 'rgba(88, 101, 242, 0.1)',
-                          borderRadius: 4,
-                          maxWidth: '200px',  // ⬅️ Réduit pour laisser place à la checkbox
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }}>
-                          🔗 {modFinalUrl}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Checkbox */}
-                    <label style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,  // ⬅️ Réduit de 8 à 6
-                      cursor: 'pointer',
-                      userSelect: 'none',
-                      fontSize: 12,
-                      color: 'var(--text)',
-                      fontWeight: 700,
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      padding: '3px 8px',  // ⬅️ Réduit le padding vertical
-                      borderRadius: 4,
-                      whiteSpace: 'nowrap'
-                    }}>
-                      <input
-                        type="checkbox"
-                        checked={inputs['is_modded_game'] === 'true'}
-                        onChange={e => setInput('is_modded_game', e.target.checked ? 'true' : 'false')}
-                        style={{ width: 16, height: 16, cursor: 'pointer' }}
-                      />
-                      <span>Mod compatible</span>
-                    </label>
-                  </div>
+                  gap: 6
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
+                  e.currentTarget.style.borderColor = 'var(--accent)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.borderColor = 'var(--border)';
+                }}
+              >
+                ➕ Ajouter un lien additionnel
+              </button>
+            </div>
+            {/* En-têtes Label | Lien | 🔗 | 🗑️ — toutes les lignes affichées de la même manière */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>Label</label>
+              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>Lien</label>
+              <span style={{ width: 40 }} />
+              <span style={{ width: 40 }} />
+            </div>
+            {/* Ligne 0 : lien principal traduction (même style que les suivantes) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center' }}>
+              <input
+                type="text"
+                value={inputs['main_translation_label'] ?? ''}
+                onChange={(e) => setInput('main_translation_label', e.target.value)}
+                placeholder="Traduction"
+                disabled={!varsUsedInTemplate.has('Translate_link')}
+                style={{
+                  height: '40px',
+                  borderRadius: 6,
+                  padding: '0 12px',
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  opacity: varsUsedInTemplate.has('Translate_link') ? 1 : 0.6
+                }}
+              />
+              <LinkField
+                label="Lien"
+                linkName="Translate_link"
+                placeholder="https://..."
+                disabled={!varsUsedInTemplate.has('Translate_link')}
+                inputOnly
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  const cfg = linkConfigs.Translate_link;
+                  const url = cfg.source === 'F95' ? `https://f95zone.to/threads/${cfg.value || ''}/` : cfg.source === 'Lewd' ? `https://lewdcorner.com/threads/${cfg.value || ''}/` : cfg.value || '';
+                  if (url && !url.includes('...')) {
+                    const result = await tauriAPI.openUrl(url);
+                    if (!result.ok) console.error('Erreur ouverture URL:', result.error);
+                  }
+                }}
+                title="Ouvrir le lien"
+                style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 6, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                🔗
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (additionalTranslationLinks.length > 0) {
+                    setInput('main_translation_label', additionalTranslationLinks[0].label);
+                    setTranslateLinkFromUrl(additionalTranslationLinks[0].link);
+                    deleteAdditionalTranslationLink(0);
+                  } else {
+                    setInput('main_translation_label', '');
+                    setLinkConfig('Translate_link', 'Autre', '');
+                  }
+                }}
+                disabled={additionalTranslationLinks.length === 0}
+                title="Supprimer ce lien"
+                style={{
+                  width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--error)', cursor: additionalTranslationLinks.length === 0 ? 'not-allowed' : 'pointer', opacity: additionalTranslationLinks.length === 0 ? 0.4 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16
+                }}
+              >
+                🗑️
+              </button>
+            </div>
+            {additionalTranslationLinks.map((link, index) => {
+              const totalRows = 1 + additionalTranslationLinks.length;
+              const isOnlyRow = totalRows === 1;
+              return (
+                <div key={index} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={link.label}
+                    onChange={(e) => updateAdditionalTranslationLink(index, { ...link, label: e.target.value })}
+                    placeholder="Saison 1"
+                    style={{ height: '40px', borderRadius: 6, padding: '0 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  />
+                  <input
+                    type="text"
+                    value={link.link}
+                    onChange={(e) => updateAdditionalTranslationLink(index, { ...link, link: e.target.value })}
+                    placeholder="https://..."
+                    style={{ height: '40px', borderRadius: 6, padding: '0 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => { if (link.link.trim()) { const r = await tauriAPI.openUrl(link.link.trim()); if (!r.ok) console.error(r.error); } }}
+                    title="Ouvrir le lien"
+                    style={{ width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    🔗
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteAdditionalTranslationLink(index)}
+                    disabled={isOnlyRow}
+                    title="Supprimer ce lien"
+                    style={{
+                      width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--error)',
+                      cursor: isOnlyRow ? 'not-allowed' : 'pointer', opacity: isOnlyRow ? 0.4 : 1,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16
+                    }}
+                  >
+                    🗑️
+                  </button>
                 </div>
-              }
-            />
+              );
+            })}
+          </div>
+
+          {/* Colonne 2 : Mod */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  cursor: varsUsedInTemplate.has('is_modded_game') ? 'pointer' : 'default',
+                  userSelect: 'none',
+                  fontSize: 13,
+                  color: 'var(--muted)',
+                  fontWeight: 600,
+                  opacity: varsUsedInTemplate.has('is_modded_game') ? 1 : 0.6
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={inputs['is_modded_game'] === 'true'}
+                  onChange={e => setInput('is_modded_game', e.target.checked ? 'true' : 'false')}
+                  disabled={!varsUsedInTemplate.has('is_modded_game')}
+                  style={{
+                    width: 16,
+                    height: 16,
+                    cursor: varsUsedInTemplate.has('is_modded_game') ? 'pointer' : 'not-allowed'
+                  }}
+                />
+                <span>Mod compatible</span>
+              </label>
+              <button
+                type="button"
+                onClick={addAdditionalModLink}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: 13,
+                  height: 32,
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  background: 'transparent',
+                  color: 'var(--text)',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
+                  e.currentTarget.style.borderColor = 'var(--accent)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.borderColor = 'var(--border)';
+                }}
+              >
+                ➕ Ajouter un lien additionnel
+              </button>
+            </div>
+            {/* En-têtes Label | Lien | 🔗 | 🗑️ — toutes les lignes affichées de la même manière */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>Label</label>
+              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>Lien</label>
+              <span style={{ width: 40 }} />
+              <span style={{ width: 40 }} />
+            </div>
+            {/* Ligne 0 : lien principal mod (même style que les suivantes). Affiché dans le template seulement si une URL est renseignée. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center' }}>
+              <input
+                type="text"
+                value={inputs['main_mod_label'] ?? ''}
+                onChange={(e) => setInput('main_mod_label', e.target.value)}
+                placeholder="Mod"
+                disabled={!varsUsedInTemplate.has('Mod_link')}
+                style={{
+                  height: '40px',
+                  borderRadius: 6,
+                  padding: '0 12px',
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  opacity: varsUsedInTemplate.has('Mod_link') ? 1 : 0.6
+                }}
+              />
+              <LinkField
+                label="Lien"
+                linkName="Mod_link"
+                placeholder="ID du thread ou URL..."
+                disabled={!varsUsedInTemplate.has('Mod_link')}
+                inputOnly
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  const cfg = linkConfigs.Mod_link;
+                  const url = cfg.source === 'F95' ? `https://f95zone.to/threads/${cfg.value || ''}/` : cfg.source === 'Lewd' ? `https://lewdcorner.com/threads/${cfg.value || ''}/` : cfg.value || '';
+                  if (url && !url.includes('...')) {
+                    const result = await tauriAPI.openUrl(url);
+                    if (!result.ok) console.error('Erreur ouverture URL:', result.error);
+                  }
+                }}
+                title="Ouvrir le lien"
+                style={{ width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                🔗
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (additionalModLinks.length > 0) {
+                    setInput('main_mod_label', additionalModLinks[0].label);
+                    setModLinkFromUrl(additionalModLinks[0].link);
+                    deleteAdditionalModLink(0);
+                  } else {
+                    setInput('main_mod_label', '');
+                    setLinkConfig('Mod_link', 'Autre', '');
+                  }
+                }}
+                disabled={additionalModLinks.length === 0}
+                title="Supprimer ce lien"
+                style={{
+                  width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--error)', cursor: additionalModLinks.length === 0 ? 'not-allowed' : 'pointer', opacity: additionalModLinks.length === 0 ? 0.4 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16
+                }}
+              >
+                🗑️
+              </button>
+            </div>
+            {additionalModLinks.map((link, index) => {
+              const totalRows = 1 + additionalModLinks.length;
+              const isOnlyRow = totalRows === 1;
+              return (
+                <div key={index} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={link.label}
+                    onChange={(e) => updateAdditionalModLink(index, { ...link, label: e.target.value })}
+                    placeholder="Label (ex: Walkthrough Mod)"
+                    style={{ height: '40px', borderRadius: 6, padding: '0 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  />
+                  <input
+                    type="text"
+                    value={link.link}
+                    onChange={(e) => updateAdditionalModLink(index, { ...link, link: e.target.value })}
+                    placeholder="https://..."
+                    style={{ height: '40px', borderRadius: 6, padding: '0 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => { if (link.link.trim()) { const r = await tauriAPI.openUrl(link.link.trim()); if (!r.ok) console.error(r.error); } }}
+                    title="Ouvrir le lien"
+                    style={{ width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    🔗
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteAdditionalModLink(index)}
+                    disabled={isOnlyRow}
+                    title="Supprimer ce lien"
+                    style={{
+                      width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--error)',
+                      cursor: isOnlyRow ? 'not-allowed' : 'pointer', opacity: isOnlyRow ? 0.4 : 1,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16
+                    }}
+                  >
+                    🗑️
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* LIGNE 8 : Variables Custom (masquer si aucune) */}
+        {/* LIGNE 8 : Variables Custom — type text = input, type textarea = textarea multiligne */}
         {visibleVars.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {visibleVars.map((v) => (
-              <div key={v.name}>
-                <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-                  {v.label || v.name}
-                </label>
-                <input
-                  value={inputs[v.name] || ''}
-                  onChange={e => setInput(v.name, e.target.value)}
-                  style={{
-                    width: '100%',
-                    height: '40px',
-                    borderRadius: 6,
-                    padding: '0 12px',
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid var(--border)',
-                    color: 'var(--text)'
-                  }}
-                  placeholder={v.placeholder || ''}
-                />
-              </div>
-            ))}
+            {visibleVars.map((v) => {
+              const used = varsUsedInTemplate.has(v.name);
+              const isTextarea = v.type === 'textarea';
+              return (
+                <div key={v.name} style={isTextarea ? { gridColumn: '1 / -1' } : undefined}>
+                  <label style={{
+                    display: 'block',
+                    fontSize: 13,
+                    color: used ? 'var(--muted)' : 'var(--muted)',
+                    marginBottom: 6,
+                    fontWeight: 600,
+                    opacity: used ? 1 : 0.7
+                  }}>
+                    {v.label || v.name}
+                  </label>
+                  {isTextarea ? (
+                    <textarea
+                      value={inputs[v.name] || ''}
+                      onChange={e => setInput(v.name, e.target.value)}
+                      disabled={!used}
+                      placeholder={v.placeholder || ''}
+                      style={{
+                        width: '100%',
+                        minHeight: 100,
+                        borderRadius: 6,
+                        padding: 12,
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text)',
+                        fontFamily: 'inherit',
+                        fontSize: 14,
+                        lineHeight: 1.5,
+                        resize: 'vertical',
+                        opacity: used ? 1 : 0.6,
+                        cursor: used ? 'text' : 'not-allowed'
+                      }}
+                      className="styled-scrollbar"
+                    />
+                  ) : (
+                    <input
+                      value={inputs[v.name] || ''}
+                      onChange={e => setInput(v.name, e.target.value)}
+                      disabled={!used}
+                      style={{
+                        width: '100%',
+                        height: '40px',
+                        borderRadius: 6,
+                        padding: '0 12px',
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text)',
+                        opacity: used ? 1 : 0.6,
+                        cursor: used ? 'text' : 'not-allowed'
+                      }}
+                      placeholder={v.placeholder || ''}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -1227,6 +1361,7 @@ export default function ContentEditor() {
               value={inputs['Overview'] || ''}
               onChange={e => setInput('Overview', e.target.value)}
               onKeyDown={handleOverviewKeyDown}
+              disabled={!varsUsedInTemplate.has('Overview')}
               style={{
                 width: '100%',
                 flex: 1,
@@ -1237,7 +1372,9 @@ export default function ContentEditor() {
                 fontSize: 14,
                 lineHeight: 1.5,
                 resize: 'none',
-                overflowY: 'auto'
+                overflowY: 'auto',
+                opacity: varsUsedInTemplate.has('Overview') ? 1 : 0.6,
+                cursor: varsUsedInTemplate.has('Overview') ? 'text' : 'not-allowed'
               }}
               className="styled-scrollbar"
               placeholder="Décrivez le jeu..."
@@ -1260,6 +1397,7 @@ export default function ContentEditor() {
                   setShowInstructionSuggestions(true);
                 }}
                 onFocus={() => setShowInstructionSuggestions(true)}
+                disabled={!varsUsedInTemplate.has('instruction')}
                 style={{
                   width: '100%',
                   height: '40px',
@@ -1267,7 +1405,9 @@ export default function ContentEditor() {
                   padding: '0 12px',
                   background: 'rgba(255,255,255,0.03)',
                   border: '1px solid var(--border)',
-                  color: 'var(--text)'
+                  color: 'var(--text)',
+                  opacity: varsUsedInTemplate.has('instruction') ? 1 : 0.6,
+                  cursor: varsUsedInTemplate.has('instruction') ? 'text' : 'not-allowed'
                 }}
               />
               {showInstructionSuggestions && filteredInstructions.length > 0 && (
@@ -1307,6 +1447,7 @@ export default function ContentEditor() {
             <textarea
               value={inputs['instruction'] || ''}
               onChange={e => setInput('instruction', e.target.value)}
+              disabled={!varsUsedInTemplate.has('instruction')}
               style={{
                 width: '100%',
                 flex: 1,
@@ -1317,7 +1458,9 @@ export default function ContentEditor() {
                 fontSize: 13,
                 lineHeight: 1.5,
                 resize: 'none',
-                overflowY: 'auto'
+                overflowY: 'auto',
+                opacity: varsUsedInTemplate.has('instruction') ? 1 : 0.6,
+                cursor: varsUsedInTemplate.has('instruction') ? 'text' : 'not-allowed'
               }}
               className="styled-scrollbar"
               placeholder="Tapez ou sélectionnez une instruction..."

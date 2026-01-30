@@ -38,7 +38,13 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
     publishedPosts,
     importFullConfig,
     setApiBaseFromSupabase,
-    clearAllAppData
+    clearAllAppData,
+    syncTagsToSupabase,
+    fetchTagsFromSupabase,
+    syncInstructionsToSupabase,
+    fetchInstructionsFromSupabase,
+    syncTemplatesToSupabase,
+    fetchTemplatesFromSupabase
   } = useApp();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
   const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('apiUrl') || localStorage.getItem('apiBase') || '');
@@ -484,6 +490,7 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
                             <button
                               type="button"
                               onClick={() => toggleEditor(p.id, allowed)}
+                              title={allowed ? 'Révoquer' : 'Autoriser'}
                               style={{
                                 padding: '6px 14px',
                                 borderRadius: 8,
@@ -510,6 +517,65 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
                 )}
               </section>
             )}
+
+            {/* Section Synchronisation : tags, instructions, templates */}
+            <section
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 14,
+                padding: 20,
+                background: 'rgba(255,255,255,0.02)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16,
+              }}
+            >
+              <h4 style={{ margin: 0, fontSize: '1rem' }}>🔄 Envoyer / Récupérer depuis la base</h4>
+              <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
+                Après avoir modifié les tags, instructions ou templates dans leurs modales, envoyez-les ici pour les partager. À l&apos;ouverture de l&apos;app, tout est récupéré depuis la base. La config API est enregistrée avec le bouton « Enregistrer » ci-dessous ; l&apos;historique se synchronise à chaque publication.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, minWidth: 90 }}>Tags</span>
+                  <button type="button" onClick={async () => {
+                    const { ok, count, error } = await syncTagsToSupabase(profile?.discord_id);
+                    if (ok) showToast(count ? `${count} tag(s) envoyé(s)` : 'Tags déjà à jour', 'success');
+                    else showToast('Erreur : ' + (error ?? 'inconnue'), 'error');
+                  }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'rgba(74,158,255,0.15)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                    📤 Envoyer
+                  </button>
+                  <button type="button" onClick={async () => { await fetchTagsFromSupabase(); showToast('Tags récupérés', 'success'); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                    📥 Récupérer
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, minWidth: 90 }}>Instructions</span>
+                  <button type="button" onClick={async () => {
+                    const { ok, error } = await syncInstructionsToSupabase();
+                    if (ok) showToast('Instructions envoyées', 'success');
+                    else showToast('Erreur : ' + (error ?? 'inconnue'), 'error');
+                  }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'rgba(74,158,255,0.15)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                    📤 Envoyer
+                  </button>
+                  <button type="button" onClick={async () => { await fetchInstructionsFromSupabase(); showToast('Instructions récupérées', 'success'); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                    📥 Récupérer
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, minWidth: 90 }}>Templates</span>
+                  <button type="button" onClick={async () => {
+                    const { ok, error } = await syncTemplatesToSupabase();
+                    if (ok) showToast('Templates envoyés', 'success');
+                    else showToast('Erreur : ' + (error ?? 'inconnue'), 'error');
+                  }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'rgba(74,158,255,0.15)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                    📤 Envoyer
+                  </button>
+                  <button type="button" onClick={async () => { await fetchTemplatesFromSupabase(); showToast('Templates récupérés', 'success'); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                    📥 Récupérer
+                  </button>
+                </div>
+              </div>
+            </section>
           </div>
 
           {/* Colonne droite : Fenêtre + Sauvegarde (mode admin) ou message */}

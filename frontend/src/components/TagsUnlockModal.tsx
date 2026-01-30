@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
+
+const STORAGE_KEY_TAGS_MASTER = 'discord-publisher:tags-master-code';
 
 const getSupabaseConfig = () => {
   const url = typeof import.meta?.env?.VITE_SUPABASE_URL === 'string' ? import.meta.env.VITE_SUPABASE_URL.trim() : '';
@@ -22,6 +24,8 @@ export default function TagsUnlockModal({ isOpen, onClose, onUnlock }: TagsUnloc
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checkingStored, setCheckingStored] = useState(false);
+  const hasCheckedStoredRef = useRef(false);
 
   useEscapeKey(() => {
     if (isOpen) {
@@ -31,6 +35,65 @@ export default function TagsUnlockModal({ isOpen, onClose, onUnlock }: TagsUnloc
     }
   }, isOpen);
   useModalScrollLock(isOpen);
+
+  // Réinitialiser le ref quand la modale se ferme pour revérifier au prochain ouvert
+  useEffect(() => {
+    if (!isOpen) {
+      hasCheckedStoredRef.current = false;
+    }
+  }, [isOpen]);
+
+  // À l'ouverture : si un code est mémorisé, le valider contre la base ; si invalide, le supprimer.
+  useEffect(() => {
+    if (!isOpen || checkingStored) return;
+    const stored = localStorage.getItem(STORAGE_KEY_TAGS_MASTER);
+    if (!stored?.trim()) return;
+    if (hasCheckedStoredRef.current) return;
+    hasCheckedStoredRef.current = true;
+
+    const validateStoredAndUnlock = async () => {
+      setCheckingStored(true);
+      const trimmed = stored.trim();
+      const { url, anonKey } = getSupabaseConfig();
+
+      if (url && anonKey) {
+        try {
+          const base = url.replace(/\/+$/, '');
+          const res = await fetch(`${base}/functions/v1/validate-tags-master-code`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${anonKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ code: trimmed }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data?.valid === true) {
+            onUnlock();
+            onClose();
+            setCheckingStored(false);
+            return;
+          }
+        } catch (_e) {
+          // Réseau : on garde le code en local et on affiche le formulaire
+        }
+        localStorage.removeItem(STORAGE_KEY_TAGS_MASTER);
+      }
+
+      const refEnv = getTagsMasterCodeEnv().trim();
+      if (refEnv && trimmed === refEnv) {
+        onUnlock();
+        onClose();
+        setCheckingStored(false);
+        return;
+      }
+
+      setError('Code mémorisé révoqué ou invalide. Saisissez le nouveau code.');
+      setCheckingStored(false);
+    };
+
+    void validateStoredAndUnlock();
+  }, [isOpen, checkingStored]);
 
   const handleValidate = async () => {
     setError(null);
@@ -57,6 +120,11 @@ export default function TagsUnlockModal({ isOpen, onClose, onUnlock }: TagsUnloc
         const data = await res.json().catch(() => ({}));
         if (res.ok && data?.valid === true) {
           setCode('');
+          try {
+            localStorage.setItem(STORAGE_KEY_TAGS_MASTER, trimmed);
+          } catch (_e) {
+            // Ignorer si localStorage indisponible
+          }
           onUnlock();
           onClose();
           return;
@@ -82,6 +150,11 @@ export default function TagsUnlockModal({ isOpen, onClose, onUnlock }: TagsUnloc
       return;
     }
     setCode('');
+    try {
+      localStorage.setItem(STORAGE_KEY_TAGS_MASTER, trimmed);
+    } catch (_e) {
+      // Ignorer si localStorage indisponible
+    }
     onUnlock();
     onClose();
   };
@@ -128,30 +201,38 @@ export default function TagsUnlockModal({ isOpen, onClose, onUnlock }: TagsUnloc
           Saisissez le code maître pour créer, modifier ou supprimer des tags. La sélection des tags dans le formulaire reste accessible sans code.
         </p>
         <div style={{ marginBottom: 12 }}>
-          <input
-            type="password"
-            value={code}
-            onChange={(e) => {
-              setCode(e.target.value);
-              setError(null);
-            }}
-            onKeyDown={(e) => e.key === 'Enter' && handleValidate()}
-            placeholder="Code maître"
-            autoFocus
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              borderRadius: 8,
-              border: `1px solid ${error ? 'var(--error)' : 'var(--border)'}`,
-              background: 'rgba(255,255,255,0.05)',
-              color: 'var(--text)',
-              fontSize: 14
-            }}
-          />
-          {error && (
-            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--error)' }}>
-              {error}
-            </div>
+          {checkingStored ? (
+            <p style={{ fontSize: 14, color: 'var(--muted)', margin: 0 }}>
+              Vérification du code mémorisé…
+            </p>
+          ) : (
+            <>
+              <input
+                type="password"
+                value={code}
+                onChange={(e) => {
+                  setCode(e.target.value);
+                  setError(null);
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && handleValidate()}
+                placeholder="Code maître"
+                autoFocus
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  border: `1px solid ${error ? 'var(--error)' : 'var(--border)'}`,
+                  background: 'rgba(255,255,255,0.05)',
+                  color: 'var(--text)',
+                  fontSize: 14
+                }}
+              />
+              {error && (
+                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--error)' }}>
+                  {error}
+                </div>
+              )}
+            </>
           )}
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -173,7 +254,7 @@ export default function TagsUnlockModal({ isOpen, onClose, onUnlock }: TagsUnloc
           <button
             type="button"
             onClick={() => void handleValidate()}
-            disabled={loading}
+            disabled={loading || checkingStored}
             style={{
               padding: '8px 16px',
               borderRadius: 8,

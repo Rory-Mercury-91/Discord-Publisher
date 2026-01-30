@@ -196,18 +196,22 @@ function AppContentInner() {
           overflow: 'hidden',
           boxSizing: 'border-box'
         }}>
-          {/* Colonne gauche : ContentEditor */}
-          <div style={{
-            height: '100%',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            borderRight: '1px solid var(--border)',
-            padding: 16,
-            boxSizing: 'border-box',
-            width: '100%',
-            maxWidth: '100%'
-          }}>
-            <ContentEditor />
+          {/* Colonne gauche : ContentEditor — padding interne pour que la scrollbar ne mange pas les bordures des champs */}
+          <div
+            className="styled-scrollbar"
+            style={{
+              height: '100%',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              borderRight: '1px solid var(--border)',
+              boxSizing: 'border-box',
+              width: '100%',
+              maxWidth: '100%'
+            }}
+          >
+            <div style={{ boxSizing: 'border-box', minHeight: '100%' }}>
+              <ContentEditor />
+            </div>
           </div>
           {/* Colonne droite : Preview */}
           <div

@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
 import { getSupabase } from '../lib/supabase';
 import { useToast } from './ToastProvider';
+
+const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
 
 const getSupabaseConfig = () => {
   const url = typeof import.meta?.env?.VITE_SUPABASE_URL === 'string' ? import.meta.env.VITE_SUPABASE_URL.trim() : '';
@@ -25,9 +27,118 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
   const [adminCode, setAdminCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checkingStored, setCheckingStored] = useState(false);
+  const hasCheckedStoredRef = useRef(false);
 
   useEscapeKey(onClose, true);
   useModalScrollLock(true);
+
+  // Réinitialiser le ref quand on repasse en mode user pour revérifier au prochain passage en admin
+  useEffect(() => {
+    if (mode === 'user') {
+      hasCheckedStoredRef.current = false;
+    }
+  }, [mode]);
+
+  // Au passage en mode admin : si un code est mémorisé, le valider contre la base ; si invalide, le supprimer.
+  useEffect(() => {
+    if (mode !== 'admin' || checkingStored) return;
+    const stored = localStorage.getItem(STORAGE_KEY_MASTER_ADMIN);
+    if (!stored?.trim()) return;
+    if (hasCheckedStoredRef.current) return;
+    hasCheckedStoredRef.current = true;
+
+    const validateStoredAndOpen = async () => {
+      setCheckingStored(true);
+      const trimmed = stored.trim();
+      const { url, anonKey } = getSupabaseConfig();
+
+      if (url && anonKey) {
+        try {
+          const base = url.replace(/\/+$/, '');
+          const res = await fetch(`${base}/functions/v1/validate-master-admin-code`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${anonKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ code: trimmed }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data?.valid === true) {
+            const sb = getSupabase();
+            if (sb) {
+              const { data: { session }, error: refreshErr } = await sb.auth.refreshSession();
+              const token = session?.access_token;
+              if (token && !refreshErr) {
+                try {
+                  const resGrant = await fetch(`${base}/functions/v1/grant-master-admin`, {
+                    method: 'POST',
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ code: trimmed }),
+                  });
+                  const grantData = await resGrant.json().catch(() => ({}));
+                  if (resGrant.ok && grantData?.success) {
+                    showToast('Droits administrateur activés', 'success');
+                  }
+                } catch (_e) {
+                  // Continuer
+                }
+              }
+            }
+            onOpenConfig(true);
+            setCheckingStored(false);
+            return;
+          }
+        } catch (_e) {
+          // Réseau : on garde le code en local et on affiche le formulaire
+        }
+        localStorage.removeItem(STORAGE_KEY_MASTER_ADMIN);
+      }
+
+      const refEnv = getMasterAdminCodeEnv().trim();
+      if (refEnv && trimmed === refEnv) {
+        const sb = getSupabase();
+        if (sb) {
+          try {
+            const { data: { session }, error: refreshErr } = await sb.auth.refreshSession();
+            const token = session?.access_token;
+            if (token && !refreshErr) {
+              const { url } = getSupabaseConfig();
+              const base = url?.replace(/\/+$/, '') ?? '';
+              if (base) {
+                const resGrant = await fetch(`${base}/functions/v1/grant-master-admin`, {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ code: trimmed }),
+                });
+                const grantData = await resGrant.json().catch(() => ({}));
+                if (resGrant.ok && grantData?.success) {
+                  showToast('Droits administrateur activés', 'success');
+                }
+              }
+            }
+          } catch (_e) {
+            // Continuer
+          }
+        }
+        onOpenConfig(true);
+        setCheckingStored(false);
+        return;
+      }
+
+      setError('Code mémorisé révoqué ou invalide. Saisissez le nouveau code.');
+      setCheckingStored(false);
+    };
+
+    void validateStoredAndOpen();
+  }, [mode, checkingStored]);
 
   const handleContinue = async () => {
     setError(null);
@@ -57,16 +168,22 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
         const data = await res.json().catch(() => ({}));
         if (res.ok && data?.valid === true) {
           setAdminCode('');
-          // Attribuer is_master_admin au profil de l'utilisateur connecté
+          try {
+            localStorage.setItem(STORAGE_KEY_MASTER_ADMIN, trimmed);
+          } catch (_e) {
+            // Ignorer si localStorage indisponible
+          }
+          // Attribuer is_master_admin au profil de l'utilisateur connecté (token frais pour éviter 401)
           const sb = getSupabase();
           if (sb) {
-            const { data: { session } } = await sb.auth.getSession();
-            if (session?.access_token) {
+            const { data: { session }, error: refreshErr } = await sb.auth.refreshSession();
+            const token = session?.access_token;
+            if (token && !refreshErr) {
               try {
                 const resGrant = await fetch(`${base}/functions/v1/grant-master-admin`, {
                   method: 'POST',
                   headers: {
-                    Authorization: `Bearer ${session.access_token}`,
+                    Authorization: `Bearer ${token}`,
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify({ code: trimmed }),
@@ -74,6 +191,8 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
                 const grantData = await resGrant.json().catch(() => ({}));
                 if (resGrant.ok && grantData?.success) {
                   showToast('Droits administrateur activés', 'success');
+                } else if (resGrant.status === 401) {
+                  showToast('Session expirée : déconnectez-vous et reconnectez-vous puis réessayez.', 'warning');
                 }
               } catch (_e) {
                 // Continuer quand même : on ouvre la config admin
@@ -94,6 +213,11 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
         const refEnv = getMasterAdminCodeEnv().trim();
         if (refEnv && trimmed === refEnv) {
           setAdminCode('');
+          try {
+            localStorage.setItem(STORAGE_KEY_MASTER_ADMIN, trimmed);
+          } catch (_e) {
+            // Ignorer si localStorage indisponible
+          }
           onOpenConfig(true);
           setLoading(false);
           return;
@@ -119,19 +243,25 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
       return;
     }
     setAdminCode('');
-    // Attribuer is_master_admin au profil (fallback env)
+    try {
+      localStorage.setItem(STORAGE_KEY_MASTER_ADMIN, trimmed);
+    } catch (_e) {
+      // Ignorer si localStorage indisponible
+    }
+    // Attribuer is_master_admin au profil (fallback env) — token frais pour éviter 401
     const sb = getSupabase();
     if (sb) {
       try {
-        const { data: { session } } = await sb.auth.getSession();
-        if (session?.access_token) {
+        const { data: { session }, error: refreshErr } = await sb.auth.refreshSession();
+        const token = session?.access_token;
+        if (token && !refreshErr) {
           const { url } = getSupabaseConfig();
           const base = url?.replace(/\/+$/, '') ?? '';
           if (base) {
             const resGrant = await fetch(`${base}/functions/v1/grant-master-admin`, {
               method: 'POST',
               headers: {
-                Authorization: `Bearer ${session.access_token}`,
+                Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({ code: trimmed }),
@@ -139,6 +269,8 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
             const grantData = await resGrant.json().catch(() => ({}));
             if (resGrant.ok && grantData?.success) {
               showToast('Droits administrateur activés', 'success');
+            } else if (resGrant.status === 401) {
+              showToast('Session expirée : déconnectez-vous et reconnectez-vous puis réessayez.', 'warning');
             }
           }
         }
@@ -237,29 +369,37 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
 
         {mode === 'admin' && (
           <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
-              Code Master Admin *
-            </label>
-            <input
-              type="password"
-              value={adminCode}
-              onChange={(e) => {
-                setAdminCode(e.target.value);
-                setError(null);
-              }}
-              placeholder="Code administrateur"
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                borderRadius: 8,
-                border: `1px solid ${error ? 'var(--danger, #e74c3c)' : 'var(--border)'}`,
-                background: 'rgba(255,255,255,0.05)',
-                color: 'var(--text)',
-                fontSize: 14,
-              }}
-            />
-            {error && (
-              <p style={{ fontSize: 12, color: 'var(--danger, #e74c3c)', marginTop: 8 }}>{error}</p>
+            {checkingStored ? (
+              <p style={{ fontSize: 14, color: 'var(--muted)', margin: 0 }}>
+                Vérification du code mémorisé…
+              </p>
+            ) : (
+              <>
+                <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>
+                  Code Master Admin *
+                </label>
+                <input
+                  type="password"
+                  value={adminCode}
+                  onChange={(e) => {
+                    setAdminCode(e.target.value);
+                    setError(null);
+                  }}
+                  placeholder="Code administrateur"
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: 8,
+                    border: `1px solid ${error ? 'var(--danger, #e74c3c)' : 'var(--border)'}`,
+                    background: 'rgba(255,255,255,0.05)',
+                    color: 'var(--text)',
+                    fontSize: 14,
+                  }}
+                />
+                {error && (
+                  <p style={{ fontSize: 12, color: 'var(--danger, #e74c3c)', marginTop: 8 }}>{error}</p>
+                )}
+              </>
             )}
           </div>
         )}
@@ -282,7 +422,7 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
           <button
             type="button"
             onClick={handleContinue}
-            disabled={loading}
+            disabled={loading || checkingStored}
             style={{
               padding: '10px 20px',
               borderRadius: 8,

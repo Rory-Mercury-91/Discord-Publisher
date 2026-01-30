@@ -384,18 +384,15 @@ export default function DiscordPreviewModal({ preview, onClose, onCopy, mainImag
                           }}>{children}</code>
                         );
                       }
-                      // Code block
+                      // Code block : pas de bordure/fond sur code pour éviter double conteneur (le <pre> parent fournit le seul cadre)
                       return (
                         <code style={{
                           display: 'block',
-                          background: '#2f3136',
+                          background: 'transparent',
                           color: '#e3e4e6',
-                          padding: '12px',
-                          borderRadius: 4,
+                          padding: 0,
                           fontFamily: "'Consolas', 'Courier New', monospace",
                           fontSize: '0.875em',
-                          border: '1px solid #202225',
-                          margin: '8px 0',
                           overflowX: 'auto',
                           whiteSpace: 'pre'
                         }}>{children}</code>

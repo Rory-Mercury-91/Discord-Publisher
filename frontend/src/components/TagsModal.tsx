@@ -3,11 +3,13 @@ import { useConfirm } from '../hooks/useConfirm';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
 import { useApp } from '../state/appContext';
+import { useAuth } from '../state/authContext';
 import ConfirmModal from './ConfirmModal';
 import { useToast } from './ToastProvider';
 
 export default function TagsModal({ onClose }: { onClose?: () => void }) {
-  const { savedTags, addSavedTag, deleteSavedTag } = useApp();
+  const { profile } = useAuth();
+  const { savedTags, addSavedTag, updateSavedTag, deleteSavedTag } = useApp();
   const { showToast } = useToast();
 
   useEscapeKey(() => onClose?.(), true);
@@ -16,7 +18,7 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
 
   const [activeTab, setActiveTab] = useState<'generic' | 'translator'>('generic');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [form, setForm] = useState({ name: '', id: '', isTranslator: false });
+  const [form, setForm] = useState({ name: '', id: '', discordTagId: '', isTranslator: false });
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [searchGeneric, setSearchGeneric] = useState('');
@@ -61,7 +63,7 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
   const sortedTranslatorTags = sortTags(filteredTranslatorTags);
 
   function openAddModal() {
-    setForm({ name: '', id: '', isTranslator: false });
+    setForm({ name: '', id: '', discordTagId: '', isTranslator: false });
     setEditingIdx(null);
     setShowAddModal(true);
   }
@@ -71,6 +73,7 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
     setForm({
       name: t.name,
       id: t.id || '',
+      discordTagId: t.discordTagId || '',
       isTranslator: t.isTranslator || false
     });
     setEditingIdx(originalIdx);
@@ -78,38 +81,50 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
   }
 
   function closeAddModal() {
-    setForm({ name: '', id: '', isTranslator: false });
+    setForm({ name: '', id: '', discordTagId: '', isTranslator: false });
     setEditingIdx(null);
     setShowAddModal(false);
   }
 
   function saveTag() {
-    if (!form.name.trim() || !form.id.trim()) {
-      showToast('Le nom et l\'ID Discord sont requis', 'warning');
+    if (!form.name.trim()) {
+      showToast('Le nom du tag est requis', 'warning');
       return;
     }
-
-    const existingIdx = savedTags.findIndex((t, i) => t.id === form.id && i !== editingIdx);
-    if (existingIdx !== -1) {
-      showToast('Un tag avec cet ID existe déjà', 'warning');
+    if (!form.discordTagId.trim()) {
+      showToast('L\'ID du tag Discord est requis pour que le tag fonctionne avec Discord.', 'warning');
       return;
     }
-
-    const tag = {
-      name: form.name,
-      id: form.id,
-      template: 'my', // Toujours 'my' maintenant - un seul salon
-      isTranslator: form.isTranslator
-    };
 
     if (editingIdx !== null) {
-      const newTags = [...savedTags];
-      newTags[editingIdx] = tag;
-      deleteSavedTag(editingIdx);
-      addSavedTag(tag);
-      showToast('Tag modifié', 'success');
+      const existing = savedTags[editingIdx];
+      if (existing?.id) {
+        updateSavedTag(existing.id, {
+          name: form.name.trim(),
+          template: 'my',
+          isTranslator: form.isTranslator,
+          authorDiscordId: profile?.discord_id,
+          discordTagId: form.discordTagId.trim() || undefined
+        });
+        showToast('Tag modifié', 'success');
+      } else {
+        addSavedTag({
+          name: form.name.trim(),
+          template: 'my',
+          isTranslator: form.isTranslator,
+          authorDiscordId: profile?.discord_id,
+          discordTagId: form.discordTagId.trim() || undefined
+        });
+        showToast('Tag modifié (enregistré comme nouveau)', 'success');
+      }
     } else {
-      addSavedTag(tag);
+      addSavedTag({
+        name: form.name.trim(),
+        template: 'my',
+        isTranslator: form.isTranslator,
+        authorDiscordId: profile?.discord_id,
+        discordTagId: form.discordTagId.trim() || undefined
+      });
       showToast('Tag ajouté', 'success');
     }
 
@@ -193,7 +208,7 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap'
               }}>
-                ID: {t.id}
+                ID Discord: {t.discordTagId || '—'}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, marginLeft: 8 }}>
@@ -446,14 +461,17 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>
-                  ID Discord *
+                  ID du tag Discord *
                 </label>
                 <input
-                  placeholder="ex: 1234567890"
-                  value={form.id}
-                  onChange={e => setForm({ ...form, id: e.target.value })}
+                  placeholder="ex: 1234567890123456789 (ID du tag côté Discord)"
+                  value={form.discordTagId}
+                  onChange={e => setForm({ ...form, discordTagId: e.target.value })}
                   style={{ width: '100%' }}
                 />
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                  ID du tag tel qu’il est défini dans le forum Discord (requis pour la synchronisation).
+                </div>
               </div>
 
               {/* Checkbox Traducteur */}
@@ -481,9 +499,6 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
                 </label>
               </div>
 
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>
-                L'ID Discord du tag est lié au salon Forum spécifique
-              </div>
             </div>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>

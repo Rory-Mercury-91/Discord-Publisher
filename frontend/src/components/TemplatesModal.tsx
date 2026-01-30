@@ -8,7 +8,7 @@ import MarkdownHelpModal from './MarkdownHelpModal';
 import { useToast } from './ToastProvider';
 
 export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
-  const { templates, updateTemplate, restoreDefaultTemplates, allVarsConfig, addVarConfig, updateVarConfig, deleteVarConfig } = useApp();
+  const { templates, updateTemplate, restoreDefaultTemplates, allVarsConfig, importFullConfig, addVarConfig, updateVarConfig, deleteVarConfig } = useApp();
   const { showToast } = useToast();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
 
@@ -18,86 +18,20 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   // Toujours éditer le template unique (index 0)
   const editingIdx = 0;
   const [form, setForm] = useState({ name: '', content: '' });
-  const [isDraft, setIsDraft] = useState(false);
-  const [draftCreatedAt, setDraftCreatedAt] = useState<number | null>(null);
-  const [draftModifiedAt, setDraftModifiedAt] = useState<number | null>(null);
-  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [showVarsSection, setShowVarsSection] = useState(false);
   const [copiedVar, setCopiedVar] = useState<string | null>(null);
   const [editingVarIdx, setEditingVarIdx] = useState<number | null>(null);
-  const [varForm, setVarForm] = useState({ name: '', label: '', type: 'text' as 'text' | 'textarea' | 'select' });
+  const [varForm, setVarForm] = useState({ name: '', label: '', type: 'text' as 'text' | 'textarea' });
   const [showMarkdownHelp, setShowMarkdownHelp] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
-  const autosaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
-  // Charger automatiquement le template unique au chargement
+  // Charger le template unique au chargement de la modale
   useEffect(() => {
     if (templates.length > 0) {
       const t = templates[0];
       setForm({ name: t.name, content: t.content });
-      setIsDraft(false);
-      setDraftCreatedAt(t.createdAt || null);
-      setDraftModifiedAt(t.modifiedAt || null);
-      setLastSavedAt(t.lastSavedAt || null);
-      setHasUnsavedChanges(false);
     }
   }, []);
-
-  // Restauration automatique du brouillon au chargement
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('template_draft');
-      if (saved) {
-        const draft = JSON.parse(saved);
-        (async () => {
-          const restore = await confirm({
-            title: 'Brouillon trouvé',
-            message: 'Un brouillon non enregistré a été trouvé. Voulez-vous le restaurer ?',
-            confirmText: 'Restaurer',
-            cancelText: 'Supprimer'
-          });
-          if (restore) {
-            setForm({ name: draft.name, content: draft.content });
-            setIsDraft(true);
-            setDraftCreatedAt(draft.createdAt);
-            setDraftModifiedAt(draft.modifiedAt);
-            setLastSavedAt(draft.lastSavedAt);
-            showToast('Brouillon restauré', 'info');
-          } else {
-            localStorage.removeItem('template_draft');
-          }
-        })();
-      }
-    } catch (e) {
-      console.error('Erreur lors de la restauration du brouillon:', e);
-      showToast('Erreur lors de la restauration du brouillon', 'error');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (form.name.trim() || form.content.trim()) {
-      setIsDraft(true);
-      setHasUnsavedChanges(true);
-      if (autosaveTimerRef.current) {
-        clearInterval(autosaveTimerRef.current);
-      }
-      autosaveTimerRef.current = setInterval(() => {
-        saveDraft();
-      }, 30000);
-    }
-    return () => {
-      if (autosaveTimerRef.current) {
-        clearInterval(autosaveTimerRef.current);
-      }
-    };
-  }, [form.name, form.content]);
-
-  useEffect(() => {
-    if (form.name.trim() || form.content.trim()) {
-      setHasUnsavedChanges(true);
-    }
-  }, [form.name, form.content]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -115,51 +49,13 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   }, [form.name, form.content, editingIdx]);
 
   function cancelEdit() {
-    // Recharger le template depuis templates[0]
     if (templates.length > 0) {
       const t = templates[0];
       setForm({ name: t.name, content: t.content });
-      setIsDraft(false);
-      setDraftCreatedAt(t.createdAt || null);
-      setDraftModifiedAt(t.modifiedAt || null);
-      setLastSavedAt(t.lastSavedAt || null);
     } else {
       setForm({ name: '', content: '' });
-      setIsDraft(false);
-      setDraftCreatedAt(null);
-      setDraftModifiedAt(null);
-      setLastSavedAt(null);
     }
-    setHasUnsavedChanges(false);
-    setShowVarsSection(false);
     cancelVarEdit();
-    if (autosaveTimerRef.current) {
-      clearInterval(autosaveTimerRef.current);
-      autosaveTimerRef.current = null;
-    }
-  }
-
-  function saveDraft() {
-    const now = Date.now();
-    const draftData = {
-      ...form,
-      isDraft: true,
-      createdAt: draftCreatedAt || now,
-      modifiedAt: now,
-      lastSavedAt: now,
-      id: form.name.toLowerCase().replace(/\s+/g, '_'),
-      type: 'Autres'
-    };
-    try {
-      localStorage.setItem('template_draft', JSON.stringify(draftData));
-      setLastSavedAt(now);
-      setDraftModifiedAt(now);
-      if (!draftCreatedAt) setDraftCreatedAt(now);
-      setHasUnsavedChanges(false);
-    } catch (e) {
-      console.error('Erreur lors de la sauvegarde du brouillon:', e);
-      showToast('Erreur lors de la sauvegarde du brouillon', 'error');
-    }
   }
 
   function saveTemplate() {
@@ -179,16 +75,13 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       type: currentTemplate.type || 'my',
       content: form.content,
       isDraft: false,
-      createdAt: draftCreatedAt || currentTemplate.createdAt || now,
+      createdAt: currentTemplate.createdAt || now,
       modifiedAt: now,
       lastSavedAt: undefined
     };
     updateTemplate(0, payload);
-    try {
-      localStorage.removeItem('template_draft');
-    } catch (e) { }
     cancelEdit();
-    showToast('Template modifié', 'success');
+    showToast('Template enregistré', 'success');
   }
 
   async function copyVarToClipboard(varName: string) {
@@ -205,11 +98,8 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
 
   function startVarEdit(idx: number) {
     const v = allVarsConfig[idx];
-    setVarForm({
-      name: v.name,
-      label: v.label,
-      type: v.type || 'text'
-    });
+    const t = v.type === 'text' || v.type === 'textarea' ? v.type : 'text';
+    setVarForm({ name: v.name, label: v.label, type: t });
     setEditingVarIdx(idx);
   }
 
@@ -232,7 +122,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       name: varForm.name,
       label: varForm.label,
       type: varForm.type,
-      templates: undefined, // Plus de filtrage par template - disponible pour tous
+      templates: undefined,
       isCustom: true
     };
     if (editingVarIdx !== null) {
@@ -257,24 +147,59 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
     showToast('Variable supprimée', 'success');
   }
 
-  // Fonction toggleVarTemplate supprimée - plus de sélection de templates pour les variables
+  /** Export local : template(s) + variables au format JSON */
+  function exportTemplateLocal() {
+    try {
+      const data = {
+        templates,
+        allVarsConfig,
+        exportDate: new Date().toISOString(),
+        version: '1.0'
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `templates_${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Template exporté', 'success');
+    } catch (e: any) {
+      showToast(e?.message || 'Erreur export', 'error');
+    }
+  }
 
-  // Fonctions exportTemplate et importTemplate supprimées - un seul template maintenant
+  /** Import local : fichier JSON avec templates et allVarsConfig */
+  function importTemplateLocal(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = reader.result as string;
+        const data = JSON.parse(text);
+        if (!data || typeof data !== 'object') throw new Error('Fichier invalide');
+        const payload: any = {};
+        if (Array.isArray(data.templates)) payload.templates = data.templates;
+        if (Array.isArray(data.allVarsConfig)) payload.allVarsConfig = data.allVarsConfig;
+        if (Object.keys(payload).length === 0) {
+          showToast('Aucun template ou variable dans le fichier', 'warning');
+          return;
+        }
+        importFullConfig(payload);
+        showToast('Template importé', 'success');
+        if (Array.isArray(data.templates) && data.templates.length > 0) {
+          const t = data.templates[0];
+          setForm({ name: t.name ?? '', content: t.content ?? '' });
+        }
+      } catch (e: any) {
+        showToast(e?.message || 'Fichier invalide', 'error');
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
 
   // Template unique - toutes les variables sont visibles
   const visibleVars = allVarsConfig;
   const customVars = allVarsConfig.map((v, idx) => ({ v, idx })).filter(({ v }) => v.isCustom);
-
-  function formatTimeSince(timestamp: number): string {
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
-    if (seconds < 60) return `${seconds} seconde${seconds > 1 ? 's' : ''}`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''}`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours} heure${hours > 1 ? 's' : ''}`;
-    const days = Math.floor(hours / 24);
-    return `${days} jour${days > 1 ? 's' : ''}`;
-  }
 
   return (
     <div className="modal">
@@ -295,6 +220,33 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
         }}>
           <h3 style={{ margin: 0 }}>📄 Gestion des templates & variables</h3>
           <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={exportTemplateLocal}
+              style={{ fontSize: 12, padding: '6px 12px', background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)' }}
+              title="Exporter le template et les variables en JSON (local)"
+            >
+              📤 Exporter
+            </button>
+            <button
+              onClick={() => importInputRef.current?.click()}
+              style={{ fontSize: 12, padding: '6px 12px', background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)' }}
+              title="Importer un fichier JSON (template + variables)"
+            >
+              📥 Importer
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  importTemplateLocal(f);
+                  e.target.value = '';
+                }
+              }}
+            />
             <button
               onClick={async () => {
                 const ok = await confirm({
@@ -317,350 +269,273 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
             >
               🔄 Restaurer
             </button>
-            {/* Bouton Importer retiré - un seul template maintenant */}
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1, minHeight: 0 }}>
-          {/* Formulaire d'édition du template unique */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h4 style={{ margin: 0 }}>
-                ✏️ Modifier le template
-              </h4>
-
-              {/* Badge Brouillon */}
-              {isDraft && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{
-                    background: 'rgba(255, 193, 7, 0.15)',
-                    color: '#ffc107',
-                    padding: '4px 12px',
-                    borderRadius: 4,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    border: '1px solid rgba(255, 193, 7, 0.3)'
-                  }}>
-                    📝 Brouillon
-                  </span>
-                  {lastSavedAt && (
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                      Sauvegardé il y a {formatTimeSince(lastSavedAt)}
-                    </span>
-                  )}
-                  <button
-                    onClick={saveDraft}
-                    style={{
-                      fontSize: 11,
-                      padding: '4px 10px',
-                      background: hasUnsavedChanges ? 'var(--info)' : 'rgba(255,255,255,0.1)',
-                      opacity: hasUnsavedChanges ? 1 : 0.5
-                    }}
-                    title="Sauvegarder maintenant"
-                    disabled={!hasUnsavedChanges}
-                  >
-                    💾
-                  </button>
-                </div>
-              )}
+        <div style={{ display: 'flex', gap: 20, flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          {/* Colonne gauche : Template */}
+          <div style={{
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            borderRight: '1px solid var(--border)',
+            paddingRight: 20
+          }}>
+            <h4 style={{ margin: '0 0 12px 0', fontSize: 15 }}>
+              📄 Template
+            </h4>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
+                Nom du template *
+              </label>
+              <input
+                placeholder="ex: Mon template"
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+                style={{ width: '100%' }}
+              />
             </div>
-
-            <div style={{ display: 'grid', gap: 12 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>
-                    Nom du template *
-                  </label>
-                  <input
-                    placeholder="ex: Mon template"
-                    value={form.name}
-                    onChange={e => setForm({ ...form, name: e.target.value })}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-                {/* Type retiré - un seul template maintenant */}
-              </div>
-
-              <div>
-                <label style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  fontSize: 13,
-                  color: 'var(--muted)',
-                  marginBottom: 4
-                }}>
-                  Contenu *
-                  <button
-                    type="button"
-                    onClick={() => setShowMarkdownHelp(true)}
-                    style={{
-                      background: 'rgba(74, 158, 255, 0.15)',
-                      border: '1px solid rgba(74, 158, 255, 0.3)',
-                      borderRadius: '50%',
-                      width: 20,
-                      height: 20,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      fontSize: 12,
-                      padding: 0
-                    }}
-                    title="Aide Markdown"
-                  >
-                    ?
-                  </button>
-                </label>
-                <textarea
-                  ref={contentRef}
-                  placeholder="Contenu du template..."
-                  value={form.content}
-                  onChange={e => setForm({ ...form, content: e.target.value })}
-                  rows={10}
+            <div style={{ flex: 1, minHeight: 120, display: 'flex', flexDirection: 'column' }}>
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: 12,
+                color: 'var(--muted)',
+                marginBottom: 4
+              }}>
+                Contenu *
+                <button
+                  type="button"
+                  onClick={() => setShowMarkdownHelp(true)}
                   style={{
-                    width: '100%',
-                    fontFamily: 'monospace',
-                    resize: 'vertical',
-                    fontSize: 13
+                    background: 'rgba(74, 158, 255, 0.15)',
+                    border: '1px solid rgba(74, 158, 255, 0.3)',
+                    borderRadius: '50%',
+                    width: 18,
+                    height: 18,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    padding: 0
                   }}
-                  spellCheck={true}
-                  lang="fr-FR"
-                />
+                  title="Aide Markdown"
+                >
+                  ?
+                </button>
+              </label>
+              <textarea
+                ref={contentRef}
+                placeholder="Contenu du template..."
+                value={form.content}
+                onChange={e => setForm({ ...form, content: e.target.value })}
+                style={{
+                  width: '100%',
+                  flex: 1,
+                  minHeight: 180,
+                  fontFamily: 'monospace',
+                  resize: 'vertical',
+                  fontSize: 13
+                }}
+                spellCheck={true}
+                lang="fr-FR"
+              />
+            </div>
+            {visibleVars.length > 0 && (
+              <div style={{
+                marginTop: 12,
+                padding: 10,
+                backgroundColor: 'rgba(74, 158, 255, 0.08)',
+                border: '1px solid rgba(74, 158, 255, 0.25)',
+                borderRadius: 6
+              }}>
+                <div style={{ fontSize: 11, color: '#4a9eff', marginBottom: 6, fontWeight: 600 }}>
+                  💡 Variables (cliquez pour copier)
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 72, overflowY: 'auto' }}>
+                  {visibleVars.map((v, idx) => (
+                    <span
+                      key={idx}
+                      onClick={() => copyVarToClipboard(v.name)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '3px 8px',
+                        backgroundColor: copiedVar === v.name ? '#4ade80' : 'rgba(0,0,0,0.3)',
+                        border: `1px solid ${copiedVar === v.name ? '#4ade80' : '#444'}`,
+                        borderRadius: 4,
+                        fontSize: 11,
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        color: copiedVar === v.name ? '#000' : '#fff',
+                        fontFamily: 'monospace',
+                        fontWeight: 500
+                      }}
+                      title={v.label}
+                    >
+                      {copiedVar === v.name && <span style={{ marginRight: 4 }}>✓</span>}
+                      [{v.name}]
+                    </span>
+                  ))}
+                </div>
               </div>
+            )}
+            <div style={{
+              display: 'flex',
+              gap: 8,
+              justifyContent: 'flex-end',
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: '1px solid var(--border)'
+            }}>
+              <button onClick={cancelEdit} style={{ padding: '8px 14px' }}>
+                ❌ Annuler
+              </button>
+              <button
+                onClick={() => {
+                  saveTemplate();
+                  onClose?.();
+                }}
+                style={{ padding: '8px 14px', background: 'var(--accent)', fontWeight: 600 }}
+              >
+                ✅ Enregistrer
+              </button>
+            </div>
+          </div>
 
-              {/* Variables disponibles */}
-              {visibleVars.length > 0 && (
-                <div style={{
-                  padding: 12,
-                  backgroundColor: 'rgba(74, 158, 255, 0.08)',
-                  border: '1px solid rgba(74, 158, 255, 0.25)',
-                  borderRadius: 6
-                }}>
-                  <div style={{ fontSize: 12, color: '#4a9eff', marginBottom: 8, fontWeight: 600 }}>
-                    💡 Variables disponibles (cliquez pour copier)
+          {/* Colonne droite : Variables dynamiques (partagées entre utilisateurs) */}
+          <div style={{
+            flex: 1,
+            minWidth: 280,
+            maxWidth: 420,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}>
+            <h4 style={{ margin: '0 0 12px 0', fontSize: 15 }}>
+              🔧 Variables dynamiques
+            </h4>
+            <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 12px 0', lineHeight: 1.4 }}>
+              Partagées entre tous les utilisateurs. Utilisez <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[nom]</code> dans le template.
+            </p>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }} className="styled-scrollbar">
+              {customVars.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 600 }}>
+                    Variables existantes
                   </div>
-                  <div style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: 6,
-                    maxHeight: 100,
-                    overflowY: 'auto'
-                  }}>
-                    {visibleVars.map((v, idx) => (
-                      <span
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {customVars.map(({ v, idx }) => (
+                      <div
                         key={idx}
-                        onClick={() => copyVarToClipboard(v.name)}
                         style={{
-                          display: 'inline-flex',
+                          display: 'grid',
+                          gridTemplateColumns: editingVarIdx === idx ? '1fr' : '1fr auto auto',
+                          gap: 6,
                           alignItems: 'center',
-                          padding: '4px 10px',
-                          backgroundColor: copiedVar === v.name ? '#4ade80' : 'rgba(0,0,0,0.3)',
-                          border: `1px solid ${copiedVar === v.name ? '#4ade80' : '#444'}`,
-                          borderRadius: 4,
-                          fontSize: 11,
-                          cursor: 'pointer',
-                          transition: 'all 0.2s',
-                          color: copiedVar === v.name ? '#000' : '#fff',
-                          fontFamily: 'monospace',
-                          fontWeight: 500
+                          padding: 8,
+                          background: editingVarIdx === idx ? 'rgba(74, 158, 255, 0.15)' : 'rgba(255,255,255,0.03)',
+                          borderRadius: 6,
+                          border: '1px solid rgba(255,255,255,0.1)'
                         }}
-                        title={`${v.label}`}
                       >
-                        {copiedVar === v.name && <span style={{ marginRight: 4 }}>✓</span>}
-                        [{v.name}]
-                      </span>
+                        {editingVarIdx === idx ? (
+                          <div style={{ fontSize: 11, color: '#4a9eff', fontWeight: 600 }}>
+                            ✏️ En édition
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ minWidth: 0 }}>
+                              <strong style={{ fontSize: 12, fontFamily: 'monospace' }}>[{v.name}]</strong>
+                              <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
+                                {v.label}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => startVarEdit(idx)}
+                              style={{ fontSize: 11, padding: '4px 8px' }}
+                              title="Éditer"
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              onClick={() => handleDeleteVar(idx)}
+                              style={{ fontSize: 11, padding: '4px 8px' }}
+                              title="Supprimer"
+                            >
+                              🗑️
+                            </button>
+                          </>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
-
-              {/* Variables personnalisées - Section repliable */}
-              {(
-                <div style={{
-                  border: '1px solid var(--border)',
-                  borderRadius: 6,
-                  overflow: 'hidden'
-                }}>
-                  <button
-                    onClick={() => setShowVarsSection(!showVarsSection)}
-                    style={{
-                      width: '100%',
-                      padding: 12,
-                      background: 'rgba(255,255,255,0.03)',
-                      border: 'none',
-                      color: 'white',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      transition: 'background 0.2s'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-                  >
-                    <span>🔧 Variables personnalisées ({customVars.length})</span>
-                    <span style={{ fontSize: 11 }}>{showVarsSection ? '▼' : '▶'}</span>
-                  </button>
-
-                  {showVarsSection && (
-                    <div style={{ padding: 12, backgroundColor: 'rgba(0,0,0,0.2)' }}>
-                      {/* Liste variables custom */}
-                      {customVars.length > 0 && (
-                        <div style={{ marginBottom: 12 }}>
-                          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 600 }}>
-                            Variables existantes
-                          </div>
-                          <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(2, 1fr)',
-                            gap: 6
-                          }}>
-                            {customVars.map(({ v, idx }) => (
-                              <div key={idx} style={{
-                                display: 'grid',
-                                gridTemplateColumns: editingVarIdx === idx ? '1fr' : '1fr auto auto',
-                                gap: 6,
-                                alignItems: 'center',
-                                padding: 8,
-                                background: editingVarIdx === idx ? 'rgba(74, 158, 255, 0.15)' : 'rgba(255,255,255,0.03)',
-                                borderRadius: 4,
-                                border: '1px solid rgba(255,255,255,0.1)'
-                              }}>
-                                {editingVarIdx === idx ? (
-                                  <div style={{ fontSize: 11, color: '#4a9eff', fontWeight: 600 }}>
-                                    ✏️ En édition
-                                  </div>
-                                ) : (
-                                  <>
-                                    <div>
-                                      <strong style={{ fontSize: 12, fontFamily: 'monospace' }}>[{v.name}]</strong>
-                                      <div style={{ color: 'var(--muted)', fontSize: 10, marginTop: 2 }}>
-                                        {v.label}
-                                      </div>
-                                    </div>
-                                    <button
-                                      onClick={() => startVarEdit(idx)}
-                                      style={{ fontSize: 11, padding: '3px 6px' }}
-                                      title="Éditer"
-                                    >
-                                      ✏️
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteVar(idx)}
-                                      style={{ fontSize: 11, padding: '3px 6px' }}
-                                      title="Supprimer"
-                                    >
-                                      🗑️
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Formulaire variable */}
-                      <div style={{
-                        borderTop: customVars.length > 0 ? '1px solid var(--border)' : 'none',
-                        paddingTop: customVars.length > 0 ? 12 : 0
-                      }}>
-                        <h5 style={{ margin: '0 0 8px 0', fontSize: 12, fontWeight: 600 }}>
-                          {editingVarIdx !== null ? '✏️ Modifier la variable' : '➕ Ajouter une variable'}
-                        </h5>
-                        <div style={{ display: 'grid', gap: 8 }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                            <div>
-                              <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
-                                Nom *
-                              </label>
-                              <input
-                                placeholder="ex: ma_var"
-                                value={varForm.name}
-                                onChange={e => setVarForm({ ...varForm, name: e.target.value })}
-                                style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
-                              />
-                            </div>
-                            <div>
-                              <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
-                                Label *
-                              </label>
-                              <input
-                                placeholder="ex: Ma variable"
-                                value={varForm.label}
-                                onChange={e => setVarForm({ ...varForm, label: e.target.value })}
-                                style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
-                              />
-                            </div>
-                            <div>
-                              <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
-                                Type
-                              </label>
-                              <select
-                                value={varForm.type}
-                                onChange={e => setVarForm({ ...varForm, type: e.target.value as any })}
-                                style={{
-                                  width: '100%',
-                                  fontSize: 12,
-                                  padding: '6px 8px',
-                                  background: 'var(--panel)',
-                                  color: 'var(--text)',
-                                  border: '1px solid var(--border)'
-                                }}
-                              >
-                                <option value="text">Texte</option>
-                                <option value="textarea">Textarea</option>
-                                <option value="select">Select</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          {/* Sélection des templates retirée - un seul template maintenant */}
-
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
-                            {editingVarIdx !== null && (
-                              <button onClick={cancelVarEdit} style={{ fontSize: 12, padding: '6px 12px' }}>
-                                ❌ Annuler
-                              </button>
-                            )}
-                            <button onClick={saveVar} style={{ fontSize: 12, padding: '6px 12px' }}>
-                              {editingVarIdx !== null ? '✅ Enregistrer' : '➕ Ajouter'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
               <div style={{
-                display: 'flex',
-                gap: 8,
-                justifyContent: 'flex-end',
-                marginTop: 8,
-                paddingTop: 12,
-                borderTop: '1px solid var(--border)'
+                borderTop: customVars.length > 0 ? '1px solid var(--border)' : 'none',
+                paddingTop: customVars.length > 0 ? 12 : 0
               }}>
-                <button onClick={cancelEdit} style={{ padding: '8px 16px' }}>
-                  ❌ Annuler
-                </button>
-                <button
-                  onClick={saveTemplate}
-                  style={{
-                    padding: '8px 16px',
-                    background: 'var(--accent)',
-                    fontWeight: 600
-                  }}
-                >
-                  ✅ Enregistrer
-                </button>
-                <button onClick={onClose} style={{ padding: '8px 16px' }}>
-                  🚪 Fermer
-                </button>
+                <h5 style={{ margin: '0 0 8px 0', fontSize: 12, fontWeight: 600 }}>
+                  {editingVarIdx !== null ? '✏️ Modifier la variable' : '➕ Ajouter une variable'}
+                </h5>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
+                      Nom *
+                    </label>
+                    <input
+                      placeholder="ex: ma_var"
+                      value={varForm.name}
+                      onChange={e => setVarForm({ ...varForm, name: e.target.value })}
+                      style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
+                      Label *
+                    </label>
+                    <input
+                      placeholder="ex: Ma variable"
+                      value={varForm.label}
+                      onChange={e => setVarForm({ ...varForm, label: e.target.value })}
+                      style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
+                      Type
+                    </label>
+                    <select
+                      value={varForm.type}
+                      onChange={e => setVarForm({ ...varForm, type: e.target.value as 'text' | 'textarea' })}
+                      style={{
+                        width: '100%',
+                        fontSize: 12,
+                        padding: '6px 8px',
+                        background: 'var(--panel)',
+                        color: 'var(--text)',
+                        border: '1px solid var(--border)'
+                      }}
+                    >
+                      <option value="text">Texte</option>
+                      <option value="textarea">Textarea</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 4 }}>
+                    {editingVarIdx !== null && (
+                      <button onClick={cancelVarEdit} style={{ fontSize: 12, padding: '6px 12px' }}>
+                        ❌ Annuler
+                      </button>
+                    )}
+                    <button onClick={saveVar} style={{ fontSize: 12, padding: '6px 12px', background: 'var(--accent)' }}>
+                      {editingVarIdx !== null ? '✅ Enregistrer' : '➕ Ajouter'}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

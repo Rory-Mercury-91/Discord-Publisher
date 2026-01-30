@@ -9,8 +9,7 @@ export type VarConfig = {
   name: string;
   label: string;
   placeholder?: string;
-  type?: 'text' | 'textarea' | 'select';
-  options?: string[];
+  type?: 'text' | 'textarea';
   fullWidth?: boolean;
   hasSaveLoad?: boolean;
   showInAvailableVars?: boolean;
@@ -24,10 +23,12 @@ export type Template = {
   name: string;
   type?: string | null;
   content: string;
-  isDraft?: boolean;          // Indique si c'est un brouillon non enregistré
-  createdAt?: number;         // Timestamp de création
-  modifiedAt?: number;        // Timestamp de dernière modification
-  lastSavedAt?: number;       // Timestamp de dernière sauvegarde auto
+  isDraft?: boolean;
+  /** Template par défaut (défini dans le code) : sauvegardé localement uniquement, jamais poussé en BDD. */
+  isDefault?: boolean;
+  createdAt?: number;
+  modifiedAt?: number;
+  lastSavedAt?: number;
 };
 
 export type LinkConfig = {
@@ -40,7 +41,16 @@ export type AdditionalTranslationLink = {
   link: string;
 };
 
-export type Tag = { name: string; id?: string; template?: string; isTranslator?: boolean };
+export type Tag = {
+  name: string;
+  id?: string;
+  template?: string;
+  isTranslator?: boolean;
+  /** ID Discord de l'utilisateur qui a créé le tag (optionnel) */
+  authorDiscordId?: string;
+  /** ID du tag côté Discord (forum/channel) pour que ça marche avec Discord */
+  discordTagId?: string;
+};
 
 export type PublishedPost = {
   id: string;
@@ -69,6 +79,8 @@ export type PublishedPost = {
     Mod_link: LinkConfig;
   };
   savedAdditionalTranslationLinks?: AdditionalTranslationLink[];
+  /** Liens additionnels mod (affichés si mod compatible) */
+  savedAdditionalModLinks?: AdditionalTranslationLink[];
   templateId?: string;
   /** ID Discord de l'auteur du post (pour droits d'édition) */
   authorDiscordId?: string;
@@ -85,11 +97,12 @@ const defaultVarsConfig: VarConfig[] = [
   { name: 'Mod_link', label: 'Lien du mod', placeholder: 'https://...' }
 ];
 
-// Template unique par défaut
+// Template unique par défaut (géré uniquement dans le code ; sauvegarde locale possible, pas en BDD)
 const defaultTemplate: Template = {
   id: 'my',
   name: 'Mes traductions',
   type: 'my',
+  isDefault: true,
   content: `## :flag_fr: La traduction française de [Game_name] est disponible ! :tada:
 
 Vous pouvez l'installer dès maintenant pour profiter du jeu dans notre langue. Bon jeu à tous ! :point_down:
@@ -101,12 +114,12 @@ Vous pouvez l'installer dès maintenant pour profiter du jeu dans notre langue. 
    * **Type de traduction :** [Translation_Type]
    * **Mod compatible :** [is_modded_game]
 
-2. :link: **Liens de Téléchargement**
-   * [Accès au jeu original](<[Game_link]>)
-   * [Lien du mod](<[Mod_link]>)
-   * [Téléchargez la traduction ici !](<[Translate_link]>)
-[ADDITIONAL_TRANSLATION_LINKS]
+2. :link: **Liens requis**
+   * [Jeu original](<[Game_link]>)
+[MOD_LINKS_LINE]
 
+3. :link: **Traductions**
+[TRANSLATION_LINKS_LINE]
 
 **Synopsis du jeu :**
 > [Overview]
@@ -161,7 +174,20 @@ type AppContextValue = {
   preview: string;
   savedTags: Tag[];
   addSavedTag: (t: Tag) => void;
+  updateSavedTag: (id: string, updates: Partial<Tag>) => void;
   deleteSavedTag: (idx: number) => void;
+  /** Envoyer les tags vers Supabase. authorDiscordId optionnel : utilisé pour les tags sans auteur. */
+  syncTagsToSupabase: (authorDiscordId?: string) => Promise<{ ok: boolean; count?: number; error?: string }>;
+  /** Recharger les tags depuis Supabase (pour récupérer ceux des autres utilisateurs). */
+  fetchTagsFromSupabase: () => Promise<void>;
+  /** Envoyer les instructions vers Supabase (app_config). */
+  syncInstructionsToSupabase: () => Promise<{ ok: boolean; error?: string }>;
+  /** Récupérer les instructions depuis Supabase. */
+  fetchInstructionsFromSupabase: () => Promise<void>;
+  /** Envoyer les templates personnalisés vers Supabase (app_config). */
+  syncTemplatesToSupabase: () => Promise<{ ok: boolean; error?: string }>;
+  /** Récupérer les templates depuis Supabase. */
+  fetchTemplatesFromSupabase: () => Promise<void>;
   importFullConfig: (config: any) => void;
 
   savedInstructions: Record<string, string>;
@@ -241,6 +267,11 @@ type AppContextValue = {
   addAdditionalTranslationLink: () => void;
   updateAdditionalTranslationLink: (index: number, link: AdditionalTranslationLink) => void;
   deleteAdditionalTranslationLink: (index: number) => void;
+  // Liens additionnels mod (affichés si mod compatible)
+  additionalModLinks: AdditionalTranslationLink[];
+  addAdditionalModLink: () => void;
+  updateAdditionalModLink: (index: number, link: AdditionalTranslationLink) => void;
+  deleteAdditionalModLink: (index: number) => void;
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -405,6 +436,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAdditionalTranslationLinks(prev => prev.filter((_, i) => i !== index));
   }, []);
 
+  // Liens additionnels mod (affichés si mod compatible)
+  const [additionalModLinks, setAdditionalModLinks] = useState<AdditionalTranslationLink[]>(() => {
+    try {
+      const raw = localStorage.getItem('additionalModLinks');
+      if (raw) return JSON.parse(raw);
+    } catch (e) { }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('additionalModLinks', JSON.stringify(additionalModLinks));
+  }, [additionalModLinks]);
+
+  const addAdditionalModLink = useCallback(() => {
+    setAdditionalModLinks(prev => [...prev, { label: '', link: '' }]);
+  }, []);
+
+  const updateAdditionalModLink = useCallback((index: number, link: AdditionalTranslationLink) => {
+    setAdditionalModLinks(prev => {
+      const next = [...prev];
+      next[index] = link;
+      return next;
+    });
+  }, []);
+
+  const deleteAdditionalModLink = useCallback((index: number) => {
+    setAdditionalModLinks(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
   const [allVarsConfig, setAllVarsConfig] = useState<VarConfig[]>(() => {
     try {
       const raw = localStorage.getItem('customVariables');
@@ -426,9 +486,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     allVarsConfig.forEach(v => obj[v.name] = '');
     // Initialiser is_modded_game à "false" par défaut
     obj['is_modded_game'] = 'false';
-    // Initialiser use_additional_links à "false" par défaut
     obj['use_additional_links'] = 'false';
     obj['Mod_link'] = '';
+    obj['main_translation_label'] = 'Traduction';
+    obj['main_mod_label'] = 'Mod';
     try {
       const raw = localStorage.getItem('savedInputs');
       if (raw) {
@@ -446,6 +507,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try { const raw = localStorage.getItem('savedInstructions'); if (raw) return JSON.parse(raw); } catch (e) { }
     return {};
   });
+  /** Propriétaire par clé d'instruction (owner_id) : pour ne synchroniser que les instructions de l'utilisateur courant. */
+  const [instructionOwners, setInstructionOwners] = useState<Record<string, string>>({});
 
   // Translation type and integration state
   const [translationType, setTranslationType] = useState<string>(() => {
@@ -680,9 +743,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         if (ownerId) {
           await sb.from('allowed_editors').delete().eq('owner_id', ownerId);
+          await sb.from('saved_instructions').delete().eq('owner_id', ownerId);
         }
       }
       setPublishedPosts([]);
+      setSavedInstructions({});
+      setInstructionOwners({});
       return { ok: true };
     } catch (e: any) {
       const msg = e?.message ?? String(e);
@@ -712,6 +778,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       saved_inputs: p.savedInputs ?? null,
       saved_link_configs: p.savedLinkConfigs ?? null,
       saved_additional_translation_links: p.savedAdditionalTranslationLinks ?? null,
+      saved_additional_mod_links: p.savedAdditionalModLinks ?? null,
       template_id: p.templateId ?? null,
       created_at: new Date(createdTs).toISOString(),
       updated_at: new Date(updatedTs).toISOString()
@@ -742,6 +809,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       savedInputs: (r.saved_inputs as Record<string, string>) ?? undefined,
       savedLinkConfigs: (r.saved_link_configs as PublishedPost['savedLinkConfigs']) ?? undefined,
       savedAdditionalTranslationLinks: (r.saved_additional_translation_links as PublishedPost['savedAdditionalTranslationLinks']) ?? undefined,
+      savedAdditionalModLinks: (r.saved_additional_mod_links as PublishedPost['savedAdditionalModLinks']) ?? undefined,
       templateId: r.template_id != null ? String(r.template_id) : undefined,
       authorDiscordId: r.author_discord_id != null ? String(r.author_discord_id) : undefined
     };
@@ -1005,6 +1073,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             savedInputs: { ...inputs },
             savedLinkConfigs: JSON.parse(JSON.stringify(linkConfigs)),
             savedAdditionalTranslationLinks: JSON.parse(JSON.stringify(additionalTranslationLinks)),
+            savedAdditionalModLinks: JSON.parse(JSON.stringify(additionalModLinks)),
             templateId: templates[currentTemplateIdx]?.id,
             discordUrl: threadUrl || editingPostData.discordUrl
           };
@@ -1029,6 +1098,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             savedInputs: { ...inputs },
             savedLinkConfigs: JSON.parse(JSON.stringify(linkConfigs)),
             savedAdditionalTranslationLinks: JSON.parse(JSON.stringify(additionalTranslationLinks)),
+            savedAdditionalModLinks: JSON.parse(JSON.stringify(additionalModLinks)),
             templateId: templates[currentTemplateIdx]?.id,
             threadId: String(threadId),
             messageId: String(messageId),
@@ -1094,19 +1164,188 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const sb = getSupabase();
     if (!sb) return;
     sb.from('tags')
-      .select('id, name, template, is_translator')
+      .select('id, name, template, is_translator, author_discord_id, discord_tag_id')
       .order('created_at', { ascending: true })
       .then((res) => {
         if (res.error || !res.data?.length) return;
         setSavedTags(
-          (res.data as Array<{ id: string; name: string; template: string | null; is_translator: boolean }>).map((r) => ({
+          (res.data as Array<{ id: string; name: string; template: string | null; is_translator: boolean; author_discord_id: string | null; discord_tag_id: string | null }>).map((r) => ({
             id: r.id,
             name: r.name,
             template: r.template ?? undefined,
-            isTranslator: r.is_translator ?? false
+            isTranslator: r.is_translator ?? false,
+            authorDiscordId: r.author_discord_id ?? undefined,
+            discordTagId: r.discord_tag_id ?? undefined
           }))
         );
       });
+  }, []);
+
+  // Charger instructions (table saved_instructions par propriétaire) et templates depuis Supabase au montage
+  useEffect(() => {
+    const sb = getSupabase();
+    if (!sb) return;
+    (async () => {
+      const { data: { session } } = await sb.auth.getSession();
+      // Instructions : table saved_instructions (visible par l'auteur + ses éditeurs autorisés)
+      const resInstr = await sb.from('saved_instructions').select('owner_id, value');
+      if (!resInstr.error && resInstr.data?.length) {
+        const merged: Record<string, string> = {};
+        const owners: Record<string, string> = {};
+        for (const row of resInstr.data as Array<{ owner_id: string; value: Record<string, string> | string }>) {
+          try {
+            const val = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+            if (val && typeof val === 'object' && !Array.isArray(val)) {
+              for (const [k, v] of Object.entries(val)) {
+                if (typeof v === 'string') {
+                  merged[k] = v;
+                  owners[k] = row.owner_id;
+                }
+              }
+            }
+          } catch (_e) {
+            /* ignorer */
+          }
+        }
+        if (Object.keys(merged).length) setSavedInstructions(merged);
+        setInstructionOwners(owners);
+      } else if (session?.user?.id) {
+        // Migration : anciennes instructions globales (app_config) → saved_instructions pour l'utilisateur courant
+        const { data: oldRow } = await sb.from('app_config').select('value').eq('key', 'saved_instructions').maybeSingle();
+        if (oldRow?.value) {
+          try {
+            const parsed = JSON.parse(oldRow.value as string) as Record<string, string>;
+            if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
+              await sb.from('saved_instructions').upsert(
+                { owner_id: session.user.id, value: parsed, updated_at: new Date().toISOString() },
+                { onConflict: 'owner_id' }
+              );
+              setSavedInstructions(parsed);
+              const owners: Record<string, string> = {};
+              for (const k of Object.keys(parsed)) owners[k] = session.user.id;
+              setInstructionOwners(owners);
+            }
+          } catch (_e) {
+            /* ignorer */
+          }
+        }
+      }
+      // Templates : toujours depuis app_config (partagés)
+      const resTpl = await sb.from('app_config').select('value').eq('key', 'custom_templates').maybeSingle();
+      if (!resTpl.error && resTpl.data?.value) {
+        try {
+          const parsed = JSON.parse(resTpl.data.value as string) as Template[];
+          if (Array.isArray(parsed) && parsed.length > 0) setTemplates(parsed);
+        } catch (_e) {
+          /* ignorer */
+        }
+      }
+    })();
+  }, []);
+
+  // Realtime : synchronisation en direct des tags, app_config, published_posts
+  useEffect(() => {
+    const sb = getSupabase();
+    if (!sb) return;
+
+    const channel = sb
+      .channel('discord-publisher-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tags' },
+        (payload) => {
+          const mapRow = (r: { id: string; name: string; template: string | null; is_translator: boolean; author_discord_id?: string | null; discord_tag_id?: string | null }) => ({
+            id: r.id,
+            name: r.name,
+            template: r.template ?? undefined,
+            isTranslator: r.is_translator ?? false,
+            authorDiscordId: r.author_discord_id ?? undefined,
+            discordTagId: r.discord_tag_id ?? undefined
+          });
+          if (payload.eventType === 'INSERT') {
+            const r = payload.new as { id: string; name: string; template: string | null; is_translator: boolean; author_discord_id?: string | null; discord_tag_id?: string | null };
+            const row = mapRow(r);
+            setSavedTags(prev => (prev.some(t => t.id === row.id) ? prev : [...prev, row]));
+          } else if (payload.eventType === 'UPDATE') {
+            const r = payload.new as { id: string; name: string; template: string | null; is_translator: boolean; author_discord_id?: string | null; discord_tag_id?: string | null };
+            setSavedTags(prev => prev.map(t => t.id === r.id ? mapRow(r) : t));
+          } else if (payload.eventType === 'DELETE') {
+            const r = payload.old as { id: string };
+            setSavedTags(prev => prev.filter(t => t.id !== r.id));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'saved_instructions' },
+        () => {
+          // Refetch et fusion : comme plusieurs lignes (par owner) sont fusionnées, on recharge tout (RLS filtre côté serveur).
+          getSupabase()
+            ?.from('saved_instructions')
+            .select('owner_id, value')
+            .then((res) => {
+              if (res.error || !res.data?.length) return;
+              const merged: Record<string, string> = {};
+              const owners: Record<string, string> = {};
+              for (const row of res.data as Array<{ owner_id: string; value: Record<string, string> | string }>) {
+                try {
+                  const val = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+                  if (val && typeof val === 'object' && !Array.isArray(val)) {
+                    for (const [k, v] of Object.entries(val)) {
+                      if (typeof v === 'string') {
+                        merged[k] = v;
+                        owners[k] = row.owner_id;
+                      }
+                    }
+                  }
+                } catch (_e) {
+                  /* ignorer */
+                }
+              }
+              setSavedInstructions(merged);
+              setInstructionOwners(owners);
+            });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'app_config' },
+        (payload) => {
+          const r = (payload.eventType === 'DELETE' ? payload.old : payload.new) as { key: string; value: string };
+          if (r?.key === 'custom_templates' && r?.value) {
+            try {
+              const parsed = JSON.parse(r.value) as Template[];
+              if (Array.isArray(parsed) && parsed.length > 0) setTemplates(parsed);
+            } catch (_e) { /* ignorer */ }
+          } else if (r?.key === 'api_base_url' && r?.value?.trim()) {
+            const url = r.value.trim().replace(/\/+$/, '');
+            setApiBaseFromSupabase(url);
+            localStorage.setItem('apiBase', url);
+            localStorage.setItem('apiUrl', url);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'published_posts' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            setPublishedPosts(prev => [rowToPost(payload.new as Record<string, unknown>), ...prev]);
+          } else if (payload.eventType === 'UPDATE') {
+            setPublishedPosts(prev => prev.map(p => p.id === (payload.new as { id: string }).id ? rowToPost(payload.new as Record<string, unknown>) : p));
+          } else if (payload.eventType === 'DELETE') {
+            const id = (payload.old as { id: string }).id;
+            setPublishedPosts(prev => prev.filter(p => p.id !== id));
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') console.log('🔄 Realtime Discord Publisher actif');
+      });
+
+    return () => {
+      sb.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -1137,7 +1376,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTemplates(prev => [...prev, t]);
   }
   function updateTemplate(idx: number, t: Template) {
-    setTemplates(prev => { const copy = [...prev]; copy[idx] = t; return copy; });
+    setTemplates(prev => {
+      const copy = [...prev];
+      const previous = copy[idx];
+      // Une fois modifié par l'utilisateur, le template n'est plus "par défaut" (il peut être synchro en BDD)
+      const newT = previous?.isDefault ? { ...t, isDefault: false } : t;
+      copy[idx] = newT;
+      return copy;
+    });
   }
   function deleteTemplate(idx: number) {
     // Ne pas permettre la suppression du dernier template
@@ -1234,17 +1480,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
 
   function buildFinalLink(config: LinkConfig): string {
-    if (!config.value.trim()) return '';
+    const v = config.value.trim();
+    if (!v) return '';
+
+    // Si la valeur est déjà une URL complète d'un autre domaine (Proton, etc.), ne pas préfixer F95/Lewd
+    if (v.toLowerCase().startsWith('http')) {
+      const lower = v.toLowerCase();
+      if (config.source === 'F95' && !lower.includes('f95zone.to')) return v;
+      if (config.source === 'Lewd' && !lower.includes('lewdcorner.com')) return v;
+    }
 
     switch (config.source) {
       case 'F95':
-        return `https://f95zone.to/threads/${config.value.trim()}/`;
+        return `https://f95zone.to/threads/${v}/`;
       case 'Lewd':
-        return `https://lewdcorner.com/threads/${config.value.trim()}/`;
+        return `https://lewdcorner.com/threads/${v}/`;
       case 'Autre':
-        return config.value.trim();
+        return v;
       default:
-        return config.value.trim();
+        return v;
     }
   }
 
@@ -1269,9 +1523,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (sb) {
       sb.from('tags')
         .insert({
-          name: t.name,
+          name: t.name || '',
           template: t.template ?? null,
-          is_translator: t.isTranslator ?? false
+          is_translator: t.isTranslator ?? false,
+          author_discord_id: t.authorDiscordId ?? null,
+          discord_tag_id: t.discordTagId ?? null
         })
         .select('id')
         .single()
@@ -1285,6 +1541,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setSavedTags(prev => [...prev, t]);
     }
   }
+  function updateSavedTag(id: string, updates: Partial<Tag>) {
+    setSavedTags(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    const sb = getSupabase();
+    if (sb) {
+      const row: Record<string, unknown> = {};
+      if (updates.name !== undefined) row.name = updates.name;
+      if (updates.template !== undefined) row.template = updates.template ?? null;
+      if (updates.isTranslator !== undefined) row.is_translator = updates.isTranslator;
+      if (updates.authorDiscordId !== undefined) row.author_discord_id = updates.authorDiscordId ?? null;
+      if (updates.discordTagId !== undefined) row.discord_tag_id = updates.discordTagId ?? null;
+      if (Object.keys(row).length > 0) {
+        sb.from('tags').update(row).eq('id', id).then((res) => {
+          if (res.error) console.warn('⚠️ Supabase update tag:', (res.error as { message?: string })?.message);
+        });
+      }
+    }
+  }
+
   function deleteSavedTag(idx: number) {
     const tag = savedTags[idx];
     const sb = getSupabase();
@@ -1298,12 +1572,162 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  async function syncTagsToSupabase(authorDiscordId?: string): Promise<{ ok: boolean; count?: number; error?: string }> {
+    const sb = getSupabase();
+    if (!sb) return { ok: false, error: 'Supabase non configuré' };
+    if (savedTags.length === 0) return { ok: true, count: 0 };
+    try {
+      const updated: Tag[] = [];
+      const author = authorDiscordId ?? undefined;
+      for (const t of savedTags) {
+        const hasValidUuid = t.id && UUID_REGEX.test(t.id);
+        const row = {
+          name: t.name || '',
+          template: t.template ?? null,
+          is_translator: t.isTranslator ?? false,
+          author_discord_id: t.authorDiscordId ?? author ?? null,
+          discord_tag_id: t.discordTagId ?? null
+        };
+        if (hasValidUuid) {
+          const { error } = await sb
+            .from('tags')
+            .upsert({ id: t.id, ...row }, { onConflict: 'id' });
+          if (error) throw new Error((error as { message?: string })?.message ?? 'Upsert tag failed');
+          updated.push(t);
+        } else {
+          const { data, error } = await sb
+            .from('tags')
+            .insert(row)
+            .select('id')
+            .single();
+          if (error) throw new Error((error as { message?: string })?.message ?? 'Insert tag failed');
+          updated.push({ ...t, id: (data as { id: string }).id, authorDiscordId: t.authorDiscordId ?? author, discordTagId: t.discordTagId });
+        }
+      }
+      setSavedTags(updated);
+      return { ok: true, count: savedTags.length };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { ok: false, error: msg };
+    }
+  }
+
+  async function fetchTagsFromSupabase(): Promise<void> {
+    const sb = getSupabase();
+    if (!sb) return;
+    const { data, error } = await sb
+      .from('tags')
+      .select('id, name, template, is_translator, author_discord_id, discord_tag_id')
+      .order('created_at', { ascending: true });
+    if (error || !data?.length) return;
+    setSavedTags(
+      (data as Array<{ id: string; name: string; template: string | null; is_translator: boolean; author_discord_id: string | null; discord_tag_id: string | null }>).map((r) => ({
+        id: r.id,
+        name: r.name,
+        template: r.template ?? undefined,
+        isTranslator: r.is_translator ?? false,
+        authorDiscordId: r.author_discord_id ?? undefined,
+        discordTagId: r.discord_tag_id ?? undefined
+      }))
+    );
+  }
+
   // Instructions saved
   function saveInstruction(name: string, text: string) {
     setSavedInstructions(prev => ({ ...prev, [name]: text }));
+    getSupabase()?.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) setInstructionOwners(prev => ({ ...prev, [name]: session.user.id }));
+    });
   }
   function deleteInstruction(name: string) {
     setSavedInstructions(prev => { const copy = { ...prev }; delete copy[name]; return copy; });
+    setInstructionOwners(prev => { const copy = { ...prev }; delete copy[name]; return copy; });
+  }
+
+  async function syncInstructionsToSupabase(): Promise<{ ok: boolean; error?: string }> {
+    const sb = getSupabase();
+    if (!sb) return { ok: false, error: 'Supabase non configuré' };
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      const userId = session?.user?.id;
+      if (!userId) return { ok: false, error: 'Connectez-vous pour enregistrer les instructions' };
+      const myInstructions: Record<string, string> = {};
+      for (const [k, v] of Object.entries(savedInstructions)) {
+        if (instructionOwners[k] === userId) myInstructions[k] = v;
+      }
+      const { error } = await sb
+        .from('saved_instructions')
+        .upsert(
+          { owner_id: userId, value: myInstructions, updated_at: new Date().toISOString() },
+          { onConflict: 'owner_id' }
+        );
+      if (error) throw new Error((error as { message?: string })?.message);
+      return { ok: true };
+    } catch (e: unknown) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  async function fetchInstructionsFromSupabase(): Promise<void> {
+    const sb = getSupabase();
+    if (!sb) return;
+    const { data, error } = await sb.from('saved_instructions').select('owner_id, value');
+    if (error || !data?.length) return;
+    const merged: Record<string, string> = {};
+    const owners: Record<string, string> = {};
+    for (const row of data as Array<{ owner_id: string; value: Record<string, string> | string }>) {
+      try {
+        const val = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+        if (val && typeof val === 'object' && !Array.isArray(val)) {
+          for (const [k, v] of Object.entries(val)) {
+            if (typeof v === 'string') {
+              merged[k] = v;
+              owners[k] = row.owner_id;
+            }
+          }
+        }
+      } catch (_e) {
+        /* ignorer */
+      }
+    }
+    if (Object.keys(merged).length) setSavedInstructions(merged);
+    setInstructionOwners(owners);
+  }
+
+  async function syncTemplatesToSupabase(): Promise<{ ok: boolean; error?: string }> {
+    const sb = getSupabase();
+    if (!sb) return { ok: false, error: 'Supabase non configuré' };
+    // Ne pas pousser le template par défaut en BDD (géré uniquement dans le code + localStorage)
+    if (templates.length > 0 && templates[0]?.isDefault === true) {
+      return { ok: true };
+    }
+    try {
+      const { error } = await sb
+        .from('app_config')
+        .upsert(
+          { key: 'custom_templates', value: JSON.stringify(templates), updated_at: new Date().toISOString() },
+          { onConflict: 'key' }
+        );
+      if (error) throw new Error((error as { message?: string })?.message);
+      return { ok: true };
+    } catch (e: unknown) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  async function fetchTemplatesFromSupabase(): Promise<void> {
+    const sb = getSupabase();
+    if (!sb) return;
+    const { data, error } = await sb.from('app_config').select('value').eq('key', 'custom_templates').maybeSingle();
+    if (error || !data?.value) return;
+    try {
+      const parsed = JSON.parse(data.value as string) as Template[];
+      if (Array.isArray(parsed) && parsed.length > 0) setTemplates(parsed);
+    } catch (_e) {
+      /* ignorer */
+    }
   }
 
   // Images
@@ -1545,7 +1969,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       Mod_link: { source: 'Autre', value: '' }
     });
     setAdditionalTranslationLinks([]);
-    // Réinitialiser les images (supprimer les fichiers locaux uniquement)
+    setAdditionalModLinks([]);
+    setInput('main_translation_label', 'Traduction');
+    setInput('main_mod_label', 'Mod');
     setUploadedImages([]);
   }, [allVarsConfig, setTranslationType, setIsIntegrated, setPostTitle, setPostTags, setLinkConfigs]);
 
@@ -1573,39 +1999,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Remplace le tag [is_modded_game] dans le texte
     content = content.split('[is_modded_game]').join(moddedText);
 
-    // 2. Gestion de l'affichage du lien de traduction standard selon la checkbox
-    // Par défaut (non cochée) : le lien est affiché
-    // Quand cochée ("Masquer le lien") : la ligne "Téléchargez la traduction ici !" est masquée
-    const hideStandardTranslationLink = (inputs as any)['use_additional_links'] === true || (inputs as any)['use_additional_links'] === 'true';
+    // 2. Construction des lignes MOD et TRADUCTION (affichées en ligne, séparées par " - ")
+    const mainModLabel = (inputs['main_mod_label'] || 'Mod').trim() || 'Mod';
+    const mainTranslationLabel = (inputs['main_translation_label'] || 'Traduction').trim() || 'Traduction';
+    const modLinkUrl = cleanGameLink((inputs['Mod_link'] || '').trim());
+    const translateLinkUrl = cleanGameLink((inputs['Translate_link'] || '').trim());
 
-    // Si la checkbox est cochée, supprimer la ligne du lien de traduction standard AVANT le remplacement
-    if (hideStandardTranslationLink) {
-      // Ancien format : "**Lien de la Traduction** : ... [Translate_link]"
-      content = content.replace(/^\s*\*\s*\*\*Lien de la [Tt]raduction\s*:\s*\*\*.*\[Translate_link\].*$/gm, '');
-      // Format actuel du template : "   * [Téléchargez la traduction ici !](<[Translate_link]>)"
-      content = content.replace(/^\s*\*\s*.*\[Translate_link\].*$/gm, '');
+    // Affichage de la ligne mod dans le template : uniquement si au moins un lien est renseigné (URL ou additionnels).
+    // La checkbox "Mod compatible" gère seulement Oui/Non dans les Infos du Jeu.
+    const modParts: string[] = [];
+    if (modLinkUrl) {
+      modParts.push(`[${mainModLabel}](<${modLinkUrl}>)`);
     }
+    additionalModLinks
+      .filter(link => link.label.trim() && link.link.trim())
+      .forEach(link => modParts.push(`[${link.label.trim()}](<${cleanGameLink(link.link.trim())}>)`));
+    const modLinksLine = modParts.length > 0 ? `   * ${modParts.join(' - ')}` : '';
+
+    const translationParts: string[] = [];
+    if (translateLinkUrl) {
+      translationParts.push(`[${mainTranslationLabel}](<${translateLinkUrl}>)`);
+    }
+    additionalTranslationLinks
+      .filter(link => link.label.trim() && link.link.trim())
+      .forEach(link => translationParts.push(`[${link.label.trim()}](<${cleanGameLink(link.link.trim())}>)`));
+    const translationLinksLine = translationParts.length > 0 ? `   * ${translationParts.join(' - ')}` : '';
+
+    content = content.split('[MOD_LINKS_LINE]').join(modLinksLine);
+    content = content.split('[TRANSLATION_LINKS_LINE]').join(translationLinksLine);
 
     // 3. Remplacement des variables classiques
     allVarsConfig.forEach(varConfig => {
       const name = varConfig.name;
-      // On ne traite pas is_modded_game ici car géré au dessus
       if (name === 'is_modded_game') return;
-
-      // Gestion spéciale pour Mod_link : afficher seulement si mod compatible = Oui
-      if (name === 'Mod_link') {
-        const modLinkValue = cleanGameLink((inputs['Mod_link'] || '').trim());
-        if (isModded && modLinkValue) {
-          // Remplacer [Mod_link] par le lien nettoyé
-          content = content.split('[Mod_link]').join(modLinkValue);
-        } else {
-          // Si pas de mod ou pas de lien, supprimer la ligne du lien du mod
-          content = content.replace(/^\s*\*\s*\[Lien du mod\]\(<\[Mod_link\]>\).*$/gm, '');
-          // Aussi supprimer si le placeholder a déjà été remplacé
-          content = content.replace(/^\s*\*\s*\[Lien du mod\]\(<.*>\).*$/gm, '');
-        }
-        return;
-      }
+      if (name === 'Mod_link' || name === 'Translate_link') return;
 
       const val = (inputs[name] || '').trim();
       let finalVal = val;
@@ -1616,8 +2043,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (name === 'Overview' && val) {
-        const lines = val.split('\n').map(l => l.trim()).filter(Boolean);
-        finalVal = lines.join('\n> ');
+        // Préserver tous les retours à la ligne du textarea : chaque ligne en blockquote "> "
+        // (la première ligne reçoit le "> " du template "> [Overview]")
+        const lines = val.split('\n');
+        finalVal = lines.length
+          ? lines.map((line, i) => (i === 0 ? line : '> ' + line)).join('\n')
+          : '';
 
         const instructionContent = (inputs['instruction'] || '').trim();
         if (instructionContent) {
@@ -1636,71 +2067,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       : translationType;
     content = content.split('[Translation_Type]').join(displayTranslationType);
 
-    // 5. Logique Smart Integrated
+    // 5. Logique Smart Integrated (masquer lien traduction standard si intégré)
     if (isIntegrated) {
       content = content.replace(/^.*\[Translate_link\].*$/gm, '');
-      content = content.replace(/^.*\*\s*\*\*Lien de la [Tt]raduction\s*:\s*\*\*.*$/gm, '');
       content = content.replace(/\n\n\n+/g, '\n\n');
     }
 
-    // Nettoyage final du tag instruction
     content = content.split('[instruction]').join('');
-
-    // Remplacement du caractère invisible (zero-width space)
     content = content.split('[INVISIBLE_CHAR]').join('\u200B');
 
-    // 6. Insertion des liens additionnels de traduction (toujours affichés s'ils sont remplis)
-    const hasAdditionalLinks = additionalTranslationLinks.some(link => link.label.trim() && link.link.trim());
-
-    if (hasAdditionalLinks) {
-      // Générer les liens additionnels avec indentation (3 espaces + * pour sous-liste)
-      // Format : "   * [Téléchargez la traduction ${label} ici !](<${link}>)"
-      // Même format que les autres liens dans la section "Liens de Téléchargement"
-      const additionalLinksText = additionalTranslationLinks
-        .filter(link => link.label.trim() && link.link.trim())
-        .map(link => {
-          const cleanedLink = cleanGameLink(link.link.trim());
-          return `   * [Téléchargez la traduction ${link.label.trim()} ici !](<${cleanedLink}>)`;
-        })
-        .join('\n');
-
-      // Si le template contient [ADDITIONAL_TRANSLATION_LINKS], l'utiliser comme point d'insertion
-      if (content.includes('[ADDITIONAL_TRANSLATION_LINKS]')) {
-        content = content.split('[ADDITIONAL_TRANSLATION_LINKS]').join(additionalLinksText + '\n');
-      } else {
-        // Chercher où insérer les liens additionnels dans la section "Liens de Téléchargement"
-        const lines = content.split('\n');
-        // Chercher la ligne "Lien du mod" ou "Téléchargez la traduction" pour insérer après
-        let insertionIndex = lines.findIndex(line =>
-          line.includes('[Mod_link]') ||
-          line.toLowerCase().includes('téléchargez la traduction')
-        );
-
-        // Si on ne trouve pas, chercher après "Accès au jeu original"
-        if (insertionIndex === -1) {
-          insertionIndex = lines.findIndex(line =>
-            line.toLowerCase().includes('accès au jeu original')
-          );
-        }
-
-        if (insertionIndex !== -1) {
-          // Insérer les liens additionnels après la ligne trouvée
-          lines.splice(insertionIndex + 1, 0, additionalLinksText);
-          content = lines.join('\n');
-        }
-      }
-    } else {
-      // Si pas de liens additionnels, supprimer le placeholder s'il existe
-      content = content.split('[ADDITIONAL_TRANSLATION_LINKS]').join('');
-    }
-
-    // Nettoyer les lignes vides multiples
+    // 6. Réduire les retours à la ligne multiples (garder au moins une ligne vide entre sections pour le preview Discord)
     content = content.replace(/\n\n\n+/g, '\n\n');
 
     // Ne pas ajouter le lien dans le preview - il sera ajouté uniquement lors de la publication
     // L'image sera affichée séparément via le composant PreviewImage
     return content;
-  }, [templates, currentTemplateIdx, allVarsConfig, inputs, translationType, isIntegrated, additionalTranslationLinks, uploadedImages]);
+  }, [templates, currentTemplateIdx, allVarsConfig, inputs, translationType, isIntegrated, additionalTranslationLinks, additionalModLinks, uploadedImages]);
 
   const value: AppContextValue = {
     resetAllFields,
@@ -1727,7 +2109,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     preview,
     savedTags,
     addSavedTag,
+    updateSavedTag,
     deleteSavedTag,
+    syncTagsToSupabase,
+    fetchTagsFromSupabase,
+    syncInstructionsToSupabase,
+    fetchInstructionsFromSupabase,
+    syncTemplatesToSupabase,
+    fetchTemplatesFromSupabase,
 
     savedInstructions,
     saveInstruction,
@@ -1814,6 +2203,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setAdditionalTranslationLinks([]);
       }
 
+      // ✅ Restaurer les liens additionnels mod
+      if (post.savedAdditionalModLinks) {
+        setAdditionalModLinks(JSON.parse(JSON.stringify(post.savedAdditionalModLinks)));
+      } else {
+        setAdditionalModLinks([]);
+      }
+
+      // ✅ Restaurer les labels principaux (Traduction, Mod) depuis savedInputs
+      if (post.savedInputs?.['main_translation_label']) {
+        setInput('main_translation_label', post.savedInputs.main_translation_label);
+      }
+      if (post.savedInputs?.['main_mod_label']) {
+        setInput('main_mod_label', post.savedInputs.main_mod_label);
+      }
+
       // ✅ Restaurer l'image si elle existe encore
       if (post.imagePath) {
         // Vérifier si c'est une URL ou un chemin local
@@ -1857,12 +2261,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setPostTags(post.tags);
       // Plus besoin de restaurer le template - un seul template maintenant
 
-      // Restaurer les liens additionnels si disponibles
       if (post.savedAdditionalTranslationLinks) {
         setAdditionalTranslationLinks(JSON.parse(JSON.stringify(post.savedAdditionalTranslationLinks)));
       } else {
         setAdditionalTranslationLinks([]);
       }
+      if (post.savedAdditionalModLinks) {
+        setAdditionalModLinks(JSON.parse(JSON.stringify(post.savedAdditionalModLinks)));
+      } else {
+        setAdditionalModLinks([]);
+      }
+      if (post.savedInputs?.['main_translation_label']) setInput('main_translation_label', post.savedInputs.main_translation_label);
+      if (post.savedInputs?.['main_mod_label']) setInput('main_mod_label', post.savedInputs.main_mod_label);
     },
 
     // API status global
@@ -1873,11 +2283,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     discordConfig,
     setDiscordConfig,
 
-    // Liens additionnels de traduction
     additionalTranslationLinks,
     addAdditionalTranslationLink,
     updateAdditionalTranslationLink,
-    deleteAdditionalTranslationLink
+    deleteAdditionalTranslationLink,
+    additionalModLinks,
+    addAdditionalModLink,
+    updateAdditionalModLink,
+    deleteAdditionalModLink
   };
 
   return (
