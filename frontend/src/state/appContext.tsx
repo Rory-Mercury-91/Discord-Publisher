@@ -246,6 +246,7 @@ type AppContextValue = {
 
   // Edit mode
   editingPostId: string | null;
+  editingPostData: PublishedPost | null;
   setEditingPostId: (id: string | null) => void;
   setEditingPostData: (post: PublishedPost | null) => void;
   loadPostForEditing: (post: PublishedPost) => void;
@@ -484,7 +485,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [inputs, setInputs] = useState<Record<string, string>>(() => {
     const obj: Record<string, string> = {};
     allVarsConfig.forEach(v => obj[v.name] = '');
-    // Initialiser is_modded_game à "false" par défaut
+    // Champs non présents dans allVarsConfig mais utilisés dans le formulaire / template
+    obj['instruction'] = '';
     obj['is_modded_game'] = 'false';
     obj['use_additional_links'] = 'false';
     obj['Mod_link'] = '';
@@ -2170,6 +2172,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     // Edit mode
     editingPostId,
+    editingPostData,
     setEditingPostId,
     setEditingPostData,
     loadPostForEditing: (post: PublishedPost) => {
@@ -2270,7 +2273,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setEditingPostData(null);
       setPostTitle(post.title);
       setPostTags(post.tags);
-      // Plus besoin de restaurer le template - un seul template maintenant
+
+      if (post.translationType) setTranslationType(post.translationType);
+      if (post.isIntegrated !== undefined) setIsIntegrated(post.isIntegrated);
+
+      // Restaurer tous les champs sauvegardés (y compris instruction et variables personnalisées supprimées depuis)
+      if (post.savedInputs) {
+        Object.keys(post.savedInputs).forEach(key => {
+          setInput(key, post.savedInputs![key] ?? '');
+        });
+      }
+
+      if (post.savedLinkConfigs) {
+        setLinkConfigs(JSON.parse(JSON.stringify(post.savedLinkConfigs)));
+      } else if (post.savedInputs) {
+        setLinkConfigs({
+          Game_link: { source: 'F95', value: post.savedInputs.Game_link || '' },
+          Translate_link: { source: 'Autre', value: post.savedInputs.Translate_link || '' },
+          Mod_link: { source: 'Autre', value: post.savedInputs.Mod_link || '' }
+        });
+      }
 
       if (post.savedAdditionalTranslationLinks) {
         setAdditionalTranslationLinks(JSON.parse(JSON.stringify(post.savedAdditionalTranslationLinks)));

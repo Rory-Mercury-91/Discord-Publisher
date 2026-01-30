@@ -32,6 +32,7 @@ export default function ContentEditor() {
     addImageFromUrl,
     removeImage,
     editingPostId,
+    editingPostData,
     setEditingPostId,
     translationType,
     setTranslationType,
@@ -132,15 +133,26 @@ export default function ContentEditor() {
   ];
 
   const visibleVars = useMemo(() => {
-    return allVarsConfig.filter(v => {
-      // Exclure les variables déjà affichées en dur
+    const fromConfig = allVarsConfig.filter(v => {
       if (hardcodedVarNames.includes(v.name)) return false;
-
-      // Filtrer par template si nécessaire
       if (!v.templates || v.templates.length === 0) return true;
       return v.templates.includes(currentTemplateId);
     });
-  }, [allVarsConfig, currentTemplateId]);
+
+    // Réafficher les variables supprimées de allVarsConfig si elles ont une valeur (post rechargé ou dupliqué)
+    const source = editingPostData?.savedInputs ?? inputs;
+    const configNames = new Set(allVarsConfig.map(v => v.name));
+    const orphanNames = Object.keys(source).filter(
+      name => varsUsedInTemplate.has(name) && !configNames.has(name) && !hardcodedVarNames.includes(name) && (source[name] ?? '').toString().trim() !== ''
+    );
+    const orphanVars: Array<{ name: string; label: string; type?: 'text' | 'textarea'; placeholder?: string }> = orphanNames.map(name => ({
+      name,
+      label: name.replace(/_/g, ' '),
+      type: 'text'
+    }));
+
+    return [...fromConfig, ...orphanVars];
+  }, [allVarsConfig, currentTemplateId, editingPostData?.savedInputs, inputs, varsUsedInTemplate]);
 
   // Calculer les IDs des tags sélectionnés
   const selectedTagIds = useMemo(() => {
