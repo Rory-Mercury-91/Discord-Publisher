@@ -9,8 +9,7 @@ from dotenv import load_dotenv
 import discord
 from discord.http import Route
 
-# Import direct des instances de bots
-from bot_server1 import bot as bot1
+# Import direct de l'instance du bot Serveur 2
 from bot_server2 import bot as bot2
 
 # Import des handlers + bot du publisher
@@ -50,7 +49,6 @@ async def health(request):
     status = {
         "status": "ok",
         "bots": {
-            "server1": bot1.is_ready(),
             "server2": bot2.is_ready(),
             "publisher": publisher_bot.is_ready(),
         },
@@ -264,20 +262,15 @@ async def wait_ready(bot: discord.Client, name: str, timeout: int = 180):
 # ORCHESTRATOR
 # -------------------------
 async def start():
-    TOKEN1 = os.getenv("DISCORD_TOKEN")
     TOKEN2 = os.getenv("DISCORD_TOKEN_F95")
     TOKEN_PUB = os.getenv("DISCORD_PUBLISHER_TOKEN")
 
-    if not TOKEN1:
-        logger.error("❌ DISCORD_TOKEN manquant dans .env")
-        return
     if not TOKEN2:
         logger.error("❌ DISCORD_TOKEN_F95 manquant dans .env")
         return
 
     logger.info("🚀 Démarrage de l'orchestrateur...")
     logger.info(f"📋 Configuration:")
-    logger.info(f"   - Bot1 (DISCORD_TOKEN): {'✓' if TOKEN1 else '✗'}")
     logger.info(f"   - Bot2 (DISCORD_TOKEN_F95): {'✓' if TOKEN2 else '✗'}")
     logger.info(f"   - Publisher (DISCORD_TOKEN_PUBLISHER): {'✓' if TOKEN_PUB else '✗'}")
 
@@ -290,34 +283,14 @@ async def start():
     await site.start()
     logger.info(f"✅ Serveur API et HealthCheck lancé sur le port {PORT}")
 
-    # 2) Démarrage séquentiel : Bot1 -> Bot2 -> PublisherBot
+    # 2) Démarrage séquentiel : Bot2 -> PublisherBot
     # Chaque bot doit être ready avant de lancer le suivant
-    
-    # --- BOT 1 ---
-    logger.info("=" * 60)
-    logger.info("🤖 ÉTAPE 1/3: Lancement Bot1 (Serveur 1)...")
-    logger.info("=" * 60)
-    
-    bot1_task = asyncio.create_task(start_bot_with_backoff(bot1, TOKEN1, "Bot1"))
-
-    try:
-        await wait_ready(bot1, "Bot1", timeout=180)
-        logger.info("✅ Bot1 prêt et opérationnel")
-    except Exception as e:
-        logger.error(f"⛔ Bot1 n'a pas pu démarrer: {e}")
-        logger.error("🛑 Arrêt de la séquence de démarrage")
-        bot1_task.cancel()
-        try:
-            await bot1_task
-        except asyncio.CancelledError:
-            pass
-        return
 
     # --- BOT 2 ---
     logger.info("=" * 60)
-    logger.info("🤖 ÉTAPE 2/3: Lancement Bot2 (Serveur 2)...")
+    logger.info("🤖 ÉTAPE 1/2: Lancement Bot2 (Serveur 2)...")
     logger.info("=" * 60)
-    
+
     bot2_task = asyncio.create_task(start_bot_with_backoff(bot2, TOKEN2, "Bot2"))
 
     try:
@@ -325,8 +298,12 @@ async def start():
         logger.info("✅ Bot2 prêt et opérationnel")
     except Exception as e:
         logger.error(f"⛔ Bot2 n'a pas pu démarrer: {e}")
-        logger.error("🛑 Les bots suivants ne seront pas lancés")
-        await asyncio.gather(bot1_task, bot2_task, return_exceptions=True)
+        logger.error("🛑 Arrêt de la séquence de démarrage")
+        bot2_task.cancel()
+        try:
+            await bot2_task
+        except asyncio.CancelledError:
+            pass
         return
 
     # --- PUBLISHER BOT ---
@@ -343,12 +320,12 @@ async def start():
 
     if not TOKEN_PUB:
         logger.error("⛔ DISCORD_PUBLISHER_TOKEN toujours manquant après 180s")
-        logger.warning("⚠️ Publisher Bot non lancé, mais Bot1 et Bot2 continuent de fonctionner")
-        await asyncio.gather(bot1_task, bot2_task, return_exceptions=True)
+        logger.warning("⚠️ Publisher Bot non lancé, Bot2 continue de fonctionner")
+        await asyncio.gather(bot2_task, return_exceptions=True)
         return
 
     logger.info("=" * 60)
-    logger.info("🤖 ÉTAPE 3/3: Lancement Publisher Bot...")
+    logger.info("🤖 ÉTAPE 2/2: Lancement Publisher Bot...")
     logger.info("=" * 60)
     
     pub_task = asyncio.create_task(start_bot_with_backoff(publisher_bot, TOKEN_PUB, "PublisherBot"))
@@ -358,22 +335,21 @@ async def start():
         logger.info("✅ PublisherBot prêt et opérationnel")
     except Exception as e:
         logger.error(f"⛔ PublisherBot n'a pas pu démarrer: {e}")
-        logger.warning("⚠️ Bot1 et Bot2 continuent de fonctionner")
-        await asyncio.gather(bot1_task, bot2_task, pub_task, return_exceptions=True)
+        logger.warning("⚠️ Bot2 continue de fonctionner")
+        await asyncio.gather(bot2_task, pub_task, return_exceptions=True)
         return
 
     # --- TOUS LES BOTS SONT PRÊTS ---
     logger.info("=" * 60)
     logger.info("🎉 TOUS LES BOTS SONT OPÉRATIONNELS")
     logger.info("=" * 60)
-    logger.info(f"✅ Bot1 (Serveur 1): Ready")
-    logger.info(f"✅ Bot2 (Serveur 2): Ready")
-    logger.info(f"✅ PublisherBot: Ready")
+    logger.info("✅ Bot2 (Serveur 2): Ready")
+    logger.info("✅ PublisherBot: Ready")
     logger.info(f"🌐 API REST: http://0.0.0.0:{PORT}")
     logger.info("=" * 60)
 
     # Garde le process vivant tant que les bots tournent
-    await asyncio.gather(bot1_task, bot2_task, pub_task, return_exceptions=True)
+    await asyncio.gather(bot2_task, pub_task, return_exceptions=True)
 
 
 if __name__ == "__main__":

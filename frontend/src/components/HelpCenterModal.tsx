@@ -6,15 +6,16 @@ interface HelpCenterModalProps {
   onClose?: () => void;
 }
 
-type HelpSection = 'tags' | 'templates' | 'instructions' | 'history' | 'stats' | 'config' | 'shortcuts';
+type HelpSection = 'formulaire' | 'tags' | 'templates' | 'instructions' | 'history' | 'stats' | 'config' | 'shortcuts';
 
 export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
   useEscapeKey(() => onClose?.(), true);
   useModalScrollLock();
 
-  const [activeSection, setActiveSection] = useState<HelpSection>('tags');
+  const [activeSection, setActiveSection] = useState<HelpSection>('formulaire');
 
   const sections = [
+    { id: 'formulaire', icon: '📝', label: 'Formulaire' },
     { id: 'tags', icon: '🏷️', label: 'Tags' },
     { id: 'templates', icon: '📄', label: 'Templates' },
     { id: 'instructions', icon: '📋', label: 'Instructions' },
@@ -105,12 +106,13 @@ export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
             overflowY: 'auto',
             paddingRight: 8
           }} className="styled-scrollbar">
+            {activeSection === 'formulaire' && <FormulaireHelp />}
             {activeSection === 'tags' && <TagsHelp />}
-            {activeSection === 'templates' && <UnderConstruction section="Templates" />}
-            {activeSection === 'instructions' && <UnderConstruction section="Instructions" />}
-            {activeSection === 'history' && <UnderConstruction section="Historique" />}
-            {activeSection === 'stats' && <UnderConstruction section="Statistiques" />}
-            {activeSection === 'config' && <UnderConstruction section="Configuration" />}
+            {activeSection === 'templates' && <TemplatesHelp />}
+            {activeSection === 'instructions' && <InstructionsHelp />}
+            {activeSection === 'history' && <HistoryHelp />}
+            {activeSection === 'stats' && <StatsHelp />}
+            {activeSection === 'config' && <ConfigHelp />}
             {activeSection === 'shortcuts' && <ShortcutsHelp />}
           </div>
         </div>
@@ -152,463 +154,372 @@ export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
 }
 
 // ============================================
-// AIDE TAGS
+// AIDE FORMULAIRE (vue d'ensemble, remplir le post)
 // ============================================
-function TagsHelp() {
+function FormulaireHelp() {
   return (
     <div style={{ display: 'grid', gap: 24 }}>
-      {/* Introduction */}
       <section>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: 'var(--accent)' }}>
-          🏷️ Qu'est-ce qu'un tag ?
+          📝 Remplir le formulaire de publication
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          Les tags sont des étiquettes Discord que vous pouvez ajouter à vos publications.
-          Ils permettent de catégoriser vos traductions (statut, type, traducteur, etc.).
+          L'éditeur de contenu permet de préparer un post Discord (traduction, annonce) avant de le publier. Le contenu affiché dépend du <strong>template</strong> choisi : seuls les champs utilisés par ce template sont actifs ; les autres restent désactivés.
         </p>
       </section>
 
-      {/* Ouvrir la fenêtre */}
       <section style={{
-        background: 'rgba(74, 158, 255, 0.1)',
-        border: '1px solid rgba(74, 158, 255, 0.3)',
+        background: 'rgba(74, 158, 255, 0.08)',
+        border: '1px solid rgba(74, 158, 255, 0.25)',
         borderRadius: 8,
         padding: 16
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4a9eff' }}>
-          📂 Ouvrir la gestion des tags
+          Ordre recommandé
         </h4>
-
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '12px',
-          fontSize: 14,
-          lineHeight: 1.6
-        }}>
-          <span>Pour accéder à la fenêtre de gestion des tags, cliquez sur ce bouton :</span>
-
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '6px 12px',
-            background: 'var(--panel)',
-            border: '2px solid var(--accent)',
-            borderRadius: 6,
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'not-allowed',
-            boxShadow: '0 4px 12px rgba(74, 158, 255, 0.3)',
-            whiteSpace: 'nowrap'
-          }}>
-            <span style={{ fontSize: 18 }}>🏷️</span>
-            <span>Gérer les tags</span>
-          </div>
-        </div>
+        <ol style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
+          <li><strong>Choisir le template</strong> (en haut de l'éditeur) : il définit la structure du message et les variables disponibles.</li>
+          <li><strong>Titre du post</strong> : généré automatiquement à partir du template et des champs (ex. nom du jeu + version). En lecture seule.</li>
+          <li><strong>Tags</strong> : cliquer sur « ➕ Ajouter » pour associer des étiquettes Discord à la publication (voir section Tags).</li>
+          <li><strong>Variables du template</strong> : nom du jeu, version du jeu, version traduite, lien du jeu (F95/Lewd/Autre), synopsis (Overview), instructions d'installation, image principale, liens mod/traduction additionnels si le template les inclut.</li>
+          <li><strong>Synopsis</strong> : décrire le jeu (résumé). Remplacer la variable <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[Overview]</code> dans le message final.</li>
+          <li><strong>Instructions d'installation</strong> : saisir du texte ou choisir une instruction enregistrée (voir section Instructions).</li>
+          <li><strong>Image(s)</strong> : ajouter une image principale (obligatoire pour l’annonce) et éventuellement d’autres ; une peut être définie comme « principale ».</li>
+          <li><strong>Aperçu</strong> : la colonne de droite affiche le rendu du message tel qu’il apparaîtra sur Discord.</li>
+          <li><strong>Publier</strong> : une fois tout renseigné, cliquer sur « Publier » pour envoyer le post (ou « Mettre à jour » en mode édition).</li>
+        </ol>
       </section>
 
-      {/* Onglets */}
+      <section style={{
+        background: 'rgba(74, 222, 128, 0.08)',
+        border: '1px solid rgba(74, 222, 128, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
+          💡 Import depuis le presse-papier
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Si vous utilisez un script ou une extension (ex. extracteur de données F95/Lewd), vous pouvez coller un JSON depuis le presse-papier : l'app remplit automatiquement le nom du jeu, la version et le lien du jeu. Cherchez le bouton d'import (presse-papier) dans la zone des champs de lien ou des variables.
+        </p>
+      </section>
+
       <section>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: 'var(--accent)' }}>
-          📑 Les deux onglets
+          ✏️ Mode édition
         </h4>
-        <div style={{ display: 'grid', gap: 12 }}>
-          <div style={{
-            padding: 12,
-            background: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid var(--border)',
-            borderRadius: 6
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 18 }}>🏷️</span>
-              <strong style={{ color: '#4a9eff' }}>Tags génériques</strong>
-            </div>
-            <p style={{ fontSize: 13, margin: 0, color: 'var(--muted)' }}>
-              Tags utilisés pour catégoriser vos publications (statut, type, etc.). Ces tags sont disponibles pour toutes vos traductions.
-            </p>
-          </div>
-
-          <div style={{
-            padding: 12,
-            background: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid var(--border)',
-            borderRadius: 6
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <span style={{ fontSize: 18 }}>👤</span>
-              <strong style={{ color: '#4a9eff' }}>Tags traducteurs</strong>
-            </div>
-            <p style={{ fontSize: 13, margin: 0, color: 'var(--muted)' }}>
-              Tags spécifiques pour identifier les traducteurs. Ces tags sont utilisés pour les statistiques et permettent de suivre les contributions de chaque traducteur.
-            </p>
-          </div>
-        </div>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Depuis l'historique, vous pouvez charger un post en mode édition. Les champs sont préremplis ; modifiez ce que vous souhaitez puis cliquez sur « Mettre à jour » pour mettre à jour le thread Discord et l'historique.
+        </p>
       </section>
+    </div>
+  );
+}
 
-      {/* Créer un tag */}
-      <section style={{
-        background: 'rgba(74, 222, 128, 0.1)',
-        border: '1px solid rgba(74, 222, 128, 0.3)',
-        borderRadius: 8,
-        padding: 16
-      }}>
-        <h4 style={{ margin: '0 0 16px 0', fontSize: 16, color: '#4ade80' }}>
-          ➕ Créer un nouveau tag
-        </h4>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 24,
-          alignItems: 'start'
-        }}>
-          {/* Colonne GAUCHE : Étapes textuelles */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--text)' }}>
-                1️⃣ Cliquez sur "Ajouter un tag"
-              </div>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '8px 14px',
-                background: '#4a9eff',
-                color: 'white',
-                borderRadius: 6,
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'not-allowed',
-                boxShadow: '0 2px 8px rgba(74, 158, 255, 0.4)'
-              }}>
-                <span>➕</span>
-                <span>Ajouter un tag</span>
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--text)' }}>
-                3️⃣ Validez la création
-              </div>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '8px 14px',
-                background: '#4a9eff',
-                color: 'white',
-                borderRadius: 6,
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'not-allowed'
-              }}>
-                <span>➕</span>
-                <span>Ajouter</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Colonne DROITE : Visuel du formulaire */}
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--text)' }}>
-              2️⃣ Remplissez le formulaire
-            </div>
-            <div style={{
-              background: 'var(--panel)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              padding: 12,
-              fontSize: 13
-            }}>
-              <div style={{ marginBottom: 10 }}>
-                <strong style={{ color: 'var(--muted)', fontSize: 12 }}>Nom du tag *</strong>
-                <div style={{
-                  marginTop: 4,
-                  padding: '8px 12px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 4,
-                  color: 'var(--muted)',
-                  fontStyle: 'italic'
-                }}>
-                  ex: ✅ Terminé
-                </div>
-              </div>
-              <div>
-                <strong style={{ color: 'var(--muted)', fontSize: 12 }}>ID Discord *</strong>
-                <div style={{
-                  marginTop: 4,
-                  padding: '8px 12px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 4,
-                  color: 'var(--muted)',
-                  fontStyle: 'italic'
-                }}>
-                  ex: 1234567890
-                </div>
-              </div>
-            </div>
-
-            {/* Note sur la checkbox Traducteur */}
-            <div style={{
-              marginTop: 12,
-              padding: 10,
-              background: 'rgba(74, 158, 255, 0.1)',
-              border: '1px solid rgba(74, 158, 255, 0.3)',
-              borderRadius: 6,
-              fontSize: 12,
-              color: 'var(--text)'
-            }}>
-              📌 <strong>Note :</strong> Lors de la création d'un tag, vous pouvez cocher <strong>"👤 Tag traducteur"</strong> pour le classer comme tag traducteur. Sinon, il sera automatiquement classé comme tag générique.
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Gestion des tags (Modification & Suppression) */}
-      <section style={{
-        background: 'rgba(255, 255, 255, 0.02)',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        padding: 16
-      }}>
-        <h4 style={{ margin: '0 0 16px 0', fontSize: 16, color: 'var(--accent)' }}>
-          ⚙️ Modifier ou Supprimer un tag
-        </h4>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 20,
-          alignItems: 'center'
-        }}>
-          {/* Gauche : Le Visuel unique */}
-          <div>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              padding: 12,
-              background: 'rgba(255, 255, 255, 0.05)',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-            }}>
-              <div>
-                <strong style={{ color: '#4a9eff', display: 'block', fontSize: 13 }}>✅ Terminé</strong>
-                <div style={{ color: 'var(--muted)', fontSize: 11 }}>ID: 1234567890</div>
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <div style={{ padding: '4px 8px', background: 'rgba(74, 158, 255, 0.2)', border: '1px solid rgba(74, 158, 255, 0.4)', borderRadius: 4 }}>✏️</div>
-                <div style={{ padding: '4px 8px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 4 }}>🗑️</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Droite : Les explications groupées */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ fontSize: 13, lineHeight: 1.4 }}>
-              <span style={{ color: '#4a9eff', fontWeight: 'bold' }}>Modifier :</span> Cliquez sur <strong>✏️</strong>, ajustez les infos et validez avec <strong>"✅ Enregistrer"</strong>.
-            </div>
-            <div style={{ fontSize: 13, lineHeight: 1.4 }}>
-              <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Supprimer :</span> Cliquez sur <strong>🗑️</strong>. Une confirmation sera demandée.
-            </div>
-          </div>
-        </div>
-
-        {/* Note d'avertissement en bas */}
-        <div style={{
-          marginTop: 16,
-          padding: '10px 12px',
-          background: 'rgba(239, 68, 68, 0.08)',
-          borderLeft: '3px solid #ef4444',
-          borderRadius: '0 4px 4px 0',
-          fontSize: 12,
-          color: 'var(--text)'
-        }}>
-          <strong>⚠️ Attention :</strong> La suppression est définitive et irréversible.
-        </div>
-      </section>
-
-      {/* Utiliser un tag */}
+// ============================================
+// AIDE TAGS — Utilisation dans le formulaire uniquement
+// ============================================
+function TagsHelp() {
+  return (
+    <div style={{ display: 'grid', gap: 24 }}>
       <section style={{
         background: 'rgba(139, 92, 246, 0.1)',
         border: '1px solid rgba(139, 92, 246, 0.3)',
         borderRadius: 8,
         padding: 16
       }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#8b5cf6' }}>
-          🎯 Utiliser un tag dans une publication
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: '#8b5cf6' }}>
+          🏷️ Ajouter des tags dans le formulaire
         </h4>
-
-        <div style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 16 }}>
-          Une fois vos tags créés, vous pouvez les ajouter à vos publications :
-        </div>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 16px 0' }}>
+          Dans l'éditeur de contenu, le champ <strong>Tags</strong> permet d'associer des étiquettes à votre publication. Voici comment les utiliser :
+        </p>
 
         <div style={{ display: 'grid', gap: 16 }}>
-          {/* Étape 1 : Ouvrir la modale */}
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--text)' }}>
-              1️⃣ Cliquez sur le bouton "➕ Ajouter"
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>
+              1. Ouvrir le sélecteur
             </div>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 14px',
-              background: '#8b5cf6',
-              color: 'white',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'not-allowed',
-              boxShadow: '0 2px 8px rgba(139, 92, 246, 0.4)'
-            }}>
-              <span>➕</span>
-              <span>Ajouter</span>
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 8 }}>
-              Ce bouton se trouve dans le champ <strong>"Tags"</strong> de l'éditeur de contenu.
-            </div>
+            <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--muted)', margin: 0 }}>
+              Cliquez sur le bouton <strong>➕ Ajouter</strong> dans le champ Tags pour ouvrir la modale de sélection.
+            </p>
           </div>
 
-          {/* Étape 2 : Sélectionner dans la modale */}
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--text)' }}>
-              2️⃣ Sélectionnez un tag dans la modale
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>
+              2. Choisir un tag
             </div>
-            <div style={{
-              background: 'var(--panel)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              padding: 12,
-              fontSize: 13
-            }}>
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
-                  La modale affiche deux sections :
-                </div>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <div style={{
-                    padding: '8px 10px',
-                    background: 'rgba(74, 158, 255, 0.1)',
-                    borderRadius: 4,
-                    borderLeft: '3px solid #4a9eff'
-                  }}>
-                    <strong style={{ color: '#4a9eff' }}>🏷️ Tags génériques</strong> - Tags de catégorisation
-                  </div>
-                  <div style={{
-                    padding: '8px 10px',
-                    background: 'rgba(74, 158, 255, 0.1)',
-                    borderRadius: 4,
-                    borderLeft: '3px solid #4a9eff'
-                  }}>
-                    <strong style={{ color: '#4a9eff' }}>👤 Tags traducteurs</strong> - Tags pour identifier les traducteurs
-                  </div>
-                </div>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                Cliquez sur un tag pour l'ajouter à votre publication. Il disparaîtra de la liste et apparaîtra dans le formulaire.
-              </div>
-            </div>
+            <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--muted)', margin: 0 }}>
+              Dans la modale, cliquez sur un tag (générique ou traducteur) pour l'ajouter à la publication. Il apparaît alors sous forme de badge dans le formulaire.
+            </p>
           </div>
 
-          {/* Étape 3 : Gérer les tags ajoutés */}
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, color: 'var(--text)' }}>
-              3️⃣ Gérer les tags ajoutés
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>
+              3. Retirer un tag
             </div>
-            <div style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 8 }}>
-              Les tags ajoutés apparaissent sous forme de badges dans le champ "Tags" :
-            </div>
-            <div style={{
-              display: 'flex',
-              gap: 6,
-              flexWrap: 'wrap',
-              marginBottom: 8
-            }}>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 10px',
-                background: 'rgba(74, 158, 255, 0.15)',
-                border: '1px solid rgba(74, 158, 255, 0.3)',
-                borderRadius: 4,
-                fontSize: 12
-              }}>
-                <span>✅ Terminé</span>
-                <button style={{
-                  border: 'none',
-                  background: 'transparent',
-                  color: 'var(--text)',
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  padding: 0,
-                  width: 16,
-                  height: 16,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>✕</button>
-              </div>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 10px',
-                background: 'rgba(74, 158, 255, 0.15)',
-                border: '1px solid rgba(74, 158, 255, 0.3)',
-                borderRadius: 4,
-                fontSize: 12
-              }}>
-                <span>👤 TraducteurXYZ</span>
-                <button style={{
-                  border: 'none',
-                  background: 'transparent',
-                  color: 'var(--text)',
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  padding: 0,
-                  width: 16,
-                  height: 16,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>✕</button>
-              </div>
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-              Cliquez sur le bouton <strong>✕</strong> d'un badge pour retirer le tag. Il réapparaîtra dans la modale lors de la prochaine ouverture.
-            </div>
+            <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--muted)', margin: 0 }}>
+              Cliquez sur le <strong>✕</strong> d'un badge pour le retirer de la publication. Vous pouvez rouvrir la modale pour en ajouter d'autres.
+            </p>
           </div>
 
-          {/* Fermeture de la modale */}
           <div style={{
             padding: 12,
-            background: 'rgba(74, 158, 255, 0.1)',
-            border: '1px solid rgba(74, 158, 255, 0.3)',
+            background: 'rgba(74, 158, 255, 0.08)',
+            border: '1px solid rgba(74, 158, 255, 0.25)',
             borderRadius: 6,
-            fontSize: 12
+            fontSize: 12,
+            color: 'var(--muted)'
           }}>
-            💡 <strong>Astuce :</strong> Vous pouvez fermer la modale en appuyant sur <strong>Échap</strong>, en cliquant sur le bouton <strong>🚪 Fermer</strong>, ou en cliquant en dehors de la modale.
+            💡 Fermeture : <strong>Échap</strong>, bouton Fermer ou clic en dehors de la modale.
           </div>
         </div>
+      </section>
+    </div>
+  );
+}
 
-        <div style={{
-          marginTop: 16,
-          padding: 12,
-          background: 'rgba(74, 158, 255, 0.1)',
-          border: '1px solid rgba(74, 158, 255, 0.3)',
-          borderRadius: 6,
-          fontSize: 12
-        }}>
-          💡 <strong>Conseil :</strong> Créez des tags pour organiser vos traductions par statut
-          (Terminé, En cours, Abandonné), type (Automatique, Manuelle), ou traducteur.
-        </div>
+// ============================================
+// AIDE STATISTIQUES
+// ============================================
+function StatsHelp() {
+  return (
+    <div style={{ display: 'grid', gap: 24 }}>
+      <section>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: 'var(--accent)' }}>
+          📈 À quoi servent les statistiques ?
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          La fenêtre Statistiques affiche des indicateurs basés sur vos publications enregistrées dans l'historique : nombre total de publications, traducteurs les plus actifs, et répartition par mois. Les données proviennent des posts présents dans l'app (Supabase + historique local).
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(74, 158, 255, 0.08)',
+        border: '1px solid rgba(74, 158, 255, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4a9eff' }}>
+          📅 Filtre par période
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
+          Vous pouvez restreindre les statistiques à une période donnée :
+        </p>
+        <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
+          <li><strong>Toutes les périodes</strong> : toutes les publications de l'historique.</li>
+          <li><strong>7 derniers jours</strong> : publications des 7 derniers jours.</li>
+          <li><strong>30 derniers jours</strong> : publications du dernier mois.</li>
+          <li><strong>6 derniers mois</strong> : publications des 6 derniers mois.</li>
+        </ul>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>
+          Le total, le classement des traducteurs et les publications par mois sont recalculés en fonction de la période choisie.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(74, 222, 128, 0.08)',
+        border: '1px solid rgba(74, 222, 128, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
+          👤 Traducteurs les plus actifs
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Cette section affiche le top 5 des traducteurs selon le nombre de publications auxquelles ils sont associés. Seuls les <strong>tags marqués comme « Tag traducteur »</strong> (dans la gestion des tags) sont pris en compte. Si aucun tag traducteur n'est défini ou utilisé dans les posts, cette section ne s'affiche pas.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(139, 92, 246, 0.08)',
+        border: '1px solid rgba(139, 92, 246, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#8b5cf6' }}>
+          📆 Publications par mois
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Un graphique en barres montre le nombre de publications par mois (sur la période filtrée). Chaque barre correspond à un mois (ex. « janv. 2026 ») et sa hauteur est proportionnelle au nombre de publications. Utile pour visualiser l'activité dans le temps.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+// ============================================
+// AIDE HISTORIQUE
+// ============================================
+function HistoryHelp() {
+  return (
+    <div style={{ display: 'grid', gap: 24 }}>
+      <section>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: 'var(--accent)' }}>
+          📋 À quoi sert l'historique ?
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          L'historique des publications liste toutes les traductions publiées (ou mises à jour) depuis l'app. Chaque entrée affiche le titre, la date, l'auteur et permet d'éditer le post sur Discord, d'ouvrir le thread, ou de supprimer définitivement la publication.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(74, 158, 255, 0.08)',
+        border: '1px solid rgba(74, 158, 255, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4a9eff' }}>
+          📂 D'où viennent les données ?
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
+          Les publications sont enregistrées dans la base Supabase (<strong>published_posts</strong>) et, à l'ouverture de l'historique, l'app peut fusionner les posts venant de l'API Koyeb (<strong>/api/history</strong>) pour inclure les publications faites depuis un autre appareil. L'historique affiché est donc la réunion de vos données locales/Supabase et de celles du serveur de publication.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
+          À chaque publication ou mise à jour depuis l'éditeur, l'entrée est ajoutée ou mise à jour dans l'historique et synchronisée avec Supabase.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(74, 222, 128, 0.08)',
+        border: '1px solid rgba(74, 222, 128, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
+          🔍 Recherche, tri et filtres
+        </h4>
+        <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
+          <li><strong>Recherche</strong> : le champ texte filtre les posts par titre, contenu ou tags.</li>
+          <li><strong>Tri</strong> : par date (plus récent en premier ou plus ancien en premier).</li>
+          <li><strong>Filtre par auteur</strong> : afficher uniquement « Mes publications » ou les publications d'un utilisateur précis (si vous avez les droits).</li>
+          <li><strong>Réinitialiser</strong> : remet recherche, tri et filtre à zéro.</li>
+        </ul>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>
+          Les résultats sont paginés (15 publications par page).
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(139, 92, 246, 0.08)',
+        border: '1px solid rgba(139, 92, 246, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#8b5cf6' }}>
+          ✏️ Éditer un post
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
+          Le bouton <strong>Éditer</strong> n'apparaît que si vous avez le droit de modifier ce post :
+        </p>
+        <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
+          <li>Vous êtes l'auteur de la publication (votre Discord est enregistré comme auteur),</li>
+          <li>Vous êtes master admin, ou</li>
+          <li>L'auteur vous a autorisé dans Configuration → « Qui peut modifier mes posts ».</li>
+        </ul>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>
+          Cliquer sur Éditer charge le post dans l'éditeur de contenu en mode édition ; vous pouvez modifier puis republier pour mettre à jour le thread Discord.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(239, 68, 68, 0.08)',
+        border: '1px solid rgba(239, 68, 68, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#ef4444' }}>
+          🗑️ Supprimer définitivement
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
+          La suppression retire l'entrée de l'historique, la supprime de la base Supabase et, si un thread Discord est associé, supprime ce thread (et tout son contenu) sur Discord. Une confirmation est demandée avant d'agir.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>
+          Si le post n'a pas de thread Discord (ancienne donnée ou erreur), seule l'entrée en base et dans l'historique est supprimée. Cette action est irréversible.
+        </p>
+      </section>
+
+    </div>
+  );
+}
+
+// ============================================
+// AIDE INSTRUCTIONS
+// ============================================
+function InstructionsHelp() {
+  return (
+    <div style={{ display: 'grid', gap: 24 }}>
+      <section>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: 'var(--accent)' }}>
+          📋 À quoi servent les instructions ?
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Les instructions sont des blocs de texte nommés (ex. « Installation Windows », « Guide Linux ») utilisés dans vos publications. Le template contient la variable <strong>[instruction]</strong> : au moment de la publication, elle est remplacée par le contenu de l'instruction que vous avez choisie ou saisie dans le formulaire.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(74, 158, 255, 0.08)',
+        border: '1px solid rgba(74, 158, 255, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4a9eff' }}>
+          💾 Sauvegarde locale
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
+          Dans la fenêtre <strong>Gestion des instructions</strong> (bouton 📋 dans l'éditeur) :
+        </p>
+        <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
+          <li><strong>Ajouter</strong> : remplissez le nom et le contenu, puis cliquez sur « ➕ Ajouter ». L'instruction est enregistrée localement dans l'app.</li>
+          <li><strong>Modifier</strong> : cliquez sur ✏️ sur une instruction, modifiez le contenu et validez avec « ✅ Enregistrer ».</li>
+          <li><strong>Supprimer</strong> : cliquez sur 🗑️ ; une confirmation est demandée. La suppression est définitive.</li>
+        </ul>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>
+          Ces actions ne touchent que votre copie locale. Pour les conserver ou les partager via la base, utilisez la synchronisation (voir ci-dessous).
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(74, 222, 128, 0.08)',
+        border: '1px solid rgba(74, 222, 128, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
+          🔄 Synchronisation et partage (Supabase)
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
+          Dans <strong>Configuration</strong> (section « Envoyer / Récupérer depuis la base ») :
+        </p>
+        <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
+          <li><strong>📤 Envoyer</strong> : envoie <em>vos</em> instructions (dont vous êtes le propriétaire) vers la base. Vous devez être connecté.</li>
+          <li><strong>📥 Récupérer</strong> : charge depuis la base toutes les instructions auxquelles vous avez accès (les vôtres + celles des utilisateurs qui vous ont autorisé comme éditeur). Les instructions déjà présentes peuvent être fusionnées ou remplacées selon les noms.</li>
+        </ul>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>
+          <strong>Partage :</strong> si un utilisateur vous ajoute dans « Qui peut modifier mes posts » (Configuration), vous voyez aussi ses instructions lorsque vous faites « Récupérer ». Vous ne pouvez en revanche envoyer que vos propres instructions ; vous ne modifiez pas les siennes sur la base.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(139, 92, 246, 0.08)',
+        border: '1px solid rgba(139, 92, 246, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#8b5cf6' }}>
+          🎯 Utiliser une instruction dans le formulaire
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
+          Dans l'éditeur de contenu, le champ <strong>Instruction</strong> (visible si le template utilise <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[instruction]</code>) permet de :
+        </p>
+        <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
+          <li><strong>Sélectionner</strong> une instruction enregistrée dans la liste déroulante (recherche possible). Le contenu est inséré dans le champ.</li>
+          <li><strong>Saisir ou modifier</strong> le texte directement dans la zone de texte.</li>
+        </ul>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>
+          Lors de la publication, le bloc <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[instruction]</code> du template est remplacé par ce contenu (formaté en liste numérotée dans le message Discord).
+        </p>
       </section>
     </div>
   );
@@ -711,6 +622,133 @@ function ShortcutsHelp() {
         💡 <strong>Astuce :</strong> D'autres raccourcis seront ajoutés au fur et à mesure
         des mises à jour de l'application.
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// AIDE TEMPLATES
+// ============================================
+function TemplatesHelp() {
+  return (
+    <div style={{ display: 'grid', gap: 24 }}>
+      <section>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: 'var(--accent)' }}>
+          📄 À quoi servent les templates ?
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Les templates définissent la structure du message Discord (titre, corps, mise en forme). Ils contiennent des <strong>variables</strong> entre crochets (ex. <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[Game_name]</code>, <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[instruction]</code>, <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[Overview]</code>) qui sont remplacées par les valeurs du formulaire au moment de la publication.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(74, 158, 255, 0.08)',
+        border: '1px solid rgba(74, 158, 255, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4a9eff' }}>
+          Choisir un template
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          En haut de l'éditeur de contenu, un sélecteur permet de choisir le template à utiliser. Le titre du post et la liste des champs actifs (nom du jeu, synopsis, instruction, etc.) dépendent du template sélectionné. Les champs dont la variable n'apparaît pas dans le template sont désactivés.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(74, 222, 128, 0.08)',
+        border: '1px solid rgba(74, 222, 128, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
+          Gérer les templates
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
+          La fenêtre <strong>Gestion des templates</strong> (accessible depuis l'éditeur) permet de créer, modifier ou supprimer des templates personnalisés. Les templates peuvent être partagés via la base : dans Configuration, utilisez « Envoyer » / « Récupérer » pour les templates afin de les synchroniser avec Supabase.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
+          Les variables disponibles (ex. <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Game_name]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Game_version]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[instruction]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Overview]</code>) sont documentées dans la modale Templates ou dans le Markdown d'aide du champ contenu.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+// ============================================
+// AIDE CONFIGURATION
+// ============================================
+function ConfigHelp() {
+  return (
+    <div style={{ display: 'grid', gap: 24 }}>
+      <section>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: 'var(--accent)' }}>
+          ⚙️ À quoi sert la configuration ?
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          La configuration regroupe les paramètres de l'API (URL Koyeb, clé API), l'état de la fenêtre au démarrage, les droits d'édition (qui peut modifier vos posts), et la synchronisation des données (tags, instructions, templates) avec la base Supabase. En mode admin, l'export/import complet et le nettoyage des données sont également disponibles.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(74, 158, 255, 0.08)',
+        border: '1px solid rgba(74, 158, 255, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4a9eff' }}>
+          🌐 API et fenêtre
+        </h4>
+        <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
+          <li><strong>URL de l'API Koyeb</strong> : URL de base de votre service (ex. https://votre-app.koyeb.app), sans /api.</li>
+          <li><strong>Clé API</strong> : clé secrète pour l'accès à l'API de publication.</li>
+          <li><strong>État de la fenêtre au démarrage</strong> : Normal, Maximisé, Plein écran ou Minimisé (application Tauri). Enregistré avec le bouton « Enregistrer ».</li>
+        </ul>
+      </section>
+
+      <section style={{
+        background: 'rgba(74, 222, 128, 0.08)',
+        border: '1px solid rgba(74, 222, 128, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
+          👥 Qui peut modifier mes posts
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Vous pouvez autoriser ou révoquer le droit d'édition de vos publications pour d'autres utilisateurs (identifiés par leur profil Supabase). Les utilisateurs autorisés pourront éditer vos posts depuis l'historique et verront vos instructions lors d'un « Récupérer » (voir section Instructions).
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(139, 92, 246, 0.08)',
+        border: '1px solid rgba(139, 92, 246, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#8b5cf6' }}>
+          🔄 Envoyer / Récupérer depuis la base
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
+          Pour les <strong>tags</strong>, <strong>instructions</strong> et <strong>templates</strong> :
+        </p>
+        <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
+          <li><strong>📤 Envoyer</strong> : envoie vos données vers Supabase (vous devez être connecté).</li>
+          <li><strong>📥 Récupérer</strong> : charge depuis Supabase les données auxquelles vous avez accès (les vôtres + celles des utilisateurs qui vous ont autorisé, selon les cas).</li>
+        </ul>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>
+          À l'ouverture de l'app, tags, instructions et templates sont chargés depuis la base si vous êtes connecté.
+        </p>
+      </section>
+
+      <section>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: 'var(--accent)' }}>
+          🔐 Mode admin
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          En débloquant le mode admin (via le code Master Admin dans la fenêtre d'accès à la configuration), vous accédez à l'<strong>export</strong> et l'<strong>import</strong> complets (sauvegarde JSON de toutes les données) et au <strong>nettoyage complet des données</strong> (suppression des publications, tags, config, etc. sur Supabase). Utilisez ces options avec précaution.
+        </p>
+      </section>
     </div>
   );
 }

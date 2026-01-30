@@ -967,7 +967,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       showErrorModal({
         code: 'CONFIG_ERROR',
         message: 'URL de l\'API manquante',
-        context: 'Veuillez configurer l\'URL Koyeb dans Configuration API',
+        context: 'Veuillez configurer l\'URL Koyeb dans Configuration',
         httpStatus: 500
       });
       return { ok: false, error: 'missing_api_url' };

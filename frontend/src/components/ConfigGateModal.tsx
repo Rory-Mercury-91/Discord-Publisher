@@ -338,7 +338,7 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
             />
             <div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Mode utilisateur</div>
-              <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.4 }}>URL API et clé uniquement</div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.4 }}>URL API, clé et état de la fenêtre</div>
             </div>
           </label>
           <label
@@ -362,7 +362,7 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
             />
             <div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Mode admin</div>
-              <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.4 }}>Fenêtre, export/import, configuration complète</div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.4 }}>Export/import, sauvegarde complète, nettoyage des données</div>
             </div>
           </label>
         </div>

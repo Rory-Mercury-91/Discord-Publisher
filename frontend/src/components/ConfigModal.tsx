@@ -391,7 +391,7 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
                 gap: 18,
               }}
             >
-              <h4 style={{ margin: 0, fontSize: '1rem' }}>🌐 Configuration API</h4>
+              <h4 style={{ margin: 0, fontSize: '1rem' }}>🌐 Configuration</h4>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
@@ -578,182 +578,181 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
             </section>
           </div>
 
-          {/* Colonne droite : Fenêtre + Sauvegarde (mode admin) ou message */}
+          {/* Colonne droite : Fenêtre (tous les utilisateurs) + Sauvegarde (mode admin uniquement) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {/* État de la fenêtre : visible pour tous les utilisateurs */}
+            <section
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 14,
+                padding: 20,
+                background: 'rgba(255,255,255,0.02)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <h4 style={{ margin: 0, fontSize: '1rem' }}>🪟 État de la fenêtre au démarrage</h4>
+                <span style={{ color: 'var(--muted)', fontSize: 13 }}>{windowState}</span>
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: 10,
+                }}
+              >
+                {(['normal', 'maximized', 'fullscreen', 'minimized'] as WindowState[]).map((state) => {
+                  const labels = {
+                    normal: '📐 Normal',
+                    maximized: '⬜ Maximisé',
+                    fullscreen: '🖥️ Plein écran',
+                    minimized: '➖ Minimisé',
+                  };
+                  const active = windowState === state;
+                  return (
+                    <button
+                      key={state}
+                      type="button"
+                      onClick={() => {
+                        setWindowState(state);
+                        void applyWindowStateLive(state);
+                      }}
+                      style={{
+                        padding: '14px 12px',
+                        borderRadius: 10,
+                        border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                        cursor: 'pointer',
+                        background: active ? 'var(--accent)' : 'rgba(255,255,255,0.03)',
+                        color: active ? '#fff' : 'var(--text)',
+                        fontSize: 13,
+                        fontWeight: active ? 700 : 500,
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {labels[state]}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
             {!adminMode && (
               <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic', padding: 16 }}>
-                Débloquez le mode admin (Configuration API) pour gérer l'état de la fenêtre et les sauvegardes.
+                Débloquez le mode admin pour gérer les sauvegardes complètes et le nettoyage des données.
               </div>
             )}
             {adminMode && (
-              <>
-                <section
+              <section
+                style={{
+                  padding: 20,
+                  background: 'rgba(74, 158, 255, 0.08)',
+                  border: '1px solid rgba(74, 158, 255, 0.25)',
+                  borderRadius: 14,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 16,
+                }}
+              >
+                <h4 style={{ margin: 0, fontSize: '1rem', color: 'var(--text)' }}>💾 Sauvegarde complète</h4>
+                <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.55 }}>
+                  Exporter ou importer toutes les données (API, templates, variables, tags, instructions, historique, état de fenêtre).
+                </p>
+                <ul
                   style={{
-                    border: '1px solid var(--border)',
-                    borderRadius: 14,
-                    padding: 20,
-                    background: 'rgba(255,255,255,0.02)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 16,
+                    fontSize: 12,
+                    color: 'var(--muted)',
+                    margin: 0,
+                    paddingLeft: 20,
+                    lineHeight: 1.7,
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                    <h4 style={{ margin: 0, fontSize: '1rem' }}>🪟 État de la fenêtre au démarrage</h4>
-                    <span style={{ color: 'var(--muted)', fontSize: 13 }}>{windowState}</span>
-                  </div>
+                  <li>Configuration</li>
+                  <li>Templates et variables</li>
+                  <li>Tags et instructions</li>
+                  <li>Historique des publications</li>
+                  <li>État de fenêtre</li>
+                </ul>
 
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(2, 1fr)',
-                      gap: 10,
-                    }}
-                  >
-                    {(['normal', 'maximized', 'fullscreen', 'minimized'] as WindowState[]).map((state) => {
-                      const labels = {
-                        normal: '📐 Normal',
-                        maximized: '⬜ Maximisé',
-                        fullscreen: '🖥️ Plein écran',
-                        minimized: '➖ Minimisé',
-                      };
-                      const active = windowState === state;
-                      return (
-                        <button
-                          key={state}
-                          type="button"
-                          onClick={() => {
-                            setWindowState(state);
-                            void applyWindowStateLive(state);
-                          }}
-                          style={{
-                            padding: '14px 12px',
-                            borderRadius: 10,
-                            border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                            cursor: 'pointer',
-                            background: active ? 'var(--accent)' : 'rgba(255,255,255,0.03)',
-                            color: active ? '#fff' : 'var(--text)',
-                            fontSize: 13,
-                            fontWeight: active ? 700 : 500,
-                            transition: 'all 0.15s',
-                          }}
-                        >
-                          {labels[state]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                <section
+                <div
                   style={{
-                    padding: 20,
-                    background: 'rgba(74, 158, 255, 0.08)',
-                    border: '1px solid rgba(74, 158, 255, 0.25)',
-                    borderRadius: 14,
                     display: 'flex',
-                    flexDirection: 'column',
-                    gap: 16,
+                    alignItems: 'flex-start',
+                    gap: 10,
+                    padding: '12px 14px',
+                    background: 'rgba(255,255,255,0.06)',
+                    borderRadius: 10,
+                    borderLeft: '3px solid var(--accent)',
                   }}
                 >
-                  <h4 style={{ margin: 0, fontSize: '1rem', color: 'var(--text)' }}>💾 Sauvegarde complète</h4>
-                  <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.55 }}>
-                    Exporter ou importer toutes les données (API, templates, variables, tags, instructions, historique, état de fenêtre).
+                  <span style={{ fontSize: 14 }}>ℹ️</span>
+                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, fontStyle: 'italic' }}>
+                    Le fichier sera enregistré dans votre dossier Téléchargements.
                   </p>
-                  <ul
-                    style={{
-                      fontSize: 12,
-                      color: 'var(--muted)',
-                      margin: 0,
-                      paddingLeft: 20,
-                      lineHeight: 1.7,
-                    }}
-                  >
-                    <li>Configuration API</li>
-                    <li>Templates et variables</li>
-                    <li>Tags et instructions</li>
-                    <li>Historique des publications</li>
-                    <li>État de fenêtre</li>
-                  </ul>
+                </div>
 
-                  <div
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  onChange={handleImportFile}
+                  style={{ display: 'none' }}
+                />
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <button
+                    onClick={handleImportClick}
                     style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 10,
-                      padding: '12px 14px',
-                      background: 'rgba(255,255,255,0.06)',
+                      width: '100%',
+                      padding: '14px 16px',
+                      background: 'rgba(74, 255, 158, 0.12)',
+                      border: '1px solid rgba(74, 255, 158, 0.3)',
+                      color: 'var(--text)',
                       borderRadius: 10,
-                      borderLeft: '3px solid var(--accent)',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      fontWeight: 600,
                     }}
                   >
-                    <span style={{ fontSize: 14 }}>ℹ️</span>
-                    <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, fontStyle: 'italic' }}>
-                      Le fichier sera enregistré dans votre dossier Téléchargements.
-                    </p>
-                  </div>
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/json,.json"
-                    onChange={handleImportFile}
-                    style={{ display: 'none' }}
-                  />
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <button
-                      onClick={handleImportClick}
-                      style={{
-                        width: '100%',
-                        padding: '14px 16px',
-                        background: 'rgba(74, 255, 158, 0.12)',
-                        border: '1px solid rgba(74, 255, 158, 0.3)',
-                        color: 'var(--text)',
-                        borderRadius: 10,
-                        cursor: 'pointer',
-                        fontSize: 14,
-                        fontWeight: 600,
-                      }}
-                    >
-                      📥 Importer une sauvegarde
-                    </button>
-                    <button
-                      onClick={handleExportConfig}
-                      style={{
-                        width: '100%',
-                        padding: '14px 16px',
-                        background: 'rgba(74, 158, 255, 0.2)',
-                        border: '1px solid rgba(74, 158, 255, 0.4)',
-                        color: 'var(--accent)',
-                        borderRadius: 10,
-                        cursor: 'pointer',
-                        fontSize: 14,
-                        fontWeight: 600,
-                      }}
-                    >
-                      📤 Télécharger la sauvegarde complète
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCleanupAllData}
-                      style={{
-                        width: '100%',
-                        padding: '14px 16px',
-                        background: 'rgba(239, 68, 68, 0.15)',
-                        border: '1px solid rgba(239, 68, 68, 0.4)',
-                        color: 'var(--error, #ef4444)',
-                        borderRadius: 10,
-                        cursor: 'pointer',
-                        fontSize: 14,
-                        fontWeight: 600,
-                      }}
-                    >
-                      🗑️ Nettoyage complet des données
-                    </button>
-                  </div>
-                </section>
-              </>
+                    📥 Importer une sauvegarde
+                  </button>
+                  <button
+                    onClick={handleExportConfig}
+                    style={{
+                      width: '100%',
+                      padding: '14px 16px',
+                      background: 'rgba(74, 158, 255, 0.2)',
+                      border: '1px solid rgba(74, 158, 255, 0.4)',
+                      color: 'var(--accent)',
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      fontWeight: 600,
+                    }}
+                  >
+                    📤 Télécharger la sauvegarde complète
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCleanupAllData}
+                    style={{
+                      width: '100%',
+                      padding: '14px 16px',
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      color: 'var(--error, #ef4444)',
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      fontWeight: 600,
+                    }}
+                  >
+                    🗑️ Nettoyage complet des données
+                  </button>
+                </div>
+              </section>
             )}
           </div>
 

@@ -92,46 +92,6 @@ export default function StatsModal({ onClose }: StatsModalProps) {
     };
   }, [filteredPosts, savedTags]);
 
-  // Export CSV
-  const exportCSV = () => {
-    const headers = ['Date', 'Titre', 'Tags', 'URL Discord'];
-    const rows = filteredPosts.map(post => [
-      new Date(post.timestamp).toLocaleDateString('fr-FR'),
-      post.title,
-      post.tags,
-      post.discordUrl
-    ]);
-
-    const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `statistiques-${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-  };
-
-  // Export JSON
-  const exportJSON = () => {
-    const data = {
-      exportDate: new Date().toISOString(),
-      period: periodFilter,
-      stats: stats,
-      posts: filteredPosts.map(post => ({
-        date: new Date(post.timestamp).toISOString(),
-        title: post.title,
-        tags: post.tags,
-        discordUrl: post.discordUrl
-      }))
-    };
-
-    const json = JSON.stringify(data, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `statistiques-${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
-  };
-
   return (
     <div className="modal">
       <div className="panel" onClick={e => e.stopPropagation()} style={{ maxWidth: 1000, width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
@@ -172,25 +132,6 @@ export default function StatsModal({ onClose }: StatsModalProps) {
               <option value="30d">30 derniers jours</option>
               <option value="6m">6 derniers mois</option>
             </select>
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <button
-              onClick={exportCSV}
-              className="btn"
-              style={{ flex: 1, fontSize: 13, padding: '8px 12px' }}
-              disabled={filteredPosts.length === 0}
-            >
-              📊 CSV
-            </button>
-            <button
-              onClick={exportJSON}
-              className="btn"
-              style={{ flex: 1, fontSize: 13, padding: '8px 12px' }}
-              disabled={filteredPosts.length === 0}
-            >
-              📦 JSON
-            </button>
           </div>
         </div>
 
