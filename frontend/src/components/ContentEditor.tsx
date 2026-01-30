@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DiscordIcon from '../assets/discord-icon.svg';
 import { useConfirm } from '../hooks/useConfirm';
-import { useUndoRedo } from '../hooks/useUndoRedo';
 import { tauriAPI } from '../lib/tauri-api';
 import { useApp } from '../state/appContext';
 import { useAuth } from '../state/authContext';
@@ -82,36 +81,6 @@ export default function ContentEditor() {
     setInstructionSearchQuery('');
     setInput('instruction', '');
   }, [currentTemplateIdx, editingPostId]);
-
-  // Undo/Redo pour le textarea Synopsis
-  const { recordState, undo, redo, reset: resetUndoRedo } = useUndoRedo();
-
-  useEffect(() => {
-    recordState(inputs['Overview'] || '');
-  }, []);
-
-  const handleOverviewKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.ctrlKey && e.key === 'z') {
-      e.preventDefault();
-      const prevState = undo();
-      if (prevState !== null) {
-        setInput('Overview', prevState);
-      }
-    } else if (e.ctrlKey && e.key === 'y') {
-      e.preventDefault();
-      const nextState = redo();
-      if (nextState !== null) {
-        setInput('Overview', nextState);
-      }
-    }
-  };
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      recordState(inputs['Overview'] || '');
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [inputs['Overview']]);
 
   const currentTemplateId = templates[currentTemplateIdx]?.id || templates[currentTemplateIdx]?.name;
 
@@ -518,43 +487,22 @@ export default function ContentEditor() {
   return (
     <div style={{ padding: '10px 15px', position: 'relative', height: '100%', minHeight: 0, overflow: 'auto', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
 
-      {/* Badge mode édition - inchangé */}
-      {isEditMode && (
-        <div style={{
-          background: 'rgba(125, 211, 252, 0.1)',
-          border: '1px solid var(--accent)',
-          borderRadius: 8,
-          padding: '12px 16px',
-          marginBottom: 20,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <div>
-            <div style={{ fontWeight: 600, color: 'var(--accent)', marginBottom: 2 }}>✏️ Mode édition</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>Vous modifiez un post existant sur Discord.</div>
-          </div>
-          <button
-            onClick={() => {
-              setEditingPostId(null);
-              showToast('Mode édition annulé', 'info');
-            }}
-            style={{
-              padding: '6px 12px',
-              fontSize: 12,
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid var(--border)',
-              borderRadius: 4,
-              cursor: 'pointer'
-            }}
-          >
-            ❌ Annuler
-          </button>
-        </div>
-      )}
-
       {/* LIGNE 1 : Titre */}
-      <h4 style={{ marginBottom: 16 }}>📝 Contenu du post Discord</h4>
+      <h4 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        📝 Contenu du post Discord
+        {editingPostId && (
+          <span style={{
+            fontSize: 12,
+            fontWeight: 500,
+            color: 'var(--accent)',
+            background: 'rgba(125, 211, 252, 0.15)',
+            padding: '4px 10px',
+            borderRadius: 6
+          }}>
+            ✏️ Mode modification
+          </span>
+        )}
+      </h4>
 
       <div style={{ display: 'grid', gap: 16, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
 
@@ -1374,7 +1322,6 @@ export default function ContentEditor() {
               ref={overviewRef}
               value={inputs['Overview'] || ''}
               onChange={e => setInput('Overview', e.target.value)}
-              onKeyDown={handleOverviewKeyDown}
               disabled={!varsUsedInTemplate.has('Overview')}
               style={{
                 width: '100%',
@@ -1493,7 +1440,7 @@ export default function ContentEditor() {
           borderTop: '1px solid var(--border)'
         }}>
 
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={handlePasteImport}
@@ -1513,6 +1460,18 @@ export default function ContentEditor() {
             >
               <span>📥</span>
               Importer Data
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                showToast('X X l’aperçu et le rendu Discord.', 'success');
+              }}
+              title=""
+              style={{
+                display: 'none'
+              }}
+            >
+              { }
             </button>
             <button
               type="button"
@@ -1558,7 +1517,7 @@ export default function ContentEditor() {
             {editingPostId && (
               <button
                 type="button"
-                onClick={() => { setEditingPostId(null); setEditingPostData(null); }}
+                onClick={() => { setEditingPostId(null); setEditingPostData(null); showToast('Mode édition annulé', 'info'); }}
                 style={{
                   background: 'transparent',
                   border: '1px solid var(--border)',
@@ -1569,7 +1528,7 @@ export default function ContentEditor() {
                   fontWeight: 600
                 }}
               >
-                Annuler l'édition
+                ❌ Annuler l'édition
               </button>
             )}
 

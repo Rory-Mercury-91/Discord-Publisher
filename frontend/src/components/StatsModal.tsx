@@ -66,7 +66,6 @@ export default function StatsModal({ onClose }: StatsModalProps) {
 
     const topTranslators = Object.entries(translatorCount)
       .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
     // Publications par mois
@@ -100,41 +99,6 @@ export default function StatsModal({ onClose }: StatsModalProps) {
           <button onClick={onClose} className="btn" style={{ padding: '4px 8px', fontSize: 14 }}>✕</button>
         </div>
 
-        {/* Filtres */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: 12,
-          marginBottom: 20,
-          padding: 16,
-          background: 'rgba(255,255,255,0.03)',
-          borderRadius: 8,
-          border: '1px solid var(--border)'
-        }}>
-          <div>
-            <label style={{ fontSize: 13, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>📅 Période</label>
-            <select
-              value={periodFilter}
-              onChange={(e) => setPeriodFilter(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                fontSize: 13,
-                color: 'white',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="all">Toutes les périodes</option>
-              <option value="7d">7 derniers jours</option>
-              <option value="30d">30 derniers jours</option>
-              <option value="6m">6 derniers mois</option>
-            </select>
-          </div>
-        </div>
-
         {/* Contenu scrollable */}
         <div style={{ flex: 1, overflowY: 'auto', marginRight: -16, paddingRight: 16 }}>
           {filteredPosts.length === 0 ? (
@@ -150,8 +114,35 @@ export default function StatsModal({ onClose }: StatsModalProps) {
             </div>
           ) : (
             <>
-              {/* Carte de métrique principale */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 24 }}>
+              {/* Ligne 1 : 📅 Période | 📚 Total */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+                <div style={{
+                  padding: 20,
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 12
+                }}>
+                  <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 8 }}>📅 Période</div>
+                  <select
+                    value={periodFilter}
+                    onChange={(e) => setPeriodFilter(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 6,
+                      fontSize: 14,
+                      color: 'white',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="all">Toutes les périodes</option>
+                    <option value="7d">7 derniers jours</option>
+                    <option value="30d">30 derniers jours</option>
+                    <option value="6m">6 derniers mois</option>
+                  </select>
+                </div>
                 <div style={{
                   padding: 20,
                   background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.05))',
@@ -164,99 +155,124 @@ export default function StatsModal({ onClose }: StatsModalProps) {
                 </div>
               </div>
 
-              {/* Traducteurs les plus fréquents */}
-              {stats.topTranslators.length > 0 && (
-                <div style={{ marginBottom: 24 }}>
+              {/* Ligne 2 : 👤 Répartition par traducteur | 📆 Publications par mois */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                {/* Répartition par traducteur */}
+                <div>
                   <h4 style={{ fontSize: 16, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    👤 Traducteurs les plus actifs
+                    👤 Répartition par traducteur
                   </h4>
-                  <div style={{
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8,
-                    overflow: 'hidden'
-                  }}>
-                    {stats.topTranslators.map((translator, index) => (
-                      <div
-                        key={translator.name}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '12px 16px',
-                          borderBottom: index < stats.topTranslators.length - 1 ? '1px solid var(--border)' : 'none'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <div style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: '50%',
-                            background: `linear-gradient(135deg, ${['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#ef4444'][index]}, ${['#2563eb', '#16a34a', '#9333ea', '#d97706', '#dc2626'][index]})`,
+                  {stats.topTranslators.length > 0 ? (
+                    <div style={{
+                      background: 'rgba(255,255,255,0.02)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      overflow: 'hidden'
+                    }}>
+                      {stats.topTranslators.map((translator, index) => (
+                        <div
+                          key={translator.name}
+                          style={{
                             display: 'flex',
+                            justifyContent: 'space-between',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 14,
-                            fontWeight: 700
-                          }}>
-                            #{index + 1}
+                            padding: '12px 16px',
+                            borderBottom: index < stats.topTranslators.length - 1 ? '1px solid var(--border)' : 'none'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: '50%',
+                              background: `linear-gradient(135deg, ${['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#ef4444'][index % 5]}, ${['#2563eb', '#16a34a', '#9333ea', '#d97706', '#dc2626'][index % 5]})`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: 14,
+                              fontWeight: 700
+                            }}>
+                              #{index + 1}
+                            </div>
+                            <span style={{ fontSize: 14 }}>{translator.name}</span>
                           </div>
-                          <span style={{ fontSize: 14 }}>{translator.name}</span>
+                          <div style={{
+                            fontSize: 16,
+                            fontWeight: 600,
+                            color: ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#ef4444'][index % 5]
+                          }}>
+                            {translator.count}
+                          </div>
                         </div>
-                        <div style={{
-                          fontSize: 16,
-                          fontWeight: 600,
-                          color: ['#3b82f6', '#22c55e', '#a855f7', '#f59e0b', '#ef4444'][index]
-                        }}>
-                          {translator.count}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: 'rgba(255,255,255,0.02)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      padding: 16,
+                      color: 'var(--muted)',
+                      fontSize: 13
+                    }}>
+                      Aucune donnée
+                    </div>
+                  )}
                 </div>
-              )}
 
-              {/* Publications par mois */}
-              {stats.monthlyData.length > 0 && (
+                {/* Publications par mois */}
                 <div>
                   <h4 style={{ fontSize: 16, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                     📆 Publications par mois
                   </h4>
-                  <div style={{
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8,
-                    padding: 16
-                  }}>
-                    {stats.monthlyData.map((item, index) => {
-                      const maxCount = Math.max(...stats.monthlyData.map(d => d.count));
-                      const percentage = (item.count / maxCount) * 100;
+                  {stats.monthlyData.length > 0 ? (
+                    <div style={{
+                      background: 'rgba(255,255,255,0.02)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      padding: 16
+                    }}>
+                      {stats.monthlyData.map((item, index) => {
+                        const maxCount = Math.max(...stats.monthlyData.map(d => d.count));
+                        const percentage = (item.count / maxCount) * 100;
 
-                      return (
-                        <div key={item.month} style={{ marginBottom: index < stats.monthlyData.length - 1 ? 12 : 0 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
-                            <span style={{ color: 'var(--muted)' }}>{item.month}</span>
-                            <span style={{ fontWeight: 600 }}>{item.count}</span>
-                          </div>
-                          <div style={{
-                            height: 8,
-                            background: 'rgba(255,255,255,0.05)',
-                            borderRadius: 4,
-                            overflow: 'hidden'
-                          }}>
+                        return (
+                          <div key={item.month} style={{ marginBottom: index < stats.monthlyData.length - 1 ? 12 : 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
+                              <span style={{ color: 'var(--muted)' }}>{item.month}</span>
+                              <span style={{ fontWeight: 600 }}>{item.count}</span>
+                            </div>
                             <div style={{
-                              height: '100%',
-                              width: `${percentage}%`,
-                              background: 'linear-gradient(90deg, #3b82f6, #2563eb)',
-                              transition: 'width 0.3s ease'
-                            }} />
+                              height: 8,
+                              background: 'rgba(255,255,255,0.05)',
+                              borderRadius: 4,
+                              overflow: 'hidden'
+                            }}>
+                              <div style={{
+                                height: '100%',
+                                width: `${percentage}%`,
+                                background: 'linear-gradient(90deg, #3b82f6, #2563eb)',
+                                transition: 'width 0.3s ease'
+                              }} />
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: 'rgba(255,255,255,0.02)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      padding: 16,
+                      color: 'var(--muted)',
+                      fontSize: 13
+                    }}>
+                      Aucune donnée
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </>
           )}
         </div>

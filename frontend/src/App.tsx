@@ -23,6 +23,7 @@ function AppContentInner() {
     apiStatus,
     setApiStatus,
     preview,
+    setPreviewOverride,
     inputs,
     uploadedImages,
     allVarsConfig,
@@ -134,7 +135,7 @@ function AppContentInner() {
         </h1>
         <div style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <button onClick={() => setOpenTemplates(true)}>📁 Gérer les Templates</button>
+            <button onClick={() => setOpenTemplates(true)}>📁 Gérer le Template</button>
             <button onClick={() => setOpenTagsUnlock(true)}>🏷️ Gérer les Tags</button>
             <button onClick={() => setOpenInstructions(true)}>📋 Gérer les Instructions</button>
             <button onClick={() => setOpenHistory(true)}>📜 Historique</button>
@@ -227,6 +228,7 @@ function AppContentInner() {
           >
             <Preview
               preview={preview || ''}
+              setPreviewContent={setPreviewOverride}
               onCopy={handleCopyPreview}
               onOpenDiscordPreview={() => setOpenDiscordPreview(true)}
             />

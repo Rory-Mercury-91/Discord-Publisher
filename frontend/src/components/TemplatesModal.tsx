@@ -12,12 +12,18 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   const { showToast } = useToast();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
 
-  useEscapeKey(() => onClose?.(), true);
+  const handleCancelAndClose = () => {
+    if (templates.length > 0) {
+      setFormContent(templates[0].content);
+    }
+    cancelVarEdit();
+    onClose?.();
+  };
+
+  useEscapeKey(handleCancelAndClose, true);
   useModalScrollLock();
 
-  // Toujours éditer le template unique (index 0)
-  const editingIdx = 0;
-  const [form, setForm] = useState({ name: '', content: '' });
+  const [formContent, setFormContent] = useState('');
   const [copiedVar, setCopiedVar] = useState<string | null>(null);
   const [editingVarIdx, setEditingVarIdx] = useState<number | null>(null);
   const [varForm, setVarForm] = useState({ name: '', label: '', type: 'text' as 'text' | 'textarea' });
@@ -25,63 +31,37 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
-  // Charger le template unique au chargement de la modale
   useEffect(() => {
     if (templates.length > 0) {
-      const t = templates[0];
-      setForm({ name: t.name, content: t.content });
+      setFormContent(templates[0].content);
     }
-  }, []);
+  }, [templates]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 's') {
         e.preventDefault();
-        if (form.name.trim()) {
-          saveTemplate();
-        } else {
-          showToast('Le nom du template est requis', 'warning');
-        }
+        saveAndClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [form.name, form.content, editingIdx]);
+  }, [formContent, templates]);
 
-  function cancelEdit() {
-    if (templates.length > 0) {
-      const t = templates[0];
-      setForm({ name: t.name, content: t.content });
-    } else {
-      setForm({ name: '', content: '' });
-    }
-    cancelVarEdit();
-  }
-
-  function saveTemplate() {
-    if (!form.name.trim()) {
-      showToast('Le nom est requis', 'warning');
-      return;
-    }
+  function saveAndClose() {
     if (templates.length === 0) {
       showToast('Aucun template à modifier', 'error');
       return;
     }
-    const now = Date.now();
     const currentTemplate = templates[0];
     const payload = {
-      id: currentTemplate.id || 'my',
-      name: form.name,
-      type: currentTemplate.type || 'my',
-      content: form.content,
-      isDraft: false,
-      createdAt: currentTemplate.createdAt || now,
-      modifiedAt: now,
-      lastSavedAt: undefined
+      ...currentTemplate,
+      content: formContent,
+      modifiedAt: Date.now()
     };
     updateTemplate(0, payload);
-    cancelEdit();
     showToast('Template enregistré', 'success');
+    onClose?.();
   }
 
   async function copyVarToClipboard(varName: string) {
@@ -147,11 +127,10 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
     showToast('Variable supprimée', 'success');
   }
 
-  /** Export local : template(s) + variables au format JSON */
   function exportTemplateLocal() {
     try {
       const data = {
-        templates,
+        templates: templates,
         allVarsConfig,
         exportDate: new Date().toISOString(),
         version: '1.0'
@@ -160,16 +139,15 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `templates_${Date.now()}.json`;
+      a.download = `template_${Date.now()}.json`;
       a.click();
       URL.revokeObjectURL(url);
       showToast('Template exporté', 'success');
-    } catch (e: any) {
-      showToast(e?.message || 'Erreur export', 'error');
+    } catch (e: unknown) {
+      showToast((e as Error)?.message || 'Erreur export', 'error');
     }
   }
 
-  /** Import local : fichier JSON avec templates et allVarsConfig */
   function importTemplateLocal(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -177,7 +155,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
         const text = reader.result as string;
         const data = JSON.parse(text);
         if (!data || typeof data !== 'object') throw new Error('Fichier invalide');
-        const payload: any = {};
+        const payload: { templates?: typeof templates; allVarsConfig?: typeof allVarsConfig } = {};
         if (Array.isArray(data.templates)) payload.templates = data.templates;
         if (Array.isArray(data.allVarsConfig)) payload.allVarsConfig = data.allVarsConfig;
         if (Object.keys(payload).length === 0) {
@@ -187,17 +165,29 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
         importFullConfig(payload);
         showToast('Template importé', 'success');
         if (Array.isArray(data.templates) && data.templates.length > 0) {
-          const t = data.templates[0];
-          setForm({ name: t.name ?? '', content: t.content ?? '' });
+          setFormContent(data.templates[0].content ?? '');
         }
-      } catch (e: any) {
-        showToast(e?.message || 'Fichier invalide', 'error');
+      } catch (e: unknown) {
+        showToast((e as Error)?.message || 'Fichier invalide', 'error');
       }
     };
     reader.readAsText(file, 'UTF-8');
   }
 
-  // Template unique - toutes les variables sont visibles
+  async function handleRestore() {
+    const ok = await confirm({
+      title: 'Restaurer le template par défaut',
+      message: 'Voulez-vous vraiment restaurer le template par défaut ? Le contenu actuel sera remplacé.',
+      confirmText: 'Restaurer',
+      type: 'warning'
+    });
+    if (ok) {
+      restoreDefaultTemplates();
+      showToast('Template par défaut restauré', 'success');
+      // Le useEffect([templates]) mettra à jour formContent au prochain rendu
+    }
+  }
+
   const visibleVars = allVarsConfig;
   const customVars = allVarsConfig.map((v, idx) => ({ v, idx })).filter(({ v }) => v.isCustom);
 
@@ -206,30 +196,33 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       <div className="panel" onClick={e => e.stopPropagation()} style={{
         maxWidth: 1200,
         width: '95%',
+        minHeight: '78vh',
         maxHeight: '90vh',
         display: 'flex',
         flexDirection: 'column'
       }}>
+        {/* Header : titre + Exporter / Importer + fermer */}
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 16,
-          paddingBottom: 12,
+          marginBottom: 0,
+          paddingBottom: 16,
+          paddingTop: 4,
           borderBottom: '2px solid var(--border)'
         }}>
-          <h3 style={{ margin: 0 }}>📄 Gestion des templates & variables</h3>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <h3 style={{ margin: 0 }}>📄 Gestion du template & variables</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
               onClick={exportTemplateLocal}
-              style={{ fontSize: 12, padding: '6px 12px', background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)' }}
-              title="Exporter le template et les variables en JSON (local)"
+              style={{ fontSize: 12, padding: '6px 12px', background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)', borderRadius: 6 }}
+              title="Exporter le template et les variables en JSON"
             >
               📤 Exporter
             </button>
             <button
               onClick={() => importInputRef.current?.click()}
-              style={{ fontSize: 12, padding: '6px 12px', background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)' }}
+              style={{ fontSize: 12, padding: '6px 12px', background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)', borderRadius: 6 }}
               title="Importer un fichier JSON (template + variables)"
             >
               📥 Importer
@@ -248,39 +241,27 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
               }}
             />
             <button
-              onClick={async () => {
-                const ok = await confirm({
-                  title: 'Restaurer les templates par défaut',
-                  message: 'Voulez-vous vraiment restaurer les templates par défaut ? Cela remplacera tous les templates actuels.',
-                  confirmText: 'Restaurer',
-                  type: 'warning'
-                });
-                if (ok) {
-                  restoreDefaultTemplates();
-                  showToast('Templates par défaut restaurés', 'success');
-                  // Recharger le formulaire avec le template par défaut restauré
-                  setTimeout(() => {
-                    if (templates.length > 0) {
-                      const t = templates[0];
-                      setForm({ name: t.name, content: t.content });
-                    }
-                  }, 50);
-                }
-              }}
+              onClick={onClose}
               style={{
-                fontSize: 12,
-                padding: '6px 12px',
-                background: 'var(--accent)'
+                fontSize: 18,
+                padding: '4px 10px',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                lineHeight: 1
               }}
-              title="Restaurer les templates par défaut"
+              title="Fermer (Échap)"
             >
-              🔄 Restaurer
+              ✕
             </button>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 20, flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          {/* Colonne gauche : Template */}
+        {/* Deux colonnes : gauche (Template) | droite (Variables) */}
+        <div style={{ display: 'flex', gap: 20, flex: 1, minHeight: 0, overflow: 'hidden', paddingTop: 24 }}>
+          {/* Partie gauche : Template */}
           <div style={{
             flex: 1,
             minWidth: 0,
@@ -289,30 +270,9 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
             borderRight: '1px solid var(--border)',
             paddingRight: 20
           }}>
-            <h4 style={{ margin: '0 0 12px 0', fontSize: 15 }}>
-              📄 Template
-            </h4>
-            <div style={{ marginBottom: 8 }}>
-              <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
-                Nom du template *
-              </label>
-              <input
-                placeholder="ex: Mon template"
-                value={form.name}
-                onChange={e => setForm({ ...form, name: e.target.value })}
-                style={{ width: '100%' }}
-              />
-            </div>
-            <div style={{ flex: 1, minHeight: 120, display: 'flex', flexDirection: 'column' }}>
-              <label style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                fontSize: 12,
-                color: 'var(--muted)',
-                marginBottom: 4
-              }}>
-                Contenu *
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h4 style={{ margin: 0, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+                📄 Template
                 <button
                   type="button"
                   onClick={() => setShowMarkdownHelp(true)}
@@ -320,33 +280,54 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
                     background: 'rgba(74, 158, 255, 0.15)',
                     border: '1px solid rgba(74, 158, 255, 0.3)',
                     borderRadius: '50%',
-                    width: 18,
-                    height: 18,
+                    width: 22,
+                    height: 22,
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: 'pointer',
-                    fontSize: 11,
-                    padding: 0
+                    fontSize: 12,
+                    padding: 0,
+                    color: 'var(--text)'
                   }}
                   title="Aide Markdown"
                 >
                   ?
                 </button>
-              </label>
+              </h4>
+              <button
+                type="button"
+                onClick={handleRestore}
+                style={{
+                  fontSize: 12,
+                  padding: '6px 12px',
+                  background: 'rgba(74, 158, 255, 0.2)',
+                  border: '1px solid rgba(74, 158, 255, 0.4)',
+                  borderRadius: 6,
+                  color: 'var(--text)',
+                  cursor: 'pointer'
+                }}
+                title="Restaurer le template par défaut"
+              >
+                🔄 Restaurer
+              </button>
+            </div>
+            <div style={{ flex: 1, minHeight: 120, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <textarea
                 ref={contentRef}
                 placeholder="Contenu du template..."
-                value={form.content}
-                onChange={e => setForm({ ...form, content: e.target.value })}
+                value={formContent}
+                onChange={e => setFormContent(e.target.value)}
                 style={{
                   width: '100%',
                   flex: 1,
                   minHeight: 180,
                   fontFamily: 'monospace',
-                  resize: 'vertical',
-                  fontSize: 13
+                  resize: 'none',
+                  fontSize: 13,
+                  overflowY: 'auto'
                 }}
+                className="styled-scrollbar"
                 spellCheck={true}
                 lang="fr-FR"
               />
@@ -362,7 +343,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
                 <div style={{ fontSize: 11, color: '#4a9eff', marginBottom: 6, fontWeight: 600 }}>
                   💡 Variables (cliquez pour copier)
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 72, overflowY: 'auto' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 72, overflowY: 'auto' }} className="styled-scrollbar">
                   {visibleVars.map((v, idx) => (
                     <span
                       key={idx}
@@ -390,30 +371,9 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
                 </div>
               </div>
             )}
-            <div style={{
-              display: 'flex',
-              gap: 8,
-              justifyContent: 'flex-end',
-              marginTop: 12,
-              paddingTop: 12,
-              borderTop: '1px solid var(--border)'
-            }}>
-              <button onClick={cancelEdit} style={{ padding: '8px 14px' }}>
-                ❌ Annuler
-              </button>
-              <button
-                onClick={() => {
-                  saveTemplate();
-                  onClose?.();
-                }}
-                style={{ padding: '8px 14px', background: 'var(--accent)', fontWeight: 600 }}
-              >
-                ✅ Enregistrer
-              </button>
-            </div>
           </div>
 
-          {/* Colonne droite : Variables dynamiques (partagées entre utilisateurs) */}
+          {/* Partie droite : Variables personnalisées */}
           <div style={{
             flex: 1,
             minWidth: 280,
@@ -423,11 +383,17 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
             overflow: 'hidden'
           }}>
             <h4 style={{ margin: '0 0 12px 0', fontSize: 15 }}>
-              🔧 Variables dynamiques
+              🔧 Variables personnalisées
             </h4>
-            <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 12px 0', lineHeight: 1.4 }}>
-              Partagées entre tous les utilisateurs. Utilisez <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[nom]</code> dans le template.
-            </p>
+            <div style={{ marginBottom: 8 }}>
+              <button
+                type="button"
+                onClick={() => { setEditingVarIdx(null); setVarForm({ name: '', label: '', type: 'text' }); }}
+                style={{ fontSize: 12, padding: '6px 12px', background: 'var(--accent)', border: 'none', borderRadius: 6, color: 'white', cursor: 'pointer' }}
+              >
+                ➕ Ajouter une variable
+              </button>
+            </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }} className="styled-scrollbar">
               {customVars.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
@@ -546,6 +512,26 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Footer : Annuler et Enregistrer à droite */}
+        <div style={{
+          marginTop: 16,
+          paddingTop: 16,
+          borderTop: '1px solid var(--border)',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 8
+        }}>
+          <button onClick={handleCancelAndClose} style={{ padding: '8px 14px' }}>
+            ❌ Annuler
+          </button>
+          <button
+            onClick={saveAndClose}
+            style={{ padding: '8px 14px', background: 'var(--accent)', fontWeight: 600 }}
+          >
+            ✅ Enregistrer
+          </button>
         </div>
       </div>
 

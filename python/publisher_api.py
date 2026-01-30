@@ -221,50 +221,89 @@ def _mark_as_notified(thread_id: int, f95_version: str):
     }
 
 # ==================== HISTORIQUE PUBLICATIONS ====================
+# Aligné sur Supabase : tous les champs (saved_inputs, saved_link_configs, etc.) sont stockés et renvoyés.
 HISTORY_FILE = Path("publication_history.json")
+
+def _normalize_history_row(row: Dict) -> Dict:
+    """Garantit les clés snake_case attendues par le frontend (rowToPost)."""
+    if not row:
+        return row
+    # Accepte camelCase entrant et renvoie snake_case pour cohérence avec Supabase
+    alias = {
+        "threadId": "thread_id", "messageId": "message_id", "discordUrl": "discord_url",
+        "forumId": "forum_id", "imagePath": "image_path", "translationType": "translation_type",
+        "isIntegrated": "is_integrated", "authorDiscordId": "author_discord_id",
+        "savedInputs": "saved_inputs", "savedLinkConfigs": "saved_link_configs",
+        "savedAdditionalTranslationLinks": "saved_additional_translation_links",
+        "savedAdditionalModLinks": "saved_additional_mod_links", "templateId": "template_id",
+        "createdAt": "created_at", "updatedAt": "updated_at",
+    }
+    out = dict(row)
+    for camel, snake in alias.items():
+        if camel in out and snake not in out:
+            out[snake] = out.pop(camel)
+    return out
+
 
 class PublicationHistory:
     def __init__(self, history_file: Path = HISTORY_FILE):
         self.history_file = history_file
         self._ensure_file_exists()
-    
+
     def _ensure_file_exists(self):
         if not self.history_file.exists():
             try:
+                self.history_file.parent.mkdir(parents=True, exist_ok=True)
                 self.history_file.write_text(json.dumps([], ensure_ascii=False, indent=2), encoding='utf-8')
             except Exception as e:
                 logger.warning(f"Impossible de créer le fichier d'historique: {e}")
-    
-    def add_post(self, post_data: Dict):
+
+    def update_or_add_post(self, post_data: Dict) -> None:
+        """
+        Ajoute ou met à jour un post dans l'historique (aligné Supabase).
+        Si post_data a thread_id et qu'un post avec ce thread_id existe, il est remplacé ; sinon insertion en tête.
+        Tous les champs (saved_inputs, saved_link_configs, etc.) sont conservés tels quels.
+        """
+        post_data = _normalize_history_row(post_data)
         try:
             if self.history_file.exists():
                 content = self.history_file.read_text(encoding='utf-8')
                 history = json.loads(content) if content.strip() else []
             else:
                 history = []
-            
+
+            thread_id = post_data.get("thread_id") or ""
+            if thread_id:
+                history = [p for p in history if (p.get("thread_id") or "") != thread_id]
             history.insert(0, post_data)
             if len(history) > 1000:
                 history = history[:1000]
-            
+
             self.history_file.write_text(
                 json.dumps(history, ensure_ascii=False, indent=2),
                 encoding='utf-8'
             )
-            logger.info(f"✅ Post ajouté à l'historique: {post_data.get('title', 'N/A')}")
+            logger.info(f"✅ Post enregistré dans l'historique Koyeb: {post_data.get('title', 'N/A')}")
         except Exception as e:
-            logger.error(f"Erreur lors de l'ajout à l'historique: {e}")
-    
+            logger.error(f"Erreur lors de l'enregistrement dans l'historique: {e}")
+
+    def add_post(self, post_data: Dict) -> None:
+        """Rétrocompatibilité : délègue à update_or_add_post."""
+        self.update_or_add_post(post_data)
+
     def get_posts(self, limit: Optional[int] = None) -> List[Dict]:
+        """Retourne la liste complète des posts (tous champs, snake_case)."""
         try:
             if not self.history_file.exists():
                 return []
             content = self.history_file.read_text(encoding='utf-8')
             history = json.loads(content) if content.strip() else []
-            return history[:limit] if limit else history
+            out = [_normalize_history_row(p) for p in history]
+            return out[:limit] if limit else out
         except Exception as e:
             logger.error(f"Erreur lors de la lecture de l'historique: {e}")
             return []
+
 
 history_manager = PublicationHistory()
 
@@ -1455,6 +1494,7 @@ async def forum_post(request):
         return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_MY_ID non configuré"}, status=500))
     title, content, tags, metadata_b64 = "", "", "", None
     translator_label, state_label, game_version, translate_version, announce_image_url = "", "", "", "", ""
+    history_payload_raw = None
     reader = await request.multipart()
     async for part in reader:
         if part.name == "title":
@@ -1475,8 +1515,10 @@ async def forum_post(request):
             translate_version = (await part.text()).strip()
         elif part.name == "announce_image_url":
             announce_image_url = (await part.text()).strip()
+        elif part.name == "history_payload":
+            history_payload_raw = (await part.text()).strip()
     forum_id = config.FORUM_MY_ID
-    
+
     async with aiohttp.ClientSession() as session:
         ok, result = await _create_forum_post(session, forum_id, title, content, tags, [], metadata_b64)
         if ok and config.ANNOUNCE_CHANNEL_ID:
@@ -1491,23 +1533,52 @@ async def forum_post(request):
                 translate_version=translate_version,
                 image_url=announce_image_url or None,
             )
-    
+
     if not ok:
         return _with_cors(request, web.json_response({"ok": False, "details": result}, status=500))
-    
-    history_manager.add_post({
-        "id": f"post_{int(time.time())}",
-        "timestamp": int(time.time() * 1000),
-        "title": title,
-        "content": content,
-        "tags": tags,
-        "template": "my",
-        "thread_id": result["thread_id"],
-        "message_id": result["message_id"],
-        "discord_url": result["thread_url"],
-        "forum_id": forum_id
-    })
-    
+
+    if history_payload_raw:
+        try:
+            payload = json.loads(history_payload_raw)
+            payload["thread_id"] = result.get("thread_id") or ""
+            payload["message_id"] = result.get("message_id") or ""
+            payload["discord_url"] = result.get("thread_url") or ""
+            payload["forum_id"] = forum_id
+            ts = int(time.time() * 1000)
+            if "created_at" not in payload or not payload.get("created_at"):
+                payload["created_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+            payload["updated_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+            if "timestamp" not in payload:
+                payload["timestamp"] = ts
+            history_manager.update_or_add_post(payload)
+        except Exception as e:
+            logger.warning(f"Historique (create): payload invalide, fallback minimal: {e}")
+            history_manager.update_or_add_post({
+                "id": f"post_{int(time.time())}",
+                "timestamp": int(time.time() * 1000),
+                "title": title,
+                "content": content,
+                "tags": tags,
+                "template": "my",
+                "thread_id": result["thread_id"],
+                "message_id": result["message_id"],
+                "discord_url": result["thread_url"],
+                "forum_id": forum_id,
+            })
+    else:
+        history_manager.update_or_add_post({
+            "id": f"post_{int(time.time())}",
+            "timestamp": int(time.time() * 1000),
+            "title": title,
+            "content": content,
+            "tags": tags,
+            "template": "my",
+            "thread_id": result["thread_id"],
+            "message_id": result["message_id"],
+            "discord_url": result["thread_url"],
+            "forum_id": forum_id,
+        })
+
     return _with_cors(request, web.json_response({"ok": True, **result}))
 
 async def forum_post_update(request):
@@ -1519,6 +1590,7 @@ async def forum_post_update(request):
         return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_MY_ID non configuré"}, status=500))
     title, content, tags, thread_id, message_id, metadata_b64 = "", "", "", None, None, None
     translator_label, state_label, game_version, translate_version, announce_image_url, thread_url = "", "", "", "", "", ""
+    history_payload_raw = None
     reader = await request.multipart()
     async for part in reader:
         if part.name == "title":
@@ -1545,6 +1617,8 @@ async def forum_post_update(request):
             announce_image_url = (await part.text()).strip()
         elif part.name == "thread_url":
             thread_url = (await part.text()).strip()
+        elif part.name == "history_payload":
+            history_payload_raw = (await part.text()).strip()
 
     if not thread_id or not message_id:
         return _with_cors(request, web.json_response({"ok": False, "error": "threadId and messageId required"}, status=400))
@@ -1651,17 +1725,42 @@ async def forum_post_update(request):
                 image_url=announce_image_url or None,
             )
 
-    history_manager.add_post({
-        "id": f"post_{int(time.time())}",
-        "timestamp": int(time.time() * 1000),
-        "title": title,
-        "content": content,
-        "tags": tags,
-        "thread_id": thread_id,
-        "updated": True,
-        "message_id": message_id,
-        "template": "my"
-    })
+    ts = int(time.time() * 1000)
+    if history_payload_raw:
+        try:
+            payload = json.loads(history_payload_raw)
+            payload["thread_id"] = thread_id or payload.get("thread_id") or ""
+            payload["message_id"] = message_id or payload.get("message_id") or ""
+            payload["discord_url"] = (thread_url or "").strip() or payload.get("discord_url") or ""
+            payload["updated_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+            if "timestamp" not in payload:
+                payload["timestamp"] = ts
+            history_manager.update_or_add_post(payload)
+        except Exception as e:
+            logger.warning(f"Historique (update): payload invalide, fallback minimal: {e}")
+            history_manager.update_or_add_post({
+                "id": f"post_{ts}",
+                "timestamp": ts,
+                "title": title,
+                "content": content,
+                "tags": tags,
+                "template": "my",
+                "thread_id": thread_id,
+                "message_id": message_id,
+                "discord_url": thread_url or "",
+            })
+    else:
+        history_manager.update_or_add_post({
+            "id": f"post_{ts}",
+            "timestamp": ts,
+            "title": title,
+            "content": content,
+            "tags": tags,
+            "thread_id": thread_id,
+            "message_id": message_id,
+            "discord_url": thread_url or "",
+            "template": "my",
+        })
 
     return _with_cors(request, web.json_response({"ok": True, "updated": True, "thread_id": thread_id}))
 

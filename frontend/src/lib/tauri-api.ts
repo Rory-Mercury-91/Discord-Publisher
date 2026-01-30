@@ -379,4 +379,45 @@ export const tauriAPI = {
       return { ok: false, error: error.message || String(error) };
     }
   },
+
+  /**
+   * Historique local : sauvegarde un post (tous les champs) dans le dossier de l'app, par utilisateur.
+   * Dossier : app_data_dir / history / {author_discord_id ou "default"} / posts.json
+   * À appeler après publication ou mise à jour (row = format Supabase snake_case).
+   */
+  async saveLocalHistoryPost(row: Record<string, unknown>, authorDiscordId: string | null | undefined) {
+    try {
+      await invoke('save_local_history_post', {
+        postJson: JSON.stringify(row),
+        authorDiscordId: authorDiscordId ?? null
+      });
+      return { ok: true };
+    } catch (_e) {
+      return { ok: false };
+    }
+  },
+
+  /** Indique si l'utilisateur a un fichier d'archive d'historique local (afficher la checkbox). */
+  async hasLocalHistoryArchive(authorDiscordId: string | null | undefined): Promise<boolean> {
+    try {
+      return await invoke<boolean>('has_local_history_archive', {
+        authorDiscordId: authorDiscordId ?? null
+      });
+    } catch (_e) {
+      return false;
+    }
+  },
+
+  /** Charge le contenu de l'archive d'historique local (JSON array de posts). */
+  async getLocalHistoryArchive(authorDiscordId: string | null | undefined): Promise<{ ok: boolean; data?: unknown[] }> {
+    try {
+      const json = await invoke<string>('get_local_history_archive', {
+        authorDiscordId: authorDiscordId ?? null
+      });
+      const data = json ? JSON.parse(json) : [];
+      return { ok: true, data: Array.isArray(data) ? data : [] };
+    } catch (_e) {
+      return { ok: false };
+    }
+  },
 };

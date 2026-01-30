@@ -1,40 +1,19 @@
-
 interface PreviewProps {
+  /** Contenu affiché (template + variables, puis ce que l'utilisateur modifie). */
   preview: string;
+  setPreviewContent: (value: string) => void;
   onCopy: () => void;
   onOpenDiscordPreview?: () => void;
 }
 
-
 export default function Preview({
   preview,
+  setPreviewContent,
   onCopy,
   onOpenDiscordPreview
 }: PreviewProps) {
   const characterCount = preview.length;
   const isOverLimit = characterCount > 2000;
-  // Si le preview est vide, afficher un message
-  if (!preview || preview.trim() === '') {
-    return (
-      <div className="preview-section" style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        height: '100%',
-        minHeight: 0,
-        background: 'var(--bg)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'var(--muted)'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>👁️</div>
-          <div style={{ fontSize: 16 }}>Aperçu</div>
-          <div style={{ fontSize: 12, marginTop: 8 }}>Le preview apparaîtra ici</div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="preview-section" style={{
@@ -45,9 +24,8 @@ export default function Preview({
       minHeight: 0,
       background: 'var(--bg)'
     }}>
-      {/* Boutons de mode et actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {onOpenDiscordPreview && (
             <button
               onClick={onOpenDiscordPreview}
@@ -77,7 +55,6 @@ export default function Preview({
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {/* Compteur de caractères */}
           <div style={{
             fontSize: 14,
             fontWeight: 700,
@@ -99,6 +76,7 @@ export default function Preview({
           </div>
           <button
             onClick={onCopy}
+            title="Copier le preview"
             style={{
               padding: '6px 12px',
               fontSize: 13,
@@ -115,20 +93,24 @@ export default function Preview({
         </div>
       </div>
 
-      <div className="preview-body styled-scrollbar" style={{ flex: 1, overflow: 'auto' }}>
+      <div className="preview-body styled-scrollbar" style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         <textarea
-          readOnly
+          readOnly={false}
           value={preview}
+          onChange={(e) => setPreviewContent(e.target.value)}
+          placeholder="Le preview (template + variables) s'affiche ici. Vous pouvez modifier le texte directement."
           style={{
             width: '100%',
             height: '100%',
+            minHeight: 200,
             fontFamily: 'monospace',
             padding: 12,
             borderRadius: 6,
             background: '#2b2d31',
             color: '#dbdee1',
             border: '1px solid var(--border)',
-            resize: 'none'
+            resize: 'none',
+            cursor: 'text'
           }}
         />
       </div>

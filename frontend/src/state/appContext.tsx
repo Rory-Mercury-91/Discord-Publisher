@@ -156,9 +156,7 @@ const defaultTemplates: Template[] = [defaultTemplate];
 type AppContextValue = {
   resetAllFields: () => void;
   templates: Template[];
-  addTemplate: (t: Template) => void;
   updateTemplate: (idx: number, t: Template) => void;
-  deleteTemplate: (idx: number) => void;
   restoreDefaultTemplates: () => void;
   currentTemplateIdx: number; // Toujours 0 - un seul template
   allVarsConfig: VarConfig[];
@@ -171,7 +169,11 @@ type AppContextValue = {
   setTranslationType: (type: string) => void;
   isIntegrated: boolean;
   setIsIntegrated: (value: boolean) => void;
+  /** Contenu affiché et envoyé à la publication : rendu template+variables, ou override si édition directe. */
   preview: string;
+  /** Override du preview (édition directe pour ce post). null = rendu live depuis le template. */
+  previewOverride: string | null;
+  setPreviewOverride: (value: string | null) => void;
   savedTags: Tag[];
   addSavedTag: (t: Tag) => void;
   updateSavedTag: (id: string, updates: Partial<Tag>) => void;
@@ -221,6 +223,8 @@ type AppContextValue = {
   updatePublishedPost: (id: string, p: Partial<PublishedPost>) => Promise<void>;
   deletePublishedPost: (id: string) => void;
   fetchHistoryFromAPI: () => Promise<void>;
+  /** Convertit une ligne historique (snake_case, Supabase/archive) en PublishedPost pour l'affichage. */
+  parseHistoryRow: (row: Record<string, unknown>) => PublishedPost;
   /** Nettoyage des données applicatives (Supabase + état local). ownerId = profil courant pour supprimer ses lignes allowed_editors. */
   clearAllAppData: (ownerId?: string) => Promise<{ ok: boolean; error?: string }>;
 
@@ -613,6 +617,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingPostData, setEditingPostData] = useState<PublishedPost | null>(null);
 
+  /** Override du preview : édition directe pour ce post. null = rendu live depuis le template. */
+  const [previewOverride, setPreviewOverride] = useState<string | null>(null);
+
   useEffect(() => { localStorage.setItem('postTitle', postTitle); }, [postTitle]);
 
   useEffect(() => {
@@ -884,29 +891,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           );
         });
         if (newPostsFromKoyeb.length > 0) {
-          const mapped = newPostsFromKoyeb.map((p: any) => ({
-            id: p.id || `post_${p.timestamp || Date.now()}_koyeb`,
-            timestamp: p.timestamp || Date.now(),
-            createdAt: p.timestamp || Date.now(),
-            updatedAt: p.timestamp || Date.now(),
-            title: p.title ?? '',
-            content: p.content ?? '',
-            tags: p.tags ?? '',
-            template: p.template ?? 'my',
-            threadId: String(p.thread_id ?? p.threadId ?? ''),
-            messageId: String(p.message_id ?? p.messageId ?? ''),
-            discordUrl: p.discord_url ?? p.thread_url ?? '',
-            forumId: Number(p.forum_id ?? p.forumId ?? 0) || 0,
-            savedInputs: undefined,
-            savedLinkConfigs: undefined,
-            savedAdditionalTranslationLinks: undefined,
-            savedAdditionalModLinks: undefined,
-            imagePath: undefined,
-            translationType: undefined,
-            isIntegrated: undefined,
-            templateId: undefined,
-            authorDiscordId: undefined
-          } as PublishedPost));
+          // Aligné Supabase : l'API Koyeb renvoie les mêmes champs (snake_case) ; on utilise rowToPost
+          const mapped = newPostsFromKoyeb.map((p: Record<string, unknown>) => {
+            const row = {
+              ...p,
+              id: p.id ?? `post_${p.timestamp ?? Date.now()}_koyeb`,
+              thread_id: p.thread_id ?? p.threadId ?? '',
+              message_id: p.message_id ?? p.messageId ?? '',
+              discord_url: p.discord_url ?? p.thread_url ?? '',
+              forum_id: p.forum_id ?? p.forumId ?? 0
+            };
+            return rowToPost(row);
+          });
           setPublishedPosts(prev => {
             const merged = [...mapped, ...prev].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             return merged;
@@ -1066,6 +1062,61 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
+      // Payload complet pour l'historique Koyeb (aligné Supabase) : tous les champs
+      const now = Date.now();
+      const postId = `post_${now}_${Math.random().toString(36).substr(2, 9)}`;
+      const imagePathVal = uploadedImages.find(i => i.isMain)?.path || uploadedImages.find(i => i.isMain)?.url;
+      if (isEditMode && editingPostData) {
+        const mergedForHistory: PublishedPost = {
+          ...editingPostData,
+          id: editingPostData.id,
+          timestamp: now,
+          updatedAt: now,
+          title,
+          content: finalContent,
+          tags: tagsToSend,
+          template: templateType,
+          imagePath: imagePathVal,
+          translationType,
+          isIntegrated,
+          savedInputs: { ...inputs },
+          savedLinkConfigs: JSON.parse(JSON.stringify(linkConfigs)),
+          savedAdditionalTranslationLinks: JSON.parse(JSON.stringify(additionalTranslationLinks)),
+          savedAdditionalModLinks: JSON.parse(JSON.stringify(additionalModLinks)),
+          templateId: templates[currentTemplateIdx]?.id,
+          threadId: editingPostData.threadId,
+          messageId: editingPostData.messageId,
+          discordUrl: editingPostData.discordUrl || '',
+          forumId: editingPostData.forumId ?? 0
+        };
+        formData.append('history_payload', JSON.stringify(postToRow(mergedForHistory)));
+      } else {
+        const newPostForHistory: PublishedPost = {
+          id: postId,
+          timestamp: now,
+          createdAt: now,
+          updatedAt: now,
+          title,
+          content: finalContent,
+          tags: tagsToSend,
+          template: templateType,
+          imagePath: imagePathVal,
+          translationType,
+          isIntegrated,
+          savedInputs: { ...inputs },
+          savedLinkConfigs: JSON.parse(JSON.stringify(linkConfigs)),
+          savedAdditionalTranslationLinks: JSON.parse(JSON.stringify(additionalTranslationLinks)),
+          savedAdditionalModLinks: JSON.parse(JSON.stringify(additionalModLinks)),
+          templateId: templates[currentTemplateIdx]?.id,
+          threadId: '',
+          messageId: '',
+          discordUrl: '',
+          forumId: 0,
+          authorDiscordId: authorDiscordId ?? undefined
+        };
+        formData.append('history_payload', JSON.stringify(postToRow(newPostForHistory)));
+      }
+
       // Plus besoin d'envoyer les images comme attachments, elles sont dans le contenu
 
       const apiKey = localStorage.getItem('apiKey') || '';
@@ -1150,6 +1201,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // Post fusionné = même contenu que Discord pour que Supabase et le contrôle de version restent cohérents
           const mergedPost = { ...editingPostData, ...updatedPost };
           await updatePublishedPost(editingPostId, mergedPost);
+          tauriAPI.saveLocalHistoryPost(postToRow(mergedPost), mergedPost.authorDiscordId);
           setEditingPostId(null);
           setEditingPostData(null);
           console.log('✅ Post mis à jour dans l\'historique et Supabase:', updatedPost);
@@ -1179,6 +1231,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             authorDiscordId: authorDiscordId ?? undefined
           };
           await addPublishedPost(newPost);
+          tauriAPI.saveLocalHistoryPost(postToRow(newPost), newPost.authorDiscordId);
           console.log('✅ Nouveau post ajouté à l\'historique et Supabase:', newPost);
         }
       } else {
@@ -1444,9 +1497,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('uploadedImages', JSON.stringify(uploadedImages));
   }, [uploadedImages]);
 
-  function addTemplate(t: Template) {
-    setTemplates(prev => [...prev, t]);
-  }
   function updateTemplate(idx: number, t: Template) {
     setTemplates(prev => {
       const copy = [...prev];
@@ -1457,15 +1507,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return copy;
     });
   }
-  function deleteTemplate(idx: number) {
-    // Ne pas permettre la suppression du dernier template
-    if (templates.length <= 1) {
-      console.warn('Impossible de supprimer le dernier template');
-      return;
-    }
-    setTemplates(prev => { const copy = [...prev]; copy.splice(idx, 1); return copy; });
-  }
-
   function restoreDefaultTemplates() {
     setTemplates(defaultTemplates);
     // Sauvegarder dans localStorage
@@ -2049,7 +2090,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setInput('main_translation_label', 'Traduction');
     setInput('main_mod_label', 'Mod');
     setUploadedImages([]);
-  }, [allVarsConfig, setTranslationType, setIsIntegrated, setPostTitle, setPostTags, setLinkConfigs]);
+    setPreviewOverride(null);
+  }, [allVarsConfig, setTranslationType, setIsIntegrated, setPostTitle, setPostTags, setLinkConfigs, setPreviewOverride]);
 
   // SUPPRESSION COMPLÈTE DU DEBOUNCE pour un rendu instantané
   // Le preview dépend directement de inputs et currentTemplateIdx
@@ -2167,6 +2209,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return content;
   }, [templates, currentTemplateIdx, allVarsConfig, inputs, translationType, isIntegrated, additionalTranslationLinks, additionalModLinks, uploadedImages]);
 
+  /** Preview effectif : contenu saisi si non vide, sinon rendu template + variables (affichage et publication). */
+  const effectivePreview = (previewOverride != null && previewOverride !== '') ? previewOverride : preview;
+
   const value: AppContextValue = {
     resetAllFields,
     linkConfigs,
@@ -2174,9 +2219,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setLinkConfigs,
     templates,
     importFullConfig,
-    addTemplate,
     updateTemplate,
-    deleteTemplate,
     restoreDefaultTemplates,
     currentTemplateIdx,
     allVarsConfig,
@@ -2189,7 +2232,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTranslationType,
     isIntegrated,
     setIsIntegrated,
-    preview,
+    preview: effectivePreview,
+    previewOverride,
+    setPreviewOverride,
     savedTags,
     addSavedTag,
     updateSavedTag,
@@ -2233,6 +2278,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updatePublishedPost,
     deletePublishedPost,
     fetchHistoryFromAPI,
+    parseHistoryRow: rowToPost,
     clearAllAppData,
 
     // Rate limit protection
@@ -2336,11 +2382,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      // Restaurer le contenu du post dans le preview (mode override) pour édition directe
+      setPreviewOverride(post.content ?? '');
+
       // Plus besoin de restaurer le template - un seul template maintenant
     },
     loadPostForDuplication: (post: PublishedPost) => {
       setEditingPostId(null);
       setEditingPostData(null);
+      setPreviewOverride(null);
       setPostTitle(post.title);
       setPostTags(post.tags);
 

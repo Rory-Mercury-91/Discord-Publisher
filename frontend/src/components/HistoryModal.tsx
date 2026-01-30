@@ -3,6 +3,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
 import { getSupabase } from '../lib/supabase';
+import { tauriAPI } from '../lib/tauri-api';
 import { PublishedPost, useApp } from '../state/appContext';
 import type { Profile } from '../state/authContext';
 import { useAuth } from '../state/authContext';
@@ -22,7 +23,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
   useModalScrollLock();
 
   const { profile } = useAuth();
-  const { publishedPosts, deletePublishedPost, loadPostForEditing, fetchHistoryFromAPI } = useApp();
+  const { publishedPosts, deletePublishedPost, loadPostForEditing, fetchHistoryFromAPI, parseHistoryRow } = useApp();
   const { showToast } = useToast();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
 
@@ -67,6 +68,36 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
       });
   }, []);
 
+  // Archive locale : afficher la checkbox uniquement s'il existe un fichier d'archive
+  const [hasArchive, setHasArchive] = useState(false);
+  const [loadArchive, setLoadArchive] = useState(false);
+  const [archivePosts, setArchivePosts] = useState<PublishedPost[]>([]);
+
+  useEffect(() => {
+    tauriAPI.hasLocalHistoryArchive(profile?.discord_id).then(setHasArchive);
+  }, [profile?.discord_id]);
+
+  const [isLoadingArchive, setIsLoadingArchive] = useState(false);
+  useEffect(() => {
+    if (!loadArchive) {
+      setArchivePosts([]);
+      setIsLoadingArchive(false);
+      return;
+    }
+    setIsLoadingArchive(true);
+    tauriAPI.getLocalHistoryArchive(profile?.discord_id).then((res) => {
+      if (res.ok && Array.isArray(res.data)) {
+        setArchivePosts(res.data.map((row: unknown) => parseHistoryRow(row as Record<string, unknown>)));
+      } else {
+        setArchivePosts([]);
+      }
+      setIsLoadingArchive(false);
+    });
+  }, [loadArchive, profile?.discord_id, parseHistoryRow]);
+
+  // Source : historique normal ou archive (pas de fusion)
+  const sourcePosts = loadArchive ? archivePosts : publishedPosts;
+
   // Recherche, tri et filtre par auteur
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc'>('date-desc');
@@ -74,7 +105,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
   const [currentPage, setCurrentPage] = useState(1);
 
   const filteredAndSortedPosts = useMemo(() => {
-    let list = [...publishedPosts];
+    let list = [...sourcePosts];
     if (filterAuthorId) {
       if (filterAuthorId === 'me') {
         list = list.filter(post => post.authorDiscordId === profile?.discord_id);
@@ -98,7 +129,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
       sortBy === 'date-desc' ? b.timestamp - a.timestamp : a.timestamp - b.timestamp
     );
     return list;
-  }, [publishedPosts, searchQuery, sortBy, filterAuthorId, profile?.discord_id, allProfilesForEdit]);
+  }, [sourcePosts, searchQuery, sortBy, filterAuthorId, profile?.discord_id, allProfilesForEdit]);
 
   // Peut modifier ce post : auteur, master admin, ou autorisé par l'auteur
   const canEditPost = useMemo(() => {
@@ -284,6 +315,27 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
             <option value="date-desc">Plus récent</option>
             <option value="date-asc">Plus ancien</option>
           </select>
+          {hasArchive && (
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 13,
+              color: 'var(--text)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap'
+            }}>
+              <input
+                type="checkbox"
+                checked={loadArchive}
+                onChange={(e) => {
+                  setLoadArchive(e.target.checked);
+                  setCurrentPage(1);
+                }}
+              />
+              Charger l'historique archivé
+            </label>
+          )}
           {hasActiveFilters && (
             <button
               type="button"
@@ -318,17 +370,17 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
             </div>
           )}
 
-          {isLoading && (
+          {(isLoading || (loadArchive && isLoadingArchive)) && (
             <div style={{
               color: 'var(--muted)',
               padding: 40,
               textAlign: 'center'
             }}>
-              ⏳ Chargement de l'historique...
+              ⏳ {loadArchive ? "Chargement de l'archive..." : "Chargement de l'historique..."}
             </div>
           )}
 
-          {!isLoading && filteredAndSortedPosts.length === 0 ? (
+          {!isLoading && !(loadArchive && isLoadingArchive) && filteredAndSortedPosts.length === 0 ? (
             <div style={{
               color: 'var(--muted)',
               fontStyle: 'italic',
@@ -337,7 +389,11 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
               background: 'rgba(255,255,255,0.03)',
               borderRadius: 10
             }}>
-              {searchQuery.trim() ? 'Aucune publication ne correspond à la recherche.' : 'Aucune publication dans l\'historique.'}
+              {searchQuery.trim()
+                ? 'Aucune publication ne correspond à la recherche.'
+                : loadArchive
+                  ? "Aucune publication dans l'archive."
+                  : "Aucune publication dans l'historique."}
             </div>
           ) : (
             <>

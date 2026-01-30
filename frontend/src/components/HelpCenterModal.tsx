@@ -368,6 +368,25 @@ function TagsHelp() {
             <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--muted)', margin: 0 }}>
               Cliquez sur le <strong>✕</strong> d'un badge pour le retirer de la publication. Vous pouvez rouvrir la modale pour en ajouter d'autres.
             </p>
+            <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8, marginBottom: 0 }}>Exemple de badge :</p>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 14px',
+                borderRadius: 999,
+                background: 'rgba(99, 102, 241, 0.14)',
+                border: '1px solid rgba(99, 102, 241, 0.35)',
+                fontSize: 13,
+                lineHeight: 1.2,
+                fontWeight: 600,
+                marginTop: 6
+              }}
+            >
+              <span style={{ color: 'var(--text)' }}>Rory Mercury 91</span>
+              <span style={{ color: 'var(--muted)', fontSize: 14 }}>✕</span>
+            </div>
           </div>
 
           <div style={{
@@ -397,7 +416,7 @@ function StatsHelp() {
           📈 À quoi servent les statistiques ?
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          La fenêtre Statistiques affiche des indicateurs basés sur vos publications enregistrées dans l'historique : nombre total de publications, traducteurs les plus actifs, et répartition par mois. Les données proviennent des posts présents dans l'app (Supabase + historique local).
+          La fenêtre Statistiques affiche des indicateurs basés sur vos publications enregistrées dans l'historique : nombre total de publications, répartition par traducteurs, et répartition par mois. Les données proviennent des posts présents dans l'app (Supabase + historique local).
         </p>
       </section>
 
@@ -431,10 +450,10 @@ function StatsHelp() {
         padding: 16
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
-          👤 Traducteurs les plus actifs
+          👤 Répartition par traducteur
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          Cette section affiche le top 5 des traducteurs selon le nombre de publications auxquelles ils sont associés. Seuls les <strong>tags marqués comme « Tag traducteur »</strong> (dans la gestion des tags) sont pris en compte. Si aucun tag traducteur n'est défini ou utilisé dans les posts, cette section ne s'affiche pas.
+          Cette section affiche tous les traducteurs selon le nombre de publications auxquelles ils sont associés. Seuls les <strong>tags marqués comme « Tag traducteur »</strong> (dans la gestion des tags) sont pris en compte. Si aucun tag traducteur n'est défini ou utilisé dans les posts, cette section affiche « Aucune donnée ».
         </p>
       </section>
 
@@ -647,8 +666,8 @@ function ShortcutsHelp() {
     {
       category: 'Édition',
       items: [
-        { keys: 'Ctrl + Z', description: 'Annuler (Undo) dans le champ Synopsis' },
-        { keys: 'Ctrl + Y', description: 'Refaire (Redo) dans le champ Synopsis' },
+        { keys: 'Ctrl + Z', description: 'Annuler (Undo) dans les champs de saisie (natif)' },
+        { keys: 'Ctrl + Y', description: 'Refaire (Redo) dans les champs de saisie (natif)' },
         { keys: 'Ctrl + S', description: 'Sauvegarder le template (modale Templates)' },
       ]
     },
@@ -755,13 +774,30 @@ function TemplatesHelp() {
         padding: 16
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
-          Gérer les templates
+          Gérer le template
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
-          Un seul template est actif à la fois ; il n'y a pas de sélecteur de template dans l'éditeur. La fenêtre <strong>Gestion des templates</strong> (bouton « Gérer les Templates ») permet de créer, modifier ou définir le template actif, et de supprimer des templates. Les templates peuvent être partagés via la base : dans Configuration, utilisez « Envoyer » / « Récupérer » pour les templates afin de les synchroniser avec Supabase.
+          La fenêtre <strong>Gestion du template</strong> (bouton « Gérer le Template ») permet de modifier le template, ou de restaurer le Template par défaut. Les templates peuvent être partagés via la base : dans Configuration, utilisez « Envoyer » / « Récupérer » pour les templates afin de les synchroniser avec Supabase ou bien en exportant ou important un Template d'un autre utilisateur.
         </p>
         <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
           Les variables disponibles (ex. <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Game_name]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Game_version]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[instruction]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Overview]</code>) sont documentées dans la modale Templates ou dans le Markdown d'aide du champ contenu.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(74, 158, 255, 0.08)',
+        border: '1px solid rgba(74, 158, 255, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4a9eff' }}>
+          ✏️ Zone Aperçu
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
+          La zone d'aperçu (à droite) est <strong>éditable directement</strong> : elle affiche le template + variables, et vous pouvez modifier le texte à la main (ajouter « Salut », corriger, etc.). Le rendu Discord et la publication utilisent ce contenu. <strong>Vider le formulaire</strong> remet l'aperçu au template + variables. Les petits ajouts sont sauvegardés avec le post.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 8px 0' }}>
+          Pour une <strong>variable personnalisée</strong> réutilisable, passer par la <strong>Gestion du template</strong>.
         </p>
       </section>
     </div>

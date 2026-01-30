@@ -251,6 +251,96 @@ async fn import_config(content: String) -> Result<String, String> {
     Ok(content)
 }
 
+fn local_history_user_folder(author_discord_id: Option<&String>) -> String {
+    author_discord_id
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect::<String>())
+        .unwrap_or_else(|| "default".to_string())
+}
+
+/// Historique local : sauvegarde un post (création ou mise à jour) dans un JSON par utilisateur.
+/// Au-delà de 1000 entrées, les plus anciennes sont archivées dans posts_archive.json (pas de perte).
+/// Dossier : app_data_dir / history / {author_discord_id ou "default"} / posts.json et posts_archive.json
+#[tauri::command]
+async fn save_local_history_post(app: AppHandle, post_json: String, author_discord_id: Option<String>) -> Result<(), String> {
+    let data_dir = app.path().app_data_dir()
+        .map_err(|e| format!("Dossier données app: {:?}", e))?;
+    let user_folder = local_history_user_folder(author_discord_id.as_ref());
+    let history_dir = data_dir.join("history").join(&user_folder);
+    fs::create_dir_all(&history_dir)
+        .map_err(|e| format!("Création dossier historique: {:?}", e))?;
+    let posts_file = history_dir.join("posts.json");
+    let archive_file = history_dir.join("posts_archive.json");
+
+    let post: serde_json::Value = serde_json::from_str(&post_json)
+        .map_err(|e| format!("JSON post invalide: {}", e))?;
+    let thread_id = post.get("thread_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let mut posts: Vec<serde_json::Value> = if posts_file.exists() {
+        let content = fs::read_to_string(&posts_file)
+            .map_err(|e| format!("Lecture historique: {:?}", e))?;
+        serde_json::from_str(&content).unwrap_or_else(|_| vec![])
+    } else {
+        vec![]
+    };
+
+    if !thread_id.is_empty() {
+        posts.retain(|p| p.get("thread_id").and_then(|v| v.as_str()).unwrap_or("") != thread_id);
+    }
+    posts.insert(0, post);
+
+    if posts.len() > 1000 {
+        let to_archive = posts.split_off(1000);
+        let mut archive: Vec<serde_json::Value> = if archive_file.exists() {
+            let content = fs::read_to_string(&archive_file)
+                .map_err(|e| format!("Lecture archive: {:?}", e))?;
+            serde_json::from_str(&content).unwrap_or_else(|_| vec![])
+        } else {
+            vec![]
+        };
+        for p in to_archive.into_iter().rev() {
+            archive.push(p);
+        }
+        let archive_json = serde_json::to_string_pretty(&archive)
+            .map_err(|e| format!("Sérialisation archive: {}", e))?;
+        fs::write(&archive_file, archive_json)
+            .map_err(|e| format!("Écriture archive: {:?}", e))?;
+    }
+
+    let json = serde_json::to_string_pretty(&posts)
+        .map_err(|e| format!("Sérialisation historique: {}", e))?;
+    fs::write(&posts_file, json)
+        .map_err(|e| format!("Écriture historique: {:?}", e))?;
+    Ok(())
+}
+
+/// Indique si l'utilisateur a un fichier d'archive d'historique local (à afficher la checkbox).
+#[tauri::command]
+async fn has_local_history_archive(app: AppHandle, author_discord_id: Option<String>) -> Result<bool, String> {
+    let data_dir = app.path().app_data_dir()
+        .map_err(|e| format!("Dossier données app: {:?}", e))?;
+    let user_folder = local_history_user_folder(author_discord_id.as_ref());
+    let archive_file = data_dir.join("history").join(&user_folder).join("posts_archive.json");
+    Ok(archive_file.exists())
+}
+
+/// Charge le contenu de l'archive d'historique local (tableau JSON de posts, même format que posts.json).
+#[tauri::command]
+async fn get_local_history_archive(app: AppHandle, author_discord_id: Option<String>) -> Result<String, String> {
+    let data_dir = app.path().app_data_dir()
+        .map_err(|e| format!("Dossier données app: {:?}", e))?;
+    let user_folder = local_history_user_folder(author_discord_id.as_ref());
+    let archive_file = data_dir.join("history").join(&user_folder).join("posts_archive.json");
+    if !archive_file.exists() {
+        return Ok("[]".to_string());
+    }
+    let content = fs::read_to_string(&archive_file)
+        .map_err(|e| format!("Lecture archive: {:?}", e))?;
+    Ok(content)
+}
+
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
@@ -305,8 +395,11 @@ pub fn run() {
             list_images,
             export_config,
             import_config,
-            save_window_state,  // ✅ Nouvelle commande
-            open_url,  // ✅ Commande pour ouvrir des URLs
+            save_window_state,
+            save_local_history_post,
+            has_local_history_archive,
+            get_local_history_archive,
+            open_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
