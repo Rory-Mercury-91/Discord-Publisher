@@ -74,7 +74,8 @@ export default function ConfirmModal({
           margin: '0 0 24px',
           color: 'var(--text)',
           lineHeight: 1.5,
-          fontSize: 15
+          fontSize: 15,
+          whiteSpace: 'pre-line'
         }}>
           {message}
         </p>

@@ -22,6 +22,7 @@ from publisher_api import (
     configure,
     forum_post,
     forum_post_update,
+    forum_post_delete,
     get_history
 )
 
@@ -77,6 +78,9 @@ def make_app():
 
     # Forum post update
     app.router.add_post("/api/forum-post/update", forum_post_update)
+
+    # Forum post delete (thread Discord + historique/Supabase côté frontend)
+    app.router.add_post("/api/forum-post/delete", forum_post_delete)
 
     # Publisher endpoints
     app.router.add_get("/api/publisher/health", publisher_health)

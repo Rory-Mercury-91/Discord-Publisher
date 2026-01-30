@@ -932,7 +932,7 @@ export default function ContentEditor() {
                   onChange={e => setIsIntegrated(e.target.checked)}
                   style={{ width: 16, height: 16, cursor: 'pointer' }}
                 />
-                <span>Traduction intégrée (VF incluse)</span>
+                <span>Traduction intégrée au jeu</span>
               </label>
             </div>
             <div style={{

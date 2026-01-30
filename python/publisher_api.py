@@ -130,6 +130,8 @@ class Config:
         
         # Salon qui reçoit les notifications de mise à jour de version
         self.MAJ_NOTIFICATION_CHANNEL_ID = int(os.getenv("MAJ_NOTIFICATION_CHANNEL_ID", "0")) if os.getenv("MAJ_NOTIFICATION_CHANNEL_ID") else 0
+        # Salon qui reçoit les annonces (nouvelle traduction / mise à jour)
+        self.ANNOUNCE_CHANNEL_ID = int(os.getenv("ANNOUNCE_CHANNEL_ID", "0")) if os.getenv("ANNOUNCE_CHANNEL_ID") else 0
         
         # Planification
         self.VERSION_CHECK_HOUR = int(os.getenv("VERSION_CHECK_HOUR", "6"))
@@ -1101,6 +1103,15 @@ async def _discord_delete_message(session, channel_id: str, message_id: str):
     )
     return status < 300
 
+
+async def _discord_delete_channel(session, channel_id: str) -> Tuple[bool, int]:
+    """Supprime un channel/thread Discord (DELETE /channels/{channel_id}). Retourne (succès, status_code)."""
+    status, data, _ = await _discord_request(
+        session, "DELETE", f"/channels/{channel_id}", headers=_auth_headers()
+    )
+    return (status < 300, status)
+
+
 async def _delete_old_metadata_messages(session, thread_id: str, keep_message_id: str = None):
     """
     Supprime tous les anciens messages de métadonnées dans un thread.
@@ -1342,6 +1353,52 @@ def _with_cors(request, resp):
     resp.headers.update({"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Credentials": "true"})
     return resp
 
+
+async def _send_announcement(
+    session,
+    is_update: bool,
+    title: str,
+    thread_url: str,
+    translator_label: str,
+    state_label: str,
+    game_version: str,
+    translate_version: str,
+    image_url: Optional[str] = None,
+) -> bool:
+    """
+    Envoie l'annonce (nouvelle traduction ou mise à jour) dans ANNOUNCE_CHANNEL_ID.
+    Format défini : titre, nom du jeu (lien), traducteur, versions, état, Bon jeu à vous 😊, embed image.
+    """
+    if not config.ANNOUNCE_CHANNEL_ID:
+        logger.warning("⚠️ ANNOUNCE_CHANNEL_ID non configuré, annonce non envoyée")
+        return False
+    title_clean = (title or "").strip() or "Sans titre"
+    game_version = (game_version or "").strip() or "Non spécifiée"
+    translate_version = (translate_version or "").strip() or "Non spécifiée"
+    prefixe = "🔄 **Mise à jour d'une traduction**" if is_update else "🎮 **Nouvelle traduction**"
+    msg_content = f"{prefixe}\n\n"
+    msg_content += f"**Nom du jeu :** [{title_clean}]({thread_url})\n"
+    if translator_label and translator_label.strip():
+        msg_content += f"**Traducteur :** {translator_label.strip()}\n"
+    msg_content += f"**Version du jeu :** `{game_version}`\n"
+    msg_content += f"**Version de la traduction :** `{translate_version}`\n"
+    if state_label and state_label.strip():
+        msg_content += f"\n**État :** {state_label.strip()}\n"
+    msg_content += "\n**Bon jeu à vous** 😊"
+    payload = {"content": msg_content}
+    if image_url and image_url.strip().startswith("http"):
+        payload["embeds"] = [{"color": 0x4ADE80, "image": {"url": image_url.strip()}}]
+    status, data, _ = await _discord_post_json(
+        session,
+        f"/channels/{config.ANNOUNCE_CHANNEL_ID}/messages",
+        payload,
+    )
+    if status >= 300:
+        logger.warning(f"⚠️ Échec envoi annonce (status={status}): {data}")
+        return False
+    logger.info(f"✅ Annonce envoyée ({'mise à jour' if is_update else 'nouvelle traduction'}): {title_clean}")
+    return True
+
 # ==================== HANDLERS HTTP ====================
 async def health(request):
     return _with_cors(request, web.json_response({"ok": True, "configured": config.configured, "rate_limit": rate_limiter.get_info()}))
@@ -1368,6 +1425,7 @@ async def forum_post(request):
     if not config.FORUM_MY_ID:
         return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_MY_ID non configuré"}, status=500))
     title, content, tags, metadata_b64 = "", "", "", None
+    translator_label, state_label, game_version, translate_version, announce_image_url = "", "", "", "", ""
     reader = await request.multipart()
     async for part in reader:
         if part.name == "title":
@@ -1378,11 +1436,32 @@ async def forum_post(request):
             tags = (await part.text()).strip()
         elif part.name == "metadata":
             metadata_b64 = (await part.text()).strip()
+        elif part.name == "translator_label":
+            translator_label = (await part.text()).strip()
+        elif part.name == "state_label":
+            state_label = (await part.text()).strip()
+        elif part.name == "game_version":
+            game_version = (await part.text()).strip()
+        elif part.name == "translate_version":
+            translate_version = (await part.text()).strip()
+        elif part.name == "announce_image_url":
+            announce_image_url = (await part.text()).strip()
     forum_id = config.FORUM_MY_ID
     
     async with aiohttp.ClientSession() as session:
-        # Plus besoin d'envoyer les images comme attachments, elles sont dans le contenu
         ok, result = await _create_forum_post(session, forum_id, title, content, tags, [], metadata_b64)
+        if ok and config.ANNOUNCE_CHANNEL_ID:
+            await _send_announcement(
+                session,
+                is_update=False,
+                title=title,
+                thread_url=result.get("thread_url", ""),
+                translator_label=translator_label,
+                state_label=state_label,
+                game_version=game_version,
+                translate_version=translate_version,
+                image_url=announce_image_url or None,
+            )
     
     if not ok:
         return _with_cors(request, web.json_response({"ok": False, "details": result}, status=500))
@@ -1410,6 +1489,7 @@ async def forum_post_update(request):
     if not config.FORUM_MY_ID:
         return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_MY_ID non configuré"}, status=500))
     title, content, tags, thread_id, message_id, metadata_b64 = "", "", "", None, None, None
+    translator_label, state_label, game_version, translate_version, announce_image_url, thread_url = "", "", "", "", "", ""
     reader = await request.multipart()
     async for part in reader:
         if part.name == "title":
@@ -1424,6 +1504,18 @@ async def forum_post_update(request):
             message_id = (await part.text()).strip()
         elif part.name == "metadata":
             metadata_b64 = (await part.text()).strip()
+        elif part.name == "translator_label":
+            translator_label = (await part.text()).strip()
+        elif part.name == "state_label":
+            state_label = (await part.text()).strip()
+        elif part.name == "game_version":
+            game_version = (await part.text()).strip()
+        elif part.name == "translate_version":
+            translate_version = (await part.text()).strip()
+        elif part.name == "announce_image_url":
+            announce_image_url = (await part.text()).strip()
+        elif part.name == "thread_url":
+            thread_url = (await part.text()).strip()
 
     if not thread_id or not message_id:
         return _with_cors(request, web.json_response({"ok": False, "error": "threadId and messageId required"}, status=400))
@@ -1517,6 +1609,19 @@ async def forum_post_update(request):
         if status >= 300:
             return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
 
+        if config.ANNOUNCE_CHANNEL_ID and thread_url:
+            await _send_announcement(
+                session,
+                is_update=True,
+                title=title,
+                thread_url=thread_url,
+                translator_label=translator_label,
+                state_label=state_label,
+                game_version=game_version,
+                translate_version=translate_version,
+                image_url=announce_image_url or None,
+            )
+
     history_manager.add_post({
         "id": f"post_{int(time.time())}",
         "timestamp": int(time.time() * 1000),
@@ -1533,10 +1638,34 @@ async def forum_post_update(request):
 
 async def get_history(request):
     api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
-    if api_key != config.PUBLISHER_API_KEY: 
+    if api_key != config.PUBLISHER_API_KEY:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     posts = history_manager.get_posts()
     return _with_cors(request, web.json_response({"ok": True, "posts": posts, "count": len(posts)}))
+
+
+async def forum_post_delete(request):
+    """Supprime définitivement un post : supprime le thread sur Discord (tous les messages avec)."""
+    api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
+    if api_key != config.PUBLISHER_API_KEY:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+    try:
+        body = await request.json() if request.can_read_body() else {}
+    except Exception:
+        body = {}
+    thread_id = (body.get("threadId") or body.get("thread_id") or "").strip()
+    if not thread_id:
+        return _with_cors(request, web.json_response({"ok": False, "error": "threadId requis"}, status=400))
+    async with aiohttp.ClientSession() as session:
+        deleted, status = await _discord_delete_channel(session, thread_id)
+    if not deleted:
+        if status == 404:
+            logger.info(f"ℹ️ Thread déjà supprimé ou introuvable: {thread_id}")
+            return _with_cors(request, web.json_response({"ok": False, "error": "Thread introuvable (déjà supprimé ?)", "not_found": True}, status=404))
+        logger.warning(f"⚠️ Échec suppression thread Discord: {thread_id} (status={status})")
+        return _with_cors(request, web.json_response({"ok": False, "error": "Échec suppression du thread sur Discord"}, status=500))
+    logger.info(f"✅ Thread Discord supprimé: {thread_id}")
+    return _with_cors(request, web.json_response({"ok": True, "thread_id": thread_id}))
 
 # ==================== APPLICATION WEB ====================
 app = web.Application()
@@ -1544,6 +1673,7 @@ app.add_routes([
     web.get('/api/publisher/health', health),
     web.post('/api/forum-post', forum_post),
     web.post('/api/forum-post/update', forum_post_update),
+    web.post('/api/forum-post/delete', forum_post_delete),
     web.get('/api/history', get_history),
     web.post('/api/configure', configure),
     web.options('/{tail:.*}', options_handler)

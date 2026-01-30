@@ -130,16 +130,53 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
     setCurrentPage(1);
   }, [searchQuery, sortBy, filterAuthorId]);
 
-  async function handleDelete(id: string) {
+  async function handleDeleteDefinitively(post: PublishedPost) {
     const ok = await confirm({
-      title: 'Supprimer de l\'historique',
-      message: 'Voulez-vous supprimer cette publication de l\'historique local ? (Le post Discord ne sera pas supprimé)',
-      confirmText: 'Supprimer',
+      title: 'Supprimer définitivement',
+      message:
+        'Cette action va :\n' +
+        '• Retirer le post de ton historique\n' +
+        '• Le supprimer de la base de données\n' +
+        '• Supprimer le thread (et tout son contenu) sur Discord\n\n' +
+        'Cette action est irréversible.',
+      confirmText: 'Supprimer définitivement',
+      cancelText: 'Annuler',
       type: 'danger'
     });
     if (!ok) return;
-    deletePublishedPost(id);
-    showToast('Publication supprimée de l\'historique', 'success');
+    if (!post.threadId) {
+      showToast('Aucun thread Discord associé ; suppression de l\'historique uniquement.', 'warning');
+      deletePublishedPost(post.id);
+      return;
+    }
+    const baseUrl = (localStorage.getItem('apiBase') || '').replace(/\/+$/, '');
+    const apiKey = localStorage.getItem('apiKey') || '';
+    if (!baseUrl || !apiKey) {
+      showToast('URL API ou clé manquante dans la configuration', 'error');
+      return;
+    }
+    try {
+      const res = await fetch(`${baseUrl}/api/forum-post/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-KEY': apiKey },
+        body: JSON.stringify({ threadId: post.threadId })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 404) {
+          deletePublishedPost(post.id);
+          showToast('Le thread était déjà supprimé sur Discord ; entrée retirée de l\'historique.', 'success');
+          return;
+        }
+        const msg = data?.error || `Erreur ${res.status}`;
+        showToast(msg, 'error');
+        return;
+      }
+      deletePublishedPost(post.id);
+      showToast('Publication supprimée définitivement (historique, base et Discord)', 'success');
+    } catch (e: any) {
+      showToast('Erreur réseau : ' + (e?.message || 'inconnue'), 'error');
+    }
   }
 
   function handleEdit(post: PublishedPost) {
@@ -395,7 +432,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDelete(post.id)}
+                            onClick={() => handleDeleteDefinitively(post)}
                             style={{
                               padding: '6px 10px',
                               background: 'transparent',
@@ -405,8 +442,9 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
                               cursor: 'pointer',
                               fontSize: 12
                             }}
+                            title="Supprimer définitivement (historique, base et Discord)"
                           >
-                            🗑️
+                            🗑️ Supprimer définitivement
                           </button>
                         </>
                       )}

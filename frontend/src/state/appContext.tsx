@@ -936,6 +936,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .filter(Boolean)
       .join(',');
 
+    const selectedTagObjects = savedTags.filter(t =>
+      selectedIds.some(id => (t.id || t.name) === id || String(t.discordTagId ?? '') === id)
+    );
+    const translatorLabel = selectedTagObjects.filter(t => t.isTranslator).map(t => t.name).join(', ');
+    const stateLabel = selectedTagObjects.filter(t => !t.isTranslator).map(t => t.name).join(', ');
+
     const storedApiUrl = localStorage.getItem('apiUrl');
     const baseUrlRaw = localStorage.getItem('apiBase') || defaultApiBase;
     const baseUrl = baseUrlRaw.replace(/\/+$/, '');
@@ -1035,13 +1041,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       formData.append('tags', tagsToSend);
       formData.append('template', templateType);
 
-      // ✅ NOUVEAU : Ajouter les métadonnées encodées en base64 (UTF-8)
-      // Schéma cohérent avec publisher_api.py / bot_server1.py
+      // Métadonnées encodées en base64 (UTF-8)
       formData.append('metadata', b64EncodeUtf8(JSON.stringify(metadata)));
+
+      // Champs pour l'annonce (nouvelle traduction / mise à jour) dans le publisher
+      formData.append('translator_label', translatorLabel);
+      formData.append('state_label', stateLabel);
+      formData.append('game_version', inputs['Game_version'] || '');
+      formData.append('translate_version', inputs['Translate_version'] || '');
+      const mainImageForAnnounce = uploadedImages.find(i => i.isMain) || uploadedImages[0];
+      const announceImageUrl = mainImageForAnnounce?.url && (mainImageForAnnounce.url.startsWith('http://') || mainImageForAnnounce.url.startsWith('https://'))
+        ? mainImageForAnnounce.url
+        : '';
+      formData.append('announce_image_url', announceImageUrl);
 
       if (isEditMode && editingPostData) {
         formData.append('threadId', editingPostData.threadId);
         formData.append('messageId', editingPostData.messageId);
+        formData.append('thread_url', editingPostData.discordUrl || '');
         formData.append('isUpdate', 'true');
         console.log('🔄 Mode édition activé:', {
           threadId: editingPostData.threadId,
@@ -2083,7 +2100,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const translationLinksLine = translationParts.length > 0 ? `   * ${translationParts.join(' - ')}` : '';
 
     content = content.split('[MOD_LINKS_LINE]').join(modLinksLine);
-    content = content.split('[TRANSLATION_LINKS_LINE]').join(translationLinksLine);
+    // Si traduction intégrée ET aucun lien de traduction : masquer toute la section "3. Traductions"
+    const hideTranslationsSection = isIntegrated && translationParts.length === 0;
+    if (hideTranslationsSection) {
+      content = content.replace(/3\. :link: \*\*Traductions\*\*\n\[TRANSLATION_LINKS_LINE\]\n?/g, '');
+    } else {
+      content = content.split('[TRANSLATION_LINKS_LINE]').join(translationLinksLine);
+    }
 
     // 3. Remplacement des variables classiques
     allVarsConfig.forEach(varConfig => {

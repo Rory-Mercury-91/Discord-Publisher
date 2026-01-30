@@ -16,9 +16,11 @@ load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 # Salon surveillé pour les nouveaux posts (forum "my")
 FORUM_CHANNEL_ID = int(os.getenv('FORUM_CHANNEL_ID'))
-# Salon de réception des annonces / mises à jour
+# Salon de réception des annonces / mises à jour (utilisé uniquement si annonces gérées par ce bot)
 ANNOUNCE_CHANNEL_ID = int(os.getenv('ANNOUNCE_CHANNEL_ID'))
 ANNOUNCE_DELAY = 5
+# Les annonces (nouvelle traduction / mise à jour) sont envoyées par le publisher ; ce bot ne les envoie plus
+ANNOUNCEMENTS_HANDLED_BY_PUBLISHER = True
 
 # Supabase : source de vérité pour published_posts (réduit les appels Discord)
 _supabase_client = None
@@ -452,6 +454,7 @@ async def envoyer_annonce(thread, liste_tags_trads):
             msg_content += f"**Type de traduction :** {translation_type_clean} ({integration_txt})\n"
     
     msg_content += f"\n**État :** {', '.join(liste_tags_trads)}"
+    msg_content += "\n\n**Bon jeu à vous** 😊"
 
     # Envoi du message
     if image_url:
@@ -649,6 +652,8 @@ async def on_ready():
 
 @bot.event
 async def on_thread_create(thread):
+    if ANNOUNCEMENTS_HANDLED_BY_PUBLISHER:
+        return
     if thread.parent_id == FORUM_CHANNEL_ID:
         recent_threads[thread.id] = time.time()
         await asyncio.sleep(3 + random.random() * 2)
@@ -660,6 +665,8 @@ async def on_thread_create(thread):
 
 @bot.event
 async def on_thread_update(before, after):
+    if ANNOUNCEMENTS_HANDLED_BY_PUBLISHER:
+        return
     if after.parent_id == FORUM_CHANNEL_ID:
         if after.id in recent_threads and (time.time() - recent_threads[after.id]) < 30:
             return
@@ -669,6 +676,8 @@ async def on_thread_update(before, after):
 
 @bot.event
 async def on_message_edit(before, after):
+    if ANNOUNCEMENTS_HANDLED_BY_PUBLISHER:
+        return
     if isinstance(after.channel, discord.Thread) and after.channel.parent_id == FORUM_CHANNEL_ID and after.id == after.channel.id:
         if before.content != after.content:
             trads = trier_tags(after.channel.applied_tags)
