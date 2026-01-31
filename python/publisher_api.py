@@ -1551,9 +1551,20 @@ async def forum_post(request):
             if "timestamp" not in payload:
                 payload["timestamp"] = ts
             history_manager.update_or_add_post(payload)
+            
+            # 🔥 SAUVEGARDER DANS SUPABASE (source de vérité)
+            sb = _get_supabase()
+            if sb:
+                try:
+                    # Supprimer les champs qui ne sont pas dans la table Supabase
+                    supabase_payload = {k: v for k, v in payload.items() if k not in ['timestamp', 'template']}
+                    res = sb.table("published_posts").upsert(supabase_payload, on_conflict="id").execute()
+                    logger.info(f"✅ Post enregistré dans Supabase: {payload.get('title')}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Échec sauvegarde Supabase lors de la création: {e}")
         except Exception as e:
             logger.warning(f"Historique (create): payload invalide, fallback minimal: {e}")
-            history_manager.update_or_add_post({
+            fallback_payload = {
                 "id": f"post_{int(time.time())}",
                 "timestamp": int(time.time() * 1000),
                 "title": title,
@@ -1564,9 +1575,22 @@ async def forum_post(request):
                 "message_id": result["message_id"],
                 "discord_url": result["thread_url"],
                 "forum_id": forum_id,
-            })
+            }
+            history_manager.update_or_add_post(fallback_payload)
+            
+            # 🔥 SAUVEGARDER DANS SUPABASE (fallback)
+            sb = _get_supabase()
+            if sb:
+                try:
+                    supabase_fallback = {k: v for k, v in fallback_payload.items() if k not in ['timestamp', 'template']}
+                    supabase_fallback["created_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+                    supabase_fallback["updated_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+                    res = sb.table("published_posts").upsert(supabase_fallback, on_conflict="id").execute()
+                    logger.info(f"✅ Post (fallback) enregistré dans Supabase: {title}")
+                except Exception as e2:
+                    logger.warning(f"⚠️ Échec sauvegarde Supabase fallback: {e2}")
     else:
-        history_manager.update_or_add_post({
+        fallback_payload = {
             "id": f"post_{int(time.time())}",
             "timestamp": int(time.time() * 1000),
             "title": title,
@@ -1577,7 +1601,20 @@ async def forum_post(request):
             "message_id": result["message_id"],
             "discord_url": result["thread_url"],
             "forum_id": forum_id,
-        })
+        }
+        history_manager.update_or_add_post(fallback_payload)
+        
+        # 🔥 SAUVEGARDER DANS SUPABASE
+        sb = _get_supabase()
+        if sb:
+            try:
+                supabase_fallback = {k: v for k, v in fallback_payload.items() if k not in ['timestamp', 'template']}
+                supabase_fallback["created_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+                supabase_fallback["updated_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+                res = sb.table("published_posts").upsert(supabase_fallback, on_conflict="id").execute()
+                logger.info(f"✅ Post (no payload) enregistré dans Supabase: {title}")
+            except Exception as e:
+                logger.warning(f"⚠️ Échec sauvegarde Supabase no payload: {e}")
 
     return _with_cors(request, web.json_response({"ok": True, **result}))
 
@@ -1770,6 +1807,17 @@ async def forum_post_update(request):
         
         # Sauvegarder dans l'historique Koyeb
         history_manager.update_or_add_post(final_payload)
+        
+        # 🔥 SAUVEGARDER DANS SUPABASE (source de vérité)
+        sb = _get_supabase()
+        if sb:
+            try:
+                # Supprimer les clamps qui ne sont pas dans la table Supabase
+                supabase_payload = {k: v for k, v in final_payload.items() if k not in ['timestamp', 'template']}
+                res = sb.table("published_posts").upsert(supabase_payload, on_conflict="id").execute()
+                logger.info(f"✅ Post enregistré dans Supabase: {final_payload.get('title')}")
+            except Exception as e:
+                logger.warning(f"⚠️ Échec sauvegarde Supabase lors de la mise à jour: {e}")
 
     return _with_cors(request, web.json_response({"ok": True, "updated": True, "thread_id": thread_id}))
 

@@ -773,12 +773,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updatePublishedPost = async (id: string, updates: Partial<PublishedPost>) => {
+    console.log('🔄 updatePublishedPost appelé:', { id, title: (updates as any).title, tags: (updates as any).tags });
     const withUpdatedAt = { ...updates, updatedAt: updates.updatedAt ?? Date.now() };
 
     const sb = getSupabase();
+    if (!sb) {
+      console.error('❌ Supabase client non disponible pour updatePublishedPost');
+      setPublishedPosts(prev => prev.map(post => post.id === id ? { ...post, ...withUpdatedAt } : post));
+      return;
+    }
     if (sb) {
       try {
         // 🔥 RÉCUPÉRER LA VERSION FRAÎCHE DEPUIS SUPABASE (au lieu de l'état local)
+        console.log('🔍 Récupération post existant depuis Supabase, id:', id);
         const { data: existingRow, error: fetchError } = await sb
           .from('published_posts')
           .select('*')
@@ -790,13 +797,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // Fallback : chercher dans l'état local
           const existing = publishedPosts.find(p => p.id === id);
           if (!existing) {
-            console.error('❌ Post introuvable (id:', id, ')');
+            console.error('❌ Post introuvable dans état local (id:', id, ')');
             return;
           }
           const merged = { ...existing, ...withUpdatedAt, id } as PublishedPost;
+          console.log('📝 Upsert dans Supabase (fallback):', { id, title: merged.title, tags: merged.tags });
           const row = postToRow(merged);
           const res = await sb.from('published_posts').upsert(row, { onConflict: 'id' });
-          if (res.error) console.warn('⚠️ Supabase update post:', res.error.message);
+          if (res.error) {
+            console.error('❌ Erreur Supabase update post (fallback):', res.error);
+          } else {
+            console.log('✅ Post mis à jour dans Supabase (fallback)');
+          }
 
           // Mettre à jour l'état local
           setPublishedPosts(prev => prev.map(p => p.id === id ? merged : p));
@@ -804,13 +816,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Fusionner avec les données fraîches de Supabase
+        console.log('🔀 Fusion avec données Supabase existantes');
         const existingPost = rowToPost(existingRow);
         const merged = { ...existingPost, ...withUpdatedAt, id } as PublishedPost;
+        console.log('📊 Données fusionnées:', {
+          id: merged.id,
+          title: merged.title,
+          tags: merged.tags,
+          oldTitle: existingPost.title,
+          newTitle: (withUpdatedAt as any).title
+        });
 
         // Upsert dans Supabase
         const row = postToRow(merged);
+        console.log('📝 Upsert dans Supabase:', { id: row.id, title: row.title, tags: row.tags });
         const res = await sb.from('published_posts').upsert(row, { onConflict: 'id' });
-        if (res.error) console.warn('⚠️ Supabase update post:', res.error.message);
+        if (res.error) {
+          console.error('❌ Erreur Supabase update post:', res.error);
+        } else {
+          console.log('✅ Post mis à jour dans Supabase avec succès');
+        }
 
         // Mettre à jour l'état local
         setPublishedPosts(prev => prev.map(p => p.id === id ? merged : p));
@@ -1277,6 +1302,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (threadId && messageId) {
         // Dans la section mise à jour (après le fetch réussi) :
         if (isEditMode && editingPostId && editingPostData) {
+          console.log('🔄 Mode édition détecté, construction updatedPost');
           const now = Date.now();
 
           // 🔥 CONSTRUIRE UN OBJET COMPLET (pas Partial)
@@ -1303,6 +1329,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             authorDiscordId: editingPostData.authorDiscordId // Garder l'auteur original
           };
 
+          console.log('📤 Appel updatePublishedPost avec:', {
+            id: editingPostId,
+            title: updatedPost.title,
+            tags: updatedPost.tags,
+            content_length: updatedPost.content?.length
+          });
           await updatePublishedPost(editingPostId, updatedPost);
           tauriAPI.saveLocalHistoryPost(postToRow(updatedPost), updatedPost.authorDiscordId);
           setEditingPostId(null);
@@ -2346,7 +2378,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [templates, currentTemplateIdx, allVarsConfig, inputs, translationType, isIntegrated, additionalTranslationLinks, additionalModLinks, uploadedImages]);
 
   /** Preview effectif : contenu saisi si non vide, sinon rendu template + variables (affichage et publication). */
-  const effectivePreview = (previewOverride != null && previewOverride !== '') ? previewOverride : preview;
+  // 🔥 En mode édition, utiliser toujours le preview recalculé (pas previewOverride figé)
+  const effectivePreview = editingPostId
+    ? preview
+    : ((previewOverride != null && previewOverride !== '') ? previewOverride : preview);
 
   const value: AppContextValue = {
     resetAllFields,
