@@ -1907,7 +1907,7 @@ async def forum_post_delete(request):
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     
     try:
-        body = await request.json() if request.can_read_body() else {}
+        body = await request.json()
     except Exception as e:
         logger.warning(f"⚠️ [DELETE] Erreur lecture body: {e}")
         body = {}
