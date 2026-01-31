@@ -1819,7 +1819,21 @@ async def forum_post_update(request):
             except Exception as e:
                 logger.warning(f"⚠️ Échec sauvegarde Supabase lors de la mise à jour: {e}")
 
-    return _with_cors(request, web.json_response({"ok": True, "updated": True, "thread_id": thread_id}))
+    return _with_cors(request, web.json_response({
+        "ok": True, 
+        "updated": True, 
+        "thread_id": thread_id,
+        "message_id": message_id,
+        "thread_url": thread_url,
+        "discord_url": thread_url,
+        "forum_id": config.FORUM_MY_ID or 0,
+        # Aliases pour compatibilité
+        "threadId": thread_id,
+        "messageId": message_id,
+        "threadUrl": thread_url,
+        "discordUrl": thread_url,
+        "forumId": config.FORUM_MY_ID or 0
+    }))
 
 async def get_history(request):
     api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
