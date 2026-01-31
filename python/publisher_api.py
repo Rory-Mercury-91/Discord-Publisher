@@ -37,23 +37,37 @@ if sys.platform == 'win32':
 load_dotenv()
 
 # ==================== SUPABASE (source de vérité published_posts) ====================
+# Import au niveau module pour éviter le lazy loading bloquant
+try:
+    from supabase import create_client
+    _SUPABASE_AVAILABLE = True
+except ImportError:
+    _SUPABASE_AVAILABLE = False
+    logger.warning("⚠️ Module supabase non installé")
+
 _supabase_client = None
 
-def _get_supabase():
+def _init_supabase():
+    """Initialise le client Supabase au démarrage (non-bloquant pour l'event loop)."""
     global _supabase_client
-    if _supabase_client is not None:
-        return _supabase_client
+    if not _SUPABASE_AVAILABLE:
+        return None
     url = (os.getenv("SUPABASE_URL") or "").strip()
     key = (os.getenv("SUPABASE_ANON_KEY") or "").strip()
     if not url or not key:
+        logger.info("ℹ️ Supabase non configuré (SUPABASE_URL ou SUPABASE_ANON_KEY manquants)")
         return None
     try:
-        from supabase import create_client
         _supabase_client = create_client(url, key)
+        logger.info("✅ Client Supabase initialisé")
         return _supabase_client
     except Exception as e:
-        logger.warning(f"⚠️ Supabase non disponible: {e}")
+        logger.warning(f"⚠️ Échec initialisation Supabase: {e}")
         return None
+
+def _get_supabase():
+    """Retourne le client Supabase (déjà initialisé au démarrage)."""
+    return _supabase_client
 
 
 def _fetch_post_by_thread_id_sync(thread_id) -> Optional[Dict]:

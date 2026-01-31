@@ -282,8 +282,14 @@ async def start():
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
     logger.info(f"✅ Serveur API et HealthCheck lancé sur le port {PORT}")
+    
+    # 2) Initialiser Supabase AVANT de lancer les bots Discord (évite le blocage de l'event loop)
+    logger.info("🗄️ Initialisation du client Supabase...")
+    from publisher_api import _init_supabase
+    await asyncio.get_event_loop().run_in_executor(None, _init_supabase)
+    logger.info("✅ Client Supabase prêt")
 
-    # 2) Démarrage séquentiel : Bot2 -> PublisherBot
+    # 3) Démarrage séquentiel : Bot2 -> PublisherBot
     # Chaque bot doit être ready avant de lancer le suivant
 
     # --- BOT 2 ---
