@@ -70,6 +70,47 @@ def _get_supabase():
     return _supabase_client
 
 
+def _delete_from_supabase_sync(thread_id: str = None, post_id: str = None) -> bool:
+    """
+    🔥 Supprime un post de Supabase par thread_id ou post_id (synchrone).
+    Retourne True si la suppression a réussi, False sinon.
+    """
+    sb = _get_supabase()
+    if not sb:
+        logger.warning("⚠️ Client Supabase non initialisé")
+        return False
+    
+    if not thread_id and not post_id:
+        logger.warning("⚠️ Aucun identifiant fourni pour la suppression Supabase")
+        return False
+    
+    try:
+        # Construire la requête de suppression
+        query = sb.table("published_posts")
+        
+        if post_id:
+            query = query.eq("id", post_id)
+        elif thread_id:
+            query = query.eq("thread_id", str(thread_id))
+        
+        # Exécuter la suppression
+        result = query.delete().execute()
+        
+        # Vérifier le résultat
+        deleted_count = len(result.data) if result.data else 0
+        
+        if deleted_count > 0:
+            logger.info(f"✅ {deleted_count} post(s) supprimé(s) de Supabase (thread_id={thread_id}, id={post_id})")
+            return True
+        else:
+            logger.info(f"ℹ️ Aucun post trouvé dans Supabase avec thread_id={thread_id} ou id={post_id}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de la suppression Supabase: {e}")
+        return False
+
+
 def _fetch_post_by_thread_id_sync(thread_id) -> Optional[Dict]:
     """Récupère la ligne published_posts par thread_id (source de vérité). Retourne None si absent."""
     sb = _get_supabase()
@@ -320,7 +361,8 @@ class PublicationHistory:
     
     def delete_post(self, thread_id: str = None, post_id: str = None) -> bool:
         """
-        Supprime un post de l'historique par thread_id ou id.
+        Supprime un post de l'historique local (JSON Koyeb) par thread_id ou id.
+        ⚠️ Ne supprime PAS de Supabase (utilisez _delete_from_supabase_sync pour ça)
         Retourne True si un post a été supprimé, False sinon.
         """
         if not thread_id and not post_id:
@@ -419,6 +461,62 @@ def _extract_version_from_f95_title(title_text: str) -> Optional[str]:
     
     parts = [m.group("val").strip() for m in _RE_BRACKETS.finditer(title_text)]
     return parts[0] if parts else None
+
+def _extract_f95_thread_id(url: str) -> Optional[str]:
+    """
+    Extrait l'ID numérique d'un thread F95Zone
+    
+    Examples:
+        https://f95zone.to/threads/game-name.285451/ -> "285451"
+        https://f95zone.to/threads/285451 -> "285451"
+    
+    Returns:
+        L'ID numérique comme string, ou None si non trouvé
+    """
+    if not url:
+        return None
+    
+    pattern = r'/threads/(?:[^/]+\.)?(\d+)'
+    match = re.search(pattern, url)
+    return match.group(1) if match else None
+
+async def fetch_f95_versions_by_ids(session: aiohttp.ClientSession, thread_ids: list) -> Dict[str, str]:
+    """
+    🆕 NOUVELLE MÉTHODE: Récupère les versions depuis l'API F95 checker.php
+    Plus fiable et rapide que le parsing HTML !
+    
+    Args:
+        session: Session aiohttp
+        thread_ids: Liste des IDs de threads F95 (ex: ["100", "285451"])
+    
+    Returns:
+        Dict {thread_id: version}
+        Example: {"100": "v0.68", "285451": "Ch.7"}
+    """
+    if not thread_ids:
+        return {}
+    
+    ids_str = ",".join(str(tid) for tid in thread_ids)
+    checker_url = f"https://f95zone.to/sam/checker.php?threads={ids_str}"
+    
+    try:
+        async with session.get(checker_url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            if resp.status != 200:
+                logger.warning(f"⚠️ F95 Checker API HTTP {resp.status}")
+                return {}
+            
+            data = await resp.json()
+            
+            if data.get("status") == "ok" and "msg" in data:
+                logger.info(f"✅ F95 Checker API: {len(data['msg'])} versions récupérées")
+                return data["msg"]
+            else:
+                logger.warning(f"⚠️ F95 Checker API réponse invalide")
+                return {}
+                
+    except Exception as e:
+        logger.warning(f"❌ Erreur fetch F95 Checker API: {e}")
+        return {}
 
 def _normalize_version(version: str) -> str:
     """Normalise une version pour la comparaison (enlève backticks, espaces inutiles)"""
@@ -741,8 +839,11 @@ async def _group_and_send_alerts(channel: discord.TextChannel, alerts: List[Vers
 
 # ==================== CONTRÔLE VERSIONS F95 ====================
 async def run_version_check_once():
-    """Effectue le contrôle des versions F95 sur le salon my uniquement."""
-    logger.info("🔎 Démarrage contrôle versions F95 (salon my)")
+    """
+    🆕 Contrôle des versions F95 via l'API checker.php (salon my uniquement)
+    AMÉLIORATION: Utilise l'API au lieu du parsing HTML pour plus de fiabilité !
+    """
+    logger.info("🔎 Démarrage contrôle versions F95 (salon my) - Méthode API")
     channel_notif = bot.get_channel(config.MAJ_NOTIFICATION_CHANNEL_ID)
     if not channel_notif:
         logger.error("❌ Salon notifications MAJ introuvable")
@@ -750,51 +851,86 @@ async def run_version_check_once():
     if not config.FORUM_MY_ID:
         logger.warning("⚠️ PUBLISHER_FORUM_MY_ID non configuré")
         return
+    
     _clean_old_notifications()
+    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+        "Accept": "application/json,*/*",
     }
+    
     all_alerts: List[VersionAlert] = []
     forum = bot.get_channel(config.FORUM_MY_ID)
     if not forum:
         logger.warning(f"⚠️ Forum {config.FORUM_MY_ID} introuvable")
         return
+    
     threads = await _collect_all_forum_threads(forum)
     logger.info(f"🔎 Check version F95: {len(threads)} threads (actifs + archivés)")
+    
+    # 📊 PHASE 1: Collecter tous les IDs F95 depuis les threads Discord
+    thread_mapping = {}  # {f95_id: (thread, post_version)}
+    
     async with aiohttp.ClientSession(headers=headers) as session:
         for thread in threads:
-            await asyncio.sleep(0.6 + random.random() * 0.6)
+            await asyncio.sleep(0.3)  # Anti-spam Discord
+            
             game_link, post_version = await _extract_post_data(thread)
             if not game_link or not post_version:
                 logger.info(f"⏭️  Thread ignoré (données manquantes): {thread.name}")
                 continue
+            
             if "lewdcorner.com" in game_link.lower():
                 logger.info(f"⏭️  Thread ignoré (LewdCorner): {thread.name}")
                 continue
+            
             if "f95zone.to" not in game_link.lower():
                 logger.info(f"⏭️  Thread ignoré (non-F95Zone): {thread.name}")
                 continue
-            logger.info(f"🌐 Fetch F95 pour {thread.name}: {game_link}")
-            title_text = await _fetch_f95_title(session, game_link)
-            f95_version = _extract_version_from_f95_title(title_text or "")
-            if f95_version:
-                f95_version = _normalize_version(f95_version)
-            if not f95_version:
-                if not _is_already_notified(thread.id, "NO_VERSION"):
-                    logger.warning(f"⚠️ Version F95 non détectable pour: {thread.name}")
-                    all_alerts.append(VersionAlert(thread.name, thread.jump_url, None, post_version, False))
-                    _mark_as_notified(thread.id, "NO_VERSION")
+            
+            # Extraire l'ID F95
+            f95_id = _extract_f95_thread_id(game_link)
+            if not f95_id:
+                logger.warning(f"⚠️ Impossible d'extraire l'ID F95 depuis: {game_link}")
                 continue
-            if f95_version.strip() != post_version.strip():
-                if not _is_already_notified(thread.id, f95_version):
-                    logger.info(f"🔄 Différence détectée pour {thread.name}: F95={f95_version} vs Post={post_version}")
-                    update_success = await _update_post_version(thread, f95_version)
-                    all_alerts.append(VersionAlert(thread.name, thread.jump_url, f95_version, post_version, update_success))
-                    _mark_as_notified(thread.id, f95_version)
+            
+            thread_mapping[f95_id] = (thread, post_version)
+            logger.info(f"✅ Thread mappé: {thread.name} → F95 ID {f95_id}")
+        
+        if not thread_mapping:
+            logger.info("✅ Aucun thread avec lien F95 trouvé")
+            return
+        
+        # 🚀 PHASE 2: Récupérer toutes les versions via l'API (1 seule requête !)
+        f95_ids = list(thread_mapping.keys())
+        logger.info(f"🌐 Récupération API F95 pour {len(f95_ids)} threads...")
+        
+        f95_versions = await fetch_f95_versions_by_ids(session, f95_ids)
+        
+        if not f95_versions:
+            logger.warning("⚠️ Aucune version récupérée depuis l'API F95")
+            return
+        
+        # 🎯 PHASE 3: Comparaison des versions
+        for f95_id, api_version in f95_versions.items():
+            if f95_id not in thread_mapping:
+                continue
+            
+            thread, post_version = thread_mapping[f95_id]
+            
+            # Normaliser les versions
+            api_version_clean = _normalize_version(api_version)
+            post_version_clean = _normalize_version(post_version)
+            
+            if api_version_clean != post_version_clean:
+                if not _is_already_notified(thread.id, api_version_clean):
+                    logger.info(f"🔄 Différence: {thread.name}: F95={api_version_clean} vs Post={post_version_clean}")
+                    update_success = await _update_post_version(thread, api_version_clean)
+                    all_alerts.append(VersionAlert(thread.name, thread.jump_url, api_version_clean, post_version_clean, update_success))
+                    _mark_as_notified(thread.id, api_version_clean)
             else:
-                logger.info(f"✅ Version OK: {thread.name} ({post_version})")
+                logger.info(f"✅ Version OK: {thread.name} ({post_version_clean})")
+    
     await _group_and_send_alerts(channel_notif, all_alerts)
     logger.info(f"📊 Contrôle terminé : {len(all_alerts)} alertes envoyées")
 
@@ -1945,7 +2081,12 @@ async def get_history(request):
 
 
 async def forum_post_delete(request):
-    """Supprime définitivement un post : supprime le thread sur Discord (tous les messages avec)."""
+    """
+    Supprime définitivement un post de TOUS les systèmes :
+    1. Thread Discord (tous les messages)
+    2. Historique local Koyeb (JSON)
+    3. Base de données Supabase
+    """
     api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
     if api_key != config.PUBLISHER_API_KEY:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
@@ -1966,7 +2107,11 @@ async def forum_post_delete(request):
     if not thread_id:
         # Pas de thread Discord : succès sans appeler Discord (suppression historique/base uniquement)
         if post_id:
+            # Suppression historique local
             history_manager.delete_post(post_id=post_id)
+            # 🔥 SUPPRESSION SUPABASE
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _delete_from_supabase_sync, None, post_id)
         return _with_cors(request, web.json_response({"ok": True, "skipped_discord": True}))
     
     async with aiohttp.ClientSession() as session:
@@ -1975,7 +2120,11 @@ async def forum_post_delete(request):
         if not deleted:
             if status == 404:
                 logger.info(f"ℹ️ Thread déjà supprimé: {thread_id}")
+                # Supprimer quand même de l'historique et Supabase
                 history_manager.delete_post(thread_id=thread_id)
+                # 🔥 SUPPRESSION SUPABASE
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, _delete_from_supabase_sync, thread_id, post_id)
                 return _with_cors(request, web.json_response({"ok": False, "error": "Thread introuvable (déjà supprimé ?)", "not_found": True}, status=404))
             logger.warning(f"⚠️ Échec suppression thread Discord: {thread_id} (status={status})")
             return _with_cors(request, web.json_response({"ok": False, "error": "Échec suppression du thread sur Discord"}, status=500))
@@ -1983,11 +2132,15 @@ async def forum_post_delete(request):
         # Supprimer de l'historique Koyeb
         history_manager.delete_post(thread_id=thread_id)
         
+        # 🔥 SUPPRESSION SUPABASE
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _delete_from_supabase_sync, thread_id, post_id)
+        
         # 🔥 Envoyer l'annonce de suppression dans le salon Discord
         if post_title:  # Seulement si on a un titre
             await _send_deletion_announcement(session, post_title, reason)
     
-    logger.info(f"✅ Post supprimé: {post_title or thread_id}")
+    logger.info(f"✅ Post supprimé complètement: {post_title or thread_id}")
     return _with_cors(request, web.json_response({"ok": True, "thread_id": thread_id}))
 
 # ==================== APPLICATION WEB ====================

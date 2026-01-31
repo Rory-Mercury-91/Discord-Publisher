@@ -152,6 +152,48 @@ def normalize_f95_url(url: str) -> str:
 
 import xml.etree.ElementTree as ET
 
+async def fetch_f95_versions_by_ids(session: aiohttp.ClientSession, thread_ids: list) -> Dict[str, str]:
+    """
+    🆕 NOUVELLE MÉTHODE: Récupère les versions depuis l'API F95 checker.php
+    Plus fiable et précise que le flux RSS !
+    
+    Args:
+        session: Session aiohttp
+        thread_ids: Liste des IDs de threads F95 (ex: ["100", "285451"])
+    
+    Returns:
+        Dict {thread_id: version}
+        Example: {"100": "v0.68", "285451": "Ch.7"}
+    """
+    if not thread_ids:
+        return {}
+    
+    # L'API accepte plusieurs IDs séparés par des virgules
+    # Ex: https://f95zone.to/sam/checker.php?threads=100,285451,300
+    ids_str = ",".join(str(tid) for tid in thread_ids)
+    checker_url = f"https://f95zone.to/sam/checker.php?threads={ids_str}"
+    
+    try:
+        async with session.get(checker_url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            if resp.status != 200:
+                print(f"⚠️ F95 Checker API HTTP {resp.status}")
+                return {}
+            
+            data = await resp.json()
+            
+            # Format de réponse: {"status":"ok","msg":{"100":"v0.68","285451":"Ch.7"}}
+            if data.get("status") == "ok" and "msg" in data:
+                print(f"✅ F95 Checker API: {len(data['msg'])} versions récupérées")
+                return data["msg"]
+            else:
+                print(f"⚠️ F95 Checker API réponse invalide: {data}")
+                return {}
+                
+    except Exception as e:
+        print(f"❌ Erreur fetch F95 Checker API: {e}")
+        return {}
+
+
 async def fetch_f95_rss_updates(session: aiohttp.ClientSession) -> Dict[str, str]:
     """
     Récupère le flux RSS F95Zone
@@ -316,14 +358,15 @@ async def _send_alert_batch(channel: discord.TextChannel, alerts: List[VersionAl
         await asyncio.sleep(1.0)
 
 
-async def run_rss_version_check():
+async def run_api_version_check():
     """
-    CONTRÔLE RSS SIMPLIFIÉ
+    🆕 CONTRÔLE VIA API F95 (checker.php) - PLUS FIABLE QUE LE RSS
     
-    1. Récupère le RSS F95
-    2. Compare avec les threads Discord
-    3. Envoie les alertes groupées
-    4. Silence total si rien à signaler
+    1. Récupère les threads Discord
+    2. Extrait les IDs F95 depuis les Game_link
+    3. Appelle l'API checker.php avec tous les IDs groupés
+    4. Compare avec les versions des posts Discord
+    5. Envoie les alertes groupées
     """
     channel_warn = bot.get_channel(WARNING_MAJ_CHANNEL_ID)
     if not channel_warn:
@@ -334,7 +377,7 @@ async def run_rss_version_check():
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/xml,text/xml,*/*",
+        "Accept": "application/json,*/*",
     }
     
     all_alerts = []
@@ -342,26 +385,9 @@ async def run_rss_version_check():
     
     try:
         async with aiohttp.ClientSession(headers=headers) as session:
-            # 🚀 RÉCUPÉRATION RSS (1 requête)
-            try:
-                rss_updates = await fetch_f95_rss_updates(session)
-            except Exception as e:
-                http_error = str(e)
-                rss_updates = {}
+            # 📊 PHASE 1: Collecter tous les threads Discord et leurs IDs F95
+            thread_mapping = {}  # {thread_id_f95: (thread_discord, post_version, trad_version, forum_type)}
             
-            if http_error:
-                await channel_warn.send(
-                    f"⚠️ **Contrôle F95 impossible**\n"
-                    f"Erreur lors de la récupération du flux RSS : `{http_error}`\n"
-                    f"Nouvelle tentative dans 24h."
-                )
-                return
-            
-            if not rss_updates:
-                print("✅ RSS vide ou aucune MAJ récente")
-                return
-            
-            # Parcourir les forums
             forum_configs = []
             if FORUM_AUTO_ID:
                 forum_configs.append((FORUM_AUTO_ID, "Auto"))
@@ -397,26 +423,65 @@ async def run_rss_version_check():
                     if not f95_url or not post_game_version:
                         continue
                     
-                    # 🎯 COMPARAISON
-                    clean_url = normalize_f95_url(f95_url)
+                    # Extraire l'ID F95 depuis l'URL
+                    f95_id = extract_f95_thread_id(f95_url)
+                    if not f95_id:
+                        print(f"⚠️ Impossible d'extraire l'ID F95 depuis: {f95_url}")
+                        continue
                     
-                    if clean_url in rss_updates:
-                        rss_version = rss_updates[clean_url]
-                        
-                        # Vérifier si différent
-                        if rss_version.strip() != post_game_version.strip():
-                            # Anti-doublon
-                            if not _is_already_notified(thread.id, rss_version):
-                                all_alerts.append(VersionAlert(
-                                    thread.name,
-                                    thread.jump_url,
-                                    rss_version,
-                                    post_game_version,
-                                    post_trad_version or "Non renseignée",
-                                    forum_type
-                                ))
-                                _mark_as_notified(thread.id, rss_version)
-                                print(f"🔔 MAJ: {thread.name} ({post_game_version} -> {rss_version})")
+                    thread_mapping[f95_id] = (thread, post_game_version, post_trad_version or "Non renseignée", forum_type)
+            
+            if not thread_mapping:
+                print("✅ Aucun thread avec lien F95 trouvé")
+                return
+            
+            # 🚀 PHASE 2: Récupérer les versions F95 via l'API (1 seule requête groupée !)
+            f95_ids = list(thread_mapping.keys())
+            print(f"🌐 Récupération API F95 pour {len(f95_ids)} threads...")
+            
+            try:
+                f95_versions = await fetch_f95_versions_by_ids(session, f95_ids)
+            except Exception as e:
+                http_error = str(e)
+                f95_versions = {}
+            
+            if http_error:
+                await channel_warn.send(
+                    f"⚠️ **Contrôle F95 impossible**\n"
+                    f"Erreur lors de la récupération de l'API F95 : `{http_error}`\n"
+                    f"Nouvelle tentative dans 24h."
+                )
+                return
+            
+            if not f95_versions:
+                print("✅ Aucune version récupérée depuis l'API F95")
+                return
+            
+            # 🎯 PHASE 3: Comparaison des versions
+            for f95_id, api_version in f95_versions.items():
+                if f95_id not in thread_mapping:
+                    continue
+                
+                thread, post_version, trad_version, forum_type = thread_mapping[f95_id]
+                
+                # Normaliser les versions pour comparaison
+                api_version_clean = api_version.strip()
+                post_version_clean = post_version.strip()
+                
+                # Vérifier si différent
+                if api_version_clean != post_version_clean:
+                    # Anti-doublon
+                    if not _is_already_notified(thread.id, api_version_clean):
+                        all_alerts.append(VersionAlert(
+                            thread.name,
+                            thread.jump_url,
+                            api_version_clean,
+                            post_version_clean,
+                            trad_version,
+                            forum_type
+                        ))
+                        _mark_as_notified(thread.id, api_version_clean)
+                        print(f"🔔 MAJ: {thread.name} ({post_version_clean} -> {api_version_clean})")
         
         # 📢 ENVOI DES ALERTES (ou silence)
         if all_alerts:
@@ -427,11 +492,21 @@ async def run_rss_version_check():
     
     except Exception as e:
         print(f"❌ Erreur globale: {e}")
+        import traceback
+        traceback.print_exc()
         await channel_warn.send(
             f"⚠️ **Erreur lors du contrôle F95**\n"
             f"Erreur technique : `{type(e).__name__}: {e}`\n"
             f"Nouvelle tentative dans 24h."
         )
+
+
+async def run_rss_version_check():
+    """
+    ⚠️ OBSOLÈTE: Ancienne méthode RSS - Redirige vers la nouvelle API
+    Gardé pour compatibilité avec les anciens appels
+    """
+    await run_api_version_check()
 
 
 # ==================== TÂCHE QUOTIDIENNE ====================
