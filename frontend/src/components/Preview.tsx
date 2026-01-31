@@ -1,7 +1,7 @@
 interface PreviewProps {
-  /** Contenu affiché (template + variables, puis ce que l'utilisateur modifie). */
+  /** Contenu affiché (template + variables) en lecture seule. */
   preview: string;
-  setPreviewContent: (value: string) => void;
+  setPreviewContent: (value: string) => void; // Non utilisé (lecture seule), conservé pour compatibilité
   onCopy: () => void;
   onOpenDiscordPreview?: () => void;
 }
@@ -95,10 +95,9 @@ export default function Preview({
 
       <div className="preview-body styled-scrollbar" style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         <textarea
-          readOnly={false}
+          readOnly={true}
           value={preview}
-          onChange={(e) => setPreviewContent(e.target.value)}
-          placeholder="Le preview (template + variables) s'affiche ici. Vous pouvez modifier le texte directement."
+          placeholder="L'aperçu (template + variables) s'affiche ici en lecture seule."
           style={{
             width: '100%',
             height: '100%',
@@ -110,7 +109,7 @@ export default function Preview({
             color: '#dbdee1',
             border: '1px solid var(--border)',
             resize: 'none',
-            cursor: 'text'
+            cursor: 'default'
           }}
         />
       </div>

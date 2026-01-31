@@ -1521,6 +1521,53 @@ async def _send_announcement(
     logger.info(f"✅ Annonce envoyée ({'mise à jour' if is_update else 'nouvelle traduction'}): {title_clean}")
     return True
 
+
+async def _send_deletion_announcement(
+    session,
+    title: str,
+    reason: str = None,
+) -> bool:
+    """
+    Envoie une annonce de suppression de post dans ANNOUNCE_CHANNEL_ID.
+    Format : titre du post supprimé, raison si fournie.
+    """
+    if not config.ANNOUNCE_CHANNEL_ID:
+        logger.warning("⚠️ ANNOUNCE_CHANNEL_ID non configuré, annonce de suppression non envoyée")
+        return False
+    
+    title_clean = (title or "").strip() or "Publication"
+    reason_clean = (reason or "").strip()
+    
+    msg_content = "🗑️ **Suppression d'une publication**\n\n"
+    msg_content += f"**Publication supprimée :** {title_clean}\n"
+    
+    if reason_clean:
+        msg_content += f"**Raison :** {reason_clean}\n"
+    
+    payload = {
+        "content": msg_content,
+        "embeds": [{
+            "color": 0xFF6B6B,  # Rouge pour suppression
+            "footer": {
+                "text": "Cette publication a été retirée définitivement"
+            }
+        }]
+    }
+    
+    status, data, _ = await _discord_post_json(
+        session,
+        f"/channels/{config.ANNOUNCE_CHANNEL_ID}/messages",
+        payload,
+    )
+    
+    if status >= 300:
+        logger.warning(f"⚠️ Échec envoi annonce suppression (status={status}): {data}")
+        return False
+    
+    logger.info(f"✅ Annonce de suppression envoyée: {title_clean}")
+    return True
+
+
 # ==================== HANDLERS HTTP ====================
 async def health(request):
     return _with_cors(request, web.json_response({"ok": True, "configured": config.configured, "rate_limit": rate_limiter.get_info()}))
@@ -1899,53 +1946,48 @@ async def get_history(request):
 
 async def forum_post_delete(request):
     """Supprime définitivement un post : supprime le thread sur Discord (tous les messages avec)."""
-    logger.info("🗑️ [DELETE] Début de la suppression d'un post")
-    
     api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
     if api_key != config.PUBLISHER_API_KEY:
-        logger.warning("⚠️ [DELETE] Clé API invalide")
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     
     try:
         body = await request.json()
     except Exception as e:
-        logger.warning(f"⚠️ [DELETE] Erreur lecture body: {e}")
+        logger.warning(f"⚠️ Erreur lecture body suppression: {e}")
         body = {}
-    
-    logger.info(f"📦 [DELETE] Body reçu: {body}")
     
     thread_id = (body.get("threadId") or body.get("thread_id") or "").strip()
     post_id = (body.get("postId") or body.get("post_id") or body.get("id") or "").strip()
-    logger.info(f"🔍 [DELETE] Thread ID extrait: '{thread_id}', Post ID: '{post_id}' (thread vide={not thread_id})")
+    post_title = (body.get("postTitle") or body.get("title") or "").strip()
+    reason = (body.get("reason") or "").strip()
+    
+    logger.info(f"🗑️ Suppression post: {post_title or post_id} (thread={thread_id}, raison={reason or 'N/A'})")
     
     if not thread_id:
         # Pas de thread Discord : succès sans appeler Discord (suppression historique/base uniquement)
-        logger.info("ℹ️ [DELETE] Aucun thread_id fourni, skip Discord")
-        # Supprimer de l'historique Koyeb si on a un post_id
         if post_id:
             history_manager.delete_post(post_id=post_id)
         return _with_cors(request, web.json_response({"ok": True, "skipped_discord": True}))
     
-    logger.info(f"🌐 [DELETE] Appel Discord DELETE /channels/{thread_id}")
     async with aiohttp.ClientSession() as session:
         deleted, status = await _discord_delete_channel(session, thread_id)
+        
+        if not deleted:
+            if status == 404:
+                logger.info(f"ℹ️ Thread déjà supprimé: {thread_id}")
+                history_manager.delete_post(thread_id=thread_id)
+                return _with_cors(request, web.json_response({"ok": False, "error": "Thread introuvable (déjà supprimé ?)", "not_found": True}, status=404))
+            logger.warning(f"⚠️ Échec suppression thread Discord: {thread_id} (status={status})")
+            return _with_cors(request, web.json_response({"ok": False, "error": "Échec suppression du thread sur Discord"}, status=500))
+        
+        # Supprimer de l'historique Koyeb
+        history_manager.delete_post(thread_id=thread_id)
+        
+        # 🔥 Envoyer l'annonce de suppression dans le salon Discord
+        if post_title:  # Seulement si on a un titre
+            await _send_deletion_announcement(session, post_title, reason)
     
-    logger.info(f"📩 [DELETE] Réponse Discord: deleted={deleted}, status={status}")
-    
-    if not deleted:
-        if status == 404:
-            logger.info(f"ℹ️ [DELETE] Thread déjà supprimé ou introuvable: {thread_id}")
-            # Supprimer de l'historique Koyeb même si Discord renvoie 404
-            history_manager.delete_post(thread_id=thread_id)
-            return _with_cors(request, web.json_response({"ok": False, "error": "Thread introuvable (déjà supprimé ?)", "not_found": True}, status=404))
-        logger.warning(f"⚠️ [DELETE] Échec suppression thread Discord: {thread_id} (status={status})")
-        return _with_cors(request, web.json_response({"ok": False, "error": "Échec suppression du thread sur Discord"}, status=500))
-    
-    logger.info(f"✅ [DELETE] Thread Discord supprimé avec succès: {thread_id}")
-    
-    # 🔥 Supprimer aussi de l'historique Koyeb
-    history_manager.delete_post(thread_id=thread_id)
-    
+    logger.info(f"✅ Post supprimé: {post_title or thread_id}")
     return _with_cors(request, web.json_response({"ok": True, "thread_id": thread_id}))
 
 # ==================== APPLICATION WEB ====================

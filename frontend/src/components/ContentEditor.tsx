@@ -53,7 +53,7 @@ export default function ContentEditor() {
   const { profile } = useAuth();
   const { showToast } = useToast();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
-  const { linkConfigs, setLinkConfig, /* autres... */ } = useApp();
+  const { linkConfigs, setLinkConfig } = useApp();
   // 2️⃣ ENSUITE : Calculer les valeurs dérivées
   const currentTemplate = templates[currentTemplateIdx]; // ✅ UNE SEULE FOIS
   const canPublish = currentTemplate?.type === 'my' &&
@@ -1490,18 +1490,6 @@ export default function ContentEditor() {
             >
               <span>📥</span>
               Importer Data
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                showToast('X X l’aperçu et le rendu Discord.', 'success');
-              }}
-              title=""
-              style={{
-                display: 'none'
-              }}
-            >
-              { }
             </button>
             <button
               type="button"

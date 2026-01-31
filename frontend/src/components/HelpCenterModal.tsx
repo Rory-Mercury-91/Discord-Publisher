@@ -793,13 +793,13 @@ function TemplatesHelp() {
         padding: 16
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4a9eff' }}>
-          ✏️ Zone Aperçu
+          👁️ Zone Aperçu
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
-          La zone d'aperçu (à droite) est <strong>éditable directement</strong> : elle affiche le template + variables, et vous pouvez modifier le texte à la main (ajouter « Salut », corriger, etc.). Le rendu Discord et la publication utilisent ce contenu. <strong>Vider le formulaire</strong> remet l'aperçu au template + variables. Les petits ajouts sont sauvegardés avec le post.
+          La zone d'aperçu (à droite) affiche le <strong>résultat final</strong> du template avec toutes les variables remplies. Cette zone est en <strong>lecture seule</strong> et montre exactement ce qui sera publié sur Discord. Utilisez le bouton <strong>🎨 Aperçu Discord</strong> pour voir le rendu avec la mise en forme Markdown.
         </p>
         <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 8px 0' }}>
-          Pour une <strong>variable personnalisée</strong> réutilisable, passer par la <strong>Gestion du template</strong>.
+          Pour personnaliser le contenu, modifiez les <strong>variables du formulaire</strong> ou le <strong>template</strong> via la Gestion des templates.
         </p>
       </section>
     </div>
@@ -880,43 +880,6 @@ function ConfigHelp() {
           En débloquant le mode admin (via le code Master Admin dans la fenêtre d'accès à la configuration), vous accédez à l'<strong>export</strong> et l'<strong>import</strong> complets (sauvegarde JSON de toutes les données) et au <strong>nettoyage complet des données</strong> (suppression des publications, tags, config, etc. sur Supabase). Utilisez ces options avec précaution.
         </p>
       </section>
-    </div>
-  );
-}
-
-// ============================================
-// EN CONSTRUCTION
-// ============================================
-function UnderConstruction({ section }: { section: string }) {
-  return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: '100%',
-      gap: 20,
-      padding: 40,
-      textAlign: 'center'
-    }}>
-      <div style={{ fontSize: 64 }}>🚧</div>
-      <h4 style={{ margin: 0, fontSize: 20, color: 'var(--accent)' }}>
-        Section en construction
-      </h4>
-      <p style={{ fontSize: 14, color: 'var(--muted)', margin: 0, maxWidth: 400 }}>
-        L'aide pour la section <strong>{section}</strong> sera bientôt disponible.
-        Revenez plus tard pour découvrir le guide complet !
-      </p>
-      <div style={{
-        marginTop: 20,
-        padding: 12,
-        background: 'rgba(74, 158, 255, 0.1)',
-        border: '1px solid rgba(74, 158, 255, 0.3)',
-        borderRadius: 6,
-        fontSize: 13
-      }}>
-        💡 En attendant, n'hésitez pas à explorer les autres sections disponibles.
-      </div>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { PublishedPost, useApp } from '../state/appContext';
 import type { Profile } from '../state/authContext';
 import { useAuth } from '../state/authContext';
 import ConfirmModal from './ConfirmModal';
+import DeleteConfirmModal from './DeleteConfirmModal';
 import { useToast } from './ToastProvider';
 
 type ProfilePublic = Pick<Profile, 'id' | 'pseudo' | 'discord_id'>;
@@ -34,6 +35,10 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
   // Gestion des erreurs et états de chargement
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Modale de suppression
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [postToDelete, setPostToDelete] = useState<PublishedPost | null>(null);
 
   // Charger profils et droits d'édition à l'ouverture
   useEffect(() => {
@@ -161,29 +166,20 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
     setCurrentPage(1);
   }, [searchQuery, sortBy, filterAuthorId]);
 
-  async function handleDeleteDefinitively(post: PublishedPost) {
-    const ok = await confirm({
-      title: 'Supprimer définitivement',
-      message:
-        'Cette action va :\n' +
-        '• Retirer le post de ton historique\n' +
-        '• Le supprimer de la base de données\n' +
-        '• Supprimer le thread (et tout son contenu) sur Discord\n\n' +
-        'Cette action est irréversible.',
-      confirmText: 'Supprimer définitivement',
-      cancelText: 'Annuler',
-      type: 'danger'
-    });
-    if (!ok) return;
-    const threadId = String((post as { threadId?: string; thread_id?: string }).threadId ?? (post as { thread_id?: string }).thread_id ?? '').trim();
+  function handleDeleteDefinitively(post: PublishedPost) {
+    // Ouvrir la modale de confirmation avec champ raison
+    setPostToDelete(post);
+    setDeleteModalOpen(true);
+  }
 
-    // 🔍 DEBUG : Logs de suppression
-    console.log('🗑️ Suppression du post:', {
-      postId: post.id,
-      title: post.title,
-      threadId,
-      post_complete: post
-    });
+  async function performDelete(reason: string) {
+    if (!postToDelete) return;
+
+    // Fermer la modale
+    setDeleteModalOpen(false);
+
+    const post = postToDelete;
+    const threadId = String((post as { threadId?: string; thread_id?: string }).threadId ?? (post as { thread_id?: string }).thread_id ?? '').trim();
 
     const baseUrl = (localStorage.getItem('apiBase') || '').replace(/\/+$/, '');
     const apiKey = localStorage.getItem('apiKey') || '';
@@ -192,38 +188,30 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
       return;
     }
 
-    // Vérifier si le threadId est valide
-    if (!threadId) {
-      console.warn('⚠️ Thread ID vide, suppression uniquement en local/Supabase');
-    }
-
     try {
-      console.log(`📡 Appel API DELETE vers ${baseUrl}/api/forum-post/delete avec threadId:`, threadId);
       const res = await fetch(`${baseUrl}/api/forum-post/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-KEY': apiKey },
         body: JSON.stringify({
           threadId,
-          postId: post.id // Envoyer aussi l'ID du post pour la suppression Koyeb
+          postId: post.id,
+          postTitle: post.title,
+          reason: reason || undefined // Envoyer la raison au backend
         })
       });
       const data = await res.json().catch(() => ({}));
-      console.log('📩 Réponse API DELETE:', { status: res.status, ok: res.ok, data });
 
       if (!res.ok) {
         if (res.status === 404) {
-          console.log('✅ Thread 404 (déjà supprimé), suppression locale');
           deletePublishedPost(post.id);
           showToast('Le thread était déjà supprimé sur Discord ; entrée retirée de l\'historique.', 'success');
           return;
         }
         const msg = data?.error || `Erreur ${res.status}`;
-        console.error('❌ Erreur lors de la suppression:', msg);
         showToast(msg, 'error');
         return;
       }
 
-      console.log('✅ Suppression réussie, mise à jour de l\'état local');
       deletePublishedPost(post.id);
       if (data?.skipped_discord) {
         showToast('Aucun thread Discord associé ; entrée retirée de l\'historique et de la base.', 'success');
@@ -231,8 +219,9 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
         showToast('Publication supprimée définitivement (historique, base et Discord)', 'success');
       }
     } catch (e: any) {
-      console.error('❌ Erreur réseau lors de la suppression:', e);
       showToast('Erreur réseau : ' + (e?.message || 'inconnue'), 'error');
+    } finally {
+      setPostToDelete(null);
     }
   }
 
@@ -556,6 +545,16 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
           </button>
         </div>
       </div>
+
+      <DeleteConfirmModal
+        isOpen={deleteModalOpen}
+        postTitle={postToDelete?.title || ''}
+        onConfirm={performDelete}
+        onCancel={() => {
+          setDeleteModalOpen(false);
+          setPostToDelete(null);
+        }}
+      />
 
       <ConfirmModal
         isOpen={confirmState.isOpen}

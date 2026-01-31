@@ -1,162 +1,31 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import ErrorModal from '../components/ErrorModal';
 import { getSupabase } from '../lib/supabase';
 import { tauriAPI } from '../lib/tauri-api';
-// The local logger has been removed.  Koyeb collects logs automatically, so
-// there is no need to import or use the custom logger.
+import { defaultTemplates, defaultVarsConfig } from './defaults';
+import { useImagesState } from './hooks/useImagesState';
+import { mergeInstructionsFromSupabase, useInstructionsState } from './hooks/useInstructionsState';
+import { usePreviewEngine } from './hooks/usePreviewEngine';
+import type {
+  AdditionalTranslationLink,
+  LinkConfig,
+  PublishedPost,
+  Tag,
+  Template,
+  VarConfig
+} from './types';
 
-export type VarConfig = {
-  name: string;
-  label: string;
-  placeholder?: string;
-  type?: 'text' | 'textarea';
-  fullWidth?: boolean;
-  hasSaveLoad?: boolean;
-  showInAvailableVars?: boolean;
-  domId?: string;
-  templates?: string[]; // Liste des IDs de templates associés (vide = tous)
-  isCustom?: boolean; // Pour distinguer les variables par défaut des personnalisées
+// Ré-exporter les types pour la compatibilité
+export type {
+  AdditionalTranslationLink, LinkConfig, PublishedPost, Tag, Template, VarConfig
 };
-
-export type Template = {
-  id?: string;
-  name: string;
-  type?: string | null;
-  content: string;
-  isDraft?: boolean;
-  /** Template par défaut (défini dans le code) : sauvegardé localement uniquement, jamais poussé en BDD. */
-  isDefault?: boolean;
-  createdAt?: number;
-  modifiedAt?: number;
-  lastSavedAt?: number;
-};
-
-export type LinkConfig = {
-  source: 'F95' | 'Lewd' | 'Autre';
-  value: string; // ID ou URL complète selon la source
-};
-
-export type AdditionalTranslationLink = {
-  label: string;
-  link: string;
-};
-
-export type Tag = {
-  name: string;
-  id?: string;
-  template?: string;
-  isTranslator?: boolean;
-  /** ID Discord de l'utilisateur qui a créé le tag (optionnel) */
-  authorDiscordId?: string;
-  /** ID du tag côté Discord (forum/channel) pour que ça marche avec Discord */
-  discordTagId?: string;
-};
-
-export type PublishedPost = {
-  id: string;
-  timestamp: number;
-  /** Date de création (ms), pour affichage */
-  createdAt?: number;
-  /** Date de dernière modification (ms), pour affichage */
-  updatedAt?: number;
-  title: string;
-  content: string;
-  tags: string;
-  imagePath?: string;
-  translationType?: string;
-  isIntegrated?: boolean;
-  threadId: string;
-  messageId: string;
-  discordUrl: string;
-  forumId: number;
-
-  // Données pour ré-édition complète
-  savedInputs?: Record<string, string>;
-  savedLinkConfigs?: {
-    Game_link: LinkConfig;
-    Translate_link: LinkConfig;
-    Mod_link: LinkConfig;
-  };
-  savedAdditionalTranslationLinks?: AdditionalTranslationLink[];
-  /** Liens additionnels mod (affichés si mod compatible) */
-  savedAdditionalModLinks?: AdditionalTranslationLink[];
-  /** ID Discord de l'auteur du post (pour droits d'édition) */
-  authorDiscordId?: string;
-};
-
-const defaultVarsConfig: VarConfig[] = [
-  { name: 'Game_name', label: 'Nom du jeu', placeholder: 'Lost Solace' },
-  { name: 'Game_version', label: 'Version du jeu', placeholder: 'v0.1' },
-  { name: 'Translate_version', label: 'Version de la traduction', placeholder: 'v0.1' },
-  { name: 'Game_link', label: 'Lien du jeu', placeholder: 'https://...' },
-  { name: 'Translate_link', label: 'Lien de la traduction', placeholder: 'https://...' },
-  { name: 'Overview', label: 'Synopsis', placeholder: 'Synopsis du jeu...', type: 'textarea' },
-  { name: 'is_modded_game', label: 'Mod compatible', type: 'text' }, // Stocké comme "true"/"false"
-  { name: 'Mod_link', label: 'Lien du mod', placeholder: 'https://...' }
-];
-
-// Template unique par défaut (géré uniquement dans le code ; sauvegarde locale possible, pas en BDD)
-const defaultTemplate: Template = {
-  id: 'my',
-  name: 'Mes traductions',
-  type: 'my',
-  isDefault: true,
-  content: `## :flag_fr: La traduction française de [Game_name] est disponible ! :tada:
-
-Vous pouvez l'installer dès maintenant pour profiter du jeu dans notre langue. Bon jeu à tous ! :point_down:
-
-1. :computer: **Infos du Jeu**
-   * **Nom du jeu :** [Game_name]
-   * **Version du jeu :** \`[Game_version]\`
-   * **Version traduite :** \`[Translate_version]\`
-   * **Type de traduction :** [Translation_Type]
-   * **Mod compatible :** [is_modded_game]
-
-2. :link: **Liens requis**
-   * [Jeu original](<[Game_link]>)
-[MOD_LINKS_LINE]
-
-3. :link: **Traductions**
-[TRANSLATION_LINKS_LINE]
-
-**Synopsis du jeu :**
-> [Overview]
-[instruction]`
-};
-// // Template unique par défaut
-// const defaultTemplate: Template = {
-//   id: 'my',
-//   name: 'Mes traductions',
-//   type: 'my',
-//   content: `## :flag_fr: La traduction française de [Game_name] est disponible ! :tada:
-
-// Vous pouvez l'installer dès maintenant pour profiter du jeu dans notre langue. Bon jeu à tous ! :point_down:
-
-// ### :computer: Infos du Mod & Liens de Téléchargement
-// * **Nom du jeu :** [Game_name]
-// * **Version du jeu :** \`[Game_version]\`
-// * **Version traduite :** \`[Translate_version]\`
-// * **Type de traduction :** [Translation_Type]
-// * **Mod compatible :** [is_modded_game]
-// * [Accès au jeu original](<[Game_link]>)
-//   * [Téléchargez la traduction ici !](<[Translate_link]>)
-// [ADDITIONAL_TRANSLATION_LINKS]
-// > **Synopsis du jeu :**
-// > [Overview]
-// [instruction]
-// ### :sparkling_heart: Soutenez le Traducteur !
-// Pour m'encourager et soutenir mes efforts :
-// * **Soutien au Traducteur (Moi !) :** [Offrez-moi un café pour le temps passé !](https://discord.com/channels/1417811606674477139/1433930090349330493)`
-// };
-// Templates stockés comme tableau avec un seul élément (pour compatibilité avec TemplatesModal)
-const defaultTemplates: Template[] = [defaultTemplate];
 
 type AppContextValue = {
   resetAllFields: () => void;
   templates: Template[];
   updateTemplate: (idx: number, t: Template) => void;
   restoreDefaultTemplates: () => void;
-  currentTemplateIdx: number; // Toujours 0 - un seul template
+  currentTemplateIdx: number;
   allVarsConfig: VarConfig[];
   addVarConfig: (v: VarConfig) => void;
   updateVarConfig: (idx: number, v: VarConfig) => void;
@@ -167,41 +36,33 @@ type AppContextValue = {
   setTranslationType: (type: string) => void;
   isIntegrated: boolean;
   setIsIntegrated: (value: boolean) => void;
-  /** Contenu affiché et envoyé à la publication : rendu template+variables, ou override si édition directe. */
   preview: string;
-  /** Override du preview (édition directe pour ce post). null = rendu live depuis le template. */
   previewOverride: string | null;
   setPreviewOverride: (value: string | null) => void;
   savedTags: Tag[];
   addSavedTag: (t: Tag) => void;
   updateSavedTag: (id: string, updates: Partial<Tag>) => void;
   deleteSavedTag: (idx: number) => void;
-  /** Envoyer les tags vers Supabase. authorDiscordId optionnel : utilisé pour les tags sans auteur. */
   syncTagsToSupabase: (authorDiscordId?: string) => Promise<{ ok: boolean; count?: number; error?: string }>;
-  /** Recharger les tags depuis Supabase (pour récupérer ceux des autres utilisateurs). */
   fetchTagsFromSupabase: () => Promise<void>;
-  /** Envoyer les instructions vers Supabase (app_config). */
   syncInstructionsToSupabase: () => Promise<{ ok: boolean; error?: string }>;
-  /** Récupérer les instructions depuis Supabase. */
   fetchInstructionsFromSupabase: () => Promise<void>;
-  /** Envoyer les templates personnalisés vers Supabase (app_config). */
   syncTemplatesToSupabase: () => Promise<{ ok: boolean; error?: string }>;
-  /** Récupérer les templates depuis Supabase. */
   fetchTemplatesFromSupabase: () => Promise<void>;
   importFullConfig: (config: any) => void;
 
   savedInstructions: Record<string, string>;
   saveInstruction: (name: string, text: string) => void;
   deleteInstruction: (name: string) => void;
+  instructionOwners: Record<string, string>;
 
-  uploadedImages: Array<{ id: string, path?: string, url?: string, name: string, isMain: boolean }>;
+  uploadedImages: Array<{ id: string; path?: string; url?: string; name: string; isMain: boolean }>;
   addImages: (files: FileList | File[]) => void;
   addImageFromPath: (filePath: string) => Promise<void>;
   addImageFromUrl: (url: string) => void;
   removeImage: (idx: number) => void;
   setMainImage: (idx: number) => void;
 
-  // Post & API
   postTitle: string;
   setPostTitle: (s: string) => void;
   postTags: string;
@@ -212,24 +73,18 @@ type AppContextValue = {
   lastPublishResult: string | null;
   publishPost: (authorDiscordId?: string) => Promise<{ ok: boolean, data?: any, error?: string }>;
 
-  // Error handling
   showErrorModal: (error: { code?: string | number; message: string; context?: string; httpStatus?: number; discordError?: any }) => void;
 
-  // History
   publishedPosts: PublishedPost[];
-  addPublishedPost: (p: PublishedPost) => Promise<void>;
+  addPublishedPost: (p: PublishedPost, skipSupabase?: boolean) => Promise<void>;
   updatePublishedPost: (id: string, p: Partial<PublishedPost>) => Promise<void>;
   deletePublishedPost: (id: string) => void;
   fetchHistoryFromAPI: () => Promise<void>;
-  /** Convertit une ligne historique (snake_case, Supabase/archive) en PublishedPost pour l'affichage. */
   parseHistoryRow: (row: Record<string, unknown>) => PublishedPost;
-  /** Nettoyage des données applicatives (Supabase + état local). ownerId = profil courant pour supprimer ses lignes allowed_editors. */
   clearAllAppData: (ownerId?: string) => Promise<{ ok: boolean; error?: string }>;
 
-  // Rate limit protection
   rateLimitCooldown: number | null;
 
-  // NOUVEAU : Gestion des liens
   linkConfigs: {
     Game_link: LinkConfig;
     Translate_link: LinkConfig;
@@ -246,7 +101,6 @@ type AppContextValue = {
     Mod_link: LinkConfig;
   }>>;
 
-  // Edit mode
   editingPostId: string | null;
   editingPostData: PublishedPost | null;
   setEditingPostId: (id: string | null) => void;
@@ -254,23 +108,16 @@ type AppContextValue = {
   loadPostForEditing: (post: PublishedPost) => void;
   loadPostForDuplication: (post: PublishedPost) => void;
 
-  // Config globale (URL API partagée via Supabase)
   setApiBaseFromSupabase: (url: string | null) => void;
-
-  // API status global
   apiStatus: string;
   setApiStatus: React.Dispatch<React.SetStateAction<string>>;
-
-  // Discord config global
   discordConfig: any;
   setDiscordConfig: React.Dispatch<React.SetStateAction<any>>;
 
-  // Liens additionnels de traduction
   additionalTranslationLinks: AdditionalTranslationLink[];
   addAdditionalTranslationLink: () => void;
   updateAdditionalTranslationLink: (index: number, link: AdditionalTranslationLink) => void;
   deleteAdditionalTranslationLink: (index: number) => void;
-  // Liens additionnels mod (affichés si mod compatible)
   additionalModLinks: AdditionalTranslationLink[];
   addAdditionalModLink: () => void;
   updateAdditionalModLink: (index: number, link: AdditionalTranslationLink) => void;
@@ -280,6 +127,12 @@ type AppContextValue = {
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  // ========================================
+  // HOOKS EXTRAITS
+  // ========================================
+  const imagesState = useImagesState();
+  const instructionsState = useInstructionsState();
+
   // Base64 UTF-8 (btoa seul ne supporte pas les caractères non-ASCII)
   function b64EncodeUtf8(str: string): string {
     const bytes = new TextEncoder().encode(str);
@@ -344,15 +197,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setTemplates(config.templates);
     }
 
-    let importedVars = config.allVarsConfig;
-    if (Array.isArray(importedVars)) {
-      // Migration: retirer les anciennes variables qui ne sont plus utilisées
-      importedVars = importedVars.filter((v: any) =>
-        v?.name !== 'install_instructions' &&
-        v?.name !== 'Traductor' &&
-        v?.name !== 'Developpeur'
-      );
-      setAllVarsConfig(importedVars);
+    if (Array.isArray(config.allVarsConfig)) {
+      setAllVarsConfig(config.allVarsConfig);
     }
 
     if (Array.isArray(config.savedTags)) {
@@ -360,7 +206,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (config.savedInstructions && typeof config.savedInstructions === 'object') {
-      setSavedInstructions(config.savedInstructions);
+      instructionsState.setSavedInstructions(config.savedInstructions);
     }
 
     if (Array.isArray(config.publishedPosts)) {
@@ -368,15 +214,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Re-synchroniser inputs avec les variables importées (évite des champs manquants)
-    if (Array.isArray(importedVars)) {
+    if (Array.isArray(config.allVarsConfig)) {
       setInputs(prev => {
         const next: Record<string, string> = { ...prev };
 
-        // Migration: supprimer les anciennes variables des inputs
-        delete next['Traductor'];
-        delete next['Developpeur'];
-
-        for (const v of importedVars) {
+        for (const v of config.allVarsConfig) {
           if (v?.name && !(v.name in next)) next[v.name] = '';
         }
 
@@ -472,13 +314,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const raw = localStorage.getItem('customVariables');
       if (raw) {
-        const vars = JSON.parse(raw);
-        // Migration: supprimer les anciennes variables qui ne sont plus utilisées
-        return vars.filter((v: VarConfig) =>
-          v.name !== 'install_instructions' &&
-          v.name !== 'Traductor' &&
-          v.name !== 'Developpeur'
-        );
+        return JSON.parse(raw);
       }
     } catch (e) { }
     return defaultVarsConfig;
@@ -497,89 +333,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const raw = localStorage.getItem('savedInputs');
       if (raw) {
-        const parsed = JSON.parse(raw);
-        // Migration: supprimer les anciennes variables Traductor et Developpeur des inputs sauvegardés
-        delete parsed['Traductor'];
-        delete parsed['Developpeur'];
-        Object.assign(obj, parsed);
+        Object.assign(obj, JSON.parse(raw));
       }
     } catch (e) { }
     return obj;
   });
 
-  const [savedInstructions, setSavedInstructions] = useState<Record<string, string>>(() => {
-    try { const raw = localStorage.getItem('savedInstructions'); if (raw) return JSON.parse(raw); } catch (e) { }
-    return {};
-  });
-  /** Propriétaire par clé d'instruction (owner_id) : pour ne synchroniser que les instructions de l'utilisateur courant. */
-  const [instructionOwners, setInstructionOwners] = useState<Record<string, string>>(() => {
-    try { const raw = localStorage.getItem('instructionOwners'); if (raw) return JSON.parse(raw); } catch (e) { }
-    return {};
-  });
-
-  /**
-   * Fusionne les instructions Supabase avec les instructions locales.
-   * - Instructions locales sans owner connu → conservées
-   * - Instructions Supabase → ajoutées/mises à jour
-   * - Instructions dont le owner était connu mais n'est plus accessible (révoqué) → supprimées
-   */
-  function mergeInstructionsFromSupabase(
-    supabaseData: Array<{ owner_id: string; value: Record<string, string> | string }>,
-    currentInstructions: Record<string, string>,
-    currentOwners: Record<string, string>
-  ): { merged: Record<string, string>; owners: Record<string, string> } {
-    // Extraire toutes les instructions et owners depuis Supabase
-    const supabaseInstructions: Record<string, string> = {};
-    const supabaseOwners: Record<string, string> = {};
-    const visibleOwnerIds = new Set<string>();
-
-    for (const row of supabaseData) {
-      visibleOwnerIds.add(row.owner_id);
-      try {
-        const val = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-        if (val && typeof val === 'object' && !Array.isArray(val)) {
-          for (const [k, v] of Object.entries(val)) {
-            if (typeof v === 'string') {
-              supabaseInstructions[k] = v;
-              supabaseOwners[k] = row.owner_id;
-            }
-          }
-        }
-      } catch (_e) {
-        /* ignorer */
-      }
-    }
-
-    // Fusionner : garder les locales sans owner, supprimer les révoquées, ajouter les Supabase
-    const merged: Record<string, string> = {};
-    const owners: Record<string, string> = {};
-
-    // 1. Parcourir les instructions locales existantes
-    for (const [k, v] of Object.entries(currentInstructions)) {
-      const existingOwner = currentOwners[k];
-      if (!existingOwner) {
-        // Instruction locale pure (pas de owner connu) → garder
-        merged[k] = v;
-      } else if (visibleOwnerIds.has(existingOwner)) {
-        // Le owner est toujours accessible → sera écrasé par Supabase si présent
-        // (ne pas ajouter ici, sera ajouté depuis supabaseInstructions)
-      } else {
-        // Le owner était connu mais n'est plus accessible → RÉVOQUÉ, supprimer
-        console.log(`🔒 Instruction "${k}" révoquée (owner ${existingOwner} non accessible)`);
-      }
-    }
-
-    // 2. Ajouter/écraser avec les instructions Supabase
-    for (const [k, v] of Object.entries(supabaseInstructions)) {
-      merged[k] = v;
-      owners[k] = supabaseOwners[k];
-    }
-
-    // Ordre stable des clés (alphabétique) pour éviter que les instructions "switchent" de position
-    const sortedMerged = Object.fromEntries(Object.entries(merged).sort((a, b) => a[0].localeCompare(b[0])));
-    const sortedOwners = Object.fromEntries(Object.entries(owners).sort((a, b) => a[0].localeCompare(b[0])));
-    return { merged: sortedMerged, owners: sortedOwners };
-  }
 
   // Translation type and integration state
   const [translationType, setTranslationType] = useState<string>(() => {
@@ -615,24 +374,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const [uploadedImages, setUploadedImages] = useState<Array<{ id: string, path?: string, url?: string, name: string, isMain: boolean }>>(() => {
-    try {
-      const raw = localStorage.getItem('uploadedImages');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        // Migration: convert old dataUrl format to new path format
-        if (parsed.length > 0 && parsed[0].dataUrl) {
-          return []; // Reset old format images
-        }
-        // Migration: ajouter name si manquant
-        return parsed.map((img: any) => ({
-          ...img,
-          name: img.name || img.path?.split(/[/\\]/).pop() || img.url?.split('/').pop() || 'image'
-        }));
-      }
-    } catch (e) { }
-    return [];
-  });
 
   const [savedTags, setSavedTags] = useState<Tag[]>(() => {
     try { const raw = localStorage.getItem('savedTags'); if (raw) return JSON.parse(raw); } catch (e) { }
@@ -683,7 +424,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [editingPostData, setEditingPostData] = useState<PublishedPost | null>(null);
 
   /** Override du preview : édition directe pour ce post. null = rendu live depuis le template. */
-  const [previewOverride, setPreviewOverride] = useState<string | null>(null);
 
   useEffect(() => { localStorage.setItem('postTitle', postTitle); }, [postTitle]);
 
@@ -764,33 +504,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // History management functions (sync Supabase si configuré)
   const addPublishedPost = async (p: PublishedPost, skipSupabase = false) => {
     setPublishedPosts(prev => [p, ...prev]);
-    // ⚠️ Si skipSupabase=true, ne pas sauvegarder dans Supabase (déjà fait par le backend)
+    // Si skipSupabase=true, ne pas sauvegarder dans Supabase (déjà fait par le backend)
     if (skipSupabase) {
-      console.log('ℹ️ Sauvegarde Supabase ignorée (déjà effectuée par le backend)');
       return;
     }
     const sb = getSupabase();
     if (sb) {
       const row = postToRow(p);
       const res = await sb.from('published_posts').upsert(row, { onConflict: 'id' });
-      if (res.error) console.warn('⚠️ Supabase insert post:', (res.error as { message?: string })?.message);
     }
   };
 
   const updatePublishedPost = async (id: string, updates: Partial<PublishedPost>) => {
-    console.log('🔄 updatePublishedPost appelé:', { id, title: (updates as any).title, tags: (updates as any).tags });
     const withUpdatedAt = { ...updates, updatedAt: updates.updatedAt ?? Date.now() };
 
     const sb = getSupabase();
     if (!sb) {
-      console.error('❌ Supabase client non disponible pour updatePublishedPost');
       setPublishedPosts(prev => prev.map(post => post.id === id ? { ...post, ...withUpdatedAt } : post));
       return;
     }
     if (sb) {
       try {
-        // 🔥 RÉCUPÉRER LA VERSION FRAÎCHE DEPUIS SUPABASE (au lieu de l'état local)
-        console.log('🔍 Récupération post existant depuis Supabase, id:', id);
+        // Récupérer la version fraîche depuis Supabase
         const { data: existingRow, error: fetchError } = await sb
           .from('published_posts')
           .select('*')
@@ -798,22 +533,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           .single();
 
         if (fetchError) {
-          console.warn('⚠️ Post non trouvé dans Supabase, utilisation de l\'état local:', fetchError);
           // Fallback : chercher dans l'état local
           const existing = publishedPosts.find(p => p.id === id);
           if (!existing) {
-            console.error('❌ Post introuvable dans état local (id:', id, ')');
             return;
           }
           const merged = { ...existing, ...withUpdatedAt, id } as PublishedPost;
-          console.log('📝 Upsert dans Supabase (fallback):', { id, title: merged.title, tags: merged.tags });
           const row = postToRow(merged);
-          const res = await sb.from('published_posts').upsert(row, { onConflict: 'id' });
-          if (res.error) {
-            console.error('❌ Erreur Supabase update post (fallback):', res.error);
-          } else {
-            console.log('✅ Post mis à jour dans Supabase (fallback)');
-          }
+          await sb.from('published_posts').upsert(row, { onConflict: 'id' });
 
           // Mettre à jour l'état local
           setPublishedPosts(prev => prev.map(p => p.id === id ? merged : p));
@@ -821,32 +548,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Fusionner avec les données fraîches de Supabase
-        console.log('🔀 Fusion avec données Supabase existantes');
         const existingPost = rowToPost(existingRow);
         const merged = { ...existingPost, ...withUpdatedAt, id } as PublishedPost;
-        console.log('📊 Données fusionnées:', {
-          id: merged.id,
-          title: merged.title,
-          tags: merged.tags,
-          oldTitle: existingPost.title,
-          newTitle: (withUpdatedAt as any).title
-        });
 
         // Upsert dans Supabase
         const row = postToRow(merged);
-        console.log('📝 Upsert dans Supabase:', { id: row.id, title: row.title, tags: row.tags });
-        const res = await sb.from('published_posts').upsert(row, { onConflict: 'id' });
-        if (res.error) {
-          console.error('❌ Erreur Supabase update post:', res.error);
-        } else {
-          console.log('✅ Post mis à jour dans Supabase avec succès');
-        }
+        await sb.from('published_posts').upsert(row, { onConflict: 'id' });
 
         // Mettre à jour l'état local
         setPublishedPosts(prev => prev.map(p => p.id === id ? merged : p));
 
-      } catch (e) {
-        console.error('❌ Erreur updatePublishedPost:', e);
+      } catch {
         // Fallback : mise à jour locale uniquement
         setPublishedPosts(prev => prev.map(post => post.id === id ? { ...post, ...withUpdatedAt } : post));
       }
@@ -859,9 +571,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const deletePublishedPost = (id: string) => {
     setPublishedPosts(prev => prev.filter(post => post.id !== id));
     const sb = getSupabase();
-    if (sb) sb.from('published_posts').delete().eq('id', id).then((res) => {
-      if (res.error) console.warn('⚠️ Supabase delete post:', (res.error as { message?: string })?.message);
-    });
+    if (sb) sb.from('published_posts').delete().eq('id', id);
   };
 
   async function clearAllAppData(ownerId?: string): Promise<{ ok: boolean; error?: string }> {
@@ -889,13 +599,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
       setPublishedPosts([]);
-      setSavedInstructions({});
-      setInstructionOwners({});
+      instructionsState.setSavedInstructions({});
+      instructionsState.setInstructionOwners({});
       return { ok: true };
     } catch (e: any) {
-      const msg = e?.message ?? String(e);
-      console.warn('⚠️ clearAllAppData:', msg);
-      return { ok: false, error: msg };
+      return { ok: false, error: e?.message ?? String(e) };
     }
   }
 
@@ -1002,11 +710,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (!response.ok) {
-        if (response.status === 404) {
-          console.log('⚠️ Endpoint /api/history non disponible, utilisation de localStorage uniquement');
-          return;
-        }
-        throw new Error(`Erreur ${response.status}: ${response.statusText}`);
+        return;
       }
 
       const data = await response.json();
@@ -1038,17 +742,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const merged = [...mapped, ...prev].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             return merged;
           });
-          console.log(`✅ ${newPostsFromKoyeb.length} nouveaux posts récupérés depuis Koyeb (backup)`);
         }
       }
-    } catch (e: any) {
-      console.error('❌ Erreur lors de la récupération de l\'historique:', e);
+    } catch {
+      // Erreur silencieuse
     }
   }
 
   async function publishPost(authorDiscordId?: string) {
     const title = (postTitle || '').trim();
-    const content = preview || '';
+    const content = previewEngine.preview || '';
     const templateType = (templates[currentTemplateIdx]?.type) || '';
     const isEditMode = editingPostId !== null && editingPostData !== null;
 
@@ -1143,8 +846,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Le backend détectera ce lien, créera un embed avec l'image, puis retirera le lien du contenu.
       // Ainsi l'image sera visible via l'embed sans que le lien soit affiché.
       let finalContent = content;
-      if (uploadedImages.length > 0) {
-        const mainImage = uploadedImages.find(img => img.isMain) || uploadedImages[0];
+      if (imagesState.uploadedImages.length > 0) {
+        const mainImage = imagesState.uploadedImages.find(img => img.isMain) || imagesState.uploadedImages[0];
         let imageUrl = '';
 
         if (mainImage.url) {
@@ -1153,7 +856,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         } else if (mainImage.path) {
           // Fichier local : sans hébergement, on ne peut pas générer une URL publique.
           // L'utilisateur doit utiliser une URL externe pour que l'embed fonctionne.
-          console.warn('Les fichiers locaux ne peuvent pas être utilisés comme image embed Discord. Veuillez utiliser une URL externe.');
         }
 
         // Ajouter le lien à la fin du contenu (le backend le retirera après avoir créé l'embed)
@@ -1176,7 +878,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       formData.append('state_label', stateLabel);
       formData.append('game_version', inputs['Game_version'] || '');
       formData.append('translate_version', inputs['Translate_version'] || '');
-      const mainImageForAnnounce = uploadedImages.find(i => i.isMain) || uploadedImages[0];
+      const mainImageForAnnounce = imagesState.uploadedImages.find(i => i.isMain) || imagesState.uploadedImages[0];
       const announceImageUrl = mainImageForAnnounce?.url && (mainImageForAnnounce.url.startsWith('http://') || mainImageForAnnounce.url.startsWith('https://'))
         ? mainImageForAnnounce.url
         : '';
@@ -1187,16 +889,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         formData.append('messageId', editingPostData.messageId);
         formData.append('thread_url', editingPostData.discordUrl || '');
         formData.append('isUpdate', 'true');
-        console.log('🔄 Mode édition activé:', {
-          threadId: editingPostData.threadId,
-          messageId: editingPostData.messageId
-        });
       }
 
       // Payload complet pour l'historique Koyeb (aligné Supabase) : tous les champs
       const now = Date.now();
       const postId = `post_${now}_${Math.random().toString(36).substr(2, 9)}`;
-      const imagePathVal = uploadedImages.find(i => i.isMain)?.path || uploadedImages.find(i => i.isMain)?.url;
+      const imagePathVal = imagesState.uploadedImages.find(i => i.isMain)?.path || imagesState.uploadedImages.find(i => i.isMain)?.url;
       if (isEditMode && editingPostData) {
         const mergedForHistory: PublishedPost = {
           ...editingPostData,
@@ -1305,25 +1003,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const forumId = res.forum_id || res.forumId || 0;
 
       if (threadId && messageId) {
-        // Dans la section mise à jour (après le fetch réussi) :
         if (isEditMode && editingPostId && editingPostData) {
-          console.log('🔄 Mode édition détecté, construction updatedPost');
           const now = Date.now();
 
-          // 🔥 CONSTRUIRE UN OBJET COMPLET (pas Partial)
           const updatedPost: PublishedPost = {
-            ...editingPostData, // Garder toutes les anciennes valeurs
+            ...editingPostData,
             id: editingPostId,
             timestamp: now,
-            createdAt: editingPostData.createdAt ?? now, // Garder la date de création originale
+            createdAt: editingPostData.createdAt ?? now,
             updatedAt: now,
             title,
             content,
             tags: tagsToSend,
-            imagePath: uploadedImages.find(i => i.isMain)?.path || uploadedImages.find(i => i.isMain)?.url,
+            imagePath: imagesState.uploadedImages.find(i => i.isMain)?.path || imagesState.uploadedImages.find(i => i.isMain)?.url,
             translationType,
             isIntegrated,
-            savedInputs: { ...inputs }, // 🔥 SAUVEGARDER TOUS LES INPUTS (y compris instruction)
+            savedInputs: { ...inputs },
             savedLinkConfigs: JSON.parse(JSON.stringify(linkConfigs)),
             savedAdditionalTranslationLinks: JSON.parse(JSON.stringify(additionalTranslationLinks)),
             savedAdditionalModLinks: JSON.parse(JSON.stringify(additionalModLinks)),
@@ -1331,32 +1026,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             messageId: String(messageId),
             discordUrl: threadUrl || editingPostData.discordUrl,
             forumId: typeof forumId === 'number' ? forumId : parseInt(String(forumId)) || 0,
-            authorDiscordId: editingPostData.authorDiscordId // Garder l'auteur original
+            authorDiscordId: editingPostData.authorDiscordId
           };
 
-          console.log('📤 Appel updatePublishedPost avec:', {
-            id: editingPostId,
-            title: updatedPost.title,
-            tags: updatedPost.tags,
-            content_length: updatedPost.content?.length
-          });
           await updatePublishedPost(editingPostId, updatedPost);
           tauriAPI.saveLocalHistoryPost(postToRow(updatedPost), updatedPost.authorDiscordId);
           setEditingPostId(null);
           setEditingPostData(null);
-          console.log('✅ Post mis à jour dans l\'historique et Supabase:', updatedPost);
         } else {
-          // 🔥 RÉUTILISER LE MÊME ID que celui envoyé au backend (postId défini ligne 1193)
           const now = Date.now();
           const newPost: PublishedPost = {
-            id: postId, // ✅ Utiliser l'ID déjà généré et envoyé au backend
+            id: postId,
             timestamp: now,
             createdAt: now,
             updatedAt: now,
             title,
             content,
             tags: tagsToSend,
-            imagePath: uploadedImages.find(i => i.isMain)?.path || uploadedImages.find(i => i.isMain)?.url,
+            imagePath: imagesState.uploadedImages.find(i => i.isMain)?.path || imagesState.uploadedImages.find(i => i.isMain)?.url,
             translationType,
             isIntegrated,
             savedInputs: { ...inputs },
@@ -1369,13 +1056,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             forumId: typeof forumId === 'number' ? forumId : parseInt(String(forumId)) || 0,
             authorDiscordId: authorDiscordId ?? undefined
           };
-          // ✅ skipSupabase=true car le backend a déjà sauvegardé dans Supabase
           await addPublishedPost(newPost, true);
           tauriAPI.saveLocalHistoryPost(postToRow(newPost), newPost.authorDiscordId);
-          console.log('✅ Nouveau post ajouté à l\'historique local (Supabase déjà géré par le backend):', newPost);
         }
-      } else {
-        console.warn('⚠️ Réponse API ne contient pas thread_id/message_id');
       }
 
       return { ok: true, data: res };
@@ -1471,28 +1154,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           localInstructions,
           localOwners
         );
-        setSavedInstructions(merged);
-        setInstructionOwners(owners);
-      } else if (session?.user?.id) {
-        // Migration : anciennes instructions globales (app_config) → saved_instructions pour l'utilisateur courant
-        const { data: oldRow } = await sb.from('app_config').select('value').eq('key', 'saved_instructions').maybeSingle();
-        if (oldRow?.value) {
-          try {
-            const parsed = JSON.parse(oldRow.value as string) as Record<string, string>;
-            if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
-              await sb.from('saved_instructions').upsert(
-                { owner_id: session.user.id, value: parsed, updated_at: new Date().toISOString() },
-                { onConflict: 'owner_id' }
-              );
-              setSavedInstructions(parsed);
-              const owners: Record<string, string> = {};
-              for (const k of Object.keys(parsed)) owners[k] = session.user.id;
-              setInstructionOwners(owners);
-            }
-          } catch (_e) {
-            /* ignorer */
-          }
-        }
+        instructionsState.setSavedInstructions(merged);
+        instructionsState.setInstructionOwners(owners);
       }
       // Templates : toujours depuis app_config (partagés)
       const resTpl = await sb.from('app_config').select('value').eq('key', 'custom_templates').maybeSingle();
@@ -1569,8 +1232,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               const instrEq = (a: Record<string, string>, b: Record<string, string>) =>
                 Object.keys(a).length === Object.keys(b).length &&
                 Object.keys(a).every(k => b[k] === a[k]);
-              setSavedInstructions(prev => instrEq(prev, merged) ? prev : merged);
-              setInstructionOwners(prev => instrEq(prev, owners) ? prev : owners);
+              instructionsState.setSavedInstructions(prev => instrEq(prev, merged) ? prev : merged);
+              instructionsState.setInstructionOwners(prev => instrEq(prev, owners) ? prev : owners);
             });
         }
       )
@@ -1606,9 +1269,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
       )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') console.log('🔄 Realtime Discord Publisher actif');
-      });
+      .subscribe();
 
     return () => {
       sb.removeChannel(channel);
@@ -1616,11 +1277,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Migration: nettoyer les anciennes variables avant de sauvegarder
-    const cleanedInputs = { ...inputs };
-    delete cleanedInputs['Traductor'];
-    delete cleanedInputs['Developpeur'];
-    localStorage.setItem('savedInputs', JSON.stringify(cleanedInputs));
+    localStorage.setItem('savedInputs', JSON.stringify(inputs));
   }, [inputs]);
 
   useEffect(() => {
@@ -1631,17 +1288,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('isIntegrated', String(isIntegrated));
   }, [isIntegrated]);
 
-  useEffect(() => {
-    localStorage.setItem('savedInstructions', JSON.stringify(savedInstructions));
-  }, [savedInstructions]);
 
   useEffect(() => {
-    localStorage.setItem('instructionOwners', JSON.stringify(instructionOwners));
-  }, [instructionOwners]);
-
-  useEffect(() => {
-    localStorage.setItem('uploadedImages', JSON.stringify(uploadedImages));
-  }, [uploadedImages]);
+    localStorage.setItem('imagesState.uploadedImages', JSON.stringify(imagesState.uploadedImages));
+  }, [imagesState.uploadedImages]);
 
   function updateTemplate(idx: number, t: Template) {
     setTemplates(prev => {
@@ -1658,15 +1308,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Sauvegarder dans localStorage
     try {
       localStorage.setItem('customTemplates', JSON.stringify(defaultTemplates));
-    } catch (e) {
-      console.error('Erreur lors de la sauvegarde des templates par défaut:', e);
+    } catch {
+      // Erreur silencieuse
     }
   }
 
   function addVarConfig(v: VarConfig) {
     // Empêcher l'ajout des variables obsolètes
     if (v.name === 'Traductor' || v.name === 'Developpeur' || v.name === 'install_instructions') {
-      console.warn(`Variable "${v.name}" n'est plus supportée et ne peut pas être ajoutée`);
       return;
     }
     setAllVarsConfig(prev => [...prev, { ...v, isCustom: true }]);
@@ -1815,9 +1464,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (updates.authorDiscordId !== undefined) row.author_discord_id = updates.authorDiscordId ?? null;
       if (updates.discordTagId !== undefined) row.discord_tag_id = updates.discordTagId ?? null;
       if (Object.keys(row).length > 0) {
-        sb.from('tags').update(row).eq('id', id).then((res) => {
-          if (res.error) console.warn('⚠️ Supabase update tag:', (res.error as { message?: string })?.message);
-        });
+        sb.from('tags').update(row).eq('id', id);
       }
     }
   }
@@ -1898,95 +1545,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Instructions : sync direct vers Supabase (comme les tags), contrôle par autorisation RLS
-  async function _syncMyInstructionsToSupabase(
-    instructions: Record<string, string>,
-    owners: Record<string, string>,
-    userId: string
-  ): Promise<void> {
-    const sb = getSupabase();
-    if (!sb) return;
-    const myInstructions: Record<string, string> = {};
-    for (const [k, v] of Object.entries(instructions)) {
-      if (!owners[k] || owners[k] === userId) myInstructions[k] = v;
-    }
-    await sb.from('saved_instructions').upsert(
-      { owner_id: userId, value: myInstructions, updated_at: new Date().toISOString() },
-      { onConflict: 'owner_id' }
-    );
-  }
-
-  function saveInstruction(name: string, text: string) {
-    const newInstructions = { ...savedInstructions, [name]: text };
-    setSavedInstructions(newInstructions);
-    getSupabase()?.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) {
-        const newOwners = { ...instructionOwners, [name]: session.user.id };
-        setInstructionOwners(newOwners);
-        _syncMyInstructionsToSupabase(newInstructions, newOwners, session.user.id).catch(() => { });
-      }
-    });
-  }
-  function deleteInstruction(name: string) {
-    const newInstructions = { ...savedInstructions }; delete newInstructions[name];
-    const newOwners = { ...instructionOwners }; delete newOwners[name];
-    setSavedInstructions(newInstructions);
-    setInstructionOwners(newOwners);
-    getSupabase()?.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) {
-        _syncMyInstructionsToSupabase(newInstructions, newOwners, session.user.id).catch(() => { });
-      }
-    });
-  }
-
-  async function syncInstructionsToSupabase(): Promise<{ ok: boolean; error?: string }> {
-    const sb = getSupabase();
-    if (!sb) return { ok: false, error: 'Supabase non configuré' };
-    try {
-      const { data: { session } } = await sb.auth.getSession();
-      const userId = session?.user?.id;
-      if (!userId) return { ok: false, error: 'Connectez-vous pour enregistrer les instructions' };
-      const myInstructions: Record<string, string> = {};
-      for (const [k, v] of Object.entries(savedInstructions)) {
-        if (instructionOwners[k] === userId) myInstructions[k] = v;
-      }
-      const { error } = await sb
-        .from('saved_instructions')
-        .upsert(
-          { owner_id: userId, value: myInstructions, updated_at: new Date().toISOString() },
-          { onConflict: 'owner_id' }
-        );
-      if (error) throw new Error((error as { message?: string })?.message);
-      return { ok: true };
-    } catch (e: unknown) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
-    }
-  }
-
-  async function fetchInstructionsFromSupabase(): Promise<void> {
-    const sb = getSupabase();
-    if (!sb) return;
-    const { data, error } = await sb.from('saved_instructions').select('owner_id, value');
-    if (error || !data?.length) return;
-
-    // Lire les instructions locales depuis localStorage pour fusion
-    let localInstructions: Record<string, string> = {};
-    let localOwners: Record<string, string> = {};
-    try {
-      const rawInstr = localStorage.getItem('savedInstructions');
-      const rawOwners = localStorage.getItem('instructionOwners');
-      if (rawInstr) localInstructions = JSON.parse(rawInstr);
-      if (rawOwners) localOwners = JSON.parse(rawOwners);
-    } catch (_e) { /* ignorer */ }
-
-    // Fusion intelligente : garder les locales sans owner, supprimer les révoquées, ajouter les Supabase
-    const { merged, owners } = mergeInstructionsFromSupabase(
-      data as Array<{ owner_id: string; value: Record<string, string> | string }>,
-      localInstructions,
-      localOwners
-    );
-    setSavedInstructions(merged);
-    setInstructionOwners(owners);
-  }
 
   async function syncTemplatesToSupabase(): Promise<{ ok: boolean; error?: string }> {
     const sb = getSupabase();
@@ -2022,233 +1580,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Images
-  async function compressImage(file: File): Promise<File> {
-    const MAX_SIZE_MB = 8;
-    const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
-    const JPEG_QUALITY = 0.8;
 
-    // Si l'image est déjà petite, pas besoin de compresser
-    if (file.size <= MAX_SIZE_BYTES) {
-      return file;
-    }
-
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const reader = new FileReader();
-
-      reader.onload = (e) => {
-        img.src = e.target?.result as string;
-      };
-
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let { width, height } = img;
-
-        // Calculer les nouvelles dimensions en gardant le ratio
-        const ratio = Math.sqrt(MAX_SIZE_BYTES / file.size);
-        width = Math.floor(width * ratio);
-        height = Math.floor(height * ratio);
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Failed to get canvas context'));
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Convertir en JPEG si c'est un PNG (plus petite taille)
-        const outputFormat = file.type === 'image/png' ? 'image/jpeg' : file.type;
-
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              reject(new Error('Failed to compress image'));
-              return;
-            }
-
-            const compressedFile = new File(
-              [blob],
-              file.name.replace(/\.png$/i, '.jpg'),
-              { type: outputFormat, lastModified: Date.now() }
-            );
-
-            console.log(`Image compressed: ${(file.size / 1024 / 1024).toFixed(2)}MB → ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB`);
-            resolve(compressedFile);
-          },
-          outputFormat,
-          JPEG_QUALITY
-        );
-      };
-
-      img.onerror = () => reject(new Error('Failed to load image'));
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsDataURL(file);
-    });
-  }
-
-  // Fonction pour ajouter une image depuis un chemin de fichier (bouton Parcourir)
-  // Une seule image : remplace l'ancienne si elle existe
-  async function addImageFromPath(filePath: string) {
-    try {
-      // Sauvegarder l'image dans le dossier images/ via Tauri
-      const result = await tauriAPI.saveImage(filePath);
-      if (result.ok && result.fileName) {
-        // Extraire le nom du fichier depuis le chemin sauvegardé
-        const fileName = result.fileName.split(/[/\\]/).pop() || filePath.split(/[/\\]/).pop() || 'image';
-
-        setUploadedImages(prev => {
-          // Supprimer l'ancienne image si elle existe
-          if (prev.length > 0 && prev[0].path) {
-            tauriAPI.deleteImage(prev[0].path).catch(e => console.error('Failed to delete old image:', e));
-          }
-
-          // Ajouter la nouvelle image (une seule)
-          return [{
-            id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
-            path: result.fileName,
-            name: fileName,
-            isMain: true
-          }];
-        });
-      }
-    } catch (e) {
-      console.error('Failed to save image from path:', e);
-    }
-  }
-
-  // Fonction pour ajouter des images depuis File objects (drag & drop)
-  // Une seule image : ne traite que le premier fichier et remplace l'ancienne si elle existe
-  async function addImages(files: FileList | File[]) {
-    const fileArray = Array.from(files as any) as File[];
-    const file = fileArray[0]; // Prendre uniquement le premier fichier
-
-    if (!file || !file.type.startsWith('image/')) return;
-
-    try {
-      // Compresser l'image si nécessaire
-      const processedFile = await compressImage(file);
-
-      // Les File objects en JavaScript n'ont jamais de propriété path
-      // On doit toujours convertir en base64 et utiliser la commande Tauri
-      let result;
-      try {
-        // Convertir le File en base64 avec FileReader (plus efficace et évite la récursion)
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const dataUrl = reader.result as string;
-            // Extraire la partie base64 (après "data:image/...;base64,")
-            const base64Data = dataUrl.split(',')[1];
-            resolve(base64Data);
-          };
-          reader.onerror = () => reject(new Error('Failed to read file'));
-          reader.readAsDataURL(processedFile);
-        });
-
-        // Utiliser tauriAPI pour sauvegarder depuis base64
-        result = await tauriAPI.saveImageFromBase64(
-          base64,
-          processedFile.name,
-          processedFile.type
-        );
-
-        if (!result.ok) {
-          throw new Error(result.error || 'Failed to save image from base64');
-        }
-      } catch (invokeError: any) {
-        console.error('Failed to save image from base64:', invokeError);
-        // Relancer l'erreur pour qu'elle soit gérée par le catch parent
-        throw invokeError;
-      }
-
-      if (result.ok && result.fileName) {
-        // Extraire le nom du fichier depuis le chemin sauvegardé
-        const fileName = result.fileName.split(/[/\\]/).pop() || file.name;
-
-        setUploadedImages(prev => {
-          // Supprimer l'ancienne image si elle existe
-          if (prev.length > 0 && prev[0].path) {
-            tauriAPI.deleteImage(prev[0].path).catch(e => console.error('Failed to delete old image:', e));
-          }
-
-          // Ajouter la nouvelle image (une seule)
-          return [{
-            id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
-            path: result.fileName,
-            name: fileName,
-            isMain: true
-          }];
-        });
-      }
-    } catch (e) {
-      console.error('Failed to save image:', e);
-    }
-  }
-
-  async function removeImage(idx: number) {
-    const img = uploadedImages[idx];
-    // Supprimer le fichier uniquement si c'est un fichier local (pas une URL)
-    if (img?.path && !img.url) {
-      try {
-        // Delete image file from filesystem
-        await tauriAPI.deleteImage(img.path);
-      } catch (e) {
-        console.error('Failed to delete image:', e);
-      }
-    }
-    setUploadedImages(prev => { const copy = [...prev]; copy.splice(idx, 1); if (copy.length && !copy.some(i => i.isMain)) copy[0].isMain = true; return copy; });
-  }
-
-  // Fonction pour ajouter une image depuis une URL
-  function addImageFromUrl(url: string) {
-    if (!url.trim()) return;
-
-    // Valider que c'est une URL valide
-    try {
-      new URL(url);
-    } catch {
-      console.error('URL invalide:', url);
-      return;
-    }
-
-    setUploadedImages(prev => {
-      // Supprimer l'ancienne image si elle existe
-      if (prev.length > 0) {
-        const oldImg = prev[0];
-        // Supprimer le fichier local si c'est un fichier (pas une URL)
-        if (oldImg.path && !oldImg.url) {
-          tauriAPI.deleteImage(oldImg.path).catch(e => console.error('Failed to delete old image:', e));
-        }
-      }
-
-      // Extraire le nom de l'image depuis l'URL ou utiliser un nom par défaut
-      const urlObj = new URL(url);
-      const pathname = urlObj.pathname;
-      const fileName = pathname.split('/').pop() || 'image.jpg';
-
-      // Ajouter la nouvelle image (une seule)
-      return [{
-        id: Date.now().toString() + '_' + Math.random().toString(36).substr(2, 9),
-        url: url.trim(),
-        name: fileName,
-        isMain: true
-      }];
-    });
-  }
-
-  function setMainImage(idx: number) {
-    setUploadedImages(prev => prev.map((i, s) => ({ ...i, isMain: s === idx })));
-  }
+  // ========================================
+  // PREVIEW ENGINE (hook extrait)
+  // ========================================
+  const previewEngine = usePreviewEngine({
+    templates,
+    currentTemplateIdx,
+    allVarsConfig,
+    inputs,
+    translationType,
+    isIntegrated,
+    additionalTranslationLinks,
+    additionalModLinks,
+    uploadedImages: imagesState.uploadedImages,
+    editingPostId
+  });
 
   const resetAllFields = useCallback(() => {
     allVarsConfig.forEach(v => setInput(v.name, ''));
     setInput('instruction', '');
-    setInput('selected_instruction_key', ''); // 🔥 Vider aussi la clé d'instruction sélectionnée
+    setInput('selected_instruction_key', '');
     setInput('is_modded_game', 'false');
     setInput('Mod_link', '');
     setInput('use_additional_links', 'false');
@@ -2265,131 +1617,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAdditionalModLinks([]);
     setInput('main_translation_label', 'Traduction');
     setInput('main_mod_label', 'Mod');
-    setUploadedImages([]);
-    setPreviewOverride(null);
-  }, [allVarsConfig, setTranslationType, setIsIntegrated, setPostTitle, setPostTags, setLinkConfigs, setPreviewOverride]);
-
-  // SUPPRESSION COMPLÈTE DU DEBOUNCE pour un rendu instantané
-  // Le preview dépend directement de inputs et currentTemplateIdx
-
-  // ============================================
-  // PREVIEW ENGINE - Logique legacy restaurée
-  // ============================================
-  // Dépend directement de inputs (RAW state) et currentTemplateIdx
-  // Logique simplifiée et robuste de la version legacy
-  const preview = useMemo(() => {
-    const tpl = templates[currentTemplateIdx];
-    if (!tpl) return '';
-
-    let content = tpl.content;
-
-    // 1. GESTION DU MOD COMPATIBLE
-    const isModded = (inputs as any)['is_modded_game'] === true || (inputs as any)['is_modded_game'] === 'true';
-    const modLink = cleanGameLink((inputs['Mod_link'] || '').trim()); // ✅ Nettoyer le lien
-
-    // Dans "Infos du Mod", afficher juste "Oui" ou "Non"
-    const moddedText = isModded ? 'Oui' : 'Non';
-
-    // Remplace le tag [is_modded_game] dans le texte
-    content = content.split('[is_modded_game]').join(moddedText);
-
-    // 2. Construction des lignes MOD et TRADUCTION (affichées en ligne, séparées par " - ")
-    const mainModLabel = (inputs['main_mod_label'] || 'Mod').trim() || 'Mod';
-    const mainTranslationLabel = (inputs['main_translation_label'] || 'Traduction').trim() || 'Traduction';
-    const modLinkUrl = cleanGameLink((inputs['Mod_link'] || '').trim());
-    const translateLinkUrl = cleanGameLink((inputs['Translate_link'] || '').trim());
-
-    // Affichage de la ligne mod dans le template : uniquement si au moins un lien est renseigné (URL ou additionnels).
-    // La checkbox "Mod compatible" gère seulement Oui/Non dans les Infos du Jeu.
-    const modParts: string[] = [];
-    if (modLinkUrl) {
-      modParts.push(`[${mainModLabel}](<${modLinkUrl}>)`);
-    }
-    additionalModLinks
-      .filter(link => link.label.trim() && link.link.trim())
-      .forEach(link => modParts.push(`[${link.label.trim()}](<${cleanGameLink(link.link.trim())}>)`));
-    const modLinksLine = modParts.length > 0 ? `   * ${modParts.join(' - ')}` : '';
-
-    const translationParts: string[] = [];
-    if (translateLinkUrl) {
-      translationParts.push(`[${mainTranslationLabel}](<${translateLinkUrl}>)`);
-    }
-    additionalTranslationLinks
-      .filter(link => link.label.trim() && link.link.trim())
-      .forEach(link => translationParts.push(`[${link.label.trim()}](<${cleanGameLink(link.link.trim())}>)`));
-    const translationLinksLine = translationParts.length > 0 ? `   * ${translationParts.join(' - ')}` : '';
-
-    content = content.split('[MOD_LINKS_LINE]').join(modLinksLine);
-    // Si traduction intégrée ET aucun lien de traduction : masquer toute la section "3. Traductions"
-    const hideTranslationsSection = isIntegrated && translationParts.length === 0;
-    if (hideTranslationsSection) {
-      content = content.replace(/3\. :link: \*\*Traductions\*\*\n\[TRANSLATION_LINKS_LINE\]\n?/g, '');
-    } else {
-      content = content.split('[TRANSLATION_LINKS_LINE]').join(translationLinksLine);
-    }
-
-    // 3. Remplacement des variables classiques
-    allVarsConfig.forEach(varConfig => {
-      const name = varConfig.name;
-      if (name === 'is_modded_game') return;
-      if (name === 'Mod_link' || name === 'Translate_link') return;
-
-      const val = (inputs[name] || '').trim();
-      let finalVal = val;
-
-      // Nettoyer les liens (Game_link, Translate_link) à la volée
-      if (name === 'Game_link' || name === 'Translate_link') {
-        finalVal = cleanGameLink(val);
-      }
-
-      if (name === 'Overview' && val) {
-        // Synopsis uniquement : préserver les retours à la ligne en blockquote "> "
-        const lines = val.split('\n');
-        finalVal = lines.length
-          ? lines.map((line, i) => (i === 0 ? line : '> ' + line)).join('\n')
-          : '';
-      }
-
-      content = content.split('[' + name + ']').join(finalVal || '[' + name + ']');
-    });
-
-    // 4. Remplacement de [Translation_Type]
-    const displayTranslationType = isIntegrated
-      ? `${translationType} (Intégrée)`
-      : translationType;
-    content = content.split('[Translation_Type]').join(displayTranslationType);
-
-    // 5. Logique Smart Integrated (masquer lien traduction standard si intégré)
-    if (isIntegrated) {
-      content = content.replace(/^.*\[Translate_link\].*$/gm, '');
-      content = content.replace(/\n\n\n+/g, '\n\n');
-    }
-
-    // [instruction] : bloc de type code (indépendant du synopsis)
-    const instructionContent = (inputs['instruction'] || '').trim();
-    const instructionBlock = instructionContent
-      ? (() => {
-        const instructionLines = instructionContent.split('\n').map(l => l.trim()).filter(Boolean);
-        const numberedInstructions = instructionLines.map((l, index) => `${index + 1}. ${l}`).join('\n');
-        return '```\nInstructions d\'installation :\n' + numberedInstructions + '\n```';
-      })()
-      : '';
-    content = content.split('[instruction]').join(instructionBlock);
-    content = content.split('[INVISIBLE_CHAR]').join('\u200B');
-
-    // 6. Réduire les retours à la ligne multiples (garder au moins une ligne vide entre sections pour le preview Discord)
-    content = content.replace(/\n\n\n+/g, '\n\n');
-
-    // Ne pas ajouter le lien dans le preview - il sera ajouté uniquement lors de la publication
-    // L'image sera affichée séparément via le composant PreviewImage
-    return content;
-  }, [templates, currentTemplateIdx, allVarsConfig, inputs, translationType, isIntegrated, additionalTranslationLinks, additionalModLinks, uploadedImages]);
-
-  /** Preview effectif : contenu saisi si non vide, sinon rendu template + variables (affichage et publication). */
-  // 🔥 En mode édition, utiliser toujours le preview recalculé (pas previewOverride figé)
-  const effectivePreview = editingPostId
-    ? preview
-    : ((previewOverride != null && previewOverride !== '') ? previewOverride : preview);
+    imagesState.clearImages();
+    previewEngine.setPreviewOverride(null);
+  }, [allVarsConfig, setTranslationType, setIsIntegrated, setPostTitle, setPostTags, setLinkConfigs, imagesState, previewEngine]);
 
   const value: AppContextValue = {
     resetAllFields,
@@ -2411,30 +1641,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTranslationType,
     isIntegrated,
     setIsIntegrated,
-    preview: effectivePreview,
-    previewOverride,
-    setPreviewOverride,
+    preview: previewEngine.preview,
+    previewOverride: previewEngine.previewOverride,
+    setPreviewOverride: previewEngine.setPreviewOverride,
     savedTags,
     addSavedTag,
     updateSavedTag,
     deleteSavedTag,
     syncTagsToSupabase,
     fetchTagsFromSupabase,
-    syncInstructionsToSupabase,
-    fetchInstructionsFromSupabase,
+    syncInstructionsToSupabase: instructionsState.syncInstructionsToSupabase,
+    fetchInstructionsFromSupabase: instructionsState.fetchInstructionsFromSupabase,
     syncTemplatesToSupabase,
     fetchTemplatesFromSupabase,
 
-    savedInstructions,
-    saveInstruction,
-    deleteInstruction,
+    savedInstructions: instructionsState.savedInstructions,
+    saveInstruction: instructionsState.saveInstruction,
+    deleteInstruction: instructionsState.deleteInstruction,
+    instructionOwners: instructionsState.instructionOwners,
 
-    uploadedImages,
-    addImages,
-    addImageFromPath,
-    addImageFromUrl,
-    removeImage,
-    setMainImage,
+    uploadedImages: imagesState.uploadedImages,
+    addImages: imagesState.addImages,
+    addImageFromPath: imagesState.addImageFromPath,
+    addImageFromUrl: imagesState.addImageFromUrl,
+    removeImage: imagesState.removeImage,
+    setMainImage: imagesState.setMainImage,
 
     // Post & API
     postTitle,
@@ -2484,22 +1715,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setIsIntegrated(post.isIntegrated);
       }
 
-      // ✅ RESTAURER TOUS LES INPUTS (y compris instruction)
+      // Restaurer tous les inputs (y compris instruction)
       if (post.savedInputs) {
-        console.log('📋 Restauration des inputs depuis savedInputs:', post.savedInputs);
-
         // Réinitialiser d'abord tous les inputs pour éviter de garder de vieilles valeurs
         const cleanInputs: Record<string, string> = {};
         allVarsConfig.forEach(v => cleanInputs[v.name] = '');
         cleanInputs['instruction'] = '';
-        cleanInputs['selected_instruction_key'] = ''; // 🔥 Réinitialiser la clé d'instruction
+        cleanInputs['selected_instruction_key'] = '';
         cleanInputs['is_modded_game'] = 'false';
         cleanInputs['Mod_link'] = '';
         cleanInputs['use_additional_links'] = 'false';
         cleanInputs['main_translation_label'] = 'Traduction';
         cleanInputs['main_mod_label'] = 'Mod';
 
-        // 🔥 APPLIQUER d'abord le nettoyage
+        // Appliquer d'abord le nettoyage
         Object.keys(cleanInputs).forEach(key => {
           setInput(key, cleanInputs[key]);
         });
@@ -2508,8 +1737,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         Object.keys(post.savedInputs).forEach(key => {
           setInput(key, post.savedInputs![key] || '');
         });
-
-        console.log('✅ Inputs restaurés, instruction:', post.savedInputs.instruction || '(vide)');
       }
 
       // ✅ RESTAURER LINKCONFIGS
@@ -2549,7 +1776,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (post.imagePath) {
         if (post.imagePath.startsWith('http://') || post.imagePath.startsWith('https://')) {
           const fileName = new URL(post.imagePath).pathname.split('/').pop() || 'image.jpg';
-          setUploadedImages([{
+          imagesState.setUploadedImages([{
             id: Date.now().toString(),
             url: post.imagePath,
             name: fileName,
@@ -2560,7 +1787,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             .then(result => {
               if (result.ok) {
                 const fileName = post.imagePath!.split(/[/\\]/).pop() || 'image';
-                setUploadedImages([{
+                imagesState.setUploadedImages([{
                   id: Date.now().toString(),
                   path: post.imagePath!,
                   name: fileName,
@@ -2568,22 +1795,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 }]);
               }
             })
-            .catch(err => {
-              console.warn('Image du post non trouvée:', err);
+            .catch(() => {
+              // Image non trouvée
             });
         }
       }
 
       // Restaurer le contenu du post dans le preview
-      setPreviewOverride(post.content ?? '');
+      previewEngine.setPreviewOverride(post.content ?? '');
 
-      // 🔥 Le champ de recherche d'instruction sera restauré automatiquement
+      // Le champ de recherche d'instruction sera restauré automatiquement
       // via l'input 'selected_instruction_key' dans ContentEditor
     },
     loadPostForDuplication: (post: PublishedPost) => {
       setEditingPostId(null);
       setEditingPostData(null);
-      setPreviewOverride(null);
+      previewEngine.setPreviewOverride(null);
       setPostTitle(post.title);
       setPostTags(post.tags);
 
