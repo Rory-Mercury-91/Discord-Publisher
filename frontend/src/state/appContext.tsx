@@ -762,8 +762,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [publishedPosts]);
 
   // History management functions (sync Supabase si configuré)
-  const addPublishedPost = async (p: PublishedPost) => {
+  const addPublishedPost = async (p: PublishedPost, skipSupabase = false) => {
     setPublishedPosts(prev => [p, ...prev]);
+    // ⚠️ Si skipSupabase=true, ne pas sauvegarder dans Supabase (déjà fait par le backend)
+    if (skipSupabase) {
+      console.log('ℹ️ Sauvegarde Supabase ignorée (déjà effectuée par le backend)');
+      return;
+    }
     const sb = getSupabase();
     if (sb) {
       const row = postToRow(p);
@@ -1341,9 +1346,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setEditingPostData(null);
           console.log('✅ Post mis à jour dans l\'historique et Supabase:', updatedPost);
         } else {
+          // 🔥 RÉUTILISER LE MÊME ID que celui envoyé au backend (postId défini ligne 1193)
           const now = Date.now();
           const newPost: PublishedPost = {
-            id: `post_${now}_${Math.random().toString(36).substr(2, 9)}`,
+            id: postId, // ✅ Utiliser l'ID déjà généré et envoyé au backend
             timestamp: now,
             createdAt: now,
             updatedAt: now,
@@ -1363,9 +1369,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             forumId: typeof forumId === 'number' ? forumId : parseInt(String(forumId)) || 0,
             authorDiscordId: authorDiscordId ?? undefined
           };
-          await addPublishedPost(newPost);
+          // ✅ skipSupabase=true car le backend a déjà sauvegardé dans Supabase
+          await addPublishedPost(newPost, true);
           tauriAPI.saveLocalHistoryPost(postToRow(newPost), newPost.authorDiscordId);
-          console.log('✅ Nouveau post ajouté à l\'historique et Supabase:', newPost);
+          console.log('✅ Nouveau post ajouté à l\'historique local (Supabase déjà géré par le backend):', newPost);
         }
       } else {
         console.warn('⚠️ Réponse API ne contient pas thread_id/message_id');
