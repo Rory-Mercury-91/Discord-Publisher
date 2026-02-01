@@ -262,16 +262,16 @@ async def wait_ready(bot: discord.Client, name: str, timeout: int = 180):
 # ORCHESTRATOR
 # -------------------------
 async def start():
-    TOKEN2 = os.getenv("DISCORD_TOKEN_F95")
+    TOKEN2 = os.getenv("FRELON_DISCORD_TOKEN")
     TOKEN_PUB = os.getenv("DISCORD_PUBLISHER_TOKEN")
 
     if not TOKEN2:
-        logger.error("❌ DISCORD_TOKEN_F95 manquant dans .env")
+        logger.error("❌ FRELON_DISCORD_TOKEN manquant dans .env")
         return
 
     logger.info("🚀 Démarrage de l'orchestrateur...")
     logger.info(f"📋 Configuration:")
-    logger.info(f"   - Bot Frelon / F95 Checker (DISCORD_TOKEN_F95): {'✓' if TOKEN2 else '✗'}")
+    logger.info(f"   - Bot Frelon / F95 Checker (FRELON_DISCORD_TOKEN): {'✓' if TOKEN2 else '✗'}")
     logger.info(f"   - Publisher (DISCORD_TOKEN_PUBLISHER): {'✓' if TOKEN_PUB else '✗'}")
 
     # 1) Serveur Web (API + healthchecks)

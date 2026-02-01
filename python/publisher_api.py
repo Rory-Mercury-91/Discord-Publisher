@@ -174,14 +174,14 @@ class Config:
         self.DISCORD_API_BASE = os.getenv("DISCORD_API_BASE", "https://api-proxy-koyeb.a-fergani91.workers.dev")
         
         # Salon unique "my" : forum qui reçoit les posts (publication + contrôle versions)
-        self.FORUM_MY_ID = int(os.getenv("PUBLISHER_FORUM_MY_ID", "0")) if os.getenv("PUBLISHER_FORUM_MY_ID") else 0
+        self.FORUM_MY_ID = int(os.getenv("PUBLISHER_FORUM_TRAD_ID", "0")) if os.getenv("PUBLISHER_FORUM_TRAD_ID") else 0
         if not self.FORUM_MY_ID and os.getenv("FORUM_CHANNEL_ID"):
             self.FORUM_MY_ID = int(os.getenv("FORUM_CHANNEL_ID", "0"))
         
         # Salon qui reçoit les notifications de mise à jour de version
-        self.MAJ_NOTIFICATION_CHANNEL_ID = int(os.getenv("MAJ_NOTIFICATION_CHANNEL_ID", "0")) if os.getenv("MAJ_NOTIFICATION_CHANNEL_ID") else 0
+        self.PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID = int(os.getenv("PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID", "0")) if os.getenv("PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID") else 0
         # Salon qui reçoit les annonces (nouvelle traduction / mise à jour)
-        self.ANNOUNCE_CHANNEL_ID = int(os.getenv("ANNOUNCE_CHANNEL_ID", "0")) if os.getenv("ANNOUNCE_CHANNEL_ID") else 0
+        self.PUBLISHER_ANNOUNCE_CHANNEL_ID = int(os.getenv("PUBLISHER_ANNOUNCE_CHANNEL_ID", "0")) if os.getenv("PUBLISHER_ANNOUNCE_CHANNEL_ID") else 0
         
         # Planification
         self.VERSION_CHECK_HOUR = int(os.getenv("VERSION_CHECK_HOUR", "6"))
@@ -192,7 +192,7 @@ class Config:
         self.configured = bool(
             self.DISCORD_PUBLISHER_TOKEN and
             self.FORUM_MY_ID and
-            self.MAJ_NOTIFICATION_CHANNEL_ID
+            self.PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID
         )
     
     def update_from_frontend(self, config_data: dict):
@@ -200,7 +200,7 @@ class Config:
             self.DISCORD_PUBLISHER_TOKEN = config_data['discordPublisherToken']
         if 'publisherForumMyId' in config_data and config_data['publisherForumMyId']:
             self.FORUM_MY_ID = int(config_data['publisherForumMyId'])
-        self.configured = bool(self.DISCORD_PUBLISHER_TOKEN and self.FORUM_MY_ID and self.MAJ_NOTIFICATION_CHANNEL_ID)
+        self.configured = bool(self.DISCORD_PUBLISHER_TOKEN and self.FORUM_MY_ID and self.PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID)
         logger.info(f"✅ Configuration mise à jour (configured: {self.configured})")
 
 config = Config()
@@ -864,12 +864,12 @@ async def run_version_check_once():
     AMÉLIORATION: Utilise l'API au lieu du parsing HTML pour plus de fiabilité !
     """
     logger.info("🔎 Démarrage contrôle versions F95 (salon my) - Méthode API")
-    channel_notif = bot.get_channel(config.MAJ_NOTIFICATION_CHANNEL_ID)
+    channel_notif = bot.get_channel(config.PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID)
     if not channel_notif:
         logger.error("❌ Salon notifications MAJ introuvable")
         return
     if not config.FORUM_MY_ID:
-        logger.warning("⚠️ PUBLISHER_FORUM_MY_ID non configuré")
+        logger.warning("⚠️ PUBLISHER_FORUM_TRAD_ID non configuré")
         return
     
     _clean_old_notifications()
@@ -959,7 +959,7 @@ async def run_cleanup_empty_messages_once():
     """Supprime les messages vides dans les threads du salon my (sauf message de départ et métadonnées)."""
     logger.info("🧹 Démarrage nettoyage quotidien des messages vides (salon my)")
     if not config.FORUM_MY_ID:
-        logger.warning("⚠️ PUBLISHER_FORUM_MY_ID non configuré")
+        logger.warning("⚠️ PUBLISHER_FORUM_TRAD_ID non configuré")
         return
     forum = bot.get_channel(config.FORUM_MY_ID)
     if not forum:
@@ -1644,11 +1644,11 @@ async def _send_announcement(
     image_url: Optional[str] = None,
 ) -> bool:
     """
-    Envoie l'annonce (nouvelle traduction ou mise à jour) dans ANNOUNCE_CHANNEL_ID.
+    Envoie l'annonce (nouvelle traduction ou mise à jour) dans PUBLISHER_ANNOUNCE_CHANNEL_ID.
     Format défini : titre, nom du jeu (lien), traducteur, versions, état, Bon jeu à vous 😊, embed image.
     """
-    if not config.ANNOUNCE_CHANNEL_ID:
-        logger.warning("⚠️ ANNOUNCE_CHANNEL_ID non configuré, annonce non envoyée")
+    if not config.PUBLISHER_ANNOUNCE_CHANNEL_ID:
+        logger.warning("⚠️ PUBLISHER_ANNOUNCE_CHANNEL_ID non configuré, annonce non envoyée")
         return False
     title_clean = (title or "").strip() or "Sans titre"
     game_version = (game_version or "").strip() or "Non spécifiée"
@@ -1668,7 +1668,7 @@ async def _send_announcement(
         payload["embeds"] = [{"color": 0x4ADE80, "image": {"url": image_url.strip()}}]
     status, data, _ = await _discord_post_json(
         session,
-        f"/channels/{config.ANNOUNCE_CHANNEL_ID}/messages",
+        f"/channels/{config.PUBLISHER_ANNOUNCE_CHANNEL_ID}/messages",
         payload,
     )
     if status >= 300:
@@ -1684,11 +1684,11 @@ async def _send_deletion_announcement(
     reason: str = None,
 ) -> bool:
     """
-    Envoie une annonce de suppression de post dans ANNOUNCE_CHANNEL_ID.
+    Envoie une annonce de suppression de post dans PUBLISHER_ANNOUNCE_CHANNEL_ID.
     Format : titre du post supprimé, raison si fournie.
     """
-    if not config.ANNOUNCE_CHANNEL_ID:
-        logger.warning("⚠️ ANNOUNCE_CHANNEL_ID non configuré, annonce de suppression non envoyée")
+    if not config.PUBLISHER_ANNOUNCE_CHANNEL_ID:
+        logger.warning("⚠️ PUBLISHER_ANNOUNCE_CHANNEL_ID non configuré, annonce de suppression non envoyée")
         return False
     
     title_clean = (title or "").strip() or "Publication"
@@ -1712,7 +1712,7 @@ async def _send_deletion_announcement(
     
     status, data, _ = await _discord_post_json(
         session,
-        f"/channels/{config.ANNOUNCE_CHANNEL_ID}/messages",
+        f"/channels/{config.PUBLISHER_ANNOUNCE_CHANNEL_ID}/messages",
         payload,
     )
     
@@ -1748,7 +1748,7 @@ async def forum_post(request):
     if api_key != config.PUBLISHER_API_KEY:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     if not config.FORUM_MY_ID:
-        return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_MY_ID non configuré"}, status=500))
+        return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_TRAD_ID non configuré"}, status=500))
     title, content, tags, metadata_b64 = "", "", "", None
     translator_label, state_label, game_version, translate_version, announce_image_url = "", "", "", "", ""
     history_payload_raw = None
@@ -1778,7 +1778,7 @@ async def forum_post(request):
 
     async with aiohttp.ClientSession() as session:
         ok, result = await _create_forum_post(session, forum_id, title, content, tags, [], metadata_b64)
-        if ok and config.ANNOUNCE_CHANNEL_ID:
+        if ok and config.PUBLISHER_ANNOUNCE_CHANNEL_ID:
             await _send_announcement(
                 session,
                 is_update=False,
@@ -1881,7 +1881,7 @@ async def forum_post_update(request):
     if api_key != config.PUBLISHER_API_KEY:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     if not config.FORUM_MY_ID:
-        return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_MY_ID non configuré"}, status=500))
+        return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_TRAD_ID non configuré"}, status=500))
     
     title, content, tags, thread_id, message_id, metadata_b64 = "", "", "", None, None, None
     translator_label, state_label, game_version, translate_version, announce_image_url, thread_url = "", "", "", "", "", ""
@@ -2008,7 +2008,7 @@ async def forum_post_update(request):
         if status >= 300:
             return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
 
-        if config.ANNOUNCE_CHANNEL_ID and thread_url:
+        if config.PUBLISHER_ANNOUNCE_CHANNEL_ID and thread_url:
             await _send_announcement(
                 session,
                 is_update=True,

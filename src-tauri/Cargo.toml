@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "1.0.32"
+version = "1.0.34"
 description = "Une application de génération de poste Discord"
 authors = ["Rory Mercury 91"]
 license = ""

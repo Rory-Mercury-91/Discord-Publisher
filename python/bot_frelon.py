@@ -12,16 +12,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==================== CONFIGURATION ====================
-TOKEN = os.getenv('DISCORD_TOKEN_F95')
-FORUM_SEMI_AUTO_ID = int(os.getenv('FORUM_SEMI_AUTO_ID')) if os.getenv('FORUM_SEMI_AUTO_ID') else None
-FORUM_AUTO_ID = int(os.getenv('FORUM_AUTO_ID')) if os.getenv('FORUM_AUTO_ID') else None
-NOTIFICATION_CHANNEL_F95_ID = int(os.getenv('NOTIFICATION_CHANNEL_F95_ID')) if os.getenv('NOTIFICATION_CHANNEL_F95_ID') else None
+TOKEN = os.getenv('FRELON_DISCORD_TOKEN')
+FRELON_SEMI_AUTO_ID = int(os.getenv('FRELON_SEMI_AUTO_ID')) if os.getenv('FRELON_SEMI_AUTO_ID') else None
+FRELON_AUTO_ID = int(os.getenv('FRELON_AUTO_ID')) if os.getenv('FRELON_AUTO_ID') else None
+FRELON_NOTIFICATION_CHANNEL_ID = int(os.getenv('FRELON_NOTIFICATION_CHANNEL_ID')) if os.getenv('FRELON_NOTIFICATION_CHANNEL_ID') else None
 DAYS_BEFORE_PUBLICATION = int(os.getenv('DAYS_BEFORE_PUBLICATION', '14'))
 
 print("🐝 [FRELON] Configuration chargée:")
-print(f"   - FORUM_SEMI_AUTO_ID: {FORUM_SEMI_AUTO_ID}")
-print(f"   - FORUM_AUTO_ID: {FORUM_AUTO_ID}")
-print(f"   - NOTIFICATION_CHANNEL_F95_ID: {NOTIFICATION_CHANNEL_F95_ID}")
+print(f"   - FRELON_SEMI_AUTO_ID: {FRELON_SEMI_AUTO_ID}")
+print(f"   - FRELON_AUTO_ID: {FRELON_AUTO_ID}")
+print(f"   - FRELON_NOTIFICATION_CHANNEL_ID: {FRELON_NOTIFICATION_CHANNEL_ID}")
 print(f"   - DAYS_BEFORE_PUBLICATION: {DAYS_BEFORE_PUBLICATION}")
 
 intents = discord.Intents.default()
@@ -41,7 +41,7 @@ def a_tag_maj(thread) -> bool:
 
 
 async def envoyer_notification_f95(thread, is_update: bool = False):
-    channel_notif = bot.get_channel(NOTIFICATION_CHANNEL_F95_ID)
+    channel_notif = bot.get_channel(FRELON_NOTIFICATION_CHANNEL_ID)
     if not channel_notif:
         return
 
@@ -88,7 +88,7 @@ async def on_ready():
 @bot.event
 async def on_thread_create(thread):
     print(f"🐝 [FRELON] 📝 Nouveau thread créé: {thread.name} (ID: {thread.id}, Parent: {thread.parent_id})")
-    if thread.parent_id in [FORUM_SEMI_AUTO_ID, FORUM_AUTO_ID]:
+    if thread.parent_id in [FRELON_SEMI_AUTO_ID, FRELON_AUTO_ID]:
         print(f"🐝 [FRELON] ✅ Thread dans un forum surveillé, envoi notification dans 5s...")
         await asyncio.sleep(5)
         thread_actuel = bot.get_channel(thread.id)
@@ -105,7 +105,7 @@ async def on_thread_create(thread):
 @bot.event
 async def on_thread_update(before, after):
     print(f"🐝 [FRELON] 🔄 Thread mis à jour: {after.name} (ID: {after.id})")
-    if after.parent_id in [FORUM_SEMI_AUTO_ID, FORUM_AUTO_ID]:
+    if after.parent_id in [FRELON_SEMI_AUTO_ID, FRELON_AUTO_ID]:
         has_maj_before = a_tag_maj(before)
         has_maj_after = a_tag_maj(after)
         print(f"🐝 [FRELON] Tag MAJ: avant={has_maj_before}, après={has_maj_after}")
@@ -127,7 +127,7 @@ async def on_message_edit(before, after):
         print(f"🐝 [FRELON] ✏️ Message de thread édité: {after.channel.name} (ID: {after.id})")
         if before.content != after.content:
             print(f"🐝 [FRELON] Contenu modifié")
-            if after.channel.parent_id in [FORUM_SEMI_AUTO_ID, FORUM_AUTO_ID]:
+            if after.channel.parent_id in [FRELON_SEMI_AUTO_ID, FRELON_AUTO_ID]:
                 if a_tag_maj(after.channel):
                     print(f"🐝 [FRELON] ✅ Thread avec tag MAJ, envoi notification F95...")
                     await envoyer_notification_f95(after.channel, is_update=True)
