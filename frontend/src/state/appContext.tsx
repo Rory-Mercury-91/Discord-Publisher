@@ -703,6 +703,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       saved_link_configs: p.savedLinkConfigs ?? null,
       saved_additional_translation_links: Array.isArray(p.savedAdditionalTranslationLinks) ? p.savedAdditionalTranslationLinks : (p.savedAdditionalTranslationLinks ?? null),
       saved_additional_mod_links: Array.isArray(p.savedAdditionalModLinks) ? p.savedAdditionalModLinks : (p.savedAdditionalModLinks ?? null),
+      is_archived: p.archived ?? false,
       created_at: new Date(createdTs).toISOString(),
       updated_at: new Date(updatedTs).toISOString()
     };
@@ -736,12 +737,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       savedLinkConfigs: savedLinkConfigs ?? undefined,
       savedAdditionalTranslationLinks: Array.isArray(savedAdditionalTranslationLinks) ? savedAdditionalTranslationLinks : undefined,
       savedAdditionalModLinks: Array.isArray(savedAdditionalModLinks) ? savedAdditionalModLinks : undefined,
-      authorDiscordId: r.author_discord_id != null ? String(r.author_discord_id) : undefined
+      authorDiscordId: r.author_discord_id != null ? String(r.author_discord_id) : undefined,
+      archived: Boolean(r.is_archived)
     };
   }
 
   // Récupérer l'historique : d'abord Supabase, puis API Koyeb en backup
   async function fetchHistoryFromAPI() {
+    console.log('[Historique] Début chargement…');
     const sb = getSupabase();
     if (sb) {
       try {
@@ -750,19 +753,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           .select('*')
           .order('updated_at', { ascending: false })
           .limit(1000);
-        if (!error && Array.isArray(rows) && rows.length > 0) {
+        if (error) {
+          console.warn('[Historique] Supabase erreur:', error.message, error.code);
+        } else if (Array.isArray(rows) && rows.length > 0) {
           setPublishedPosts(rows.map(rowToPost));
+          console.log('[Historique] Supabase OK:', rows.length, 'publication(s)');
           return;
+        } else {
+          console.log('[Historique] Supabase OK mais 0 publication, passage à Koyeb si configuré');
         }
-      } catch (_e) {
-        // Continuer vers Koyeb
+      } catch (e) {
+        console.warn('[Historique] Supabase exception:', e);
       }
+    } else {
+      console.log('[Historique] Supabase non configuré, tentative Koyeb');
     }
     try {
       const baseUrl = localStorage.getItem('apiBase') || defaultApiBase;
       const apiKey = localStorage.getItem('apiKey') || '';
+      if (!baseUrl || !apiKey) {
+        console.log('[Historique] API Koyeb non configurée (apiBase ou apiKey manquant)');
+        return;
+      }
       const endpoint = `${baseUrl}/api/history`;
-
       const response = await fetch(endpoint, {
         method: 'GET',
         headers: {
@@ -770,11 +783,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           'Content-Type': 'application/json'
         }
       });
-
       if (!response.ok) {
+        console.warn('[Historique] Koyeb HTTP', response.status, response.statusText);
         return;
       }
-
       const data = await response.json();
       if (Array.isArray(data.posts) || Array.isArray(data)) {
         const koyebPosts = Array.isArray(data.posts) ? data.posts : data;
@@ -788,7 +800,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           );
         });
         if (newPostsFromKoyeb.length > 0) {
-          // Aligné Supabase : l'API Koyeb renvoie les mêmes champs (snake_case) ; on utilise rowToPost
           const mapped = newPostsFromKoyeb.map((p: Record<string, unknown>) => {
             const row = {
               ...p,
@@ -804,10 +815,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const merged = [...mapped, ...prev].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             return merged;
           });
+          console.log('[Historique] Koyeb OK:', newPostsFromKoyeb.length, 'nouvelle(s) publication(s)');
+        } else {
+          console.log('[Historique] Koyeb OK mais aucune nouvelle publication');
         }
       }
-    } catch {
-      // Erreur silencieuse
+    } catch (e) {
+      console.warn('[Historique] Koyeb exception:', e);
     }
   }
 

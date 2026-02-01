@@ -78,6 +78,8 @@ export type PublishedPost = {
   savedAdditionalModLinks?: AdditionalTranslationLink[];
   /** ID Discord de l'auteur du post (pour droits d'édition) */
   authorDiscordId?: string;
+  /** Post dans l'onglet Archive (synchronisé Supabase is_archived) */
+  archived?: boolean;
 };
 
 export type AppContextValue = {
