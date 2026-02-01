@@ -1535,6 +1535,10 @@ def _message_has_metadata_embed(msg_dict: dict) -> bool:
             return True
     return False
 
+# Type de message Discord : changement de nom du channel/thread ("X a changé le titre du post : …")
+CHANNEL_NAME_CHANGE_TYPE = 4
+
+
 def _is_message_empty_and_not_metadata(msg_dict: dict) -> bool:
     """
     True si le message est totalement vide : pas de contenu, pas de pièce jointe, pas d'embed.
@@ -1553,9 +1557,30 @@ def _is_message_empty_and_not_metadata(msg_dict: dict) -> bool:
         return False
     return False
 
+
+def _is_message_thread_name_change(msg_dict: dict) -> bool:
+    """
+    True si le message est une notification "X a changé le titre du post" (type CHANNEL_NAME_CHANGE ou contenu similaire).
+    Ces messages ne sont pas utiles et peuvent être supprimés par le nettoyage.
+    """
+    if msg_dict.get("type") == CHANNEL_NAME_CHANGE_TYPE:
+        return True
+    content = (msg_dict.get("content") or "").strip()
+    if not content:
+        return False
+    # Secours : message bot avec texte "a changé le titre" / "changed the thread name"
+    lower = content.lower()
+    if "a changé le titre" in lower or "changed the thread name" in lower or "changed the channel name" in lower:
+        return True
+    return False
+
+
 async def _clean_empty_messages_in_thread(session, thread_id: str) -> int:
     """
-    Supprime les messages vides dans un thread (sauf le message de départ et les messages contenant les métadonnées).
+    Supprime dans un thread :
+    - les messages vides (pas de contenu, pièce jointe ni embed utile) ;
+    - les messages "X a changé le titre du post" (type CHANNEL_NAME_CHANGE ou contenu similaire).
+    Sauf le message de départ et les messages contenant les métadonnées.
     L'API renvoie les messages du plus récent au plus ancien ; le dernier de la liste est le message de départ.
     Returns:
         Nombre de messages supprimés
@@ -1571,7 +1596,7 @@ async def _clean_empty_messages_in_thread(session, thread_id: str) -> int:
             msg_id = m.get("id")
             if not msg_id or msg_id == starter_id:
                 continue
-            if _is_message_empty_and_not_metadata(m):
+            if _is_message_empty_and_not_metadata(m) or _is_message_thread_name_change(m):
                 to_delete.append(msg_id)
         deleted = 0
         for msg_id in to_delete:
@@ -1581,9 +1606,9 @@ async def _clean_empty_messages_in_thread(session, thread_id: str) -> int:
             
             if await _discord_delete_message(session, thread_id, msg_id):
                 deleted += 1
-                logger.info(f"🗑️ Message vide supprimé: {msg_id} (thread {thread_id})")
+                logger.info(f"🗑️ Message vide ou « titre changé » supprimé: {msg_id} (thread {thread_id})")
             else:
-                logger.warning(f"⚠️ Échec suppression message vide: {msg_id}")
+                logger.warning(f"⚠️ Échec suppression message: {msg_id}")
         return deleted
     except Exception as e:
         logger.warning(f"⚠️ Exception nettoyage messages vides (thread {thread_id}): {e}")
