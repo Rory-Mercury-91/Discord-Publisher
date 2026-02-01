@@ -1125,11 +1125,13 @@ async def check_help(interaction: discord.Interaction):
 @bot.tree.command(name="check_versions", description="Contrôle les versions F95 (salon my)")
 async def check_versions(interaction: discord.Interaction):
     """Lance le contrôle des versions sur le salon my."""
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except Exception:
+        pass
     if not _user_can_run_checks(interaction):
-        await interaction.response.send_message("⛔ Permission insuffisante.", ephemeral=True)
+        await interaction.followup.send("⛔ Permission insuffisante.", ephemeral=True)
         return
-    # Différer immédiatement (3 s max) pour éviter "Unknown interaction" pendant le contrôle
-    await interaction.response.defer(ephemeral=True)
     try:
         await interaction.followup.send("⏳ Contrôle des versions F95 en cours…", ephemeral=True)
     except Exception:
@@ -1144,11 +1146,13 @@ async def check_versions(interaction: discord.Interaction):
 @bot.tree.command(name="cleanup_empty_messages", description="Supprime les messages vides dans les threads (sauf métadonnées)")
 async def cleanup_empty_messages_cmd(interaction: discord.Interaction):
     """Lance le nettoyage des messages vides manuellement."""
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except Exception:
+        pass
     if not _user_can_run_checks(interaction):
-        await interaction.response.send_message("⛔ Permission insuffisante.", ephemeral=True)
+        await interaction.followup.send("⛔ Permission insuffisante.", ephemeral=True)
         return
-    # Différer immédiatement pour éviter "Unknown interaction" pendant le nettoyage
-    await interaction.response.defer(ephemeral=True)
     try:
         await interaction.followup.send("⏳ Nettoyage des messages vides en cours…", ephemeral=True)
     except Exception:
