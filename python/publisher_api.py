@@ -167,7 +167,7 @@ logger = logging.getLogger(__name__)
 class Config:
     def __init__(self):
         # API REST
-        self.DISCORD_PUBLISHER_TOKEN = os.getenv("DISCORD_PUBLISHER_TOKEN", "")
+        self.PUBLISHER_DISCORD_TOKEN = os.getenv("PUBLISHER_DISCORD_TOKEN", "")
         self.PUBLISHER_API_KEY = os.getenv("PUBLISHER_API_KEY", "")
         self.ALLOWED_ORIGINS = os.getenv("PUBLISHER_ALLOWED_ORIGINS", "*")
         self.PORT = int(os.getenv("PORT", "8080"))
@@ -190,23 +190,23 @@ class Config:
         self.CLEANUP_EMPTY_MESSAGES_MINUTE = int(os.getenv("CLEANUP_EMPTY_MESSAGES_MINUTE", "0"))
         
         self.configured = bool(
-            self.DISCORD_PUBLISHER_TOKEN and
+            self.PUBLISHER_DISCORD_TOKEN and
             self.FORUM_MY_ID and
             self.PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID
         )
     
     def update_from_frontend(self, config_data: dict):
         if 'discordPublisherToken' in config_data and config_data['discordPublisherToken']:
-            self.DISCORD_PUBLISHER_TOKEN = config_data['discordPublisherToken']
+            self.PUBLISHER_DISCORD_TOKEN = config_data['discordPublisherToken']
         if 'publisherForumMyId' in config_data and config_data['publisherForumMyId']:
             self.FORUM_MY_ID = int(config_data['publisherForumMyId'])
-        self.configured = bool(self.DISCORD_PUBLISHER_TOKEN and self.FORUM_MY_ID and self.PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID)
+        self.configured = bool(self.PUBLISHER_DISCORD_TOKEN and self.FORUM_MY_ID and self.PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID)
         logger.info(f"✅ Configuration mise à jour (configured: {self.configured})")
 
 config = Config()
 def get_publisher_token() -> str:
     # 1) env > 2) config en mémoire
-    return (os.getenv("DISCORD_PUBLISHER_TOKEN") or config.DISCORD_PUBLISHER_TOKEN or "").strip()
+    return (os.getenv("PUBLISHER_DISCORD_TOKEN") or config.PUBLISHER_DISCORD_TOKEN or "").strip()
 
 # ==================== DISCORD BOT SETUP ====================
 intents = discord.Intents.default()
@@ -1308,7 +1308,7 @@ def _build_metadata_embed(metadata_b64: str) -> dict:
     }
 
 def _auth_headers():
-    return {"Authorization": f"Bot {config.DISCORD_PUBLISHER_TOKEN}"}
+    return {"Authorization": f"Bot {config.PUBLISHER_DISCORD_TOKEN}"}
 
 async def _discord_request(session, method, path, headers=None, json_data=None, data=None):
     url = f"{config.DISCORD_API_BASE}{path}"
@@ -2190,7 +2190,7 @@ async def main():
     await start_web_server()
     
     # Lancer le bot Discord
-    await bot.start(config.DISCORD_PUBLISHER_TOKEN)
+    await bot.start(config.PUBLISHER_DISCORD_TOKEN)
 
 if __name__ == '__main__':
     from discord.http import Route

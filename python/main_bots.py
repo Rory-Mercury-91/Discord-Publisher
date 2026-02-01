@@ -263,7 +263,7 @@ async def wait_ready(bot: discord.Client, name: str, timeout: int = 180):
 # -------------------------
 async def start():
     TOKEN2 = os.getenv("FRELON_DISCORD_TOKEN")
-    TOKEN_PUB = os.getenv("DISCORD_PUBLISHER_TOKEN")
+    TOKEN_PUB = os.getenv("PUBLISHER_DISCORD_TOKEN")
 
     if not TOKEN2:
         logger.error("❌ FRELON_DISCORD_TOKEN manquant dans .env")
@@ -315,17 +315,17 @@ async def start():
     # --- PUBLISHER BOT ---
     # Attendre le token si nécessaire (config via API)
     if not TOKEN_PUB:
-        logger.warning("⚠️ DISCORD_PUBLISHER_TOKEN non défini, attente de configuration via /api/configure...")
+        logger.warning("⚠️ PUBLISHER_DISCORD_TOKEN non défini, attente de configuration via /api/configure...")
         waited = 0
         while not TOKEN_PUB and waited < 180:
             await asyncio.sleep(2)
             waited += 2
-            TOKEN_PUB = os.getenv("DISCORD_PUBLISHER_TOKEN") or getattr(publisher_config, "DISCORD_PUBLISHER_TOKEN", "")
+            TOKEN_PUB = os.getenv("PUBLISHER_DISCORD_TOKEN") or getattr(publisher_config, "PUBLISHER_DISCORD_TOKEN", "")
             if TOKEN_PUB:
                 logger.info(f"✅ Token Publisher reçu après {waited}s")
 
     if not TOKEN_PUB:
-        logger.error("⛔ DISCORD_PUBLISHER_TOKEN toujours manquant après 180s")
+        logger.error("⛔ PUBLISHER_DISCORD_TOKEN toujours manquant après 180s")
         logger.warning("⚠️ Publisher Bot non lancé, Bot Frelon continue de fonctionner")
         await asyncio.gather(frelon_task, return_exceptions=True)
         return
