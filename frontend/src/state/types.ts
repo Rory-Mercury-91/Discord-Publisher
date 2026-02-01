@@ -27,6 +27,8 @@ export type Template = {
 export type LinkConfig = {
   source: 'F95' | 'Lewd' | 'Autre';
   value: string; // ID ou URL complète selon la source
+  /** Hash optionnel pour lien direct vers un post (ex: #post-513555) */
+  hash?: string;
 };
 
 export type AdditionalTranslationLink = {
@@ -106,7 +108,7 @@ export type AppContextValue = {
   fetchTagsFromSupabase: () => Promise<void>;
   syncInstructionsToSupabase: () => Promise<{ ok: boolean; error?: string }>;
   fetchInstructionsFromSupabase: () => Promise<void>;
-  syncTemplatesToSupabase: () => Promise<{ ok: boolean; error?: string }>;
+  syncTemplatesToSupabase: (templatesToSync?: Template[]) => Promise<{ ok: boolean; error?: string }>;
   fetchTemplatesFromSupabase: () => Promise<void>;
   importFullConfig: (config: any) => void;
 
@@ -151,7 +153,8 @@ export type AppContextValue = {
   setLinkConfig: (
     linkName: 'Game_link' | 'Translate_link' | 'Mod_link',
     source: 'F95' | 'Lewd' | 'Autre',
-    value: string
+    value: string,
+    hash?: string
   ) => void;
   setLinkConfigs: React.Dispatch<React.SetStateAction<{
     Game_link: LinkConfig;

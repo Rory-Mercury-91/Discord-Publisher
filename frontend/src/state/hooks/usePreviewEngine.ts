@@ -9,16 +9,20 @@ function cleanGameLink(url: string): string {
   // Retirer les chevrons si présents (au cas où l'utilisateur les met manuellement)
   const cleaned = trimmed.replace(/^<|>$/g, '');
 
-  // F95Zone - Garder uniquement https://f95zone.to/threads/ID/
-  const f95Match = cleaned.match(/f95zone\.to\/threads\/([^\/]+)/);
+  // F95Zone - Nettoyer : garder threads/slug.ID/ et préserver #post-XXXXX si présent
+  const f95Match = cleaned.match(/f95zone\.to\/threads\/([^\/#]+?)(?:\/post-\d+)?\/?(#post-\d+)?/);
   if (f95Match) {
-    return `https://f95zone.to/threads/${f95Match[1]}/`;
+    const segment = f95Match[1].replace(/\/$/, '');
+    const hash = f95Match[2] || '';
+    return `https://f95zone.to/threads/${segment}/${hash}`.replace(/\/+$/, (m) => (hash ? m : '/'));
   }
 
-  // LewdCorner - Garder uniquement https://lewdcorner.com/threads/ID/
-  const lewdMatch = cleaned.match(/lewdcorner\.com\/threads\/([^\/]+)/);
+  // LewdCorner - Nettoyer : garder threads/slug.ID/ et préserver #post-XXXXX si présent
+  const lewdMatch = cleaned.match(/lewdcorner\.com\/threads\/([^\/#]+?)(?:\/post-\d+)?\/?(#post-\d+)?/);
   if (lewdMatch) {
-    return `https://lewdcorner.com/threads/${lewdMatch[1]}/`;
+    const segment = lewdMatch[1].replace(/\/$/, '');
+    const hash = lewdMatch[2] || '';
+    return `https://lewdcorner.com/threads/${segment}/${hash}`.replace(/\/+$/, (m) => (hash ? m : '/'));
   }
 
   // Si aucun pattern reconnu, retourner l'URL nettoyée

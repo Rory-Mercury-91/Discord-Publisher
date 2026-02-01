@@ -265,37 +265,44 @@ export default function ContentEditor() {
         detectedSource = 'Autre';
       }
 
-      // Extraction de l'ID du thread si c'est une URL F95 ou Lewd (format threads/3281/ ou threads/xxx.3281/)
+      // Extraction de l'ID du thread et du hash #post-XXXXX si c'est une URL F95 ou Lewd
+      let hash: string | undefined;
       if (detectedSource !== 'Autre') {
-        const threadIdMatch = val.match(/threads\/(?:[^/]*\.)?(\d+)\/?/);
-        if (threadIdMatch && threadIdMatch[1]) {
-          val = threadIdMatch[1];
+        const fullMatch = val.match(/threads\/(?:[^/]*\.)?(\d+)\/?(#post-\d+)?/i);
+        if (fullMatch && fullMatch[1]) {
+          val = fullMatch[1];
+          hash = fullMatch[2] || undefined;
         } else if (/^\d+$/.test(val.trim())) {
           val = val.trim();
         }
       }
 
-      setLinkConfig(linkName, detectedSource, val);
+      setLinkConfig(linkName, detectedSource, val, hash);
     };
 
     // Ne pas préfixer F95/Lewd si la valeur est déjà une URL d'un autre domaine (Proton, etc.)
     const valueLower = (config.value || '').toLowerCase();
     const isOtherFullUrl = valueLower.startsWith('http') && !valueLower.includes('f95zone.to') && !valueLower.includes('lewdcorner.com');
 
+    // Base URL pour F95/Lewd (avec hash #post-XXXXX si présent)
+    const baseF95 = config.source === 'F95' ? `https://f95zone.to/threads/${config.value || '...'}/` : '';
+    const baseLewd = config.source === 'Lewd' ? `https://lewdcorner.com/threads/${config.value || '...'}/` : '';
+    const hashPart = (config.hash || '').trim() ? (config.hash!.startsWith('#') ? config.hash : `#${config.hash}`) : '';
+
     // Construction de l'URL finale : uniquement préfixer F95/Lewd si la valeur n'est PAS déjà une URL d'un autre domaine
     const finalUrl = isOtherFullUrl
       ? config.value || '...'
-      : config.source === 'F95' && !isOtherFullUrl
-        ? `https://f95zone.to/threads/${config.value || '...'}/`
-        : config.source === 'Lewd' && !isOtherFullUrl
-          ? `https://lewdcorner.com/threads/${config.value || '...'}/`
+      : baseF95
+        ? baseF95 + hashPart
+        : baseLewd
+          ? baseLewd + hashPart
           : config.value || '...';
 
-    // Affichage dans le champ : URL complète nettoyée pour F95/Lewd, sinon valeur brute
+    // Affichage dans le champ : URL complète nettoyée pour F95/Lewd (avec hash), sinon valeur brute
     const displayValue = isOtherFullUrl || config.source === 'Autre'
       ? config.value
       : (config.source === 'F95' || config.source === 'Lewd') && config.value.trim()
-        ? (config.source === 'F95' ? `https://f95zone.to/threads/${config.value.trim()}/` : `https://lewdcorner.com/threads/${config.value.trim()}/`)
+        ? (config.source === 'F95' ? `https://f95zone.to/threads/${config.value.trim()}/` : `https://lewdcorner.com/threads/${config.value.trim()}/`) + hashPart
         : config.value;
 
     const previewNode = finalUrl && !finalUrl.includes('...') ? (
@@ -472,8 +479,8 @@ export default function ContentEditor() {
       };
 
       const extractThreadId = (link: string): string => {
-        // Ex: https://f95zone.to/threads/xxxxx.232384/
-        const m = link.match(/threads\/.*\.(\d+)\/?/i);
+        // Ex: https://f95zone.to/threads/xxxxx.232384/ ou .../xxxxx.8012/post-11944222
+        const m = link.match(/threads\/(?:[^/]*\.)?(\d+)/i);
         return m?.[1] ?? '';
       };
 
@@ -513,11 +520,11 @@ export default function ContentEditor() {
     let value = u;
     if (u.toLowerCase().includes('f95zone.to')) {
       source = 'F95';
-      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)\/?/);
+      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)/);
       value = m?.[1] ?? u;
     } else if (u.toLowerCase().includes('lewdcorner.com')) {
       source = 'Lewd';
-      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)\/?/);
+      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)/);
       value = m?.[1] ?? u;
     }
     setLinkConfig('Translate_link', source, value);
@@ -528,11 +535,11 @@ export default function ContentEditor() {
     let value = u;
     if (u.toLowerCase().includes('f95zone.to')) {
       source = 'F95';
-      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)\/?/);
+      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)/);
       value = m?.[1] ?? u;
     } else if (u.toLowerCase().includes('lewdcorner.com')) {
       source = 'Lewd';
-      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)\/?/);
+      const m = u.match(/threads\/(?:[^/]*\.)?(\d+)/);
       value = m?.[1] ?? u;
     }
     setLinkConfig('Mod_link', source, value);

@@ -22,6 +22,18 @@ export type {
   AdditionalTranslationLink, LinkConfig, PublishedPost, Tag, Template, VarConfig
 };
 
+/** Nettoyage des liens F95/Lewd : accepter /post-XXXXX ou #post-XXXXX, garder thread ID/slug et optionnellement le hash. */
+function cleanGameLinkUrl(url: string): string {
+  if (!url || !url.trim()) return url;
+  const trimmed = url.trim().replace(/^<|>$/g, '');
+  // Segment thread = tout jusqu'à / ou # (ex: 8012 ou milfy-city.8012) ; optionnellement conserver #post-XXXXX
+  const f95Match = trimmed.match(/f95zone\.to\/threads\/([^\/#]+)(#post-\d+)?/);
+  if (f95Match) return `https://f95zone.to/threads/${f95Match[1].replace(/\/$/, '')}/${f95Match[2] || ''}`.replace(/\/+$/, (m) => (f95Match[2] ? m : '/'));
+  const lewdMatch = trimmed.match(/lewdcorner\.com\/threads\/([^\/#]+)(#post-\d+)?/);
+  if (lewdMatch) return `https://lewdcorner.com/threads/${lewdMatch[1].replace(/\/$/, '')}/${lewdMatch[2] || ''}`.replace(/\/+$/, (m) => (lewdMatch[2] ? m : '/'));
+  return trimmed;
+}
+
 type AppContextValue = {
   resetAllFields: () => void;
   templates: Template[];
@@ -49,7 +61,7 @@ type AppContextValue = {
   fetchTagsFromSupabase: () => Promise<void>;
   syncInstructionsToSupabase: () => Promise<{ ok: boolean; error?: string }>;
   fetchInstructionsFromSupabase: () => Promise<void>;
-  syncTemplatesToSupabase: () => Promise<{ ok: boolean; error?: string }>;
+  syncTemplatesToSupabase: (templatesToSync?: Template[]) => Promise<{ ok: boolean; error?: string }>;
   fetchTemplatesFromSupabase: () => Promise<void>;
   importFullConfig: (config: any) => void;
 
@@ -95,7 +107,8 @@ type AppContextValue = {
   setLinkConfig: (
     linkName: 'Game_link' | 'Translate_link' | 'Mod_link',
     source: 'F95' | 'Lewd' | 'Autre',
-    value: string
+    value: string,
+    hash?: string
   ) => void;
   setLinkConfigs: React.Dispatch<React.SetStateAction<{
     Game_link: LinkConfig;
@@ -275,7 +288,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateAdditionalTranslationLink = useCallback((index: number, link: AdditionalTranslationLink) => {
     setAdditionalTranslationLinks(prev => {
       const next = [...prev];
-      next[index] = link;
+      // Nettoyer le lien (F95/Lewd avec /post-XXXXX -> URL canonique du thread) comme pour Game_link / Translate_link / Mod_link
+      const cleanedLink = cleanGameLinkUrl(link.link);
+      next[index] = { ...link, link: cleanedLink };
       return next;
     });
   }, []);
@@ -304,7 +319,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateAdditionalModLink = useCallback((index: number, link: AdditionalTranslationLink) => {
     setAdditionalModLinks(prev => {
       const next = [...prev];
-      next[index] = link;
+      // Nettoyer le lien (F95/Lewd avec /post-XXXXX -> URL canonique du thread) comme pour les autres champs liens
+      const cleanedLink = cleanGameLinkUrl(link.link);
+      next[index] = { ...link, link: cleanedLink };
       return next;
     });
   }, []);
@@ -1356,6 +1373,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // Erreur silencieuse
     }
+    // Sync immédiate vers Supabase (réel direct) dès que les templates sont restaurés
+    syncTemplatesToSupabase(defaultTemplates).catch(() => {});
   }
 
   function addVarConfig(v: VarConfig) {
@@ -1378,27 +1397,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
 
   function cleanGameLink(url: string): string {
-    if (!url || !url.trim()) return url;
-
-    const trimmed = url.trim();
-
-    // Retirer les chevrons si présents (au cas où l'utilisateur les met manuellement)
-    const cleaned = trimmed.replace(/^<|>$/g, '');
-
-    // F95Zone - Garder uniquement https://f95zone.to/threads/ID/
-    const f95Match = cleaned.match(/f95zone\.to\/threads\/([^\/]+)/);
-    if (f95Match) {
-      return `https://f95zone.to/threads/${f95Match[1]}/`;
-    }
-
-    // LewdCorner - Garder uniquement https://lewdcorner.com/threads/ID/
-    const lewdMatch = cleaned.match(/lewdcorner\.com\/threads\/([^\/]+)/);
-    if (lewdMatch) {
-      return `https://lewdcorner.com/threads/${lewdMatch[1]}/`;
-    }
-
-    // Si aucun pattern reconnu, retourner l'URL nettoyée
-    return cleaned;
+    return cleanGameLinkUrl(url);
   }
 
   function setInput(name: string, value: string) {
@@ -1413,23 +1412,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
 
   function extractIdFromUrl(url: string, source: 'F95' | 'Lewd'): string {
-    if (!url || !url.trim()) return '';
+    const { id } = extractIdAndHashFromUrl(url, source);
+    return id || url.trim();
+  }
 
+  /** Extrait l'ID thread et le hash #post-XXXXX d'une URL F95/Lewd. */
+  function extractIdAndHashFromUrl(url: string, source: 'F95' | 'Lewd'): { id: string; hash?: string } {
+    if (!url || !url.trim()) return { id: '' };
     const trimmed = url.trim();
-
     if (source === 'F95') {
-      // Extraire ID de f95zone.to/threads/nom.ID/ ou f95zone.to/threads/ID/
-      const match = trimmed.match(/f95zone\.to\/threads\/(?:[^.]+\.)?(\d+)/);
-      return match ? match[1] : trimmed;
+      // f95zone.to/threads/slug.ID/ ou threads/ID/ ou .../#post-513555
+      const match = trimmed.match(/f95zone\.to\/threads\/(?:[^/]*\.)?(\d+)\/?(#post-\d+)?/);
+      if (match) return { id: match[1], hash: match[2] || undefined };
+      return { id: trimmed };
     }
-
     if (source === 'Lewd') {
-      // Extraire ID de lewdcorner.com/threads/nom.ID/ ou lewdcorner.com/threads/ID/
-      const match = trimmed.match(/lewdcorner\.com\/threads\/(?:[^.]+\.)?(\d+)/);
-      return match ? match[1] : trimmed;
+      const match = trimmed.match(/lewdcorner\.com\/threads\/(?:[^/]*\.)?(\d+)\/?(#post-\d+)?/);
+      if (match) return { id: match[1], hash: match[2] || undefined };
+      return { id: trimmed };
     }
-
-    return trimmed;
+    return { id: trimmed };
   }
 
   function buildFinalLink(config: LinkConfig): string {
@@ -1446,31 +1448,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return v;
     }
 
-    // Sinon, construire l'URL selon la source
-    switch (config.source) {
-      case 'F95':
-        return `https://f95zone.to/threads/${v}/`;
-      case 'Lewd':
-        return `https://lewdcorner.com/threads/${v}/`;
-      case 'Autre':
-        return v;
-      default:
-        return v;
-    }
+    // Sinon, construire l'URL selon la source (avec hash #post-XXXXX si présent)
+    const base = config.source === 'F95'
+      ? `https://f95zone.to/threads/${v}/`
+      : config.source === 'Lewd'
+        ? `https://lewdcorner.com/threads/${v}/`
+        : v;
+    if (config.source !== 'F95' && config.source !== 'Lewd') return base;
+    const hash = (config.hash || '').trim();
+    return hash ? `${base}${hash.startsWith('#') ? hash : `#${hash}`}` : base;
   }
 
   // Fonction pour mettre à jour la config d'un lien
-  function setLinkConfig(linkName: 'Game_link' | 'Translate_link' | 'Mod_link', source: 'F95' | 'Lewd' | 'Autre', value: string) {
+  function setLinkConfig(linkName: 'Game_link' | 'Translate_link' | 'Mod_link', source: 'F95' | 'Lewd' | 'Autre', value: string, hash?: string) {
     setLinkConfigs(prev => {
-      // Si on change de source F95/Lewd et qu'on a une URL, extraire l'ID
       let processedValue = value;
+      let processedHash: string | undefined = hash;
       if ((source === 'F95' || source === 'Lewd') && value.includes('http')) {
-        processedValue = extractIdFromUrl(value, source);
+        const extracted = extractIdAndHashFromUrl(value, source);
+        processedValue = extracted.id;
+        if (extracted.hash) processedHash = extracted.hash;
       }
-
       return {
         ...prev,
-        [linkName]: { source, value: processedValue }
+        [linkName]: { source, value: processedValue, ...(processedHash != null && processedHash !== '' ? { hash: processedHash } : {}) }
       };
     });
   }
@@ -1587,21 +1588,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Instructions : sync direct vers Supabase (comme les tags), contrôle par autorisation RLS
 
-  async function syncTemplatesToSupabase(): Promise<{ ok: boolean; error?: string }> {
+  async function syncTemplatesToSupabase(templatesToSync?: Template[]): Promise<{ ok: boolean; error?: string }> {
     const sb = getSupabase();
     if (!sb) return { ok: false, error: 'Supabase non configuré' };
     const { data: { session } } = await sb.auth.getSession();
     const userId = session?.user?.id;
     if (!userId) return { ok: true };
-    // Ne pas pousser le template par défaut seul en BDD (géré dans le code + localStorage)
-    if (templates.length > 0 && templates[0]?.isDefault === true) {
+    const list = templatesToSync ?? templates;
+    // Ne pas pousser le template par défaut seul en BDD quand c'est l'état courant (évite écrasement au chargement)
+    // Quand templatesToSync est fourni (ex: restauration), on pousse quand même pour mettre Supabase à jour
+    if (!templatesToSync && list.length > 0 && list[0]?.isDefault === true) {
       return { ok: true };
     }
     try {
       const { error } = await sb
         .from('saved_templates')
         .upsert(
-          { owner_id: userId, value: templates, updated_at: new Date().toISOString() },
+          { owner_id: userId, value: list, updated_at: new Date().toISOString() },
           { onConflict: 'owner_id' }
         );
       if (error) throw new Error((error as { message?: string })?.message);
@@ -1627,7 +1630,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Sync automatique des templates vers Supabase (debounce, après chargement initial)
+  // Sync automatique des templates vers Supabase (debounce court pour réel direct après édition)
   const templatesSyncEnabledRef = useRef(false);
   useEffect(() => {
     const t = setTimeout(() => { templatesSyncEnabledRef.current = true; }, 3000);
@@ -1635,7 +1638,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
   useEffect(() => {
     if (!templatesSyncEnabledRef.current) return;
-    const id = setTimeout(() => { syncTemplatesToSupabase().catch(() => {}); }, 1500);
+    const id = setTimeout(() => { syncTemplatesToSupabase().catch(() => {}); }, 400);
     return () => clearTimeout(id);
   }, [templates]);
 

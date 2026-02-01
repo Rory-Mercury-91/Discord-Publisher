@@ -475,19 +475,21 @@ def _extract_version_from_f95_title(title_text: str) -> Optional[str]:
 
 def _extract_f95_thread_id(url: str) -> Optional[str]:
     """
-    Extrait l'ID numérique d'un thread F95Zone
-    
+    Extrait l'ID numérique d'un thread F95Zone.
+    Accepte les URLs avec /post-XXXXX (ex: .../threads/game.8012/post-11944222 -> "8012").
+
     Examples:
         https://f95zone.to/threads/game-name.285451/ -> "285451"
         https://f95zone.to/threads/285451 -> "285451"
-    
+        https://f95zone.to/threads/milfy-city-v1-0e-icstor.8012/post-11944222 -> "8012"
+
     Returns:
         L'ID numérique comme string, ou None si non trouvé
     """
     if not url:
         return None
-    
-    pattern = r'/threads/(?:[^/]+\.)?(\d+)'
+    # [^/]*\. pour capturer le slug avant le point, (\d+) pour l'ID (compatible /post-XXXXX)
+    pattern = r'/threads/(?:[^/]*\.)?(\d+)'
     match = re.search(pattern, url)
     return match.group(1) if match else None
 

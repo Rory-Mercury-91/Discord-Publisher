@@ -16,9 +16,10 @@
     const url = window.location.href;
     const isF95 = window.location.hostname.includes('f95zone');
 
-    // 1. Extraction de l'ID
-    const idMatch = url.match(/\.(\d+)(?:\/|$)/);
-    const id = idMatch ? idMatch[1] : "N/A";
+    // 1. Extraction de l'ID (slug.ID ou threads/ID/ ou threads/ID#post-XXXXX)
+    const idMatchSlug = url.match(/\.(\d+)(?:\/|#|$)/);
+    const idMatchNumeric = url.match(/\/threads\/(\d+)(?:\/|#|$)/);
+    const id = (idMatchSlug && idMatchSlug[1]) || (idMatchNumeric && idMatchNumeric[1]) || "N/A";
 
     // 2. Récupération du titre brut
     const titleElement = document.querySelector('.p-title-value');
