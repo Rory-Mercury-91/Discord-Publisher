@@ -1461,6 +1461,85 @@ async def _discord_patch_form(session, path, form):
 async def _discord_post_form(session, path, form):
     return await _discord_request(session, "POST", path, headers=_auth_headers(), data=form)
 
+async def _fetch_image_from_url(session, url: str) -> Optional[Tuple[bytes, str, str]]:
+    """
+    Télécharge une image depuis une URL. Retourne (bytes, filename, content_type) ou None en cas d'échec.
+    """
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            if resp.status >= 400:
+                logger.warning(f"⚠️ Échec téléchargement image (status {resp.status}): {url[:60]}...")
+                return None
+            data = await resp.read()
+            if not data:
+                return None
+            # Nom de fichier : depuis Content-Disposition ou extrait de l'URL
+            disp = resp.headers.get("Content-Disposition")
+            filename = "image.png"
+            if disp and "filename=" in disp:
+                part = disp.split("filename=")[-1].strip().strip('"\'')
+                if part:
+                    filename = part
+            else:
+                path = url.split("?")[0].strip("/")
+                if "/" in path:
+                    name = path.split("/")[-1]
+                    if "." in name and len(name) < 200:
+                        filename = name
+            if not any(filename.lower().endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                filename = filename + ".png" if "." not in filename else "image.png"
+            ctype = resp.headers.get("Content-Type") or "image/png"
+            if ";" in ctype:
+                ctype = ctype.split(";")[0].strip()
+            return (data, filename, ctype)
+    except Exception as e:
+        logger.warning(f"⚠️ Exception téléchargement image: {e}")
+        return None
+
+async def _discord_post_thread_with_attachment(
+    session, forum_id: str, name: str, message_content: str,
+    applied_tag_ids: Optional[List[str]], file_bytes: bytes, filename: str, content_type: str
+):
+    """
+    Crée un thread avec un message contenant une pièce jointe (multipart/form-data).
+    Retourne (status, data, headers).
+    """
+    payload = {
+        "name": name,
+        "message": {"content": message_content or " "}
+    }
+    if applied_tag_ids:
+        payload["applied_tags"] = applied_tag_ids
+    form = aiohttp.FormData()
+    form.add_field("payload_json", json.dumps(payload), content_type="application/json")
+    form.add_field("files[0]", file_bytes, filename=filename, content_type=content_type)
+    return await _discord_request(
+        session, "POST", f"/channels/{forum_id}/threads",
+        headers=_auth_headers(), data=form
+    )
+
+async def _discord_patch_message_with_attachment(
+    session, thread_id: str, message_id: str, content: str,
+    file_bytes: bytes, filename: str, content_type: str
+):
+    """
+    Met à jour un message en remplaçant la pièce jointe (multipart/form-data).
+    payload_json.attachments avec id 0 et filename permet de remplacer l'attachment.
+    """
+    payload = {
+        "content": content or " ",
+        "embeds": [],
+        "attachments": [{"id": 0, "filename": filename}]
+    }
+    form = aiohttp.FormData()
+    form.add_field("payload_json", json.dumps(payload), content_type="application/json")
+    form.add_field("files[0]", file_bytes, filename=filename, content_type=content_type)
+    status, data, headers = await _discord_request(
+        session, "PATCH", f"/channels/{thread_id}/messages/{message_id}",
+        headers=_auth_headers(), data=form
+    )
+    return status, data
+
 async def _discord_post_json(session, path, payload):
     """Envoie une requête POST avec JSON et retourne les 3 valeurs attendues"""
     status, data, headers = await _discord_request(session, "POST", path, headers=_auth_headers(), json_data=payload)
@@ -1660,10 +1739,20 @@ async def _resolve_applied_tag_ids(session, forum_id, tags_raw):
                     break
     return list(dict.fromkeys(applied))
 
+def _strip_image_url_from_content(content: str, image_url: str) -> str:
+    """Retire l'URL d'image du contenu (lien et retours à la ligne autour)."""
+    final_content = content or " "
+    final_content = re.sub(r'\n\s*' + re.escape(image_url) + r'\s*\n?', '\n', final_content)
+    final_content = re.sub(r'\n\s*' + re.escape(image_url) + r'\s*$', '', final_content)
+    final_content = re.sub(re.escape(image_url), '', final_content)
+    final_content = re.sub(r'\n\n\n+', '\n\n', final_content)
+    return final_content.strip()
+
+
 async def _create_forum_post(session, forum_id, title, content, tags_raw, images, metadata_b64=None):
     """
     Crée un post de forum Discord.
-    - L'image est affichée via un embed "image" sur le 1er message (sinon SUPPRESS_EMBEDS la masque).
+    - L'image est envoyée en pièce jointe (fichier joint) sur le 1er message (téléchargée depuis l'URL).
     - Les métadonnées sont stockées dans un 2e message (embed) puis SUPPRESS_EMBEDS sur ce 2e message.
     """
     applied_tag_ids = await _resolve_applied_tag_ids(session, forum_id, tags_raw)
@@ -1676,37 +1765,39 @@ async def _create_forum_post(session, forum_id, title, content, tags_raw, images
     )
     image_urls_full = [m.group(0) for m in image_url_pattern.finditer(content or "")]
 
-    # Retirer le lien d'image du contenu pour le masquer (il sera dans l'embed)
     final_content = content or " "
-    message_embeds = []
+    use_attachment = False
+    file_bytes, filename, content_type = None, "image.png", "image/png"
+
     if image_urls_full:
         image_url = image_urls_full[0]
-        # Créer l'embed avec l'image
-        message_embeds.append({"image": {"url": image_url}})
-        logger.info(f"✅ Embed image (message principal): {image_url[:60]}...")
-        
-        # Retirer le lien du contenu (y compris s'il est sur une ligne séparée)
-        # On retire le lien et les retours à la ligne qui l'entourent
-        final_content = re.sub(r'\n\s*' + re.escape(image_url) + r'\s*\n?', '\n', final_content)
-        final_content = re.sub(r'\n\s*' + re.escape(image_url) + r'\s*$', '', final_content)
-        final_content = re.sub(re.escape(image_url), '', final_content)
-        # Nettoyer les doubles retours à la ligne
-        final_content = re.sub(r'\n\n\n+', '\n\n', final_content)
-        final_content = final_content.strip()
+        # Télécharger l'image et l'envoyer en pièce jointe (au lieu d'embed)
+        fetched = await _fetch_image_from_url(session, image_url)
+        if fetched:
+            file_bytes, filename, content_type = fetched
+            final_content = _strip_image_url_from_content(content or " ", image_url)
+            use_attachment = True
+            logger.info(f"✅ Image en pièce jointe (message principal): {image_url[:60]}...")
+        else:
+            # Fallback : embed si le téléchargement échoue
+            final_content = _strip_image_url_from_content(content or " ", image_url)
+            logger.info(f"⚠️ Téléchargement image échoué, fallback embed: {image_url[:60]}...")
 
-    message_payload = {"content": final_content or " "}
-    # Si pas d'image, on force embeds=[] pour nettoyer une éventuelle image précédente lors d'updates
-    message_payload["embeds"] = message_embeds if message_embeds else []
-
-    payload = {
-        "name": title,
-        "message": message_payload
-    }
-
-    if applied_tag_ids:
-        payload["applied_tags"] = applied_tag_ids
-
-    status, data, _ = await _discord_post_json(session, f"/channels/{forum_id}/threads", payload)
+    if use_attachment and file_bytes:
+        status, data, _ = await _discord_post_thread_with_attachment(
+            session, forum_id, title, final_content or " ", applied_tag_ids,
+            file_bytes, filename, content_type
+        )
+    else:
+        # Sans image ou fallback embed
+        message_embeds = []
+        if image_urls_full and not use_attachment:
+            message_embeds.append({"image": {"url": image_urls_full[0]}})
+        message_payload = {"content": final_content or " ", "embeds": message_embeds}
+        payload = {"name": title, "message": message_payload}
+        if applied_tag_ids:
+            payload["applied_tags"] = applied_tag_ids
+        status, data, _ = await _discord_post_json(session, f"/channels/{forum_id}/threads", payload)
 
     if status >= 300:
         return False, {"status": status, "discord": data}
@@ -2055,7 +2146,6 @@ async def forum_post_update(request):
         message_path = f"/channels/{thread_id}/messages/{message_id}"
 
         # Détecter une URL d'image dans le contenu (y compris query string complète)
-        import re
         image_exts = r"(?:jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)"
         image_url_pattern = re.compile(
             rf"https?://[^\s<>\"']+\.{image_exts}(?:\?[^\s<>\"']*)?",
@@ -2063,26 +2153,31 @@ async def forum_post_update(request):
         )
         image_urls_full = [m.group(0) for m in image_url_pattern.finditer(content or "")]
 
-        # Retirer le lien d'image du contenu pour le masquer (il sera dans l'embed)
         final_content = content or " "
-        message_embeds = []
+        use_attachment = False
+        file_bytes, filename, content_type = None, "image.png", "image/png"
+
         if image_urls_full:
             image_url = image_urls_full[0]
-            # Créer l'embed avec l'image
-            message_embeds.append({"image": {"url": image_url}})
-            logger.info(f"✅ Embed image (update message principal): {image_url[:60]}...")
-            
-            # Retirer le lien du contenu (y compris s'il est sur une ligne séparée)
-            # On retire le lien et les retours à la ligne qui l'entourent
-            final_content = re.sub(r'\n\s*' + re.escape(image_url) + r'\s*\n?', '\n', final_content)
-            final_content = re.sub(r'\n\s*' + re.escape(image_url) + r'\s*$', '', final_content)
-            final_content = re.sub(re.escape(image_url), '', final_content)
-            # Nettoyer les doubles retours à la ligne
-            final_content = re.sub(r'\n\n\n+', '\n\n', final_content)
-            final_content = final_content.strip()
+            fetched = await _fetch_image_from_url(session, image_url)
+            if fetched:
+                file_bytes, filename, content_type = fetched
+                final_content = _strip_image_url_from_content(content or " ", image_url)
+                use_attachment = True
+                logger.info(f"✅ Image en pièce jointe (update message principal): {image_url[:60]}...")
+            else:
+                final_content = _strip_image_url_from_content(content or " ", image_url)
+                logger.info(f"⚠️ Téléchargement image échoué (update), pas de nouvelle image")
 
-        message_payload = {"content": final_content or " ", "embeds": message_embeds if message_embeds else []}
-        status, data = await _discord_patch_json(session, message_path, message_payload)
+        if use_attachment and file_bytes:
+            status, data = await _discord_patch_message_with_attachment(
+                session, str(thread_id), str(message_id), final_content or " ",
+                file_bytes, filename, content_type
+            )
+        else:
+            # Mise à jour du contenu uniquement (sans nouvelle image ; pas d'embed)
+            message_payload = {"content": final_content or " ", "embeds": []}
+            status, data = await _discord_patch_json(session, message_path, message_payload)
 
         if status >= 300:
             return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))

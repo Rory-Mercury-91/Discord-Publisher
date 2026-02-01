@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import ErrorModal from '../components/ErrorModal';
-import { useAuth } from './authContext';
 import { getSupabase } from '../lib/supabase';
 import { tauriAPI } from '../lib/tauri-api';
+import { useAuth } from './authContext';
 import { defaultTemplates, defaultVarsConfig } from './defaults';
 import { useImagesState } from './hooks/useImagesState';
 import { mergeInstructionsFromSupabase, useInstructionsState } from './hooks/useInstructionsState';
@@ -426,6 +426,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [postTags, setPostTags] = useState<string>(() => {
     try { const raw = localStorage.getItem('postTags'); return raw || ''; } catch (e) { return ''; }
   });
+
+  // Correspondance ID Discord du tag "Type de traduction" → type de traduction du formulaire
+  const TRANSLATION_TYPE_BY_TAG_DISCORD_ID: Record<string, string> = {
+    '1467532357530816522': 'Manuelle',
+    '1467532481963229276': 'Semi-automatique',
+    '1467532186700747021': 'Automatique'
+  };
+
+  useEffect(() => {
+    const selectedIds = (postTags || '').split(',').map(s => s.trim()).filter(Boolean);
+    const selectedTagObjects = savedTags.filter(t =>
+      selectedIds.some(id => (t.id || t.name) === id || String(t.discordTagId ?? '') === id)
+    );
+    for (const tag of selectedTagObjects) {
+      const discordId = tag.discordTagId != null ? String(tag.discordTagId) : '';
+      const mappedType = TRANSLATION_TYPE_BY_TAG_DISCORD_ID[discordId];
+      if (mappedType != null) {
+        setTranslationType(mappedType);
+        return;
+      }
+    }
+  }, [postTags, savedTags]);
 
   // API Configuration - URL is now hardcoded for local API
   // Définir l’URL de base en consultant d’abord localStorage, puis .env, et enfin un fallback Koyeb
@@ -1393,7 +1415,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Erreur silencieuse
     }
     // Sync immédiate vers Supabase (réel direct) dès que les templates sont restaurés
-    syncTemplatesToSupabase(defaultTemplates).catch(() => {});
+    syncTemplatesToSupabase(defaultTemplates).catch(() => { });
   }
 
   function addVarConfig(v: VarConfig) {
@@ -1634,7 +1656,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
   useEffect(() => {
     if (!templatesSyncEnabledRef.current) return;
-    const id = setTimeout(() => { syncTemplatesToSupabase().catch(() => {}); }, 400);
+    const id = setTimeout(() => { syncTemplatesToSupabase().catch(() => { }); }, 400);
     return () => clearTimeout(id);
   }, [templates]);
 
