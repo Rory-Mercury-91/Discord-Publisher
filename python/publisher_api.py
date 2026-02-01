@@ -236,6 +236,12 @@ _RE_GAME_LINK_PLAIN = re.compile(
     re.IGNORECASE | re.MULTILINE
 )
 
+# Nouveau format (uniquement lien du jeu) : * [Jeu original](<url>) — pas les autres liens F95 (traduction, etc.)
+_RE_GAME_LINK_JEU_ORIGINAL = re.compile(
+    r"^\s*\*\s*\[\s*Jeu\s+original\s*\]\s*\(\s*<\s*(?P<url>https?://[^>]+)\s*>\s*\)\s*$",
+    re.IGNORECASE | re.MULTILINE
+)
+
 # Extraction version depuis titre F95
 _RE_BRACKETS = re.compile(r"\[(?P<val>[^\]]+)\]")
 # Version dans le nom du thread Discord (ex: "Growing Problems [v0.12]")
@@ -649,6 +655,11 @@ async def _extract_post_data(thread: discord.Thread) -> Tuple[Optional[str], Opt
             game_link = m_link_md.group("url").strip()
         elif m_link_plain:
             game_link = m_link_plain.group("url").strip()
+        if not game_link:
+            # Nouveau format : * [Jeu original](<url>) — ligne dédiée, pas les autres liens F95
+            m_jeu = _RE_GAME_LINK_JEU_ORIGINAL.search(content)
+            if m_jeu:
+                game_link = m_jeu.group("url").strip()
         if game_link or game_version:
             logger.info(f"✅ Données post depuis Supabase (thread_id={thread.id})")
             return game_link, game_version
@@ -706,11 +717,15 @@ async def _extract_post_data(thread: discord.Thread) -> Tuple[Optional[str], Opt
     # Extraire game_link (toujours depuis le texte car absent des métadonnées)
     m_link_md = _RE_GAME_LINK_MD.search(content)
     m_link_plain = _RE_GAME_LINK_PLAIN.search(content)
-    
     if m_link_md:
         game_link = m_link_md.group("url").strip()
     elif m_link_plain:
         game_link = m_link_plain.group("url").strip()
+    if not game_link:
+        # Nouveau format : * [Jeu original](<url>) — ligne dédiée, pas les autres liens F95
+        m_jeu = _RE_GAME_LINK_JEU_ORIGINAL.search(content)
+        if m_jeu:
+            game_link = m_jeu.group("url").strip()
     
     # Si game_version n'a pas été trouvée dans les métadonnées, parser le texte
     if not game_version:

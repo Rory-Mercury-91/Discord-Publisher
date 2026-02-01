@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import ErrorModal from '../components/ErrorModal';
 import { getSupabase } from '../lib/supabase';
 import { tauriAPI } from '../lib/tauri-api';
@@ -597,6 +597,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (ownerId) {
           await sb.from('allowed_editors').delete().eq('owner_id', ownerId);
           await sb.from('saved_instructions').delete().eq('owner_id', ownerId);
+          await sb.from('saved_templates').delete().eq('owner_id', ownerId);
         }
       }
       setPublishedPosts([]);
@@ -1148,16 +1149,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
   }, []);
 
-  // Charger instructions (table saved_instructions par propriétaire) et templates depuis Supabase au montage
+  // Charger instructions (par propriétaire ; visible par l'auteur + éditeurs autorisés) et templates (par utilisateur connecté)
   useEffect(() => {
     const sb = getSupabase();
     if (!sb) return;
     (async () => {
       const { data: { session } } = await sb.auth.getSession();
-      // Instructions : table saved_instructions (visible par l'auteur + ses éditeurs autorisés)
+      const userId = session?.user?.id;
+
+      // Instructions : saved_instructions (RLS = propre + autorisations allowed_editors)
       const resInstr = await sb.from('saved_instructions').select('owner_id, value');
       if (!resInstr.error && resInstr.data?.length) {
-        // Lire les instructions locales depuis localStorage pour fusion
         let localInstructions: Record<string, string> = {};
         let localOwners: Record<string, string> = {};
         try {
@@ -1167,7 +1169,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (rawOwners) localOwners = JSON.parse(rawOwners);
         } catch (_e) { /* ignorer */ }
 
-        // Fusion intelligente : garder les locales sans owner, supprimer les révoquées, ajouter les Supabase
         const { merged, owners } = mergeInstructionsFromSupabase(
           resInstr.data as Array<{ owner_id: string; value: Record<string, string> | string }>,
           localInstructions,
@@ -1176,14 +1177,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         instructionsState.setSavedInstructions(merged);
         instructionsState.setInstructionOwners(owners);
       }
-      // Templates : toujours depuis app_config (partagés)
-      const resTpl = await sb.from('app_config').select('value').eq('key', 'custom_templates').maybeSingle();
-      if (!resTpl.error && resTpl.data?.value) {
-        try {
-          const parsed = JSON.parse(resTpl.data.value as string) as Template[];
-          if (Array.isArray(parsed) && parsed.length > 0) setTemplates(parsed);
-        } catch (_e) {
-          /* ignorer */
+
+      // Templates : saved_templates (propre à l'utilisateur connecté, un row par owner)
+      if (userId) {
+        const resTpl = await sb.from('saved_templates').select('value').eq('owner_id', userId).maybeSingle();
+        if (!resTpl.error && resTpl.data?.value) {
+          try {
+            const parsed = (Array.isArray(resTpl.data.value) ? resTpl.data.value : JSON.parse(String(resTpl.data.value))) as Template[];
+            if (Array.isArray(parsed) && parsed.length > 0) setTemplates(parsed);
+          } catch (_e) {
+            /* ignorer */
+          }
         }
       }
     })();
@@ -1257,15 +1261,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'saved_templates' },
+        () => {
+          // Realtime : refetch les templates de l'utilisateur connecté (RLS = propre à l'utilisateur)
+          getSupabase()
+            ?.auth.getSession()
+            .then(({ data: { session } }) => {
+              if (!session?.user?.id) return null;
+              return getSupabase()
+                ?.from('saved_templates')
+                .select('value')
+                .eq('owner_id', session.user.id)
+                .maybeSingle();
+            })
+            .then((res) => {
+              if (!res?.data?.value || res.error) return;
+              const value = res.data.value;
+              try {
+                const parsed = (Array.isArray(value) ? value : JSON.parse(String(value))) as Template[];
+                if (Array.isArray(parsed) && parsed.length > 0) setTemplates(parsed);
+              } catch (_e) { /* ignorer */ }
+            });
+        }
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'app_config' },
         (payload) => {
           const r = (payload.eventType === 'DELETE' ? payload.old : payload.new) as { key: string; value: string };
-          if (r?.key === 'custom_templates' && r?.value) {
-            try {
-              const parsed = JSON.parse(r.value) as Template[];
-              if (Array.isArray(parsed) && parsed.length > 0) setTemplates(parsed);
-            } catch (_e) { /* ignorer */ }
-          } else if (r?.key === 'api_base_url' && r?.value?.trim()) {
+          if (r?.key === 'api_base_url' && r?.value?.trim()) {
             const url = r.value.trim().replace(/\/+$/, '');
             setApiBaseFromSupabase(url);
             localStorage.setItem('apiBase', url);
@@ -1563,16 +1587,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   async function syncTemplatesToSupabase(): Promise<{ ok: boolean; error?: string }> {
     const sb = getSupabase();
     if (!sb) return { ok: false, error: 'Supabase non configuré' };
-    // Ne pas pousser le template par défaut en BDD (géré uniquement dans le code + localStorage)
+    const { data: { session } } = await sb.auth.getSession();
+    const userId = session?.user?.id;
+    if (!userId) return { ok: true };
+    // Ne pas pousser le template par défaut seul en BDD (géré dans le code + localStorage)
     if (templates.length > 0 && templates[0]?.isDefault === true) {
       return { ok: true };
     }
     try {
       const { error } = await sb
-        .from('app_config')
+        .from('saved_templates')
         .upsert(
-          { key: 'custom_templates', value: JSON.stringify(templates), updated_at: new Date().toISOString() },
-          { onConflict: 'key' }
+          { owner_id: userId, value: templates, updated_at: new Date().toISOString() },
+          { onConflict: 'owner_id' }
         );
       if (error) throw new Error((error as { message?: string })?.message);
       return { ok: true };
@@ -1584,16 +1611,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   async function fetchTemplatesFromSupabase(): Promise<void> {
     const sb = getSupabase();
     if (!sb) return;
-    const { data, error } = await sb.from('app_config').select('value').eq('key', 'custom_templates').maybeSingle();
+    const { data: { session } } = await sb.auth.getSession();
+    const userId = session?.user?.id;
+    if (!userId) return;
+    const { data, error } = await sb.from('saved_templates').select('value').eq('owner_id', userId).maybeSingle();
     if (error || !data?.value) return;
     try {
-      const parsed = JSON.parse(data.value as string) as Template[];
+      const parsed = (Array.isArray(data.value) ? data.value : JSON.parse(String(data.value))) as Template[];
       if (Array.isArray(parsed) && parsed.length > 0) setTemplates(parsed);
     } catch (_e) {
       /* ignorer */
     }
   }
 
+  // Sync automatique des templates vers Supabase (debounce, après chargement initial)
+  const templatesSyncEnabledRef = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => { templatesSyncEnabledRef.current = true; }, 3000);
+    return () => clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    if (!templatesSyncEnabledRef.current) return;
+    const id = setTimeout(() => { syncTemplatesToSupabase().catch(() => {}); }, 1500);
+    return () => clearTimeout(id);
+  }, [templates]);
 
   // ========================================
   // PREVIEW ENGINE (hook extrait)

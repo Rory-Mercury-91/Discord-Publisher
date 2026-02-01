@@ -21,6 +21,7 @@ import { AuthProvider, useAuth } from './state/authContext';
 const APP_VERSION = rootPkg.version;
 
 function AppContentInner() {
+  const { profile } = useAuth();
   const {
     resetAllFields,
     apiStatus,
@@ -144,7 +145,18 @@ function AppContentInner() {
             <button onClick={() => setOpenInstructions(true)}>📋 Gérer les Instructions</button>
             <button onClick={() => setOpenHistory(true)}>📜 Historique</button>
             <button onClick={() => setOpenStats(true)}>📈 Statistiques</button>
-            <button onClick={() => setOpenConfigGate(true)}>⚙️ Configuration</button>
+            <button
+              onClick={() => {
+                if (profile?.is_master_admin) {
+                  setConfigAdminMode(true);
+                  setOpenConfig(true);
+                } else {
+                  setOpenConfigGate(true);
+                }
+              }}
+            >
+              ⚙️ Configuration
+            </button>
             {/* Place ApiStatusBadge juste avant le bouton "?" */}
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               <ApiStatusBadge />

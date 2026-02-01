@@ -3,6 +3,9 @@ import { getSupabase } from '../../lib/supabase';
 
 /**
  * Fusionne les instructions Supabase avec les instructions locales.
+ * Les instructions sont propres à l'utilisateur connecté (saved_instructions.owner_id).
+ * Seule la présence d'autorisation (allowed_editors) permet à un autre utilisateur de voir
+ * les instructions du propriétaire sur son PC (RLS : select own or allowed).
  * - Instructions locales sans owner connu → conservées
  * - Instructions Supabase → ajoutées/mises à jour
  * - Instructions dont le owner était connu mais n'est plus accessible (révoqué) → supprimées

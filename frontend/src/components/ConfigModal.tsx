@@ -38,11 +38,7 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
     publishedPosts,
     importFullConfig,
     setApiBaseFromSupabase,
-    clearAllAppData,
-    syncTagsToSupabase,
-    fetchTagsFromSupabase,
-    syncTemplatesToSupabase,
-    fetchTemplatesFromSupabase
+    clearAllAppData
   } = useApp();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
   const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('apiUrl') || localStorage.getItem('apiBase') || '');
@@ -176,23 +172,24 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
   };
 
   const handleSave = async () => {
-    localStorage.setItem('apiUrl', apiUrl);
-    localStorage.setItem('apiBase', apiUrl);
     localStorage.setItem('apiKey', apiKey);
-
-    const baseUrl = (apiUrl || '').trim().replace(/\/+$/, '');
-    if (baseUrl) {
-      setApiBaseFromSupabase(baseUrl);
-      const sb = getSupabase();
-      if (sb) {
-        sb.from('app_config')
-          .upsert(
-            { key: 'api_base_url', value: baseUrl, updated_at: new Date().toISOString() },
-            { onConflict: 'key' }
-          )
-          .then((res) => {
-            if (res?.error) console.warn('⚠️ Supabase app_config:', (res.error as { message?: string })?.message);
-          });
+    if (adminMode) {
+      localStorage.setItem('apiUrl', apiUrl);
+      localStorage.setItem('apiBase', apiUrl);
+      const baseUrl = (apiUrl || '').trim().replace(/\/+$/, '');
+      if (baseUrl) {
+        setApiBaseFromSupabase(baseUrl);
+        const sb = getSupabase();
+        if (sb) {
+          sb.from('app_config')
+            .upsert(
+              { key: 'api_base_url', value: baseUrl, updated_at: new Date().toISOString() },
+              { onConflict: 'key' }
+            )
+            .then((res) => {
+              if (res?.error) console.warn('⚠️ Supabase app_config:', (res.error as { message?: string })?.message);
+            });
+        }
       }
     }
 
@@ -391,30 +388,32 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
             >
               <h4 style={{ margin: 0, fontSize: '1rem' }}>🌐 Configuration</h4>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
-                  URL de l'API Koyeb
-                </label>
-                <input
-                  type="text"
-                  value={apiUrl}
-                  onChange={(e) => setApiUrl(e.target.value)}
-                  placeholder="https://votre-app.koyeb.app"
-                  style={{
-                    width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: 10,
-                    border: '1px solid var(--border)',
-                    background: 'rgba(255,255,255,0.05)',
-                    color: 'var(--text)',
-                    fontSize: 14,
-                    boxSizing: 'border-box',
-                  }}
-                />
-                <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0 }}>
-                  💡 URL de base de votre service Koyeb (sans /api)
-                </p>
-              </div>
+              {adminMode && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
+                    URL de l'API (admin)
+                  </label>
+                  <input
+                    type="text"
+                    value={apiUrl}
+                    onChange={(e) => setApiUrl(e.target.value)}
+                    placeholder="https://votre-app.koyeb.app"
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: 10,
+                      border: '1px solid var(--border)',
+                      background: 'rgba(255,255,255,0.05)',
+                      color: 'var(--text)',
+                      fontSize: 14,
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0 }}>
+                    💡 URL de base du service (sans /api). Réservée à l'admin ; les utilisateurs utilisent l'URL définie ici.
+                  </p>
+                </div>
+              )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
@@ -437,7 +436,7 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
                   }}
                 />
                 <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0 }}>
-                  🔒 Clé de sécurité pour l'accès à l'API
+                  🔒 Clé de sécurité pour publier (chaque utilisateur saisit la sienne).
                 </p>
               </div>
             </section>
@@ -516,56 +515,7 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
               </section>
             )}
 
-            {/* Section Synchronisation : tags, instructions, templates */}
-            <section
-              style={{
-                border: '1px solid var(--border)',
-                borderRadius: 14,
-                padding: 20,
-                background: 'rgba(255,255,255,0.02)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 16,
-              }}
-            >
-              <h4 style={{ margin: 0, fontSize: '1rem' }}>🔄 Synchronisation avec la base</h4>
-              <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
-                Les <strong>instructions sont synchronisées automatiquement</strong> à chaque modification. Pour les tags et templates, utilisez les boutons ci-dessous. La config API est enregistrée avec le bouton « Enregistrer » ; l&apos;historique se synchronise à chaque publication.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, minWidth: 90 }}>Tags</span>
-                  <button type="button" onClick={async () => {
-                    const { ok, count, error } = await syncTagsToSupabase(profile?.discord_id);
-                    if (ok) showToast(count ? `${count} tag(s) envoyé(s)` : 'Tags déjà à jour', 'success');
-                    else showToast('Erreur : ' + (error ?? 'inconnue'), 'error');
-                  }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'rgba(74,158,255,0.15)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                    📤 Envoyer
-                  </button>
-                  <button type="button" onClick={async () => { await fetchTagsFromSupabase(); showToast('Tags récupérés', 'success'); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                    📥 Récupérer
-                  </button>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, minWidth: 90 }}>Instructions</span>
-                  <span style={{ fontSize: 11, color: 'var(--success)', background: 'rgba(46,204,113,0.15)', padding: '4px 8px', borderRadius: 6 }}>🔄 Sync direct (Autoriser/Révoquer)</span>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, minWidth: 90 }}>Templates</span>
-                  <button type="button" onClick={async () => {
-                    const { ok, error } = await syncTemplatesToSupabase();
-                    if (ok) showToast('Templates envoyés', 'success');
-                    else showToast('Erreur : ' + (error ?? 'inconnue'), 'error');
-                  }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'rgba(74,158,255,0.15)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                    📤 Envoyer
-                  </button>
-                  <button type="button" onClick={async () => { await fetchTemplatesFromSupabase(); showToast('Templates récupérés', 'success'); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                    📥 Récupérer
-                  </button>
-                </div>
-              </div>
-            </section>
-          </div>
+            </div>
 
           {/* Colonne droite : Fenêtre (tous les utilisateurs) + Sauvegarde (mode admin uniquement) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -582,8 +532,8 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
               }}
             >
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                <h4 style={{ margin: 0, fontSize: '1rem' }}>🪟 État de la fenêtre au démarrage</h4>
-                <span style={{ color: 'var(--muted)', fontSize: 13 }}>{windowState}</span>
+                <h4 style={{ margin: 0, fontSize: '1rem' }}>🪟 État de la fenêtre</h4>
+                <span style={{ color: 'var(--muted)', fontSize: 13 }}>Appliqué immédiatement et au prochain démarrage</span>
               </div>
 
               <div
@@ -605,9 +555,16 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
                     <button
                       key={state}
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         setWindowState(state);
-                        void applyWindowStateLive(state);
+                        await applyWindowStateLive(state);
+                        localStorage.setItem('windowState', state);
+                        try {
+                          if (window.__TAURI__) {
+                            const { invoke } = window.__TAURI__.core;
+                            await invoke('save_window_state', { state });
+                          }
+                        } catch (_e) { /* ignorer */ }
                       }}
                       style={{
                         padding: '14px 12px',
@@ -642,45 +599,10 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
                   borderRadius: 14,
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 16,
+                  gap: 20,
                 }}
               >
-                <h4 style={{ margin: 0, fontSize: '1rem', color: 'var(--text)' }}>💾 Sauvegarde complète</h4>
-                <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.55 }}>
-                  Exporter ou importer toutes les données (API, templates, variables, tags, instructions, historique, état de fenêtre).
-                </p>
-                <ul
-                  style={{
-                    fontSize: 12,
-                    color: 'var(--muted)',
-                    margin: 0,
-                    paddingLeft: 20,
-                    lineHeight: 1.7,
-                  }}
-                >
-                  <li>Configuration</li>
-                  <li>Templates et variables</li>
-                  <li>Tags et instructions</li>
-                  <li>Historique des publications</li>
-                  <li>État de fenêtre</li>
-                </ul>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 10,
-                    padding: '12px 14px',
-                    background: 'rgba(255,255,255,0.06)',
-                    borderRadius: 10,
-                    borderLeft: '3px solid var(--accent)',
-                  }}
-                >
-                  <span style={{ fontSize: 14 }}>ℹ️</span>
-                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, fontStyle: 'italic' }}>
-                    Le fichier sera enregistré dans votre dossier Téléchargements.
-                  </p>
-                </div>
+                <h4 style={{ margin: 0, fontSize: '1rem', color: 'var(--text)' }}>💾 Sauvegarde et restauration</h4>
 
                 <input
                   ref={fileInputRef}
@@ -690,38 +612,54 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
                   style={{ display: 'none' }}
                 />
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <button
+                    onClick={handleExportConfig}
+                    style={{
+                      width: '100%',
+                      padding: '14px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      background: 'rgba(74, 158, 255, 0.15)',
+                      border: '1px solid rgba(74, 158, 255, 0.35)',
+                      color: 'var(--text)',
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      textAlign: 'left',
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>📤</span>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>Exporter une copie</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>Télécharge un fichier JSON avec tout : config, templates, tags, instructions, historique.</div>
+                    </div>
+                  </button>
                   <button
                     onClick={handleImportClick}
                     style={{
                       width: '100%',
                       padding: '14px 16px',
-                      background: 'rgba(74, 255, 158, 0.12)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      background: 'rgba(74, 255, 158, 0.1)',
                       border: '1px solid rgba(74, 255, 158, 0.3)',
                       color: 'var(--text)',
                       borderRadius: 10,
                       cursor: 'pointer',
                       fontSize: 14,
                       fontWeight: 600,
+                      textAlign: 'left',
                     }}
                   >
-                    📥 Importer une sauvegarde
-                  </button>
-                  <button
-                    onClick={handleExportConfig}
-                    style={{
-                      width: '100%',
-                      padding: '14px 16px',
-                      background: 'rgba(74, 158, 255, 0.2)',
-                      border: '1px solid rgba(74, 158, 255, 0.4)',
-                      color: 'var(--accent)',
-                      borderRadius: 10,
-                      cursor: 'pointer',
-                      fontSize: 14,
-                      fontWeight: 600,
-                    }}
-                  >
-                    📤 Télécharger la sauvegarde complète
+                    <span style={{ fontSize: 20 }}>📥</span>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>Restaurer depuis un fichier</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>Remplace tes données par le contenu d’un fichier de sauvegarde (export précédent).</div>
+                    </div>
                   </button>
                   <button
                     type="button"
@@ -729,16 +667,24 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
                     style={{
                       width: '100%',
                       padding: '14px 16px',
-                      background: 'rgba(239, 68, 68, 0.15)',
-                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.35)',
                       color: 'var(--error, #ef4444)',
                       borderRadius: 10,
                       cursor: 'pointer',
                       fontSize: 14,
                       fontWeight: 600,
+                      textAlign: 'left',
                     }}
                   >
-                    🗑️ Nettoyage complet des données
+                    <span style={{ fontSize: 20 }}>🗑️</span>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>Tout supprimer</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>Supprime toutes les données (Supabase + local). Irréversible.</div>
+                    </div>
                   </button>
                 </div>
               </section>

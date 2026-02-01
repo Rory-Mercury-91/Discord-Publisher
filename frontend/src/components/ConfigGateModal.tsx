@@ -313,7 +313,7 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
       >
         <h2 style={{ margin: '0 0 20px', fontSize: 20 }}>⚙️ Accès à la configuration</h2>
         <p style={{ fontSize: 14, color: 'var(--muted)', marginBottom: 20, lineHeight: 1.5 }}>
-          Choisissez le mode d'accès : utilisateur (URL API uniquement) ou administrateur (configuration complète).
+          Choisissez le mode d'accès : utilisateur (clé API et fenêtre) ou administrateur (configuration complète).
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
@@ -338,7 +338,7 @@ export default function ConfigGateModal({ onClose, onOpenConfig }: ConfigGateMod
             />
             <div>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Mode utilisateur</div>
-              <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.4 }}>URL API, clé et état de la fenêtre</div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.4 }}>Clé API et état de la fenêtre (l'URL est gérée par l'admin)</div>
             </div>
           </label>
           <label

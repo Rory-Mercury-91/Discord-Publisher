@@ -10,7 +10,7 @@ import { useToast } from './ToastProvider';
 
 export default function TagsModal({ onClose }: { onClose?: () => void }) {
   const { profile } = useAuth();
-  const { savedTags, addSavedTag, updateSavedTag, deleteSavedTag } = useApp();
+  const { savedTags, addSavedTag, updateSavedTag, deleteSavedTag, syncTagsToSupabase } = useApp();
   const { showToast } = useToast();
 
   useEscapeKey(() => onClose?.(), true);
@@ -132,7 +132,7 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
       addSavedTag(tagData);
       showToast('Tag ajouté', 'success');
     }
-
+    syncTagsToSupabase(profile?.discord_id).catch(() => {});
     closeAddModal();
   }
 

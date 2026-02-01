@@ -71,6 +71,18 @@ export default function ContentEditor() {
     return hasSite && hasTranslationType && hasTranslator;
   }, [selectedTagObjects]);
 
+  // Labels des catégories obligatoires manquantes (pour le message dynamique)
+  const missingRequiredTagLabels = useMemo(() => {
+    const hasSite = selectedTagObjects.some(t => t.tagType === 'sites');
+    const hasTranslationType = selectedTagObjects.some(t => t.tagType === 'translationType');
+    const hasTranslator = selectedTagObjects.some(t => t.tagType === 'translator');
+    const labels: string[] = [];
+    if (!hasSite) labels.push('Site');
+    if (!hasTranslationType) labels.push('Type de traduction');
+    if (!hasTranslator) labels.push('Traducteur');
+    return labels;
+  }, [selectedTagObjects]);
+
   // 2️⃣ ENSUITE : Calculer les valeurs dérivées
   const currentTemplate = templates[currentTemplateIdx]; // ✅ UNE SEULE FOIS
   const canPublish = currentTemplate?.type === 'my' &&
@@ -1563,9 +1575,14 @@ export default function ContentEditor() {
               </button>
             )}
 
-            {!hasRequiredTags && (
+            {!hasRequiredTags && missingRequiredTagLabels.length > 0 && (
               <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>
-                Tags obligatoires : au moins un <strong>Site</strong>, un <strong>Type de traduction</strong> et un <strong>Traducteur</strong>. Autres et Statut optionnels.
+                Tags obligatoires : {missingRequiredTagLabels.map((label, i) => (
+                  <span key={label}>
+                    {i > 0 && ', '}
+                    <strong>{label}</strong>
+                  </span>
+                ))}.
               </div>
             )}
 
