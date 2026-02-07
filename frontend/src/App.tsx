@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import rootPkg from '../../package.json';
 import ApiStatusBadge from './components/ApiStatusBadge';
 import AuthModal from './components/AuthModal';
+import LogsModal from './components/LogsModal';
 import ConfigGateModal from './components/ConfigGateModal';
 import ConfigModal from './components/ConfigModal';
 import ContentEditor from './components/ContentEditor';
@@ -79,6 +80,7 @@ function AppContentInner() {
   const [openStats, setOpenStats] = useState(false);
   const [openShortcutsHelp, setOpenShortcutsHelp] = useState(false);
   const [openDiscordPreview, setOpenDiscordPreview] = useState(false);
+  const [showLogsModal, setShowLogsModal] = useState(false);
 
   // C. État local du Thème (il est bien ici aussi)
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
@@ -159,7 +161,7 @@ function AppContentInner() {
             </button>
             {/* Place ApiStatusBadge juste avant le bouton "?" */}
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <ApiStatusBadge />
+              <ApiStatusBadge onOpenLogs={() => setShowLogsModal(true)} />
               <button
                 onClick={() => setOpenShortcutsHelp(true)}
                 style={{
@@ -278,6 +280,7 @@ function AppContentInner() {
         <ConfigModal
           adminMode={configAdminMode}
           onClose={() => setOpenConfig(false)}
+          onOpenLogs={() => setShowLogsModal(true)}
         />
       )}
       {openInstructions && <InstructionsManagerModal onClose={() => setOpenInstructions(false)} />}
@@ -292,7 +295,7 @@ function AppContentInner() {
           mainImagePath={mainImagePath}
         />
       )}
-      {/* Removed LogsModal – log display is no longer supported */}
+      {showLogsModal && <LogsModal onClose={() => setShowLogsModal(false)} />}
     </div>
   );
 }

@@ -7,12 +7,17 @@ const DEFAULT_API_BASE = 'http://138.2.182.125:8080';
 // Possible states for the publisher connection.
 type Status = 'connected' | 'disconnected' | 'checking';
 
+interface ApiStatusBadgeProps {
+  /** Ouvrir la modale des logs du serveur */
+  onOpenLogs?: () => void;
+}
+
 /**
  * ApiStatusBadge affiche un indicateur indiquant si le service publisher
  * est accessible. Il interroge `/api/publisher/health` toutes les 15 min
  * et met à jour le badge. Au clic, un dropdown affiche les détails.
  */
-export default function ApiStatusBadge() {
+export default function ApiStatusBadge({ onOpenLogs }: ApiStatusBadgeProps) {
   const { apiUrl } = useApp();
   const [status, setStatus] = useState<Status>('checking');
   const [showDetails, setShowDetails] = useState(false);
@@ -199,10 +204,32 @@ export default function ApiStatusBadge() {
           <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
             Dernier test : {lastCheck ? new Date(lastCheck).toLocaleString('fr-FR') : 'Jamais'}
           </div>
+          {onOpenLogs && (
+            <button
+              onClick={() => {
+                onOpenLogs();
+                setShowDetails(false);
+              }}
+              style={{
+                marginTop: 12,
+                width: '100%',
+                padding: '6px 12px',
+                fontSize: 12,
+                background: 'var(--accent)',
+                border: 'none',
+                borderRadius: 6,
+                color: '#fff',
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
+            >
+              📋 Voir les logs
+            </button>
+          )}
           <button
             onClick={checkStatus}
             style={{
-              marginTop: 12,
+              marginTop: 8,
               width: '100%',
               padding: '6px 12px',
               fontSize: 12

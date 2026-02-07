@@ -7,9 +7,13 @@ import os
 import asyncio
 import datetime
 import random
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Charger .env : _ignored/ prioritaire, puis racine python/
+_python_dir = Path(__file__).resolve().parent.parent
+load_dotenv(_python_dir / "_ignored" / ".env")
+load_dotenv(_python_dir / ".env")
 
 # ==================== CONFIGURATION ====================
 TOKEN = os.getenv('FRELON_DISCORD_TOKEN')

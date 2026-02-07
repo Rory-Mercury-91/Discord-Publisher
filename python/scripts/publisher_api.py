@@ -34,7 +34,11 @@ if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
-load_dotenv()
+# Charger .env : _ignored/ prioritaire, puis racine python/
+from pathlib import Path as _Path
+_python_dir = _Path(__file__).resolve().parent.parent
+load_dotenv(_python_dir / "_ignored" / ".env")
+load_dotenv(_python_dir / ".env")
 
 # ==================== SUPABASE (source de vérité published_posts) ====================
 # Import au niveau module pour éviter le lazy loading bloquant

@@ -23,11 +23,13 @@ interface ConfigModalProps {
   onClose?: () => void;
   /** true = accès admin (fenêtre, export/import) ; false = uniquement API */
   adminMode?: boolean;
+  /** Callback pour ouvrir la modale des logs (permet l'accès depuis le badge API) */
+  onOpenLogs?: () => void;
 }
 
 type ProfilePublic = Pick<Profile, 'id' | 'pseudo' | 'discord_id'>;
 
-export default function ConfigModal({ onClose, adminMode = false }: ConfigModalProps) {
+export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: ConfigModalProps) {
   const { showToast } = useToast();
   const { profile } = useAuth();
   const {
@@ -54,7 +56,6 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
     const saved = localStorage.getItem('windowState') as WindowState;
     return saved || 'maximized';
   });
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEscapeKey(() => onClose?.(), true);
@@ -613,6 +614,31 @@ export default function ConfigModal({ onClose, adminMode = false }: ConfigModalP
                 />
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenLogs?.()}
+                    style={{
+                      width: '100%',
+                      padding: '14px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      background: 'rgba(156, 163, 175, 0.15)',
+                      border: '1px solid rgba(156, 163, 175, 0.35)',
+                      color: 'var(--text)',
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      textAlign: 'left',
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>📋</span>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>Voir les logs du serveur</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>Affiche les logs Python en direct (bots, API). Rafraîchissement auto toutes les 5 s.</div>
+                    </div>
+                  </button>
                   <button
                     onClick={handleExportConfig}
                     style={{

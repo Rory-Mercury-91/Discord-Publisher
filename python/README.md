@@ -9,7 +9,7 @@ Ce guide explique comment mettre à jour, redémarrer et maintenir tes bots héb
 Depuis **PowerShell** ou **Windows Terminal** :
 
 ```powershell
-ssh -i "C:\chemin\vers\ta_cle.pem" ubuntu@138.2.182.125
+ssh -i "D:\Projet GitHub\Discord Publisher\python\_ignored\ssh-key-2026-02-07.key" ubuntu@138.2.182.125
 ```
 
 - Remplace `C:\chemin\vers\ta_cle.pem` par le chemin de ta clé privée (fichier `.pem` ou `.key` généré par Oracle Cloud).
@@ -46,7 +46,11 @@ Pour travailler efficacement, ouvre **3 fenêtres** :
 
 - **Répertoire :** `/home/ubuntu/mon_projet/`
 - **Environnement virtuel :** `/home/ubuntu/mon_projet/venv/`
-- **Fichiers clés :** `main_bots.py`, `publisher_api.py`, `bot_frelon.py`, `.env`, `requirements.txt`
+- **Scripts :** `scripts/main_bots.py`, `scripts/publisher_api.py`, `scripts/bot_frelon.py`
+- **Fichiers sensibles (ignorés par Git) :** `_ignored/` — y mettre `.env`, clés SSH (`.key`, `.ppk`), etc.
+- **Logs :** `logs/bot.log` (rotation 5 Mo, 3 backups) — consultable via l'app (admin → Voir les logs) ou `/api/logs`
+
+Le fichier `.env` est chargé depuis `_ignored/.env` en priorité, sinon depuis la racine `python/`.
 
 ---
 
@@ -84,7 +88,10 @@ Dès que tu modifies ton code localement dans Cursor, suis ces étapes pour appl
 ### 1. Transférer les fichiers (WinSCP)
 
 1. Connecte-toi à ton serveur via **WinSCP** (Port 22, utilisateur `ubuntu`, avec ta clé `.ppk`).
-2. Fais glisser les fichiers modifiés (`.py`, `.env` ou `requirements.txt`) de ton PC vers le dossier `/home/ubuntu/mon_projet/`.
+2. Fais glisser les fichiers modifiés :
+   - Scripts Python → `/home/ubuntu/mon_projet/scripts/`
+   - `.env` et clés SSH → `/home/ubuntu/mon_projet/_ignored/`
+   - `requirements.txt` → `/home/ubuntu/mon_projet/`
 3. **Note :** N'écrase jamais le dossier `venv`.
 
 ### 2. Si tu as modifié `requirements.txt`
@@ -190,7 +197,7 @@ Réponse attendue : `{"ok": true, "configured": true, ...}`
 
 ## ⚠️ Points de vigilance
 
-- **Le fichier `.env` :** Assure-toi qu'il contient toujours `PORT=8080`, Supabase (URL + Service Role Key) et les tokens des bots.
+- **Le fichier `.env` :** Place-le dans `_ignored/` (recommandé) ou à la racine `python/`. Il doit contenir `PORT=8080`, Supabase (URL + Service Role Key) et les tokens des bots.
 - **API Discord directe :** Le code utilise `https://discord.com/api/v10` (aucun proxy).
 - **iptables :** Après un reboot, vérifie que la règle 8080 est toujours en place : `sudo iptables -L INPUT -n -v --line-numbers`. Si absente, relance `sudo iptables -I INPUT 1 -p tcp --dport 8080 -j ACCEPT` puis `sudo netfilter-persistent save`.
 - **Espace disque :** Si les logs journalctl prennent de la place : `sudo journalctl --vacuum-time=7d` pour garder 7 jours.

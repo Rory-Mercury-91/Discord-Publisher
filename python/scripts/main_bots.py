@@ -1,13 +1,26 @@
 import os
 import sys
+from pathlib import Path
+
+# Chemin pour imports (scripts/ dans le path)
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(_SCRIPTS_DIR))
+
+_PYTHON_DIR = _SCRIPTS_DIR.parent  # python/
+
 import asyncio
 import logging
 import random
+from logging.handlers import RotatingFileHandler
 from aiohttp import web
 from dotenv import load_dotenv
 
 import discord
 from discord.http import Route
+
+# Charger .env : _ignored/ prioritaire (fichiers sensibles), puis racine python/
+load_dotenv(_PYTHON_DIR / "_ignored" / ".env")
+load_dotenv(_PYTHON_DIR / ".env")
 
 # Import direct de l'instance du Bot Serveur Frelon
 from bot_frelon import bot as bot_frelon
@@ -22,7 +35,8 @@ from publisher_api import (
     forum_post,
     forum_post_update,
     forum_post_delete,
-    get_history
+    get_history,
+    _with_cors,
 )
 
 
@@ -31,13 +45,15 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-load_dotenv()
+# Dossier logs (python/logs/)
+LOG_DIR = _PYTHON_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / "bot.log"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+# Configuration logging : ajouter fichier à la console (publisher_api configure déjà la console)
+file_handler = RotatingFileHandler(LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
+file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+logging.getLogger().addHandler(file_handler)
 logger = logging.getLogger("orchestrator")
 
 PORT = int(os.getenv("PORT", "8080"))
@@ -56,6 +72,28 @@ async def health(request):
         "timestamp": int(asyncio.get_event_loop().time()),
     }
     return web.json_response(status)
+
+
+async def get_logs(request):
+    """Retourne les dernières lignes du fichier de logs (admin, protégé par clé API)."""
+    api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
+    if api_key != publisher_config.PUBLISHER_API_KEY:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+    try:
+        lines = int(request.query.get("lines", "500"))
+        lines = min(max(lines, 50), 2000)
+    except ValueError:
+        lines = 500
+    content = ""
+    if LOG_FILE.exists():
+        try:
+            with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+                all_lines = f.readlines()
+                content = "".join(all_lines[-lines:])
+        except Exception as e:
+            logger.warning(f"Erreur lecture logs: {e}")
+            content = f"[Erreur lecture: {e}]"
+    return _with_cors(request, web.json_response({"ok": True, "logs": content}))
 
 
 def make_app():
@@ -83,6 +121,7 @@ def make_app():
     # Publisher endpoints
     app.router.add_get("/api/publisher/health", publisher_health)
     app.router.add_get("/api/history", get_history)
+    app.router.add_get("/api/logs", get_logs)
 
     return app
 
