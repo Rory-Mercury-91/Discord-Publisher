@@ -1,1 +1,0 @@
-web: python python/main_bots.py
