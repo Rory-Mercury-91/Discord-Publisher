@@ -147,6 +147,11 @@ export default function ContentEditor() {
   const [instructionSearchQuery, setInstructionSearchQuery] = useState<string>('');
   const [showInstructionSuggestions, setShowInstructionSuggestions] = useState(false);
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
+  const [silentUpdateMode, setSilentUpdateMode] = useState(false);
+
+  useEffect(() => {
+    if (!editingPostId) setSilentUpdateMode(false);
+  }, [editingPostId]);
   const overviewRef = useRef<HTMLTextAreaElement | null>(null);
 
   // 4️⃣ ENFIN : useEffect
@@ -1557,21 +1562,42 @@ export default function ContentEditor() {
             )}
 
             {editingPostId && (
-              <button
-                type="button"
-                onClick={() => { setEditingPostId(null); setEditingPostData(null); showToast('Mode édition annulé', 'info'); }}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid var(--border)',
-                  color: 'var(--muted)',
-                  padding: '10px 20px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
-              >
-                ❌ Annuler l'édition
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => { setEditingPostId(null); setEditingPostData(null); showToast('Mode édition annulé', 'info'); }}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border)',
+                    color: 'var(--muted)',
+                    padding: '10px 20px',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  ❌ Annuler l'édition
+                </button>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    color: 'var(--muted)',
+                    userSelect: 'none'
+                  }}
+                  title="Ne pas envoyer de notification de mise à jour dans le canal d'annonces (ex. : ajout d'un tag oublié)"
+                >
+                  <input
+                    type="checkbox"
+                    checked={silentUpdateMode}
+                    onChange={(e) => setSilentUpdateMode(e.target.checked)}
+                  />
+                  <span>🔇 Mise à jour silencieuse</span>
+                </label>
+              </>
             )}
 
             {!hasRequiredTags && missingRequiredTagLabels.length > 0 && (
@@ -1593,7 +1619,10 @@ export default function ContentEditor() {
                   message: editingPostId ? 'Modifier ce post sur Discord ?' : 'Envoyer ce nouveau post sur Discord ?'
                 });
                 if (ok) {
-                  const res = await publishPost(profile?.discord_id);
+                  const res = await publishPost(
+                    profile?.discord_id,
+                    { silentUpdate: editingPostId ? silentUpdateMode : false }
+                  );
                   if (res && res.ok) {
                     showToast('Terminé !', 'success');
                     if (editingPostId) {

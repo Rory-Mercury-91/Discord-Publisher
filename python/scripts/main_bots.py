@@ -52,7 +52,7 @@ LOG_FILE = LOG_DIR / "bot.log"
 
 # Configuration logging : ajouter fichier à la console (publisher_api configure déjà la console)
 file_handler = RotatingFileHandler(LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
-file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] [%(name)s] %(message)s"))
 logging.getLogger().addHandler(file_handler)
 logger = logging.getLogger("orchestrator")
 

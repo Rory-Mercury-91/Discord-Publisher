@@ -132,7 +132,7 @@ export type AppContextValue = {
   apiUrl: string;
   publishInProgress: boolean;
   lastPublishResult: string | null;
-  publishPost: (authorDiscordId?: string) => Promise<{ ok: boolean, data?: any, error?: string }>;
+  publishPost: (authorDiscordId?: string, options?: { silentUpdate?: boolean }) => Promise<{ ok: boolean, data?: any, error?: string }>;
 
   showErrorModal: (error: { code?: string | number; message: string; context?: string; httpStatus?: number; discordError?: any }) => void;
 

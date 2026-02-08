@@ -2,6 +2,7 @@
 🐝 Bot Discord - Serveur FRELON (Rappel publication F95)
 Envoie des rappels de publication F95fr quand un thread est créé ou tagué "MAJ".
 """
+import logging
 import discord
 import os
 import asyncio
@@ -9,6 +10,8 @@ import datetime
 import random
 from pathlib import Path
 from dotenv import load_dotenv
+
+logger = logging.getLogger("frelon")
 
 # Charger .env : _ignored/ prioritaire, puis racine python/
 _python_dir = Path(__file__).resolve().parent.parent
@@ -22,11 +25,8 @@ FRELON_AUTO_ID = int(os.getenv('FRELON_AUTO_ID')) if os.getenv('FRELON_AUTO_ID')
 FRELON_NOTIFICATION_CHANNEL_ID = int(os.getenv('FRELON_NOTIFICATION_CHANNEL_ID')) if os.getenv('FRELON_NOTIFICATION_CHANNEL_ID') else None
 DAYS_BEFORE_PUBLICATION = int(os.getenv('DAYS_BEFORE_PUBLICATION', '14'))
 
-print("🐝 [FRELON] Configuration chargée:")
-print(f"   - FRELON_SEMI_AUTO_ID: {FRELON_SEMI_AUTO_ID}")
-print(f"   - FRELON_AUTO_ID: {FRELON_AUTO_ID}")
-print(f"   - FRELON_NOTIFICATION_CHANNEL_ID: {FRELON_NOTIFICATION_CHANNEL_ID}")
-print(f"   - DAYS_BEFORE_PUBLICATION: {DAYS_BEFORE_PUBLICATION}")
+logger.info("Configuration chargée: FRELON_SEMI_AUTO_ID=%s, FRELON_AUTO_ID=%s, FRELON_NOTIFICATION_CHANNEL_ID=%s, DAYS_BEFORE_PUBLICATION=%s",
+            FRELON_SEMI_AUTO_ID, FRELON_AUTO_ID, FRELON_NOTIFICATION_CHANNEL_ID, DAYS_BEFORE_PUBLICATION)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -76,50 +76,50 @@ async def envoyer_notification_f95(thread, is_update: bool = False):
         )
 
         await channel_notif.send(msg_content)
-        print(f"✅ Notification F95fr: {thread.name}")
+        logger.info("✅ Notification F95fr: %s", thread.name)
 
     except Exception as e:
-        print(f"❌ Erreur notification: {e}")
+        logger.error("❌ Erreur notification: %s", e)
 
 
 # ==================== ÉVÉNEMENTS ====================
 
 @bot.event
 async def on_ready():
-    print(f'🤖 Bot prêt: {bot.user}')
+    logger.info("🤖 Bot prêt: %s", bot.user)
 
 
 @bot.event
 async def on_thread_create(thread):
-    print(f"🐝 [FRELON] 📝 Nouveau thread créé: {thread.name} (ID: {thread.id}, Parent: {thread.parent_id})")
+    logger.info("📝 Nouveau thread créé: %s (ID: %s, Parent: %s)", thread.name, thread.id, thread.parent_id)
     if thread.parent_id in [FRELON_SEMI_AUTO_ID, FRELON_AUTO_ID]:
-        print(f"🐝 [FRELON] ✅ Thread dans un forum surveillé, envoi notification dans 5s...")
+        logger.info("✅ Thread dans un forum surveillé, envoi notification dans 5s...")
         await asyncio.sleep(5)
         thread_actuel = bot.get_channel(thread.id)
         if thread_actuel:
             is_maj = a_tag_maj(thread_actuel)
-            print(f"🐝 [FRELON] Envoi notification F95 (is_update={is_maj})")
+            logger.info("Envoi notification F95 (is_update=%s)", is_maj)
             await envoyer_notification_f95(thread_actuel, is_update=is_maj)
         else:
-            print(f"🐝 [FRELON] ⚠️ Thread introuvable après fetch")
+            logger.warning("⚠️ Thread introuvable après fetch")
     else:
-        print(f"🐝 [FRELON] Thread hors forums surveillés, ignoré")
+        logger.info("Thread hors forums surveillés, ignoré")
 
 
 @bot.event
 async def on_thread_update(before, after):
-    print(f"🐝 [FRELON] 🔄 Thread mis à jour: {after.name} (ID: {after.id})")
+    logger.info("🔄 Thread mis à jour: %s (ID: %s)", after.name, after.id)
     if after.parent_id in [FRELON_SEMI_AUTO_ID, FRELON_AUTO_ID]:
         has_maj_before = a_tag_maj(before)
         has_maj_after = a_tag_maj(after)
-        print(f"🐝 [FRELON] Tag MAJ: avant={has_maj_before}, après={has_maj_after}")
+        logger.info("Tag MAJ: avant=%s, après=%s", has_maj_before, has_maj_after)
         if has_maj_after and not has_maj_before:
-            print(f"🐝 [FRELON] ✅ Tag MAJ ajouté, envoi notification F95...")
+            logger.info("✅ Tag MAJ ajouté, envoi notification F95...")
             await envoyer_notification_f95(after, is_update=True)
         else:
-            print(f"🐝 [FRELON] Pas de changement de tag MAJ pertinent")
+            logger.info("Pas de changement de tag MAJ pertinent")
     else:
-        print(f"🐝 [FRELON] Thread hors forums surveillés, ignoré")
+        logger.info("Thread hors forums surveillés, ignoré")
 
 
 @bot.event
@@ -128,19 +128,19 @@ async def on_message_edit(before, after):
         return
 
     if after.id == after.channel.id:  # Message de démarrage du thread
-        print(f"🐝 [FRELON] ✏️ Message de thread édité: {after.channel.name} (ID: {after.id})")
+        logger.info("✏️ Message de thread édité: %s (ID: %s)", after.channel.name, after.id)
         if before.content != after.content:
-            print(f"🐝 [FRELON] Contenu modifié")
+            logger.info("Contenu modifié")
             if after.channel.parent_id in [FRELON_SEMI_AUTO_ID, FRELON_AUTO_ID]:
                 if a_tag_maj(after.channel):
-                    print(f"🐝 [FRELON] ✅ Thread avec tag MAJ, envoi notification F95...")
+                    logger.info("✅ Thread avec tag MAJ, envoi notification F95...")
                     await envoyer_notification_f95(after.channel, is_update=True)
                 else:
-                    print(f"🐝 [FRELON] Pas de tag MAJ, pas de notification")
+                    logger.info("Pas de tag MAJ, pas de notification")
             else:
-                print(f"🐝 [FRELON] Thread hors forums surveillés, ignoré")
+                logger.info("Thread hors forums surveillés, ignoré")
         else:
-            print(f"🐝 [FRELON] Contenu identique, aucune action")
+            logger.info("Contenu identique, aucune action")
 
 
 # ==================== LANCEMENT ====================

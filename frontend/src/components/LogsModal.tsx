@@ -31,6 +31,31 @@ function filterHttpLogs(lines: string, hide: boolean): string {
     .join('\n');
 }
 
+const LOG_CATEGORIES = [
+  { id: 'frelon' as const, label: 'Frelon', default: false },
+  { id: 'publisher' as const, label: 'Publisher', default: true },
+  { id: 'orchestrator' as const, label: 'Orchestrateur', default: true },
+] as const;
+
+function getLineCategory(line: string): 'frelon' | 'publisher' | 'orchestrator' | null {
+  if (/\[frelon\]/i.test(line)) return 'frelon';
+  if (/\[publisher\]/i.test(line)) return 'publisher';
+  if (/\[orchestrator\]/i.test(line)) return 'orchestrator';
+  return null;
+}
+
+function filterByCategory(lines: string, selected: Set<string>): string {
+  if (selected.size === 0) return lines;
+  return lines
+    .split('\n')
+    .filter((line) => {
+      const cat = getLineCategory(line);
+      if (!cat) return true; // Lignes sans catégorie (ex. API) : affichées
+      return selected.has(cat);
+    })
+    .join('\n');
+}
+
 function exportLogsAsTxt(content: string) {
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -47,11 +72,24 @@ export default function LogsModal({ onClose }: LogsModalProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hideHttpLogs, setHideHttpLogs] = useState(true);
+  const [logCategories, setLogCategories] = useState<Set<string>>(() =>
+    new Set(LOG_CATEGORIES.filter((c) => c.default).map((c) => c.id))
+  );
 
   useEscapeKey(onClose, true);
   useModalScrollLock();
 
-  const displayedLogs = filterHttpLogs(logs, hideHttpLogs);
+  const filteredByHttp = filterHttpLogs(logs, hideHttpLogs);
+  const displayedLogs = filterByCategory(filteredByHttp, logCategories);
+
+  const toggleCategory = (id: string) => {
+    setLogCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const fetchLogs = useCallback(async () => {
     const base = getBaseUrl(apiUrl);
@@ -133,6 +171,28 @@ export default function LogsModal({ onClose }: LogsModalProps) {
         >
           <h2 style={{ margin: 0, fontSize: '1.1rem' }}>📋 Logs du serveur</h2>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12 }}>
+              {LOG_CATEGORIES.map((c) => (
+                <label
+                  key={c.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    cursor: 'pointer',
+                    color: logCategories.has(c.id) ? 'var(--text)' : 'var(--muted)',
+                  }}
+                  title={c.id === 'frelon' ? 'Logs du bot F95 (Frelon)' : c.id === 'publisher' ? 'Logs du bot Publisher' : 'Logs démarrage et orchestration'}
+                >
+                  <input
+                    type="checkbox"
+                    checked={logCategories.has(c.id)}
+                    onChange={() => toggleCategory(c.id)}
+                  />
+                  {c.label}
+                </label>
+              ))}
+            </div>
             <button
               type="button"
               onClick={() => setHideHttpLogs((v) => !v)}
@@ -219,8 +279,10 @@ export default function LogsModal({ onClose }: LogsModalProps) {
             <div style={{ color: 'var(--error, #ef4444)' }}>{error}</div>
           ) : displayedLogs ? (
             displayedLogs
-          ) : logs && hideHttpLogs ? (
-            <div style={{ color: 'var(--muted)' }}>Tous les logs sont masqués par le filtre. Clique sur « Tout afficher ».</div>
+          ) : (logs && hideHttpLogs) || (filteredByHttp && logCategories.size > 0 && !displayedLogs) ? (
+            <div style={{ color: 'var(--muted)' }}>
+              Aucun log visible. Coche d'autres catégories ou « Tout afficher » pour les requêtes HTTP.
+            </div>
           ) : (
             <div style={{ color: 'var(--muted)' }}>Aucun log disponible.</div>
           )}
@@ -234,6 +296,7 @@ export default function LogsModal({ onClose }: LogsModalProps) {
           }}
         >
           Rafraîchissement auto 5 s • Filtre HTTP : {hideHttpLogs ? 'actif' : 'désactivé'}
+          {logCategories.size > 0 && ` • Catégories : ${LOG_CATEGORIES.filter((c) => logCategories.has(c.id)).map((c) => c.label).join(', ')}`}
         </div>
       </div>
     </div>

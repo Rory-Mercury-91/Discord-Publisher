@@ -25,6 +25,14 @@ import aiohttp
 from aiohttp import web
 from dotenv import load_dotenv
 
+# ==================== LOGGING ====================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("publisher")
+
 # Discord imports
 import discord
 from discord.ext import commands, tasks
@@ -162,10 +170,10 @@ def _metadata_from_row(row: Dict, new_game_version: Optional[str] = None) -> Opt
 # ==================== LOGGING ====================
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
     handlers=[logging.StreamHandler(sys.stdout)]
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("publisher")
 
 # ==================== CONFIGURATION ====================
 # Un seul salon "my" : FORUM = salon qui reçoit les posts, MAJ_NOTIFICATION = salon des alertes version
@@ -1222,7 +1230,7 @@ async def reset_commands(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=True)
     except Exception as e:
-        print(f"⚠️ Erreur defer: {e}")
+        logger.warning("⚠️ Erreur defer: %s", e)
         return
 
     bot_name = bot.user.name if bot.user else "Bot"
@@ -1230,32 +1238,32 @@ async def reset_commands(interaction: discord.Interaction):
     
     try:
         # ÉTAPE 1: Nettoyage global
-        print(f"🧹 [{bot_name}] Étape 1/4: Suppression commandes globales...")
+        logger.info("🧹 [%s] Étape 1/4: Suppression commandes globales...", bot_name)
         bot.tree.clear_commands(guild=None)
         await bot.tree.sync()
         await asyncio.sleep(2)
         
         # ÉTAPE 2: Nettoyage serveur (si dans un serveur)
         if guild:
-            print(f"🧹 [{bot_name}] Étape 2/4: Suppression commandes serveur {guild.name}...")
+            logger.info("🧹 [%s] Étape 2/4: Suppression commandes serveur %s...", bot_name, guild.name)
             bot.tree.clear_commands(guild=guild)
             await bot.tree.sync(guild=guild)
             await asyncio.sleep(2)
         else:
-            print(f"⏭️  [{bot_name}] Étape 2/4: Ignorée (pas dans un serveur)")
+            logger.info("⏭️  [%s] Étape 2/4: Ignorée (pas dans un serveur)", bot_name)
         
         # ÉTAPE 3: Resync global
-        print(f"🔄 [{bot_name}] Étape 3/4: Synchronisation globale...")
+        logger.info("🔄 [%s] Étape 3/4: Synchronisation globale...", bot_name)
         await bot.tree.sync()
         await asyncio.sleep(2)
         
         # ÉTAPE 4: Resync serveur (si dans un serveur)
         if guild:
-            print(f"🔄 [{bot_name}] Étape 4/4: Synchronisation serveur {guild.name}...")
+            logger.info("🔄 [%s] Étape 4/4: Synchronisation serveur %s...", bot_name, guild.name)
             bot.tree.copy_global_to(guild=guild)
             await bot.tree.sync(guild=guild)
         else:
-            print(f"⏭️  [{bot_name}] Étape 4/4: Ignorée (pas dans un serveur)")
+            logger.info("⏭️  [%s] Étape 4/4: Ignorée (pas dans un serveur)", bot_name)
         
         # Message de succès
         success_msg = (
@@ -1275,15 +1283,15 @@ async def reset_commands(interaction: discord.Interaction):
         success_msg += f"**ℹ️ Les commandes peuvent mettre jusqu'à 1h pour apparaître partout.**"
         
         await interaction.followup.send(success_msg, ephemeral=True)
-        print(f"✅ [{bot_name}] Reset complet terminé avec succès!")
+        logger.info("✅ [%s] Reset complet terminé avec succès!", bot_name)
         
     except discord.errors.HTTPException as e:
         error_msg = f"❌ Erreur Discord HTTP: {e}"
-        print(f"❌ [{bot_name}] {error_msg}")
+        logger.error("❌ [%s] %s", bot_name, error_msg)
         await interaction.followup.send(error_msg, ephemeral=True)
     except Exception as e:
         error_msg = f"❌ Erreur inattendue: {type(e).__name__}: {e}"
-        print(f"❌ [{bot_name}] {error_msg}")
+        logger.error("❌ [%s] %s", bot_name, error_msg)
         await interaction.followup.send(error_msg, ephemeral=True)
 
 
@@ -1297,7 +1305,7 @@ async def sync_commands(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=True)
     except Exception as e:
-        print(f"⚠️ Erreur defer: {e}")
+        logger.warning("⚠️ Erreur defer: %s", e)
         return
 
     bot_name = bot.user.name if bot.user else "Bot"
@@ -1305,13 +1313,13 @@ async def sync_commands(interaction: discord.Interaction):
     
     try:
         # Sync global
-        print(f"🔄 [{bot_name}] Synchronisation globale...")
+        logger.info("🔄 [%s] Synchronisation globale...", bot_name)
         await bot.tree.sync()
         await asyncio.sleep(1)
         
         # Sync serveur si applicable
         if guild:
-            print(f"🔄 [{bot_name}] Synchronisation serveur {guild.name}...")
+            logger.info("🔄 [%s] Synchronisation serveur %s...", bot_name, guild.name)
             bot.tree.copy_global_to(guild=guild)
             await bot.tree.sync(guild=guild)
         
@@ -1322,15 +1330,15 @@ async def sync_commands(interaction: discord.Interaction):
         success_msg += "\n**ℹ️ Les commandes peuvent mettre jusqu'à 1h pour apparaître partout.**"
         
         await interaction.followup.send(success_msg, ephemeral=True)
-        print(f"✅ [{bot_name}] Sync terminé avec succès!")
+        logger.info("✅ [%s] Sync terminé avec succès!", bot_name)
         
     except discord.errors.HTTPException as e:
         error_msg = f"❌ Erreur Discord HTTP: {e}"
-        print(f"❌ [{bot_name}] {error_msg}")
+        logger.error("❌ [%s] %s", bot_name, error_msg)
         await interaction.followup.send(error_msg, ephemeral=True)
     except Exception as e:
         error_msg = f"❌ Erreur inattendue: {type(e).__name__}: {e}"
-        print(f"❌ [{bot_name}] {error_msg}")
+        logger.error("❌ [%s] %s", bot_name, error_msg)
         await interaction.followup.send(error_msg, ephemeral=True)
 
 
@@ -1344,7 +1352,7 @@ async def list_commands(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=True)
     except Exception as e:
-        print(f"⚠️ Erreur defer: {e}")
+        logger.warning("⚠️ Erreur defer: %s", e)
         return
 
     bot_name = bot.user.name if bot.user else "Bot"
@@ -1376,7 +1384,7 @@ async def list_commands(interaction: discord.Interaction):
         
     except Exception as e:
         error_msg = f"❌ Erreur: {type(e).__name__}: {e}"
-        print(f"❌ [{bot_name}] {error_msg}")
+        logger.error("❌ [%s] %s", bot_name, error_msg)
         await interaction.followup.send(error_msg, ephemeral=True)
 # ==================== ÉVÉNEMENTS BOT ====================
 @bot.event
@@ -2114,10 +2122,14 @@ async def forum_post_update(request):
     title, content, tags, thread_id, message_id, metadata_b64 = "", "", "", None, None, None
     translator_label, state_label, game_version, translate_version, announce_image_url, thread_url = "", "", "", "", "", ""
     history_payload_raw = None
-    
+    silent_update = False
+
     reader = await request.multipart()
     async for part in reader:
-        if part.name == "title":
+        if part.name == "silent_update":
+            val = (await part.text()).strip().lower()
+            silent_update = val in ("true", "1", "yes")
+        elif part.name == "title":
             title = (await part.text()).strip()
         elif part.name == "content":
             content = (await part.text()).strip()
@@ -2240,7 +2252,7 @@ async def forum_post_update(request):
         if status >= 300:
             return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
 
-        if config.PUBLISHER_ANNOUNCE_CHANNEL_ID and thread_url:
+        if config.PUBLISHER_ANNOUNCE_CHANNEL_ID and thread_url and not silent_update:
             await _send_announcement(
                 session,
                 is_update=True,
@@ -2252,6 +2264,8 @@ async def forum_post_update(request):
                 translate_version=translate_version,
                 image_url=announce_image_url or None,
             )
+        elif silent_update:
+            logger.info(f"🔇 Mise à jour silencieuse (sans annonce): {title}")
 
         # 🔥 RECONSTRUCTION DU PAYLOAD COMPLET POUR L'HISTORIQUE
         ts = int(time.time() * 1000)

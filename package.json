@@ -1,6 +1,6 @@
 {
   "name": "publication-generator-tauri",
-  "version": "1.0.61",
+  "version": "1.2.0",
   "description": "Application Tauri pour générer et publier des traductions sur Discord",
   "author": "Rory Mercury 91",
   "scripts": {
@@ -9,8 +9,8 @@
     "build:frontend": "npm --prefix frontend run build",
     "bump-version": "node scripts/bump-version.js",
     "set-version": "node scripts/set-version.js",
-    "build:win": "npm run bump-version && tauri build",
-    "build": "npm run bump-version && tauri build",
+    "build:win": "node scripts/build-win.js",
+    "build": "tauri build",
     "test": "npm --prefix frontend run type-check && npm --prefix frontend run build",
     "tauri": "tauri",
     "supabase:login": "supabase login",

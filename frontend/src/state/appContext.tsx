@@ -825,7 +825,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function publishPost(authorDiscordId?: string) {
+  async function publishPost(authorDiscordId?: string, options?: { silentUpdate?: boolean }) {
     const title = (postTitle || '').trim();
     const content = previewEngine.preview || '';
     const templateType = (templates[currentTemplateIdx]?.type) || '';
@@ -984,6 +984,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         formData.append('messageId', editingPostData.messageId);
         formData.append('thread_url', editingPostData.discordUrl || '');
         formData.append('isUpdate', 'true');
+        if (options?.silentUpdate) {
+          formData.append('silent_update', 'true');
+        }
       }
 
       // Payload complet pour l'historique (aligné Supabase) : tous les champs
