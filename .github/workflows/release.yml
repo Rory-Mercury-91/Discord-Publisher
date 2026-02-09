@@ -7,7 +7,7 @@ on:
 
 env:
   TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-  TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
 jobs:
   build-release:
@@ -125,16 +125,16 @@ jobs:
             exit 1
           }
           
-          if ($env:TAURI_KEY_PASSWORD -ne $null) {
-            Write-Host "✅ TAURI_KEY_PASSWORD is set"
+          if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ne $null) {
+            Write-Host "✅ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is set"
           } else {
-            Write-Host "⚠️ TAURI_KEY_PASSWORD is not set (this might be OK if no password)"
+            Write-Host "⚠️ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not set (this might be OK if no password)"
           }
 
       - name: Build application
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run build
 
       - name: List build artifacts
