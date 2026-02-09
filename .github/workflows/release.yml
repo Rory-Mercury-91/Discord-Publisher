@@ -41,6 +41,16 @@ jobs:
           npm ci
           cd frontend && npm ci
 
+      - name: Create .env file with Supabase credentials
+        shell: pwsh
+        run: |
+          $envContent = @"
+          VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          "@
+          $envContent | Out-File -FilePath "frontend/.env" -Encoding utf8
+          Write-Host "✅ .env file created with Supabase credentials"
+
       - name: Build application
         run: npm run build
 
@@ -60,6 +70,7 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.nsis.zip
             src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
+            src-tauri/target/release/bundle/zip/*.zip
           name: Discord Publisher v${{ steps.version.outputs.VERSION }}
           body: |
             ## 🎉 Nouvelle version : ${{ steps.version.outputs.VERSION }}

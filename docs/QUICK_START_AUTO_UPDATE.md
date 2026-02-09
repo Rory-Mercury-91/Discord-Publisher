@@ -56,12 +56,25 @@ Par :
 
 Dans GitHub : **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
-Créer **2 secrets** :
+Créer **3 à 5 secrets** :
 
-| Nom | Valeur |
-|-----|--------|
-| `TAURI_SIGNING_PRIVATE_KEY` | Coller la clé privée complète |
-| `DISCORD_WEBHOOK_URL` | `https://discord.com/api/webhooks/[VOTRE_WEBHOOK]` |
+| Nom | Valeur | Obligatoire |
+|-----|--------|-------------|
+| `TAURI_SIGNING_PRIVATE_KEY` | Coller la clé privée complète | ✅ OUI |
+| `VITE_SUPABASE_URL` | URL de votre projet Supabase | ✅ OUI |
+| `VITE_SUPABASE_ANON_KEY` | Clé anon/public de Supabase | ✅ OUI |
+| `TAURI_KEY_PASSWORD` | Mot de passe de la clé (si défini) | ⚪ Si MDP |
+| `DISCORD_WEBHOOK_URL` | `https://discord.com/api/webhooks/[VOTRE_WEBHOOK]` | ⚪ Optionnel |
+
+**📋 Guide détaillé** : [GITHUB_SECRETS.md](./GITHUB_SECRETS.md)
+
+**Comment obtenir les valeurs Supabase** :
+1. Aller sur [Supabase Dashboard](https://app.supabase.com)
+2. Sélectionner votre projet
+3. **Settings** → **API**
+4. Copier :
+   - **Project URL** → `VITE_SUPABASE_URL`
+   - **Project API keys** → `anon` `public` → `VITE_SUPABASE_ANON_KEY`
 
 **Comment créer le webhook Discord** :
 1. Serveur Discord → Paramètres → Intégrations → Webhooks

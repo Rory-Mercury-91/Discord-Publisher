@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Discord Publisher",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "identifier": "com.publication.generator",
   "build": {
     "frontendDist": "../frontend/dist",
@@ -33,7 +33,8 @@
   "bundle": {
     "active": true,
     "targets": [
-      "nsis"
+      "nsis",
+      "zip"
     ],
     "icon": [
       "icons/32x32.png",
