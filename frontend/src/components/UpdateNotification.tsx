@@ -70,7 +70,7 @@ export default function UpdateNotification() {
       console.log('[Updater] 🚀 Calling downloadAndInstall()...');
       
       await update.downloadAndInstall((event) => {
-        console.log('[Updater] 📡 Event received:', event.event, event.data);
+        console.log('[Updater] 📡 Event received:', event.event);
         
         switch (event.event) {
           case 'Started':
