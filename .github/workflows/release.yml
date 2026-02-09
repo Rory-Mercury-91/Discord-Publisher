@@ -51,9 +51,6 @@ jobs:
           $envContent | Out-File -FilePath "frontend/.env" -Encoding utf8
           Write-Host "✅ .env file created with Supabase credentials"
 
-      - name: Build application
-        run: npm run build
-
       - name: Extract version from tag
         id: version
         shell: pwsh
@@ -61,20 +58,47 @@ jobs:
           $tag = "${{ github.ref_name }}"
           $version = $tag -replace '^v', ''
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          echo "Version extracted: $version"
+          Write-Host "✅ Version extracted: $version"
+
+      - name: Build application
+        run: npm run build
+
+      - name: List build artifacts
+        shell: pwsh
+        run: |
+          Write-Host "📦 Listing build artifacts..."
+          if (Test-Path "src-tauri/target/release/bundle/nsis") {
+            Get-ChildItem -Recurse src-tauri/target/release/bundle/nsis
+          } else {
+            Write-Host "⚠️ NSIS bundle directory not found"
+          }
+          if (Test-Path "src-tauri/target/release") {
+            Get-ChildItem src-tauri/target/release/*.exe
+          }
 
       - name: Create portable version
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.VERSION }}"
-          $exePath = "src-tauri\target\release\app.exe"
+          $exePath = "src-tauri/target/release/app.exe"
           $portableName = "Discord_Publisher_${version}_portable.exe"
+          
+          Write-Host "🔍 Looking for exe at: $exePath"
           
           if (Test-Path $exePath) {
             Copy-Item $exePath $portableName
             Write-Host "✅ Portable version created: $portableName"
+            
+            # Verify the file was created
+            if (Test-Path $portableName) {
+              $fileSize = (Get-Item $portableName).Length / 1MB
+              Write-Host "✅ File size: $($fileSize.ToString('F2')) MB"
+            }
           } else {
-            Write-Host "⚠️ exe not found at $exePath"
+            Write-Host "❌ exe not found at $exePath"
+            Write-Host "📂 Available exe files:"
+            Get-ChildItem -Recurse src-tauri/target/release/*.exe
+            exit 1
           }
 
       - name: Create GitHub Release
@@ -82,18 +106,27 @@ jobs:
         with:
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/*.nsis.zip
-            src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
-            Discord_Publisher_*_portable.exe
+            Discord_Publisher_${{ steps.version.outputs.VERSION }}_portable.exe
           name: Discord Publisher v${{ steps.version.outputs.VERSION }}
           body: |
             ## 🎉 Nouvelle version : ${{ steps.version.outputs.VERSION }}
             
-            ### 📦 Installation
+            ### 📦 Fichiers disponibles
             
-            1. **Télécharger** l'installateur Windows ci-dessous
-            2. **Exécuter** le fichier `.exe` et suivre les instructions
-            3. **Lancer** l'application depuis le menu Démarrer
+            - **Installateur NSIS** : Installation complète avec mise à jour automatique
+            - **Version portable** : Exécutable standalone sans installation
+            
+            ### 🔧 Installation
+            
+            #### Installateur (recommandé)
+            1. Télécharger le fichier `Discord Publisher_*_x64-setup.exe`
+            2. Exécuter le fichier et suivre les instructions
+            3. Lancer l'application depuis le menu Démarrer
+            
+            #### Version portable
+            1. Télécharger `Discord_Publisher_${{ steps.version.outputs.VERSION }}_portable.exe`
+            2. Placer le fichier où vous voulez
+            3. Double-cliquer pour lancer (aucune installation requise)
             
             ### 🔄 Mise à jour automatique
             
@@ -104,15 +137,16 @@ jobs:
             
             ### 📝 Changelog
             
-            *Voir les commits depuis la dernière release pour les détails.*
+            *Voir les commits ci-dessous pour les détails des changements.*
             
             ---
             
             **Build date** : ${{ github.event.head_commit.timestamp }}  
-            **Commit** : ${{ github.sha }}
+            **Commit** : `${{ github.sha }}`
           draft: false
           prerelease: false
           generate_release_notes: true
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -143,7 +177,7 @@ jobs:
                 },
                 @{
                   name = "Plateforme"
-                  value = "Windows (NSIS)"
+                  value = "Windows (NSIS + Portable)"
                   inline = $true
                 },
                 @{
@@ -162,10 +196,9 @@ jobs:
           
           try {
             Invoke-RestMethod -Uri $env:DISCORD_WEBHOOK_URL -Method Post -Body $payload -ContentType "application/json"
-            Write-Host "Discord notification sent successfully"
+            Write-Host "✅ Discord notification sent successfully"
           } catch {
-            Write-Host "Failed to send Discord notification: $_"
-            # Don't fail the workflow if notification fails
+            Write-Host "⚠️ Failed to send Discord notification: $_"
             exit 0
           }
 
