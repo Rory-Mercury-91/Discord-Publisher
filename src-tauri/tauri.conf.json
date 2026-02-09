@@ -63,7 +63,7 @@
       "endpoints": [
         "https://github.com/Rory-Mercury-91/Discord-Bot-Traductions/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg1NDlBNTAzNzdFMjk4RkEKUldUNm1PSjNBNlZKaGE1OFdxdks4SXpINUpkYm5leGZUR05Mc2xMdjZuUFV0WFd1a0tVRExWcnMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIzRDZCMzdDNTA4OTk4MkUKUldRdW1JbFFmTFBXSTM1NWltdC92TERrSVFkMEdZai82YXlsZURNVmM0OFVHaWhJbm5OVjV2ZFoK",
       "windows": {
         "installMode": "passive"
       }
