@@ -101,6 +101,18 @@ jobs:
           
           Write-Host "✅ Version set to $version in all files"
 
+      - name: Clean Cargo cache to avoid feature conflicts
+        shell: pwsh
+        run: |
+          Write-Host "🧹 Cleaning Cargo build artifacts..."
+          if (Test-Path "src-tauri/Cargo.lock") {
+            Remove-Item "src-tauri/Cargo.lock" -Force
+            Write-Host "✅ Cargo.lock removed"
+          }
+          cd src-tauri
+          cargo clean
+          Write-Host "✅ Cargo cache cleaned"
+
       - name: Verify signing keys are set
         shell: pwsh
         run: |
