@@ -9,22 +9,28 @@ export default function UpdateNotification() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    checkForUpdate();
+    // Vérifier au montage après 3 secondes
+    const timeout = setTimeout(() => {
+      checkForUpdate();
+    }, 3000);
+    
+    return () => clearTimeout(timeout);
   }, []);
 
   async function checkForUpdate() {
     try {
+      console.log('[Updater] 🔍 Checking for updates...');
       const update = await check();
       
-      if (update?.available) {
-        console.log('[Updater] New version available:', update.version);
+      if (update) {
+        console.log(`[Updater] ✨ New version available: ${update.version} (current: ${update.currentVersion})`);
         setUpdateAvailable(true);
         setUpdateVersion(update.version);
       } else {
-        console.log('[Updater] Application is up to date');
+        console.log('[Updater] ✅ Application is up to date');
       }
     } catch (err) {
-      console.error('[Updater] Failed to check for updates:', err);
+      console.error('[Updater] ❌ Failed to check for updates:', err);
       // Don't show error to user, just log it
       // Auto-update is not critical for the app to function
     }
@@ -35,19 +41,37 @@ export default function UpdateNotification() {
       setIsInstalling(true);
       setError(null);
 
-      console.log('[Updater] Starting update installation...');
+      console.log('[Updater] 📥 Starting update download and installation...');
       
       const update = await check();
-      if (update?.available) {
-        await update.downloadAndInstall((event) => {
-          console.log('[Updater] Download progress:', event);
-        });
-        
-        console.log('[Updater] Update installed successfully, relaunching...');
-        await relaunch();
+      if (!update) {
+        throw new Error('No update available');
       }
+      
+      let downloaded = 0;
+      let contentLength = 0;
+      
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case 'Started':
+            contentLength = event.data.contentLength ?? 0;
+            console.log(`[Updater] 📦 Download size: ${(contentLength / 1024 / 1024).toFixed(2)} MB`);
+            break;
+          case 'Progress':
+            downloaded += event.data.chunkLength;
+            const progress = contentLength > 0 ? (downloaded / contentLength) * 100 : 0;
+            console.log(`[Updater] ⏳ Progress: ${Math.round(progress)}%`);
+            break;
+          case 'Finished':
+            console.log('[Updater] ✅ Download complete');
+            break;
+        }
+      });
+      
+      console.log('[Updater] 🔄 Update installed successfully, relaunching...');
+      await relaunch();
     } catch (err: any) {
-      console.error('[Updater] Failed to install update:', err);
+      console.error('[Updater] ❌ Failed to install update:', err);
       setError('Échec de l\'installation : ' + err.message);
       setIsInstalling(false);
     }
