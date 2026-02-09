@@ -33,8 +33,7 @@
   "bundle": {
     "active": true,
     "targets": [
-      "nsis",
-      "zip"
+      "nsis"
     ],
     "icon": [
       "icons/32x32.png",
