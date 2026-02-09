@@ -20,10 +20,20 @@ export default function UpdateNotification() {
   async function checkForUpdate() {
     try {
       console.log('[Updater] 🔍 Checking for updates...');
+      console.log('[Updater] 📍 Endpoint:', 'https://github.com/Rory-Mercury-91/Discord-Bot-Traductions/releases/latest/download/latest.json');
+      
       const update = await check();
+      
+      console.log('[Updater] 🔍 Update check result:', update);
       
       if (update) {
         console.log(`[Updater] ✨ New version available: ${update.version} (current: ${update.currentVersion})`);
+        console.log('[Updater] 📦 Update details:', {
+          version: update.version,
+          currentVersion: update.currentVersion,
+          date: update.date,
+          body: update.body
+        });
         setUpdateAvailable(true);
         setUpdateVersion(update.version);
       } else {
@@ -31,6 +41,10 @@ export default function UpdateNotification() {
       }
     } catch (err) {
       console.error('[Updater] ❌ Failed to check for updates:', err);
+      console.error('[Updater] ❌ Error details:', {
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+      });
       // Don't show error to user, just log it
       // Auto-update is not critical for the app to function
     }
@@ -44,6 +58,8 @@ export default function UpdateNotification() {
       console.log('[Updater] 📥 Starting update download and installation...');
       
       const update = await check();
+      console.log('[Updater] 🔍 Update object before download:', update);
+      
       if (!update) {
         throw new Error('No update available');
       }
@@ -51,19 +67,25 @@ export default function UpdateNotification() {
       let downloaded = 0;
       let contentLength = 0;
       
+      console.log('[Updater] 🚀 Calling downloadAndInstall()...');
+      
       await update.downloadAndInstall((event) => {
+        console.log('[Updater] 📡 Event received:', event.event, event.data);
+        
         switch (event.event) {
           case 'Started':
             contentLength = event.data.contentLength ?? 0;
             console.log(`[Updater] 📦 Download size: ${(contentLength / 1024 / 1024).toFixed(2)} MB`);
+            console.log(`[Updater] 📦 Content length: ${contentLength} bytes`);
             break;
           case 'Progress':
             downloaded += event.data.chunkLength;
             const progress = contentLength > 0 ? (downloaded / contentLength) * 100 : 0;
-            console.log(`[Updater] ⏳ Progress: ${Math.round(progress)}%`);
+            console.log(`[Updater] ⏳ Progress: ${Math.round(progress)}% (${downloaded}/${contentLength} bytes)`);
             break;
           case 'Finished':
             console.log('[Updater] ✅ Download complete');
+            console.log(`[Updater] 📊 Total downloaded: ${(downloaded / 1024 / 1024).toFixed(2)} MB`);
             break;
         }
       });
@@ -72,6 +94,13 @@ export default function UpdateNotification() {
       await relaunch();
     } catch (err: any) {
       console.error('[Updater] ❌ Failed to install update:', err);
+      console.error('[Updater] ❌ Error type:', typeof err);
+      console.error('[Updater] ❌ Error details:', {
+        message: err?.message,
+        stack: err?.stack,
+        name: err?.name,
+        cause: err?.cause
+      });
       setError('Échec de l\'installation : ' + err.message);
       setIsInstalling(false);
     }
