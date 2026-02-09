@@ -153,26 +153,33 @@ jobs:
           
           Write-Host "📝 Generating latest.json for version $version"
           
-          # Trouver le fichier .nsis.zip et .sig
-          $nsisZip = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip" -Recurse | Select-Object -First 1
-          $nsisSig = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip.sig" -Recurse | Select-Object -First 1
+          # Trouver le fichier .exe NSIS et .sig
+          $nsisExe = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*setup.exe" -Recurse | Select-Object -First 1
+          $nsisSig = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.sig" -Recurse | Select-Object -First 1
           
-          if (-not $nsisZip) {
-            Write-Host "❌ .nsis.zip file not found"
+          if (-not $nsisExe) {
+            Write-Host "❌ NSIS setup.exe file not found"
+            Write-Host "📂 Listing NSIS directory:"
+            Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Recurse
             exit 1
           }
           
           if (-not $nsisSig) {
-            Write-Host "❌ .nsis.zip.sig file not found"
+            Write-Host "❌ .sig file not found"
             exit 1
           }
           
-          $zipFileName = $nsisZip.Name
-          $signature = Get-Content $nsisSig.FullName -Raw -Encoding UTF8
-          
-          Write-Host "✅ Found update files:"
-          Write-Host "   - $zipFileName"
+          Write-Host "✅ Found files:"
+          Write-Host "   - $($nsisExe.Name)"
           Write-Host "   - $($nsisSig.Name)"
+          
+          # Créer le .nsis.zip à partir du .exe
+          $zipFileName = "Discord_Publisher_${version}_x64_setup.nsis.zip"
+          Compress-Archive -Path $nsisExe.FullName -DestinationPath $zipFileName -Force
+          Write-Host "✅ Created: $zipFileName"
+          
+          # Lire la signature
+          $signature = Get-Content $nsisSig.FullName -Raw -Encoding UTF8
           
           # Créer le JSON pour Tauri updater
           $latestJson = @{
@@ -190,19 +197,13 @@ jobs:
           $latestJson | Out-File -FilePath "latest.json" -Encoding utf8
           Write-Host "✅ latest.json created:"
           Get-Content "latest.json"
-          
-          # Copier les fichiers dans un endroit facile à trouver
-          Copy-Item $nsisZip.FullName -Destination "."
-          Copy-Item $nsisSig.FullName -Destination "."
-          Write-Host "✅ Update files copied to root"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
-            *.nsis.zip
-            *.nsis.zip.sig
+            Discord_Publisher_${{ steps.version.outputs.VERSION }}_x64_setup.nsis.zip
             latest.json
             Discord_Publisher_${{ steps.version.outputs.VERSION }}_portable.exe
           name: Discord Publisher v${{ steps.version.outputs.VERSION }}
