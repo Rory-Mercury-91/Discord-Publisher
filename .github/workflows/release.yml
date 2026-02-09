@@ -41,15 +41,18 @@ jobs:
           npm ci
           cd frontend && npm ci
 
-      - name: Create .env file with Supabase credentials
+      - name: Create .env file with all Vite environment variables
         shell: pwsh
         run: |
           $envContent = @"
           VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_PUBLISHER_API_URL=${{ secrets.VITE_PUBLISHER_API_URL }}
+          VITE_MASTER_ADMIN_CODE=${{ secrets.VITE_MASTER_ADMIN_CODE }}
+          VITE_TAGS_MASTER_CODE=${{ secrets.VITE_TAGS_MASTER_CODE }}
           "@
-          $envContent | Out-File -FilePath "frontend/.env" -Encoding utf8
-          Write-Host "✅ .env file created with Supabase credentials"
+          $envContent | Out-File -FilePath ".env" -Encoding utf8
+          Write-Host "✅ .env file created at root with all Vite variables"
 
       - name: Extract version from tag
         id: version
