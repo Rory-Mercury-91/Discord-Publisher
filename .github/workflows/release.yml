@@ -54,6 +54,15 @@ jobs:
       - name: Build application
         run: npm run build
 
+      - name: Extract version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v', ''
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "Version extracted: $version"
+
       - name: Create portable version
         shell: pwsh
         run: |
@@ -67,15 +76,6 @@ jobs:
           } else {
             Write-Host "⚠️ exe not found at $exePath"
           }
-
-      - name: Extract version from tag
-        id: version
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          $version = $tag -replace '^v', ''
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          echo "Version extracted: $version"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
