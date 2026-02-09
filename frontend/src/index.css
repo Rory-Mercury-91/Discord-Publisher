@@ -425,46 +425,58 @@ select option[value=""]{
   color: var(--placeholder);
 }
 
-/* Scrollbar stylisée pour correspondre au thème de l'application */
+/* ============================================
+   SCROLLBARS GLOBALES - Cohérence visuelle
+   ============================================ */
+
+/* Webkit browsers (Chrome, Edge, Safari) */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  transition: background 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) rgba(255, 255, 255, 0.05);
+}
+
+/* Thème clair */
+[data-theme="light"] *::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] *::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+[data-theme="light"] * {
+  scrollbar-color: var(--border) rgba(0, 0, 0, 0.05);
+}
+
+/* Classe utilitaire pour scrollbars plus fines (optionnel) */
 .styled-scrollbar::-webkit-scrollbar {
   width: 8px;
   height: 8px;
-}
-
-.styled-scrollbar::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 4px;
-}
-
-.styled-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.styled-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
-}
-
-/* Firefox scrollbar */
-.styled-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) rgba(255, 255, 255, 0.03);
-}
-
-[data-theme="light"] .styled-scrollbar::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.03);
-}
-
-[data-theme="light"] .styled-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-}
-
-[data-theme="light"] .styled-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
-}
-
-[data-theme="light"] .styled-scrollbar {
-  scrollbar-color: var(--border) rgba(0, 0, 0, 0.03);
 }

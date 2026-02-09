@@ -1862,9 +1862,40 @@ async def _create_forum_post(session, forum_id, title, content, tags_raw, images
         "thread_url": f"https://discord.com/channels/{data.get('guild_id')}/{thread_id}"
     }
 
+def _get_client_ip(request) -> str:
+    """Extrait l'IP du client en tenant compte des reverse proxies."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+    return request.remote or "unknown"
+
 def _with_cors(request, resp):
-    origin = request.headers.get("Origin", "*")
-    resp.headers.update({"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Credentials": "true"})
+    """Applique les headers CORS avec whitelist d'origines autorisées."""
+    origin = request.headers.get("Origin", "")
+    
+    # Parse ALLOWED_ORIGINS (par défaut: tauri://localhost)
+    allowed_raw = config.ALLOWED_ORIGINS or "tauri://localhost"
+    allowed_origins = [o.strip() for o in allowed_raw.split(",") if o.strip()]
+    
+    # Autoriser si l'origine est dans la whitelist ou si elle commence par http://localhost ou http://127.0.0.1
+    if origin in allowed_origins or origin.startswith("http://localhost") or origin.startswith("http://127.0.0.1") or origin.startswith("tauri://"):
+        resp.headers.update({
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Credentials": "true"
+        })
+    else:
+        # Fallback pour compatibilité (peut être retiré en production stricte)
+        resp.headers.update({
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
+            "Access-Control-Allow-Headers": "*"
+        })
+    
     return resp
 
 
@@ -1968,20 +1999,28 @@ async def options_handler(request):
     return _with_cors(request, web.Response(status=204))
 
 async def configure(request):
-    """Handler pour configurer l'API"""
+    """Handler pour configurer l'API (protégé par clé API)."""
+    api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
+    if api_key != config.PUBLISHER_API_KEY:
+        client_ip = _get_client_ip(request)
+        logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/configure)")
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+    
     try:
         data = await request.json()
         config.update_from_frontend(data)
         resp = web.json_response({"ok": True, "message": "Configuration mise à jour", "configured": config.configured})
         return _with_cors(request, resp)
     except Exception as e:
-        logger.error(f"Erreur configuration: {e}")
+        logger.error(f"[API] Erreur configuration: {e}")
         return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=400))
 
 async def forum_post(request):
     """Handler pour publier un post dans le salon my uniquement."""
     api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
     if api_key != config.PUBLISHER_API_KEY:
+        client_ip = _get_client_ip(request)
+        logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/forum-post)")
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     if not config.FORUM_MY_ID:
         return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_TRAD_ID non configuré"}, status=500))
@@ -2115,6 +2154,8 @@ async def forum_post_update(request):
     """Handler pour mettre à jour un post (salon my uniquement)."""
     api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
     if api_key != config.PUBLISHER_API_KEY:
+        client_ip = _get_client_ip(request)
+        logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/forum-post/update)")
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     if not config.FORUM_MY_ID:
         return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_TRAD_ID non configuré"}, status=500))
@@ -2341,6 +2382,8 @@ async def forum_post_update(request):
 async def get_history(request):
     api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
     if api_key != config.PUBLISHER_API_KEY:
+        client_ip = _get_client_ip(request)
+        logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/history)")
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     posts = history_manager.get_posts()
     return _with_cors(request, web.json_response({"ok": True, "posts": posts, "count": len(posts)}))
@@ -2355,6 +2398,8 @@ async def forum_post_delete(request):
     """
     api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
     if api_key != config.PUBLISHER_API_KEY:
+        client_ip = _get_client_ip(request)
+        logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/forum-post/delete)")
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     
     try:

@@ -1,102 +1,111 @@
-# 🚀 Guide de Maintenance : Bot Discord & API (Oracle Cloud)
+﻿# ðŸš€ Guide de Maintenance : Bot Discord & API (Oracle Cloud)
 
-Ce guide explique comment mettre à jour, redémarrer et maintenir tes bots hébergés sur ton instance Ubuntu Oracle Cloud.
+Ce guide regroupe toutes les informations pour maintenir, mettre Ã  jour et dÃ©panner tes bots Discord hÃ©bergÃ©s sur ton instance Ubuntu Oracle Cloud.
 
 ---
 
-## 🔌 Connexion SSH au serveur
+## ðŸ“‚ Scripts PowerShell (Outils d'Administration)
 
-Depuis **PowerShell** ou **Windows Terminal** :
+Des scripts PowerShell sont disponibles dans le dossier **`outils_serveur/`** pour te faciliter la gestion du serveur sans taper de commandes SSH manuellement.
+
+### ðŸŽ¯ Lancer le Menu Principal
+
+Lance le menu interactif qui donne accÃ¨s Ã  toutes les fonctions :
+
+```powershell
+.\outils_serveur\0_SSH_Menu.ps1
+```
+
+**Options disponibles :**
+- **[1]** Terminal SSH normal
+- **[2]** Voir les logs en temps rÃ©el
+- **[3]** Statut du service discord-bots
+- **[4]** RedÃ©marrer le service
+- **[5]** Tester l'API Publisher
+- **[6]** VÃ©rifier le pare-feu (iptables)
+- **[7]** Corriger le pare-feu (port 8080)
+- **[8]** Nettoyer les rÃ¨gles iptables dupliquÃ©es
+
+### ðŸ”— CrÃ©er un Raccourci Bureau (RecommandÃ©)
+
+Pour accÃ©der rapidement au menu, crÃ©e un raccourci sur le bureau :
+
+1. **Clic droit sur le Bureau** â†’ Nouveau â†’ Raccourci
+2. **Cible :**
+   ```
+   powershell.exe -ExecutionPolicy Bypass -File "D:\Projet GitHub\Discord Publisher\outils_serveur\0_SSH_Menu.ps1"
+   ```
+3. **Nom :** `âš™ï¸ Gestion Serveur Ubuntu`
+4. **IcÃ´ne :** Personnalise si tu veux (PropriÃ©tÃ©s â†’ Changer d'icÃ´ne)
+
+Double-clic sur ce raccourci pour ouvrir le menu instantanÃ©ment ! ðŸŽ¯
+
+---
+
+## ðŸ”Œ Connexion SSH Manuelle (Optionnel)
+
+Si tu prÃ©fÃ¨res te connecter manuellement sans les scripts :
 
 ```powershell
 ssh -i "D:\Projet GitHub\Discord Publisher\python\_ignored\ssh-key-2026-02-07.key" ubuntu@138.2.182.125
 ```
 
-- Remplace `C:\chemin\vers\ta_cle.pem` par le chemin de ta clé privée (fichier `.pem` ou `.key` généré par Oracle Cloud).
-- Si ta clé est en `.ppk` : utilise **PuTTY** ou convertis-la en `.pem` avec PuTTYgen.
-- **Erreur « bad permissions »** : exécute dans PowerShell : `icacls "C:\chemin\vers\ta_cle.key" /inheritance:r` puis `icacls "C:\chemin\vers\ta_cle.key" /grant:r "%USERNAME%:(R)"` (ou utilise `cmd /c '...'` si la 2ᵉ commande échoue).
-
-**Raccourci** (si ta clé est déjà configurée dans `~/.ssh/`) :
-
+**Raccourci** (si ta clÃ© SSH est configurÃ©e dans `~/.ssh/config`) :
 ```powershell
 ssh ubuntu@138.2.182.125
 ```
 
----
-
-## 🪟 Organisation des fenêtres (3 écrans)
-
-Pour travailler efficacement, ouvre **3 fenêtres** :
-
-| Fenêtre | Rôle | À faire |
-|---------|------|---------|
-| **1. Logs Python** | Voir les logs du bot en direct | SSH → `sudo journalctl -u discord-bots -f` |
-| **2. Terminal Ubuntu** | Lancer des commandes sur le serveur | SSH → session normale (tcpdump, ss, curl localhost, etc.) |
-| **3. Terminal Windows** | Tester depuis ton PC | PowerShell (curl.exe, Test-NetConnection) |
-
-### Étapes
-
-1. **Fenêtre 1 (Logs)** : Connexion SSH → `sudo journalctl -u discord-bots -f` (ne pas fermer, les logs défilent ici).
-2. **Fenêtre 2 (Ubuntu)** : Nouvelle connexion SSH → `cd ~/mon_projet` pour exécuter des commandes.
-3. **Fenêtre 3 (Windows)** : Ouvre PowerShell ou Windows Terminal en local pour les tests réseau.
+**Note :** Les scripts PowerShell font Ã§a automatiquement et bien plus encore !
 
 ---
 
-## 📁 Structure du Projet sur le Serveur
+## ðŸ“ Structure du Projet sur le Serveur
 
-- **Répertoire :** `/home/ubuntu/mon_projet/`
-- **Environnement virtuel :** `/home/ubuntu/mon_projet/venv/`
-- **Scripts :** `scripts/main_bots.py`, `scripts/publisher_api.py`, `scripts/bot_frelon.py`
-- **Fichiers sensibles (ignorés par Git) :** `_ignored/` — y mettre `.env`, clés SSH (`.key`, `.ppk`), etc.
-- **Logs :** `logs/bot.log` (rotation 5 Mo, 3 backups) — consultable via l'app (admin → Voir les logs) ou `/api/logs`
+- **RÃ©pertoire :** `/home/ubuntu/mon_projet/`
+- **Environnement virtuel Python :** `/home/ubuntu/mon_projet/venv/`
+- **Scripts Python :** `scripts/main_bots.py`, `scripts/publisher_api.py`, `scripts/bot_frelon.py`
+- **Fichiers sensibles (ignorÃ©s par Git) :** `_ignored/` â€” contient `.env`, clÃ©s SSH, etc.
+- **Logs :** `logs/bot.log` (rotation 5 Mo, 3 backups) â€” accessible via l'app (Voir les logs) ou `/api/logs`
 
-Le fichier `.env` est chargé depuis `_ignored/.env` en priorité, sinon depuis la racine `python/`.
-
----
-
-## ⚙️ Démarrage automatique (systemd)
-
-Pour que les bots démarrent au boot et redémarrent en cas de crash :
-
-### 1. Installer le service (une seule fois)
-
-Sur le serveur, copie le fichier `discord-bots.service` dans `/home/ubuntu/mon_projet/`, puis :
-
-```bash
-sudo cp /home/ubuntu/mon_projet/discord-bots.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable discord-bots
-sudo systemctl start discord-bots
-```
-
-### 2. Commandes utiles
-
-| Action | Commande |
-|--------|----------|
-| Démarrer les bots | `sudo systemctl start discord-bots` |
-| Arrêter les bots | `sudo systemctl stop discord-bots` |
-| Redémarrer les bots | `sudo systemctl restart discord-bots` |
-| Statut | `sudo systemctl status discord-bots` |
-| Voir les logs en direct | `sudo journalctl -u discord-bots -f` |
+Le fichier `.env` est chargÃ© depuis `_ignored/.env` en prioritÃ©, sinon depuis la racine `python/`.
 
 ---
 
-## 🛠️ Procédure de Mise à Jour
+## ðŸ› ï¸ ProcÃ©dure de Mise Ã  Jour du Code
 
-Dès que tu modifies ton code localement dans Cursor, suis ces étapes pour appliquer les changements sur le serveur.
+### 1. ðŸ“¤ TransfÃ©rer les Fichiers avec WinSCP
 
-### 1. Transférer les fichiers (WinSCP)
+**WinSCP** est l'outil recommandÃ© pour transfÃ©rer tes fichiers modifiÃ©s sur le serveur.
 
-1. Connecte-toi à ton serveur via **WinSCP** (Port 22, utilisateur `ubuntu`, avec ta clé `.ppk`).
-2. Fais glisser les fichiers modifiés :
-   - Scripts Python → `/home/ubuntu/mon_projet/scripts/`
-   - `.env` et clés SSH → `/home/ubuntu/mon_projet/_ignored/`
-   - `requirements.txt` → `/home/ubuntu/mon_projet/`
-3. **Note :** N'écrase jamais le dossier `venv`.
+#### Installation de WinSCP
+1. TÃ©lÃ©charge **WinSCP** : [https://winscp.net/](https://winscp.net/)
+2. Installe-le sur ton PC Windows
 
-### 2. Si tu as modifié `requirements.txt`
+#### Configuration de la Connexion
+1. **Ouvre WinSCP**
+2. **Protocole :** SFTP
+3. **HÃ´te :** `138.2.182.125`
+4. **Port :** `22`
+5. **Utilisateur :** `ubuntu`
+6. **ClÃ© privÃ©e :** Clique sur "AvancÃ©" â†’ SSH â†’ Authentification â†’ Parcourir
+   - SÃ©lectionne ta clÃ© `.ppk` (si tu n'en as pas, convertis ton fichier `.key` avec PuTTYgen)
+7. **Enregistre** la session pour ne pas tout refaire Ã  chaque fois !
 
-Sur le serveur, avant de redémarrer :
+#### TransfÃ©rer les Fichiers ModifiÃ©s
+1. **Ã€ gauche :** Ton PC (navigue vers `D:\Projet GitHub\Discord Publisher\`)
+2. **Ã€ droite :** Le serveur (navigue vers `/home/ubuntu/mon_projet/`)
+3. **Glisse-dÃ©pose** les fichiers modifiÃ©s :
+   - Scripts Python â†’ `/home/ubuntu/mon_projet/scripts/`
+   - `.env` mis Ã  jour â†’ `/home/ubuntu/mon_projet/_ignored/`
+   - `requirements.txt` â†’ `/home/ubuntu/mon_projet/`
+
+âš ï¸ **IMPORTANT :** Ne jamais Ã©craser le dossier `venv/` sur le serveur !
+
+---
+
+### 2. ðŸ Installer les Nouvelles DÃ©pendances (Si besoin)
+
+Si tu as modifiÃ© `requirements.txt`, connecte-toi au serveur et installe les nouvelles dÃ©pendances :
 
 ```bash
 cd ~/mon_projet
@@ -104,112 +113,150 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Relancer les Bots
+Tu peux faire Ã§a en lanÃ§ant le script **`SSH_Terminal.ps1`** depuis le menu !
 
+---
+
+### 3. ðŸ”„ RedÃ©marrer le Service
+
+AprÃ¨s avoir transfÃ©rÃ© les fichiers, redÃ©marre le service pour appliquer les changements :
+
+**Via le Menu PowerShell :**
+```powershell
+.\outils_serveur\0_SSH_Menu.ps1
+â†’ Choisis [4] RedÃ©marrer le service
+```
+
+**En SSH manuel :**
 ```bash
 sudo systemctl restart discord-bots
 ```
 
 ---
 
-## 🌐 Configuration Réseau & API
+### 4. âœ… VÃ©rifier que Tout Fonctionne
 
-### URL de l'API (Frontend)
+**Via le Menu PowerShell :**
+```powershell
+.\outils_serveur\0_SSH_Menu.ps1
+â†’ Choisis [2] Voir les logs en temps rÃ©el
+```
 
-L'adresse actuelle de ton API est : **`http://138.2.182.125:8080`**
+Les logs doivent montrer que les bots se connectent et dÃ©marrent correctement.
+
+---
+
+## âš™ï¸ DÃ©marrage Automatique (systemd)
+
+Le service `discord-bots` est configurÃ© pour dÃ©marrer automatiquement au boot du serveur et redÃ©marrer en cas de crash.
+
+### Commandes Utiles
+
+| Action | Commande SSH |
+|--------|-------------|
+| DÃ©marrer les bots | `sudo systemctl start discord-bots` |
+| ArrÃªter les bots | `sudo systemctl stop discord-bots` |
+| RedÃ©marrer les bots | `sudo systemctl restart discord-bots` |
+| Voir le statut | `sudo systemctl status discord-bots` |
+| Voir les logs en direct | `sudo journalctl -u discord-bots -f` |
+
+ðŸ’¡ **Astuce :** Utilise plutÃ´t le menu PowerShell pour faire tout Ã§a en un clic !
+
+---
+
+## ðŸŒ Configuration RÃ©seau & API
+
+### URL de l'API
+
+L'adresse actuelle de ton API : **`http://138.2.182.125:8080`**
 
 - **Protocole :** HTTP (pas de HTTPS pour le moment)
-- **Port :** 8080 (configuré dans `main_bots.py`)
+- **Port :** 8080 (configurÃ© dans `main_bots.py`)
 
-### Rappel des ports Oracle
+### Rappel des Ports Oracle
 
-Si tu dois changer de port ou si la connexion échoue, vérifie que le port est ouvert à deux endroits :
+Si tu dois ouvrir un nouveau port ou si la connexion Ã©choue :
 
-1. **Console Oracle Cloud :** Réseau → VCN → Security Lists → Ingress Rules (ajouter le port TCP)
-2. **Pare-feu Linux (IPTables) :** La règle doit être **avant** la règle REJECT :
-   ```bash
-   sudo iptables -I INPUT 1 -p tcp --dport 8080 -j ACCEPT
-   sudo netfilter-persistent save
-   ```
+1. **Console Oracle Cloud :** RÃ©seau â†’ VCN â†’ Security Lists â†’ Ingress Rules (ajouter le port TCP)
+2. **Pare-feu Linux (iptables) :** Utilise le script **`SSH_FixFirewall.ps1`** depuis le menu !
 
 ---
 
-## 📜 Antisèche des commandes utiles
+## ðŸ“‹ Diagnostic et DÃ©pannage
 
-| Action | Commande |
-|--------|----------|
-| Se connecter au dossier | `cd ~/mon_projet` |
-| Activer l'environnement (si besoin) | `cd ~/mon_projet` puis `source venv/bin/activate` |
-| Voir les bots qui tournent | `sudo systemctl status discord-bots` |
-| Voir les logs en direct | `sudo journalctl -u discord-bots -f` |
-| Vérifier l'utilisation du port | `sudo ss -tunlp \| grep 8080` |
+### ðŸ” Consulter les Logs
 
----
+**MÃ©thode rapide (Menu PowerShell) :**
+```powershell
+.\outils_serveur\0_SSH_Menu.ps1 â†’ [2] Voir les logs en temps rÃ©el
+```
 
-## 📋 Diagnostic et Logs
-
-Les logs sont essentiels pour diagnostiquer les problèmes : si le bot s'arrête ou se comporte bizarrement, la réponse est souvent écrite dedans.
-
-### 1. Consulter les logs en temps réel
-
+**En SSH manuel :**
 ```bash
 sudo journalctl -u discord-bots -f
 ```
 
-Les messages s'affichent au fur et à mesure, avec l'heure et le niveau (INFO, ERROR). `CTRL + C` pour quitter.
+Les logs affichent l'heure, le niveau (INFO, WARNING, ERROR) et le message. `CTRL + C` pour quitter.
 
-### 2. Tester la connexion (depuis le serveur)
+---
 
-```bash
-curl http://127.0.0.1:8080/api/publisher/health
-```
+### ðŸ§ª Tester l'API
 
-Si ça renvoie du JSON avec `"ok": true`, l'API fonctionne en local.
-
-### 3. Vérifier si le port écoute
-
-Si ton application Tauri n'arrive pas à joindre le serveur, vérifie que l'API écoute bien :
-
-```bash
-sudo ss -tunlp | grep 8080
-```
-
-Si tu vois `0.0.0.0:8080` et `LISTEN`, l'API écoute. Le problème vient alors du pare-feu (iptables ou Oracle Security List).
-
-### 4. Tester depuis ton PC (PowerShell)
-
+**Via le Menu PowerShell :**
 ```powershell
-curl.exe http://138.2.182.125:8080/api/publisher/health
+.\outils_serveur\0_SSH_Menu.ps1 â†’ [5] Tester l'API Publisher
 ```
 
-Réponse attendue : `{"ok": true, "configured": true, ...}`
-
-### 5. Erreurs courantes
-
-| Erreur | Cause probable | Solution |
-|--------|----------------|----------|
-| **ModuleNotFoundError** | Bibliothèque manquante | `pip install -r requirements.txt` puis `sudo systemctl restart discord-bots` |
-| **401 Unauthorized** | Clé API incorrecte | Vérifier que `PUBLISHER_API_KEY` dans `.env` = clé saisie dans l'app Tauri |
-| **Connection Timeout** | Port bloqué | Security List Oracle + `sudo iptables -I INPUT 1 -p tcp --dport 8080 -j ACCEPT` puis `sudo netfilter-persistent save` |
-| **Connection reset** (curl/ERR_CONNECTION_RESET) | Règle iptables REJECT avant ACCEPT 8080 | `sudo iptables -I INPUT 1 -p tcp --dport 8080 -j ACCEPT` puis `sudo netfilter-persistent save` |
+Le script teste automatiquement :
+1. L'API depuis le serveur (localhost)
+2. Si le port 8080 Ã©coute
+3. L'API depuis Windows (externe)
 
 ---
 
-## ⚠️ Points de vigilance
+### ðŸš¨ Erreurs Courantes
 
-- **Le fichier `.env` :** Place-le dans `_ignored/` (recommandé) ou à la racine `python/`. Il doit contenir `PORT=8080`, Supabase (URL + Service Role Key) et les tokens des bots.
-- **API Discord directe :** Le code utilise `https://discord.com/api/v10` (aucun proxy).
-- **iptables :** Après un reboot, vérifie que la règle 8080 est toujours en place : `sudo iptables -L INPUT -n -v --line-numbers`. Si absente, relance `sudo iptables -I INPUT 1 -p tcp --dport 8080 -j ACCEPT` puis `sudo netfilter-persistent save`.
-- **Espace disque :** Si les logs journalctl prennent de la place : `sudo journalctl --vacuum-time=7d` pour garder 7 jours.
+| Erreur | Cause | Solution |
+|--------|-------|----------|
+| **ModuleNotFoundError** | BibliothÃ¨que Python manquante | `pip install -r requirements.txt` puis redÃ©marre le service |
+| **401 Unauthorized** | ClÃ© API incorrecte | VÃ©rifie que `PUBLISHER_API_KEY` dans `.env` = clÃ© dans l'app Tauri |
+| **Connection Timeout** | Port bloquÃ© | Menu â†’ [6] VÃ©rifier le pare-feu, puis [7] Corriger si besoin |
+| **Connection reset** | RÃ¨gle iptables dans le mauvais ordre | Menu â†’ [8] Nettoyer les rÃ¨gles iptables |
 
 ---
 
-## 💡 En résumé
+## âš ï¸ Points de Vigilance
 
-| Situation | Action |
-|-----------|--------|
-| Mise à jour du code | WinSCP (transfert) → `sudo systemctl restart discord-bots` |
-| Mise à jour requirements.txt | `pip install -r requirements.txt` puis `sudo systemctl restart discord-bots` |
-| Voir les logs | `sudo journalctl -u discord-bots -f` |
-| L'API ne répond pas | Vérifier iptables + Security List + `sudo systemctl status discord-bots` |
-| Tu éteins ton PC | Aucun souci : les bots tournent sur le serveur Oracle, pas sur ton PC |
+- **Fichier `.env` :** Doit Ãªtre dans `_ignored/.env` (recommandÃ©) ou `python/.env`
+  - Contient : `PORT=8080`, Supabase (URL + Service Role Key), tokens Discord
+- **iptables :** AprÃ¨s un reboot, vÃ©rifie les rÃ¨gles avec le script [6] du menu
+- **Espace disque :** Si les logs prennent trop de place : `sudo journalctl --vacuum-time=7d`
+
+---
+
+## ðŸ’¡ Workflow RecommandÃ© pour une Mise Ã  Jour
+
+1. **Modifie le code** localement dans Cursor
+2. **Ouvre WinSCP** et glisse-dÃ©pose les fichiers modifiÃ©s sur le serveur
+3. **Lance le menu PowerShell** : `.\outils_serveur\0_SSH_Menu.ps1`
+4. **Choisis [4]** RedÃ©marrer le service
+5. **Choisis [2]** Voir les logs pour vÃ©rifier que tout dÃ©marre correctement
+6. **Teste l'API** depuis l'application Tauri
+
+âœ… C'est tout ! Pas besoin de commandes SSH complexes. ðŸŽ‰
+
+---
+
+## ðŸ“ž RÃ©sumÃ© Ultra-Rapide
+
+| Besoin | Action |
+|--------|--------|
+| **GÃ©rer le serveur** | Lance `.\outils_serveur\0_SSH_Menu.ps1` |
+| **TransfÃ©rer les fichiers** | WinSCP : glisse-dÃ©pose vers `/home/ubuntu/mon_projet/scripts/` |
+| **RedÃ©marrer les bots** | Menu â†’ [4] |
+| **Voir les logs** | Menu â†’ [2] |
+| **Tester l'API** | Menu â†’ [5] |
+| **ProblÃ¨me de connexion** | Menu â†’ [6] puis [7] ou [8] |
+
+**Tu Ã©teins ton PC ?** Aucun souci : les bots tournent sur le serveur Oracle Cloud, pas sur ton PC ! ðŸš€
+

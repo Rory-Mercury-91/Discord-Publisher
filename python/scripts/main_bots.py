@@ -56,6 +56,9 @@ file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] [%(name
 logging.getLogger().addHandler(file_handler)
 logger = logging.getLogger("orchestrator")
 
+# Passer les logs aiohttp.access en DEBUG (éviter pollution des logs INFO)
+logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
+
 PORT = int(os.getenv("PORT", "8080"))
 
 # -------------------------
@@ -78,6 +81,13 @@ async def get_logs(request):
     """Retourne les dernières lignes du fichier de logs (admin, protégé par clé API)."""
     api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
     if api_key != publisher_config.PUBLISHER_API_KEY:
+        # Extraction IP pour logging (helper depuis publisher_api)
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            client_ip = forwarded.split(",")[0].strip()
+        else:
+            client_ip = request.headers.get("X-Real-IP") or request.remote or "unknown"
+        logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/logs)")
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     try:
         lines = int(request.query.get("lines", "500"))

@@ -24,8 +24,9 @@ python-embed/
 *.key.pub
 *.ppk
 
-# Documentation personnelle (non versionnée)
+# Documentation et outils personnels (non versionnés)
 docs_perso/
+outils_serveur/
 *.example
 
 # Node modules
