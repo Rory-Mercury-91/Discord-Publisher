@@ -51,17 +51,32 @@ try {
   fs.writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 2) + '\n', 'utf8');
   console.log(`   ${tauriConf.version} → ${newVersion}`);
 
-  // 3. Mettre à jour Cargo.toml
+  // 3. Mettre à jour Cargo.toml (SEULEMENT la version du package, PAS rust-version)
   console.log('🦀 Mise à jour de src-tauri/Cargo.toml...');
   let cargoToml = fs.readFileSync(cargoTomlPath, 'utf8');
-  const versionMatch = cargoToml.match(/^version\s*=\s*"([^"]+)"/m);
-
-  if (!versionMatch) {
-    throw new Error('Version non trouvée dans Cargo.toml');
+  
+  // Trouver la section [package]
+  const packageSectionMatch = cargoToml.match(/\[package\]([\s\S]*?)(?=\n\[|$)/);
+  if (!packageSectionMatch) {
+    throw new Error('Section [package] non trouvée dans Cargo.toml');
   }
-
+  
+  const packageSection = packageSectionMatch[1];
+  const versionMatch = packageSection.match(/^version\s*=\s*"([^"]+)"/m);
+  
+  if (!versionMatch) {
+    throw new Error('Version non trouvée dans la section [package] de Cargo.toml');
+  }
+  
   const cargoOldVersion = versionMatch[1];
-  cargoToml = cargoToml.replace(/^version\s*=\s*"[^"]+"/, `version = "${newVersion}"`);
+  
+  // Remplacer UNIQUEMENT "version = " dans la section [package]
+  const updatedPackageSection = packageSection.replace(
+    /^version\s*=\s*"[^"]+"/m,
+    `version = "${newVersion}"`
+  );
+  
+  cargoToml = cargoToml.replace(packageSectionMatch[0], `[package]${updatedPackageSection}`);
   fs.writeFileSync(cargoTomlPath, cargoToml, 'utf8');
   console.log(`   ${cargoOldVersion} → ${newVersion}`);
 

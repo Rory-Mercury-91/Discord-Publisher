@@ -76,10 +76,25 @@ jobs:
           $tauri.version = $version
           $tauri | ConvertTo-Json -Depth 100 | Set-Content src-tauri/tauri.conf.json -Encoding utf8
           
-          # Cargo.toml
-          $cargo = Get-Content src-tauri/Cargo.toml -Raw
-          $cargo = $cargo -replace 'version\s*=\s*"[^"]+"', "version = `"$version`""
-          $cargo | Set-Content src-tauri/Cargo.toml -NoNewline -Encoding utf8
+          # Cargo.toml - SEULEMENT la version dans [package], PAS rust-version
+          $cargoContent = Get-Content src-tauri/Cargo.toml -Raw
+          
+          # Trouver la section [package]
+          if ($cargoContent -match '\[package\]([\s\S]*?)(?=\n\[|$)') {
+            $packageSection = $matches[1]
+            
+            # Remplacer UNIQUEMENT "version = " (pas rust-version)
+            $updatedSection = $packageSection -replace '(?m)^version\s*=\s*"[^"]+"', "version = `"$version`""
+            
+            # Reconstruire le fichier
+            $cargoContent = $cargoContent -replace [regex]::Escape($packageSection), $updatedSection
+            
+            $cargoContent | Set-Content src-tauri/Cargo.toml -NoNewline -Encoding utf8
+            Write-Host "✅ Cargo.toml updated"
+          } else {
+            Write-Host "❌ Could not find [package] section in Cargo.toml"
+            exit 1
+          }
           
           Write-Host "✅ Version set to $version in all files"
 
