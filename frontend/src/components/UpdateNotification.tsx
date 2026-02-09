@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { getVersion } from '@tauri-apps/api/app';
 
 export default function UpdateNotification() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -10,7 +11,9 @@ export default function UpdateNotification() {
 
   useEffect(() => {
     // Vérifier au montage après 3 secondes
-    const timeout = setTimeout(() => {
+    const timeout = setTimeout(async () => {
+      const version = await getVersion();
+      console.log('[Updater] 📱 Current app version:', version);
       checkForUpdate();
     }, 3000);
     
@@ -95,13 +98,23 @@ export default function UpdateNotification() {
     } catch (err: any) {
       console.error('[Updater] ❌ Failed to install update:', err);
       console.error('[Updater] ❌ Error type:', typeof err);
-      console.error('[Updater] ❌ Error details:', {
-        message: err?.message,
-        stack: err?.stack,
-        name: err?.name,
-        cause: err?.cause
-      });
-      setError('Échec de l\'installation : ' + err.message);
+      
+      // Log complet de l'erreur
+      if (typeof err === 'string') {
+        console.error('[Updater] ❌ Error string:', err);
+      } else if (err instanceof Error) {
+        console.error('[Updater] ❌ Error object:', {
+          message: err.message,
+          stack: err.stack,
+          name: err.name,
+          cause: err.cause
+        });
+      } else {
+        console.error('[Updater] ❌ Error (unknown type):', JSON.stringify(err));
+      }
+      
+      const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
+      setError('Échec de l\'installation : ' + errorMessage);
       setIsInstalling(false);
     }
   }
