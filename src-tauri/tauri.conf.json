@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Discord Publisher",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "identifier": "com.publication.generator",
   "build": {
     "frontendDist": "../frontend/dist",
@@ -44,6 +44,29 @@
     ],
     "resources": [
       "../assets/**/*"
-    ]
+    ],
+    "windows": {
+      "wix": {
+        "language": "fr-FR"
+      },
+      "nsis": {
+        "languages": [
+          "French"
+        ],
+        "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/Rory-Mercury-91/Discord-Bot-Traductions/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg1NDlBNTAzNzdFMjk4RkEKUldUNm1PSjNBNlZKaGE1OFdxdks4SXpINUpkYm5leGZUR05Mc2xMdjZuUFV0WFd1a0tVRExWcnMK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

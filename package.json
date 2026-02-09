@@ -1,6 +1,6 @@
 {
   "name": "publication-generator-tauri",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Application Tauri pour générer et publier des traductions sur Discord",
   "author": "Rory Mercury 91",
   "scripts": {

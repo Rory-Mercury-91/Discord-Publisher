@@ -15,6 +15,7 @@ import StatsModal from './components/StatsModal';
 import TagsModal from './components/TagsModal';
 import TagsUnlockModal from './components/TagsUnlockModal';
 import TemplatesModal from './components/TemplatesModal';
+import UpdateNotification from './components/UpdateNotification';
 import { ToastProvider, useToast } from './components/ToastProvider';
 import { AppProvider, useApp } from './state/appContext';
 import { AuthProvider, useAuth } from './state/authContext';
@@ -296,6 +297,9 @@ function AppContentInner() {
         />
       )}
       {showLogsModal && <LogsModal onClose={() => setShowLogsModal(false)} />}
+      
+      {/* Update notification - always mounted to check for updates */}
+      <UpdateNotification />
     </div>
   );
 }

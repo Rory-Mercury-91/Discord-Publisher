@@ -225,11 +225,23 @@ export default function InstructionsManagerModal({ onClose }: { onClose?: () => 
                   <button onClick={saveInstructionItem}>
                     {editingKey !== null ? '✅ Enregistrer' : '➕ Ajouter'}
                   </button>
-                  <button onClick={onClose}>🚪 Fermer</button>
                 </div>
               </div>
             )}
           </div>
+        </div>
+
+        {/* Footer avec bouton Fermer - toujours visible */}
+        <div style={{
+          borderTop: '1px solid var(--border)',
+          padding: '16px 20px',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          marginTop: 16
+        }}>
+          <button onClick={onClose} style={{ padding: '8px 20px', fontWeight: 600 }}>
+            🚪 Fermer
+          </button>
         </div>
       </div>
 
