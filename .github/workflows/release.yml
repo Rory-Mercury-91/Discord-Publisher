@@ -101,7 +101,28 @@ jobs:
           
           Write-Host "✅ Version set to $version in all files"
 
+      - name: Verify signing keys are set
+        shell: pwsh
+        run: |
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            $keyLength = $env:TAURI_SIGNING_PRIVATE_KEY.Length
+            Write-Host "✅ TAURI_SIGNING_PRIVATE_KEY is set (length: $keyLength)"
+            Write-Host "First 50 chars: $($env:TAURI_SIGNING_PRIVATE_KEY.Substring(0, [Math]::Min(50, $keyLength)))"
+          } else {
+            Write-Host "❌ TAURI_SIGNING_PRIVATE_KEY is NOT set"
+            exit 1
+          }
+          
+          if ($env:TAURI_KEY_PASSWORD -ne $null) {
+            Write-Host "✅ TAURI_KEY_PASSWORD is set"
+          } else {
+            Write-Host "⚠️ TAURI_KEY_PASSWORD is not set (this might be OK if no password)"
+          }
+
       - name: Build application
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
         run: npm run build
 
       - name: List build artifacts
