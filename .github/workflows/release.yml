@@ -260,18 +260,19 @@ jobs:
             Remove-Item $zipFileName -Force
           }
           
-          # Utiliser .NET System.IO.Compression avec Deflate standard
+          # Utiliser .NET System.IO.Compression SANS compression (Store method)
+          # Tauri ne supporte que Store ou Deflate basique, pas les variantes avancées
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           
-          # Créer le .zip avec compression Deflate (compatible Tauri)
+          # Créer le .zip avec Store (pas de compression)
           $zip = [System.IO.Compression.ZipFile]::Open($zipFileName, 'Create')
           
-          # Ajouter le .exe au .zip avec compression Deflate
-          [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $nsisExe.FullName, $nsisExe.Name, 'Optimal')
+          # Ajouter le .exe au .zip SANS compression (Store method)
+          [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $nsisExe.FullName, $nsisExe.Name, 'NoCompression')
           
           $zip.Dispose()
           
-          Write-Host "✅ Created: $zipFileName (using .NET Deflate compression)"
+          Write-Host "✅ Created: $zipFileName (using Store method - no compression)"
           
           # IMPORTANT: Signer le .zip (pas le .exe!)
           Write-Host "🔐 Signing the .zip file with Tauri CLI..."
