@@ -16,7 +16,6 @@
     "core:window:allow-is-fullscreen",
     "core:window:allow-is-maximized",
     "core:window:allow-is-minimized",
-    "shell:allow-open",
     "updater:default",
     "updater:allow-check",
     "updater:allow-download",

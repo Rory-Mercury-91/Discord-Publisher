@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { check } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
-import { open } from '@tauri-apps/plugin-shell';
+import { relaunch } from '@tauri-apps/plugin-process';
 
 export default function UpdateNotification() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // Vérifier au montage après 3 secondes
@@ -52,10 +54,69 @@ export default function UpdateNotification() {
   }
 
   async function handleUpdate() {
-    // Ouvrir la page des releases GitHub au lieu d'installer automatiquement
-    // (temporaire : contourne les problèmes de signature)
-    await open('https://github.com/Rory-Mercury-91/Discord-Bot-Traductions/releases/latest');
-    setUpdateAvailable(false);
+    try {
+      setIsInstalling(true);
+      setError(null);
+
+      console.log('[Updater] 📥 Starting update download and installation...');
+      
+      const update = await check();
+      console.log('[Updater] 🔍 Update object before download:', update);
+      
+      if (!update) {
+        throw new Error('No update available');
+      }
+      
+      let downloaded = 0;
+      let contentLength = 0;
+      
+      console.log('[Updater] 🚀 Calling downloadAndInstall()...');
+      
+      await update.downloadAndInstall((event) => {
+        console.log('[Updater] 📡 Event received:', event.event);
+        
+        switch (event.event) {
+          case 'Started':
+            contentLength = event.data.contentLength ?? 0;
+            console.log(`[Updater] 📦 Download size: ${(contentLength / 1024 / 1024).toFixed(2)} MB`);
+            console.log(`[Updater] 📦 Content length: ${contentLength} bytes`);
+            break;
+          case 'Progress':
+            downloaded += event.data.chunkLength;
+            const progress = contentLength > 0 ? (downloaded / contentLength) * 100 : 0;
+            console.log(`[Updater] ⏳ Progress: ${Math.round(progress)}% (${downloaded}/${contentLength} bytes)`);
+            break;
+          case 'Finished':
+            console.log('[Updater] ✅ Download complete');
+            console.log(`[Updater] 📊 Total downloaded: ${(downloaded / 1024 / 1024).toFixed(2)} MB`);
+            break;
+        }
+      });
+      
+      console.log('[Updater] 🔄 Update installed successfully, relaunching...');
+      await relaunch();
+    } catch (err: any) {
+      console.error('[Updater] ❌ Failed to install update:', err);
+      console.error('[Updater] ❌ Error type:', typeof err);
+      
+      // Log complet de l'erreur
+      if (typeof err === 'string') {
+        console.error('[Updater] ❌ Error string:', err);
+      } else if (err instanceof Error) {
+        console.error('[Updater] ❌ Error object:', {
+          message: err.message,
+          stack: err.stack,
+          name: err.name,
+          cause: err.cause
+        });
+      } else {
+        console.error('[Updater] ❌ Error (unknown type):', JSON.stringify(err));
+      }
+      
+      const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
+      setError('Échec de l\'installation : ' + errorMessage);
+      setIsInstalling(false);
+    }
   }
 
   function handleDismiss() {
@@ -106,13 +167,27 @@ export default function UpdateNotification() {
           
           {updateVersion && (
             <div style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.9)', marginBottom: 12 }}>
-              Version {updateVersion} est disponible sur GitHub
+              Version {updateVersion} est prête à être installée
+            </div>
+          )}
+
+          {error && (
+            <div style={{
+              fontSize: 12,
+              color: '#ff6b6b',
+              background: 'rgba(255, 107, 107, 0.1)',
+              padding: '8px 12px',
+              borderRadius: 6,
+              marginBottom: 12
+            }}>
+              {error}
             </div>
           )}
 
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               onClick={handleUpdate}
+              disabled={isInstalling}
               style={{
                 flex: 1,
                 padding: '8px 16px',
@@ -122,29 +197,32 @@ export default function UpdateNotification() {
                 color: '#667eea',
                 fontWeight: 600,
                 fontSize: 13,
-                cursor: 'pointer',
+                cursor: isInstalling ? 'not-allowed' : 'pointer',
+                opacity: isInstalling ? 0.6 : 1,
                 transition: 'all 0.2s ease'
               }}
             >
-              🌐 Télécharger
+              {isInstalling ? '⏳ Installation...' : '📥 Installer'}
             </button>
             
-            <button
-              onClick={handleDismiss}
-              style={{
-                padding: '8px 16px',
-                borderRadius: 8,
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                background: 'transparent',
-                color: '#fff',
-                fontWeight: 500,
-                fontSize: 13,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              Plus tard
-            </button>
+            {!isInstalling && (
+              <button
+                onClick={handleDismiss}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(255, 255, 255, 0.3)',
+                  background: 'transparent',
+                  color: '#fff',
+                  fontWeight: 500,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                Plus tard
+              </button>
+            )}
           </div>
         </div>
       </div>
