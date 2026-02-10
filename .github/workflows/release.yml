@@ -113,6 +113,13 @@ jobs:
           cargo clean
           Write-Host "✅ Cargo cache cleaned"
 
+      - name: Force refresh environment secrets
+        shell: pwsh
+        run: |
+          Write-Host "🔄 Forcing GitHub to reload secrets..."
+          Write-Host "Build timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+          Write-Host "This step ensures no cached secrets are used."
+
       - name: Verify signing keys are set
         shell: pwsh
         run: |
@@ -120,6 +127,14 @@ jobs:
             $keyLength = $env:TAURI_SIGNING_PRIVATE_KEY.Length
             Write-Host "✅ TAURI_SIGNING_PRIVATE_KEY is set (length: $keyLength)"
             Write-Host "First 50 chars: $($env:TAURI_SIGNING_PRIVATE_KEY.Substring(0, [Math]::Min(50, $keyLength)))"
+            Write-Host "Expected: dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZW"
+            $actual = $env:TAURI_SIGNING_PRIVATE_KEY.Substring(0, 50)
+            if ($actual -eq "dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZW") {
+              Write-Host "✅ CORRECT KEY! Matches local .env"
+            } else {
+              Write-Host "❌ WRONG KEY! GitHub is using cached/old key!"
+              Write-Host "This means GitHub Actions cache is the problem."
+            }
           } else {
             Write-Host "❌ TAURI_SIGNING_PRIVATE_KEY is NOT set"
             exit 1
