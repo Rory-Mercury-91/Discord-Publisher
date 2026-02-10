@@ -23,7 +23,7 @@ export default function UpdateNotification() {
   async function checkForUpdate() {
     try {
       console.log('[Updater] 🔍 Checking for updates...');
-      console.log('[Updater] 📍 Endpoint:', 'https://github.com/Rory-Mercury-91/Discord-Bot-Traductions/releases/latest/download/latest.json');
+      console.log('[Updater] 📍 Endpoint:', 'https://github.com/Rory-Mercury-91/Discord-Publisher/releases/latest/download/latest.json');
       
       const update = await check();
       
