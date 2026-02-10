@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Discord Publisher",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "identifier": "com.publication.generator",
   "build": {
     "frontendDist": "../frontend/dist",
@@ -64,7 +64,7 @@
       "endpoints": [
         "https://github.com/Rory-Mercury-91/Discord-Bot-Traductions/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM4Q0QyNTE5Q0Q4RUE0RUEKUldUcXBJN05HU1hOT0p6Qk9qaTF6dWNuUUZsaXlzOVlydzdFUmhOakIyRkxCUExnUjFLQUxLdFMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVENkFEQTZGOURBNUI5QjQKUldTMHVhV2RiOXBxWFJneWZsUGpzdHNsZmw4cE5nYmsyZGdyVVpiTVVYQkkyN01BNkR2cGJteDMK",
       "windows": {
         "installMode": "passive"
       }
