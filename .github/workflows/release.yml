@@ -125,28 +125,52 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_PASSWORD_FRESH }}
         shell: pwsh
         run: |
+          Write-Host "🔍 VÉRIFICATION COMPLÈTE DES SECRETS" -ForegroundColor Cyan
+          Write-Host "=" * 80
+          
           if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-            $keyLength = $env:TAURI_SIGNING_PRIVATE_KEY.Length
-            Write-Host "✅ TAURI_SIGNING_PRIVATE_KEY is set (length: $keyLength)"
-            Write-Host "First 50 chars: $($env:TAURI_SIGNING_PRIVATE_KEY.Substring(0, [Math]::Min(50, $keyLength)))"
-            Write-Host "Expected: dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZW"
-            $actual = $env:TAURI_SIGNING_PRIVATE_KEY.Substring(0, 50)
-            if ($actual -eq "dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZW") {
-              Write-Host "✅ CORRECT KEY! Matches local .env"
+            Write-Host "`n✅ TAURI_SIGNING_PRIVATE_KEY trouvée" -ForegroundColor Green
+            Write-Host "Longueur: $($env:TAURI_SIGNING_PRIVATE_KEY.Length) caractères"
+            Write-Host "`n📋 CLÉ COMPLÈTE:" -ForegroundColor Yellow
+            Write-Host $env:TAURI_SIGNING_PRIVATE_KEY
+            
+            Write-Host "`n🎯 CLÉ ATTENDUE:" -ForegroundColor Magenta
+            Write-Host "dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5ClJXUlRZMEl5WHpuUHZwNmJoWDRHakxuS0ZqUXZ3U21DS3MrMk9neHJGaG9BT0RqVGdIOEFBQkFBQUFBQUFBQUFBQUlBQUFBQUtBMzd2SDM5UUJ1anJ4U0tkTXJCSnJLV09icENtWVNla2owN0VCVW9DamUrYmVVaTFuaHR0MFFtZDd5Wjc1SmU1bTJROFp3NVhWNitvOCt5TC84MnMzZm9YaXBlVktCaE9sTVZIOWUyOXRRaWJLeUMvT1gvQkZiT256MCtvN2VrNEw5aUppWWNMa2s9Cg=="
+            
+            if ($env:TAURI_SIGNING_PRIVATE_KEY -eq "dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5ClJXUlRZMEl5WHpuUHZwNmJoWDRHakxuS0ZqUXZ3U21DS3MrMk9neHJGaG9BT0RqVGdIOEFBQkFBQUFBQUFBQUFBQUlBQUFBQUtBMzd2SDM5UUJ1anJ4U0tkTXJCSnJLV09icENtWVNla2owN0VCVW9DamUrYmVVaTFuaHR0MFFtZDd5Wjc1SmU1bTJROFp3NVhWNitvOCt5TC84MnMzZm9YaXBlVktCaE9sTVZIOWUyOXRRaWJLeUMvT1gvQkZiT256MCtvN2VrNEw5aUppWWNMa2s9Cg==") {
+              Write-Host "`n✅✅✅ PARFAIT! La clé correspond exactement!" -ForegroundColor Green
             } else {
-              Write-Host "❌ WRONG KEY! GitHub is using cached/old key!"
-              Write-Host "Actual: $actual"
+              Write-Host "`n❌❌❌ ERREUR! La clé est différente!" -ForegroundColor Red
+              exit 1
             }
           } else {
-            Write-Host "❌ TAURI_SIGNING_PRIVATE_KEY is NOT set"
+            Write-Host "❌ TAURI_SIGNING_PRIVATE_KEY is NOT set" -ForegroundColor Red
             exit 1
           }
           
+          Write-Host "`n" + ("=" * 80)
+          
           if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ne $null) {
-            Write-Host "✅ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is set"
+            Write-Host "`n✅ TAURI_SIGNING_PRIVATE_KEY_PASSWORD trouvé" -ForegroundColor Green
+            Write-Host "📋 MOT DE PASSE COMPLET:" -ForegroundColor Yellow
+            Write-Host $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+            
+            Write-Host "`n🎯 MOT DE PASSE ATTENDU:" -ForegroundColor Magenta
+            Write-Host "2026"
+            
+            if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -eq "2026") {
+              Write-Host "`n✅✅✅ PARFAIT! Le mot de passe correspond!" -ForegroundColor Green
+            } else {
+              Write-Host "`n❌❌❌ ERREUR! Le mot de passe est différent!" -ForegroundColor Red
+              exit 1
+            }
           } else {
-            Write-Host "⚠️ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not set"
+            Write-Host "⚠️ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not set" -ForegroundColor Red
+            exit 1
           }
+          
+          Write-Host "`n" + ("=" * 80)
+          Write-Host "🎉 TOUS LES SECRETS SONT CORRECTS!" -ForegroundColor Green
 
       - name: Build application
         env:
