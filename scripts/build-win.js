@@ -15,6 +15,29 @@ const path = require('path');
 const { execSync } = require('child_process');
 const readline = require('readline');
 
+// Charger les variables d'environnement depuis .env
+function loadEnvFile() {
+  const envPath = path.join(__dirname, '..', '.env');
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, 'utf8');
+    envContent.split('\n').forEach(line => {
+      line = line.trim();
+      if (line && !line.startsWith('#') && line.includes('=')) {
+        const [key, ...valueParts] = line.split('=');
+        const value = valueParts.join('=').trim();
+        if (key && value) {
+          process.env[key.trim()] = value;
+        }
+      }
+    });
+    console.log('✅ Variables d\'environnement chargées depuis .env');
+  } else {
+    console.log('⚠️ Fichier .env non trouvé');
+  }
+}
+
+loadEnvFile();
+
 const rootDir = path.join(__dirname, '..');
 const packageJsonPath = path.join(rootDir, 'package.json');
 const tauriConfPath = path.join(rootDir, 'src-tauri', 'tauri.conf.json');
@@ -130,7 +153,11 @@ async function main() {
   console.log('\n📦 Build avec la version : ' + version);
 
   try {
-    execSync('npm run build', { stdio: 'inherit', cwd: rootDir });
+    execSync('npm run build', { 
+      stdio: 'inherit', 
+      cwd: rootDir,
+      env: process.env // Transmet les variables d'environnement
+    });
   } catch (e) {
     console.error('\n❌ Build échoué.');
     process.exit(1);
