@@ -251,10 +251,27 @@ jobs:
           
           Write-Host "✅ Found exe: $($nsisExe.Name)"
           
-          # Créer le .nsis.zip à partir du .exe
+          # Créer le .nsis.zip à partir du .exe avec .NET (compression standard)
+          # Compress-Archive utilise une méthode non supportée par Tauri
           $zipFileName = "Discord_Publisher_${version}_x64_setup.nsis.zip"
-          Compress-Archive -Path $nsisExe.FullName -DestinationPath $zipFileName -Force
-          Write-Host "✅ Created: $zipFileName"
+          
+          # Supprimer le .zip si il existe déjà
+          if (Test-Path $zipFileName) {
+            Remove-Item $zipFileName -Force
+          }
+          
+          # Utiliser .NET System.IO.Compression avec Deflate standard
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          
+          # Créer le .zip avec compression Deflate (compatible Tauri)
+          $zip = [System.IO.Compression.ZipFile]::Open($zipFileName, 'Create')
+          
+          # Ajouter le .exe au .zip avec compression Deflate
+          [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $nsisExe.FullName, $nsisExe.Name, 'Optimal')
+          
+          $zip.Dispose()
+          
+          Write-Host "✅ Created: $zipFileName (using .NET Deflate compression)"
           
           # IMPORTANT: Signer le .zip (pas le .exe!)
           Write-Host "🔐 Signing the .zip file with Tauri CLI..."
