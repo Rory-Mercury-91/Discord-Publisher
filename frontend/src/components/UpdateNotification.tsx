@@ -24,6 +24,9 @@ export default function UpdateNotification() {
     try {
       console.log('[Updater] 🔍 Checking for updates...');
       console.log('[Updater] 📍 Endpoint:', 'https://github.com/Rory-Mercury-91/Discord-Publisher/releases/latest/download/latest.json');
+      console.log('[Updater] 🔑 Public key embedded in this binary for verification:');
+      console.log('[Updater] 🔑 dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNEODU2NzIxRjBGOENGMjYKUldRbXovandJV2VGUGRqZksvMlZtelRZVnpRNGJLdTZ2ZVVMWXo0R2N4Z2JJclJESm9mSlJSVXAK');
+      console.log('[Updater] 🔑 Key ID (decoded): RWQmz/jwIWeF...');
       
       const update = await check();
       
