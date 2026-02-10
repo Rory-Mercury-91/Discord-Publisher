@@ -237,22 +237,22 @@ jobs:
           
           Write-Host "📝 Generating latest.json for version $version"
           
-          # Trouver le fichier .exe NSIS
-          $nsisExe = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*setup.exe" -Recurse | Select-Object -First 1
+          # Trouver le binaire app.exe (pas le setup NSIS!)
+          $appExe = "src-tauri/target/release/app.exe"
           
-          if (-not $nsisExe) {
-            Write-Host "❌ NSIS setup.exe file not found"
-            Write-Host "📂 Listing NSIS directory:"
-            Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Recurse | ForEach-Object {
+          if (-not (Test-Path $appExe)) {
+            Write-Host "❌ app.exe not found at: $appExe"
+            Write-Host "📂 Listing release directory:"
+            Get-ChildItem -Path "src-tauri/target/release" | ForEach-Object {
               Write-Host "  $($_.FullName)"
             }
             exit 1
           }
           
-          Write-Host "✅ Found exe: $($nsisExe.Name)"
+          Write-Host "✅ Found app.exe: $appExe"
+          Write-Host "📊 File size: $((Get-Item $appExe).Length / 1MB) MB"
           
-          # Créer le .nsis.zip à partir du .exe avec .NET (compression standard)
-          # Compress-Archive utilise une méthode non supportée par Tauri
+          # Créer le .nsis.zip avec app.exe (pour l'auto-update)
           $zipFileName = "Discord_Publisher_${version}_x64_setup.nsis.zip"
           
           # Supprimer le .zip si il existe déjà
@@ -261,20 +261,20 @@ jobs:
           }
           
           # Utiliser .NET System.IO.Compression SANS compression (Store method)
-          # Tauri ne supporte que Store ou Deflate basique, pas les variantes avancées
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           
           # Créer le .zip avec Store (pas de compression)
           $zip = [System.IO.Compression.ZipFile]::Open($zipFileName, 'Create')
           
-          # Ajouter le .exe au .zip SANS compression (Store method)
-          [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $nsisExe.FullName, $nsisExe.Name, 'NoCompression')
+          # Ajouter app.exe au .zip SANS compression (Store method)
+          # Important: Le nom dans le zip doit être app.exe pour que Tauri puisse le remplacer
+          [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $appExe, "app.exe", 'NoCompression')
           
           $zip.Dispose()
           
-          Write-Host "✅ Created: $zipFileName (using Store method - no compression)"
+          Write-Host "✅ Created: $zipFileName (contains app.exe, Store method)"
           
-          # IMPORTANT: Signer le .zip (pas le .exe!)
+          # IMPORTANT: Signer le .zip
           Write-Host "🔐 Signing the .zip file with Tauri CLI..."
           
           # Utiliser la commande de signature de Tauri sur le .zip
@@ -289,7 +289,7 @@ jobs:
           
           Write-Host "✅ Zip file signed: $zipSigPath"
           
-          # Lire la signature DU .ZIP (pas du .exe!)
+          # Lire la signature DU .ZIP
           $signature = Get-Content $zipSigPath -Raw -Encoding UTF8
           Write-Host "✅ Signature length: $($signature.Length) chars"
           Write-Host "🔑 Zip signature content:"
