@@ -46,6 +46,10 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
   const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('apiUrl') || localStorage.getItem('apiBase') || 'http://138.2.182.125:8080');
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('apiKey') || '');
 
+  // Labels par défaut personnalisés
+  const [defaultTranslationLabel, setDefaultTranslationLabel] = useState(() => localStorage.getItem('default_translation_label') || 'Traduction');
+  const [defaultModLabel, setDefaultModLabel] = useState(() => localStorage.getItem('default_mod_label') || 'Mod');
+
   // Droits d'édition : liste des profils et des éditeurs autorisés par l'utilisateur connecté
   const [allProfiles, setAllProfiles] = useState<ProfilePublic[]>([]);
   const [allowedEditorIds, setAllowedEditorIds] = useState<Set<string>>(new Set());
@@ -174,6 +178,11 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
 
   const handleSave = async () => {
     localStorage.setItem('apiKey', apiKey);
+    
+    // Sauvegarder les labels par défaut
+    localStorage.setItem('default_translation_label', defaultTranslationLabel);
+    localStorage.setItem('default_mod_label', defaultModLabel);
+    
     if (adminMode) {
       localStorage.setItem('apiUrl', apiUrl);
       localStorage.setItem('apiBase', apiUrl);
@@ -242,6 +251,8 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
         savedInstructions,
         publishedPosts,
         windowState, // ✅ Inclure l'état de fenêtre dans l'export
+        defaultTranslationLabel, // ✅ Inclure les labels par défaut
+        defaultModLabel,
         exportDate: new Date().toISOString(),
         version: '1.0'
       };
@@ -295,6 +306,16 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
         setWindowState(data.windowState);
         localStorage.setItem('windowState', data.windowState);
         void applyWindowStateLive(data.windowState);
+      }
+      
+      // ✅ Restaurer les labels par défaut si présents
+      if (data.defaultTranslationLabel) {
+        setDefaultTranslationLabel(data.defaultTranslationLabel);
+        localStorage.setItem('default_translation_label', data.defaultTranslationLabel);
+      }
+      if (data.defaultModLabel) {
+        setDefaultModLabel(data.defaultModLabel);
+        localStorage.setItem('default_mod_label', data.defaultModLabel);
       }
 
       showToast('Sauvegarde importée avec succès !', 'success');
@@ -518,8 +539,72 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
 
           </div>
 
-          {/* Colonne droite : Fenêtre (tous les utilisateurs) + Sauvegarde (mode admin uniquement) */}
+          {/* Colonne droite : Labels par défaut + Fenêtre (tous les utilisateurs) + Sauvegarde (mode admin uniquement) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {/* Section Labels par défaut */}
+            <section
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 14,
+                padding: 20,
+                background: 'rgba(255,255,255,0.02)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16,
+              }}
+            >
+              <h4 style={{ margin: 0, fontSize: '1rem' }}>🏷️ Labels par défaut</h4>
+              <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
+                Personnalisez les labels par défaut pour les liens de traduction et mod. Ces valeurs seront préservées lors du vidage du formulaire.
+              </p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
+                    Label de traduction
+                  </label>
+                  <input
+                    type="text"
+                    value={defaultTranslationLabel}
+                    onChange={(e) => setDefaultTranslationLabel(e.target.value)}
+                    placeholder="Traduction"
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: 10,
+                      border: '1px solid var(--border)',
+                      background: 'rgba(255,255,255,0.05)',
+                      color: 'var(--text)',
+                      fontSize: 14,
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
+                    Label de mod
+                  </label>
+                  <input
+                    type="text"
+                    value={defaultModLabel}
+                    onChange={(e) => setDefaultModLabel(e.target.value)}
+                    placeholder="Mod"
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: 10,
+                      border: '1px solid var(--border)',
+                      background: 'rgba(255,255,255,0.05)',
+                      color: 'var(--text)',
+                      fontSize: 14,
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              </div>
+            </section>
+
             {/* État de la fenêtre : visible pour tous les utilisateurs */}
             <section
               style={{

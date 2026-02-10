@@ -367,8 +367,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     obj['is_modded_game'] = 'false';
     obj['use_additional_links'] = 'false';
     obj['Mod_link'] = '';
-    obj['main_translation_label'] = 'Traduction';
-    obj['main_mod_label'] = 'Mod';
+    // Charger les labels personnalisés depuis localStorage, ou utiliser les valeurs par défaut
+    obj['main_translation_label'] = localStorage.getItem('default_translation_label') || 'Traduction';
+    obj['main_mod_label'] = localStorage.getItem('default_mod_label') || 'Mod';
     try {
       const raw = localStorage.getItem('savedInputs');
       if (raw) {
@@ -1711,8 +1712,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     setAdditionalTranslationLinks([]);
     setAdditionalModLinks([]);
-    setInput('main_translation_label', 'Traduction');
-    setInput('main_mod_label', 'Mod');
+    // Utiliser les labels personnalisés depuis localStorage, ou les valeurs par défaut
+    setInput('main_translation_label', localStorage.getItem('default_translation_label') || 'Traduction');
+    setInput('main_mod_label', localStorage.getItem('default_mod_label') || 'Mod');
     imagesState.clearImages();
     previewEngine.setPreviewOverride(null);
   }, [allVarsConfig, setTranslationType, setIsIntegrated, setPostTitle, setPostTags, setLinkConfigs, imagesState, previewEngine]);
