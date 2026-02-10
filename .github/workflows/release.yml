@@ -237,11 +237,11 @@ jobs:
           
           Write-Host "📝 Generating latest.json for version $version"
           
-          # Trouver le fichier .nsis.zip généré par Tauri (PAS le .exe!)
-          $nsisZip = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.nsis.zip" -Recurse | Select-Object -First 1
+          # Trouver le fichier .exe NSIS
+          $nsisExe = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*setup.exe" -Recurse | Select-Object -First 1
           
-          if (-not $nsisZip) {
-            Write-Host "❌ NSIS .nsis.zip file not found"
+          if (-not $nsisExe) {
+            Write-Host "❌ NSIS setup.exe file not found"
             Write-Host "📂 Listing NSIS directory:"
             Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Recurse | ForEach-Object {
               Write-Host "  $($_.FullName)"
@@ -249,31 +249,32 @@ jobs:
             exit 1
           }
           
-          Write-Host "✅ Found nsis.zip: $($nsisZip.Name)"
+          Write-Host "✅ Found exe: $($nsisExe.Name)"
           
-          # Chercher le fichier .sig du .nsis.zip (PAS du .exe!)
-          $sigPath = $nsisZip.FullName + ".sig"
+          # Créer le .nsis.zip à partir du .exe
+          $zipFileName = "Discord_Publisher_${version}_x64_setup.nsis.zip"
+          Compress-Archive -Path $nsisExe.FullName -DestinationPath $zipFileName -Force
+          Write-Host "✅ Created: $zipFileName"
           
-          if (-not (Test-Path $sigPath)) {
-            Write-Host "❌ Signature file not found at: $sigPath"
-            Write-Host "📂 Looking for .sig files:"
-            Get-ChildItem -Path "src-tauri/target/release/bundle" -Filter "*.sig" -Recurse | ForEach-Object {
-              Write-Host "  Found: $($_.FullName)"
-            }
+          # IMPORTANT: Signer le .zip (pas le .exe!)
+          Write-Host "🔐 Signing the .zip file with Tauri CLI..."
+          
+          # Utiliser la commande de signature de Tauri sur le .zip
+          npx tauri signer sign "$zipFileName" --private-key "$env:TAURI_SIGNING_PRIVATE_KEY" --password "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          
+          # Vérifier que la signature du .zip a été créée
+          $zipSigPath = "$zipFileName.sig"
+          if (-not (Test-Path $zipSigPath)) {
+            Write-Host "❌ Signature file not created at: $zipSigPath"
             exit 1
           }
           
-          Write-Host "✅ Found signature: $sigPath"
+          Write-Host "✅ Zip file signed: $zipSigPath"
           
-          # Copier le .nsis.zip généré par Tauri (pas besoin de le recréer!)
-          $zipFileName = "Discord_Publisher_${version}_x64_setup.nsis.zip"
-          Copy-Item $nsisZip.FullName $zipFileName -Force
-          Write-Host "✅ Copied Tauri-generated: $zipFileName"
-          
-          # Lire la signature du .nsis.zip (PAS du .exe!)
-          $signature = Get-Content $sigPath -Raw -Encoding UTF8
+          # Lire la signature DU .ZIP (pas du .exe!)
+          $signature = Get-Content $zipSigPath -Raw -Encoding UTF8
           Write-Host "✅ Signature length: $($signature.Length) chars"
-          Write-Host "🔑 Signature content:"
+          Write-Host "🔑 Zip signature content:"
           Write-Host $signature
           
           # Créer le JSON pour Tauri updater
