@@ -8,8 +8,25 @@ export default function UpdateNotification() {
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSuccessBadge, setShowSuccessBadge] = useState(false);
+  const [updatedVersion, setUpdatedVersion] = useState<string | null>(null);
 
   useEffect(() => {
+    // Vérifier si on vient de se mettre à jour
+    const justUpdated = localStorage.getItem('justUpdated');
+    if (justUpdated) {
+      const versionInfo = JSON.parse(justUpdated);
+      console.log('[Updater] 🎉 Update successful! Now running version:', versionInfo.version);
+      setShowSuccessBadge(true);
+      setUpdatedVersion(versionInfo.version);
+      localStorage.removeItem('justUpdated');
+      
+      // Masquer le badge après 5 secondes
+      setTimeout(() => {
+        setShowSuccessBadge(false);
+      }, 5000);
+    }
+    
     // Vérifier au montage après 3 secondes
     const timeout = setTimeout(async () => {
       const version = await getVersion();
@@ -97,6 +114,13 @@ export default function UpdateNotification() {
       });
       
       console.log('[Updater] 🔄 Update installed successfully, relaunching...');
+      
+      // Marquer qu'on vient de se mettre à jour pour afficher le badge de succès
+      localStorage.setItem('justUpdated', JSON.stringify({ 
+        version: update.version,
+        timestamp: Date.now()
+      }));
+      
       await relaunch();
     } catch (err: any) {
       console.error('[Updater] ❌ Failed to install update:', err);
@@ -128,37 +152,97 @@ export default function UpdateNotification() {
     setTimeout(checkForUpdate, 24 * 60 * 60 * 1000);
   }
 
-  if (!updateAvailable) return null;
+  if (!updateAvailable && !showSuccessBadge) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 20,
-        right: 20,
-        zIndex: 10000,
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        borderRadius: 12,
-        padding: 20,
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-        maxWidth: 400,
-        animation: 'slideIn 0.3s ease-out',
-      }}
-    >
-      <style>
-        {`
-          @keyframes slideIn {
-            from {
-              transform: translateX(400px);
-              opacity: 0;
-            }
-            to {
-              transform: translateX(0);
-              opacity: 1;
-            }
-          }
-        `}
-      </style>
+    <>
+      {/* Badge de succès après mise à jour */}
+      {showSuccessBadge && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 20,
+            right: 20,
+            zIndex: 10001,
+            background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+            borderRadius: 12,
+            padding: 20,
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+            maxWidth: 400,
+            animation: 'slideIn 0.3s ease-out, fadeOut 0.5s ease-out 4.5s forwards',
+          }}
+        >
+          <style>
+            {`
+              @keyframes slideIn {
+                from {
+                  transform: translateX(400px);
+                  opacity: 0;
+                }
+                to {
+                  transform: translateX(0);
+                  opacity: 1;
+                }
+              }
+              @keyframes fadeOut {
+                from {
+                  opacity: 1;
+                  transform: translateX(0);
+                }
+                to {
+                  opacity: 0;
+                  transform: translateX(400px);
+                }
+              }
+            `}
+          </style>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 32 }}>✅</div>
+            
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+                Mise à jour réussie !
+              </div>
+              
+              <div style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.95)' }}>
+                Version {updatedVersion} installée avec succès
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification de mise à jour disponible */}
+      {updateAvailable && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 20,
+            right: 20,
+            zIndex: 10000,
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            borderRadius: 12,
+            padding: 20,
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+            maxWidth: 400,
+            animation: 'slideIn 0.3s ease-out',
+          }}
+        >
+          <style>
+            {`
+              @keyframes slideIn {
+                from {
+                  transform: translateX(400px);
+                  opacity: 0;
+                }
+                to {
+                  transform: translateX(0);
+                  opacity: 1;
+                }
+              }
+            `}
+          </style>
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ fontSize: 32 }}>🚀</div>
@@ -229,6 +313,8 @@ export default function UpdateNotification() {
           </div>
         </div>
       </div>
-    </div>
+        </div>
+      )}
+    </>
   );
 }
