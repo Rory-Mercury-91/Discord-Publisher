@@ -6,8 +6,8 @@ on:
       - 'v*.*.*'
 
 env:
-  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY_2026 }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD_2026 }}
 
 jobs:
   build-release:
@@ -116,11 +116,13 @@ jobs:
       - name: Force refresh environment secrets
         shell: pwsh
         run: |
-          Write-Host "🔄 Forcing GitHub to reload secrets..."
+          Write-Host "🔄 Using refreshed secret names to bypass cache..."
           Write-Host "Build timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-          Write-Host "This step ensures no cached secrets are used."
 
       - name: Verify signing keys are set
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY_2026 }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD_2026 }}
         shell: pwsh
         run: |
           if ($env:TAURI_SIGNING_PRIVATE_KEY) {
@@ -133,7 +135,7 @@ jobs:
               Write-Host "✅ CORRECT KEY! Matches local .env"
             } else {
               Write-Host "❌ WRONG KEY! GitHub is using cached/old key!"
-              Write-Host "This means GitHub Actions cache is the problem."
+              Write-Host "Actual: $actual"
             }
           } else {
             Write-Host "❌ TAURI_SIGNING_PRIVATE_KEY is NOT set"
@@ -143,13 +145,13 @@ jobs:
           if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ne $null) {
             Write-Host "✅ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is set"
           } else {
-            Write-Host "⚠️ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not set (this might be OK if no password)"
+            Write-Host "⚠️ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not set"
           }
 
       - name: Build application
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY_2026 }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD_2026 }}
         run: npm run build
 
       - name: List build artifacts
