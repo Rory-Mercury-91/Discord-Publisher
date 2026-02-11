@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef, ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../state/appContext';
-import { useAuth } from '../state/authContext';
+import { useAuth } from '../state/authContext'; // ✅ AJOUTÉ
 import { getSupabase } from '../lib/supabase';
 import { apiFetch } from '../lib/api-helpers';
 import { useEscapeKey } from '../hooks/useEscapeKey';
@@ -23,51 +23,43 @@ function getBaseUrl(apiUrl: string | undefined): string {
   }
 }
 
-// Catégories de logs : sources principales + filtres spéciaux
 const LOG_SOURCES = [
   { id: 'frelon' as const, label: 'Bot Frelon', default: false },
   { id: 'publisher' as const, label: 'Bot Publisher', default: true },
   { id: 'orchestrator' as const, label: 'Bot Orchestrateur', default: true },
 ] as const;
 
-
 const LOG_FILTERS = [
   { id: 'security' as const, label: 'Sécurité', default: false },
   { id: 'publisher-requests' as const, label: 'Requêtes Discord Publisher', default: false },
   { id: 'discord-api' as const, label: 'API Discord', default: false },
-  { id: 'supabase-api' as const, label: 'API Supabase', default: false }, // ✨ NOUVEAU
+  { id: 'supabase-api' as const, label: 'API Supabase', default: false },
   { id: 'debug' as const, label: 'HTTPS / Debug', default: false },
 ] as const;
 
 type LogCategory = 'frelon' | 'publisher' | 'orchestrator' | 'security' | 'publisher-requests' | 'discord-api' | 'supabase-api' | 'debug' | null;
 
 function getLineCategory(line: string): LogCategory {
-  // 1. Publisher requests
   if (/\[REQUEST\].*(?:OPTIONS|GET)\s+\/api\/(?:logs|publisher\/[^\s]+)/i.test(line)) {
     return 'publisher-requests';
   }
   
-  // 2. Discord API
   if (/\[discord\.(?:client|gateway)\]/i.test(line)) {
     return 'discord-api';
   }
   
-  // 3. Sécurité
   if (/\[AUTH\]/i.test(line)) {
     return 'security';
   }
   
-  // 4. Supabase API (AVANT debug pour avoir priorité)
   if (/\[httpx\].*supabase\.co/i.test(line)) {
     return 'supabase-api';
   }
   
-  // 5. Debug - aiohttp.* et httpx (autres que Supabase)
   if (/\[(?:aiohttp\.|httpx)\]/i.test(line)) {
     return 'debug';
   }
   
-  // 6. Sources principales
   if (/\[frelon\]/i.test(line)) return 'frelon';
   if (/\[publisher\]/i.test(line)) return 'publisher';
   if (/\[orchestrator\]/i.test(line)) return 'orchestrator';
@@ -86,32 +78,25 @@ function filterLogs(lines: string, activeCategories: Set<string>): string {
     const line = allLines[i];
     const cat = getLineCategory(line);
     
-    // Si la ligne a une catégorie, on l'évalue
     if (cat !== null) {
       lastCategory = cat;
       if (activeCategories.has(cat)) {
         result.push(line);
       }
-    } 
-    // Si la ligne n'a pas de catégorie (continuation/traceback)
-    else {
-      // Garder les lignes vides ou indentées si la dernière catégorie était active
-      // Cela permet de garder les tracebacks, stacktraces, etc.
+    } else {
       if (lastCategory && activeCategories.has(lastCategory)) {
-        // Vérifier si c'est une ligne de continuation (indentée ou traceback)
         const isContinuation = 
-          line.trim() === '' || // Ligne vide
-          line.startsWith('  ') || // Indentée (traceback Python)
-          line.startsWith('\t') || // Tab
-          /^Traceback/i.test(line) || // Début traceback
-          /^  File "/.test(line) || // Ligne File du traceback
-          /^    /.test(line) || // Code source dans traceback
-          /^[a-z_]+\.[a-z_]+\./.test(line); // Exception type (ex: aiohttp.http_exceptions)
+          line.trim() === '' ||
+          line.startsWith('  ') ||
+          line.startsWith('\t') ||
+          /^Traceback/i.test(line) ||
+          /^  File "/.test(line) ||
+          /^    /.test(line) ||
+          /^[a-z_]+\.[a-z_]+\./.test(line);
         
         if (isContinuation) {
           result.push(line);
         } else {
-          // Si ce n'est pas une continuation, réinitialiser
           lastCategory = null;
         }
       }
@@ -121,41 +106,40 @@ function filterLogs(lines: string, activeCategories: Set<string>): string {
   return result.join('\n');
 }
 
-// Coloration des logs selon la source
 function colorizeLogLine(line: string): ReactElement {
   const cat = getLineCategory(line);
   
   let color = 'var(--text)';
   
   if (/\[ERROR\]/i.test(line)) {
-    color = '#ef4444'; // Rouge
+    color = '#ef4444';
   } else if (/\[WARNING\]/i.test(line)) {
-    color = '#f59e0b'; // Orange
+    color = '#f59e0b';
   } else {
     switch (cat) {
       case 'frelon':
-        color = '#10b981'; // Vert
+        color = '#10b981';
         break;
       case 'publisher':
-        color = '#a78bfa'; // Violet
+        color = '#a78bfa';
         break;
       case 'orchestrator':
-        color = '#3b82f6'; // Bleu
+        color = '#3b82f6';
         break;
       case 'security':
-        color = '#f59e0b'; // Orange
+        color = '#f59e0b';
         break;
       case 'publisher-requests':
-        color = '#c084fc'; // Violet clair (nuance de publisher)
+        color = '#c084fc';
         break;
       case 'discord-api':
-        color = '#5865f2'; // Bleu Discord (couleur officielle)
+        color = '#5865f2';
         break;
       case 'supabase-api':
-        color = '#34d399'; // Vert émeraude (couleur Supabase)
+        color = '#34d399';
         break;
       case 'debug':
-        color = '#6b7280'; // Gris
+        color = '#6b7280';
         break;
     }
   }
@@ -175,11 +159,12 @@ function exportLogsAsTxt(content: string) {
 
 export default function LogsModal({ onClose }: LogsModalProps) {
   const { apiUrl } = useApp();
+  const { profile } = useAuth(); // ✅ AJOUTÉ
+  
   const [logs, setLogs] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // États des catégories (sources + filtres)
   const [activeCategories, setActiveCategories] = useState<Set<string>>(() => {
     const defaults = new Set<string>();
     LOG_SOURCES.forEach((s) => s.default && defaults.add(s.id));
@@ -206,6 +191,14 @@ export default function LogsModal({ onClose }: LogsModalProps) {
     });
   };
 
+  // ✅ AJOUTÉ : Filtrer les sources visibles selon droits admin
+  const visibleSources = LOG_SOURCES.filter(source => {
+    if (source.id === 'publisher' || source.id === 'orchestrator') {
+      return true;
+    }
+    return profile?.is_master_admin === true;
+  });
+
   const fetchLogs = useCallback(async () => {
     const base = getBaseUrl(apiUrl);
     const apiKey = localStorage.getItem('apiKey') || '';
@@ -216,7 +209,6 @@ export default function LogsModal({ onClose }: LogsModalProps) {
     }
     try {
       setError(null);
-      // On ne met pas de limite de lignes, l'API doit renvoyer tout le fichier courant
       const res = await apiFetch(`${base}/api/logs`, apiKey);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -224,7 +216,6 @@ export default function LogsModal({ onClose }: LogsModalProps) {
       }
       const data = await res.json();
       setLogs(data.logs || '');
-      // Si des UUID sont trouvés, enrichir les logs avec les pseudos
       if (data.unique_user_ids && data.unique_user_ids.length > 0) {
         await enrichLogsWithUsernames(data.logs, data.unique_user_ids);
       }
@@ -235,13 +226,11 @@ export default function LogsModal({ onClose }: LogsModalProps) {
     }
   }, [apiUrl]);
   
-  // Fonction pour enrichir les logs avec les pseudos
   const enrichLogsWithUsernames = async (rawLogs: string, userIds: string[]) => {
     try {
       const sb = getSupabase();
       if (!sb || userIds.length === 0) return;
       
-      // Récupérer les profils correspondants aux UUID
       const { data: profiles } = await sb
         .from('profiles')
         .select('id, pseudo')
@@ -249,14 +238,11 @@ export default function LogsModal({ onClose }: LogsModalProps) {
       
       if (!profiles || profiles.length === 0) return;
       
-      // Créer un mapping UUID -> pseudo
       const uuidToPseudo: Record<string, string> = {};
       profiles.forEach(p => {
         uuidToPseudo[p.id] = p.pseudo || 'Utilisateur';
       });
       
-      // Remplacer les UUID par les pseudos dans les logs (pour l'affichage)
-      // Format: [REQUEST] IP | UUID | METHOD PATH
       let enrichedLogs = rawLogs;
       Object.entries(uuidToPseudo).forEach(([uuid, pseudo]) => {
         const regex = new RegExp(` \\| ${uuid.replace(/-/g, '\\-')} \\| `, 'g');
@@ -266,7 +252,6 @@ export default function LogsModal({ onClose }: LogsModalProps) {
       setLogs(enrichedLogs);
     } catch (error) {
       console.warn('[Logs] Erreur enrichissement avec pseudos:', error);
-      // Ne pas bloquer l'affichage si l'enrichissement échoue
     }
   };
 
@@ -274,7 +259,6 @@ export default function LogsModal({ onClose }: LogsModalProps) {
     fetchLogs();
   }, [fetchLogs]);
 
-  // Auto-refresh toutes les 5 secondes
   useEffect(() => {
     if (!loading && !error) {
       const interval = setInterval(fetchLogs, 5000);
@@ -282,12 +266,10 @@ export default function LogsModal({ onClose }: LogsModalProps) {
     }
   }, [loading, error, fetchLogs]);
 
-  // Scroll initial EN BAS + auto-scroll si l'utilisateur est déjà en bas
   useEffect(() => {
     const container = logsContainerRef.current;
     if (!container || !displayedLogs) return;
 
-    // Premier chargement : scroll en bas
     if (isInitialScroll && displayedLogs) {
       setTimeout(() => {
         container.scrollTop = container.scrollHeight;
@@ -296,7 +278,6 @@ export default function LogsModal({ onClose }: LogsModalProps) {
       return;
     }
 
-    // Mises à jour suivantes : auto-scroll si l'utilisateur est en bas
     const isUpdate = prevLogsRef.current !== '' && prevLogsRef.current !== displayedLogs;
     prevLogsRef.current = displayedLogs;
 
@@ -312,7 +293,6 @@ export default function LogsModal({ onClose }: LogsModalProps) {
     }
   }, [displayedLogs, isInitialScroll]);
 
-  // Gérer l'affichage du bouton de retour en bas
   const handleScroll = () => {
     const container = logsContainerRef.current;
     if (!container) return;
@@ -322,7 +302,6 @@ export default function LogsModal({ onClose }: LogsModalProps) {
     setShowScrollButton(!isNearBottom);
   };
 
-  // Fonction pour scroller en bas manuellement
   const scrollToBottom = () => {
     const container = logsContainerRef.current;
     if (!container) return;
@@ -363,7 +342,6 @@ export default function LogsModal({ onClose }: LogsModalProps) {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header avec titre et croix */}
         <div
           style={{
             padding: '16px 20px',
@@ -398,7 +376,6 @@ export default function LogsModal({ onClose }: LogsModalProps) {
           </button>
         </div>
 
-        {/* Filtres : 2 lignes */}
         <div
           style={{
             padding: '12px 20px',
@@ -412,7 +389,8 @@ export default function LogsModal({ onClose }: LogsModalProps) {
           {/* Ligne 1 : Sources principales + Export */}
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              {LOG_SOURCES.map((source) => (
+              {/* ✅ MODIFIÉ : utiliser visibleSources */}
+              {visibleSources.map((source) => (
                 <label
                   key={source.id}
                   style={{
@@ -430,7 +408,6 @@ export default function LogsModal({ onClose }: LogsModalProps) {
                       : 'Logs d\'orchestration et démarrage'
                   }
                 >
-                  {/* Toggle Switch */}
                   <div
                     style={{
                       position: 'relative',
@@ -495,73 +472,74 @@ export default function LogsModal({ onClose }: LogsModalProps) {
             </div>
           </div>
 
-          {/* Ligne 2 : Filtres avancés */}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            {LOG_FILTERS.map((filter) => (
-              <label
-                key={filter.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                }}
-                title={
-                  filter.id === 'security'
-                    ? "Afficher les tentatives d'authentification échouées"
-                    : filter.id === 'publisher-requests'
-                    ? "Afficher les requêtes Discord Publisher (GET/OPTIONS sur /api/logs, /api/publisher/*, /api/publisher/health...) - masquées par défaut"
-                    : filter.id === 'discord-api'
-                    ? "Afficher les logs API Discord ([discord.client], [discord.gateway])"
-                    : filter.id === 'supabase-api'
-                    ? "Afficher les requêtes HTTP vers Supabase (lectures/écritures base de données)"
-                    : 'Afficher les requêtes HTTP/HTTPS (aiohttp.access)'
-                }
-              >
-                {/* Toggle Switch - compact */}
-                <div
+          {/* ✅ MODIFIÉ : Ligne 2 conditionnelle pour admin uniquement */}
+          {profile?.is_master_admin && (
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              {LOG_FILTERS.map((filter) => (
+                <label
+                  key={filter.id}
                   style={{
-                    position: 'relative',
-                    width: 36,
-                    height: 20,
-                    borderRadius: 10,
-                    background: activeCategories.has(filter.id)
-                      ? 'var(--accent)'
-                      : 'var(--border)',
-                    transition: 'background 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
                     cursor: 'pointer',
+                    userSelect: 'none',
                   }}
-                  onClick={() => toggleCategory(filter.id)}
+                  title={
+                    filter.id === 'security'
+                      ? "Afficher les tentatives d'authentification échouées"
+                      : filter.id === 'publisher-requests'
+                      ? "Afficher les requêtes Discord Publisher (GET/OPTIONS sur /api/logs, /api/publisher/*, /api/publisher/health...) - masquées par défaut"
+                      : filter.id === 'discord-api'
+                      ? "Afficher les logs API Discord ([discord.client], [discord.gateway])"
+                      : filter.id === 'supabase-api'
+                      ? "Afficher les requêtes HTTP vers Supabase (lectures/écritures base de données)"
+                      : 'Afficher les requêtes HTTP/HTTPS (aiohttp.access)'
+                  }
                 >
                   <div
                     style={{
-                      position: 'absolute',
-                      top: 3,
-                      left: activeCategories.has(filter.id) ? 19 : 3,
-                      width: 14,
-                      height: 14,
-                      borderRadius: '50%',
-                      background: '#fff',
-                      transition: 'left 0.2s ease',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                      position: 'relative',
+                      width: 36,
+                      height: 20,
+                      borderRadius: 10,
+                      background: activeCategories.has(filter.id)
+                        ? 'var(--accent)'
+                        : 'var(--border)',
+                      transition: 'background 0.2s ease',
+                      cursor: 'pointer',
                     }}
-                  />
-                </div>
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 500,
-                    color: activeCategories.has(filter.id) ? 'var(--text)' : 'var(--muted)',
-                  }}
-                >
-                  {filter.label}
-                </span>
-              </label>
-            ))}
-          </div>
+                    onClick={() => toggleCategory(filter.id)}
+                  >
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 3,
+                        left: activeCategories.has(filter.id) ? 19 : 3,
+                        width: 14,
+                        height: 14,
+                        borderRadius: '50%',
+                        background: '#fff',
+                        transition: 'left 0.2s ease',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                      }}
+                    />
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: activeCategories.has(filter.id) ? 'var(--text)' : 'var(--muted)',
+                    }}
+                  >
+                    {filter.label}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
-        {/* Zone de logs avec coloration */}
+        
         <div
           ref={logsContainerRef}
           onScroll={handleScroll}
@@ -591,7 +569,6 @@ export default function LogsModal({ onClose }: LogsModalProps) {
             </div>
           )}
 
-          {/* Bouton retour en bas (sticky) */}
           {showScrollButton && !loading && displayedLogs && (
             <button
               type="button"
@@ -632,7 +609,7 @@ export default function LogsModal({ onClose }: LogsModalProps) {
             </button>
           )}
         </div>
-        {/* Footer avec infos et bouton Fermer */}
+        
         <div
           style={{
             padding: '12px 20px',

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { check } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { invoke } from '@tauri-apps/api/core';
 
 export default function UpdateNotification() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -12,6 +13,18 @@ export default function UpdateNotification() {
   const [updatedVersion, setUpdatedVersion] = useState<string | null>(null);
 
   useEffect(() => {
+    // Sauvegarder le chemin d'installation au démarrage
+    const saveInstallPath = async () => {
+      try {
+        const appPath = await invoke<string>('get_app_path');
+        await invoke('save_install_path', { path: appPath });
+        console.log('[Updater] 📍 Install path saved:', appPath);
+      } catch (err) {
+        console.error('[Updater] ❌ Failed to save install path:', err);
+      }
+    };
+    
+    saveInstallPath();    
     // Vérifier si on vient de se mettre à jour
     const justUpdated = localStorage.getItem('justUpdated');
     if (justUpdated) {

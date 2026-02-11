@@ -369,7 +369,32 @@ async fn open_url(url: String) -> Result<(), String> {
     
     Ok(())
 }
+#[tauri::command]
+async fn get_app_path(app: AppHandle) -> Result<String, String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get exe path: {}", e))?;
+    
+    let canonical_path = dunce::canonicalize(&exe_path)
+        .unwrap_or_else(|_| exe_path.clone());
+    
+    Ok(canonical_path.to_string_lossy().to_string())
+}
 
+#[tauri::command]
+async fn save_install_path(app: AppHandle, path: String) -> Result<(), String> {
+    let config_dir = app.path().app_config_dir()
+        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+    
+    fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config dir: {:?}", e))?;
+    
+    let install_path_file = config_dir.join("install_path.txt");
+    
+    fs::write(&install_path_file, path)
+        .map_err(|e| format!("Failed to write install path: {:?}", e))?;
+    
+    Ok(())
+}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -403,6 +428,8 @@ pub fn run() {
             has_local_history_archive,
             get_local_history_archive,
             open_url,
+            get_app_path,
+            save_install_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

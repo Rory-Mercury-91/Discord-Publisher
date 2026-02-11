@@ -13,7 +13,6 @@ import InstructionsManagerModal from './components/InstructionsManagerModal';
 import Preview from './components/Preview';
 import StatsModal from './components/StatsModal';
 import TagsModal from './components/TagsModal';
-import TagsUnlockModal from './components/TagsUnlockModal';
 import TemplatesModal from './components/TemplatesModal';
 import UpdateNotification from './components/UpdateNotification';
 import { ToastProvider, useToast } from './components/ToastProvider';
@@ -46,10 +45,8 @@ function AppContentInner() {
     setLinkConfigs
   } = useApp();
 
-
   const { showToast } = useToast();
 
-  // Fonction pour copier le preview
   const handleCopyPreview = async () => {
     try {
       await navigator.clipboard.writeText(preview);
@@ -59,20 +56,15 @@ function AppContentInner() {
     }
   };
 
-  // Fonction pour réinitialiser tous les champs
-
   const handleResetFields = async () => {
     resetAllFields();
-    showToast('Tous les champs ont été réinialisés', 'success');
+    showToast('Tous les champs ont été réinitialisés', 'success');
   };
-
 
   const mainImagePath = uploadedImages.find(img => img.isMain)?.path;
 
-  // B. On garde tes états LOCAUX (ils sont bien ici)
   const [openTemplates, setOpenTemplates] = useState(false);
   const [openTags, setOpenTags] = useState(false);
-  const [openTagsUnlock, setOpenTagsUnlock] = useState(false);
   const [openConfigGate, setOpenConfigGate] = useState(false);
   const [openConfig, setOpenConfig] = useState(false);
   const [configAdminMode, setConfigAdminMode] = useState(false);
@@ -83,7 +75,6 @@ function AppContentInner() {
   const [openDiscordPreview, setOpenDiscordPreview] = useState(false);
   const [showLogsModal, setShowLogsModal] = useState(false);
 
-  // C. État local du Thème (il est bien ici aussi)
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try {
       const saved = localStorage.getItem('theme');
@@ -97,8 +88,6 @@ function AppContentInner() {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   };
 
-  // --- TES EFFETS ---
-
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
@@ -108,7 +97,7 @@ function AppContentInner() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'h') {
         e.preventDefault();
-        setOpenHistory(true); // Utilise l'état local
+        setOpenHistory(true);
       }
       if (e.ctrlKey && e.key === 't') {
         e.preventDefault();
@@ -120,18 +109,14 @@ function AppContentInner() {
   }, [theme]);
 
   useEffect(() => {
-    // On vérifie juste si on a une URL enregistrée pour savoir si on est "configuré"
     const storedUrl = localStorage.getItem('apiUrl') || localStorage.getItem('apiBase');
 
     if (!storedUrl) {
       setApiStatus('disconnected');
     } else {
-      // On initialise à "checking". 
-      // C'est le composant ApiStatusBadge qui fera le VRAI travail réseau
       setApiStatus('checking');
     }
   }, [setApiStatus]);
-
 
   return (
     <div className="app" style={{ height: '100vh', minHeight: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -143,8 +128,18 @@ function AppContentInner() {
         </h1>
         <div style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <button onClick={() => setOpenTemplates(true)}>📁 Gérer le Template</button>
-            <button onClick={() => setOpenTagsUnlock(true)}>🏷️ Gérer les Tags</button>
+            <button onClick={() => setOpenTemplates(true)}>📝 Gérer le Template</button>
+            <button 
+              onClick={() => {
+                if (profile?.is_master_admin) {
+                  setOpenTags(true);
+                } else {
+                  showToast('Accès réservé aux administrateurs', 'warning');
+                }
+              }}
+            >
+              🏷️ Gérer les Tags
+            </button>
             <button onClick={() => setOpenInstructions(true)}>📋 Gérer les Instructions</button>
             <button onClick={() => setOpenHistory(true)}>📜 Historique</button>
             <button onClick={() => setOpenStats(true)}>📈 Statistiques</button>
@@ -160,7 +155,6 @@ function AppContentInner() {
             >
               ⚙️ Configuration
             </button>
-            {/* Place ApiStatusBadge juste avant le bouton "?" */}
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               <ApiStatusBadge onOpenLogs={() => setShowLogsModal(true)} />
               <button
@@ -197,7 +191,6 @@ function AppContentInner() {
           </div>
         </div>
       </header>
-      {/* Layout principal en CSS Grid */}
       <main style={{
         display: 'grid',
         gridTemplateRows: 'auto 1fr',
@@ -207,7 +200,6 @@ function AppContentInner() {
         overflow: 'hidden',
         boxSizing: 'border-box'
       }}>
-        {/* Ligne 2 : 2 colonnes */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: '65% 35%',
@@ -216,7 +208,6 @@ function AppContentInner() {
           overflow: 'hidden',
           boxSizing: 'border-box'
         }}>
-          {/* Colonne gauche : ContentEditor — padding interne pour que la scrollbar ne mange pas les bordures des champs */}
           <div
             className="styled-scrollbar"
             style={{
@@ -233,7 +224,6 @@ function AppContentInner() {
               <ContentEditor />
             </div>
           </div>
-          {/* Colonne droite : Preview */}
           <div
             data-preview-container
             style={{
@@ -256,16 +246,6 @@ function AppContentInner() {
       </main>
 
       {openTemplates && <TemplatesModal onClose={() => setOpenTemplates(false)} />}
-      {openTagsUnlock && (
-        <TagsUnlockModal
-          isOpen={openTagsUnlock}
-          onClose={() => setOpenTagsUnlock(false)}
-          onUnlock={() => {
-            setOpenTagsUnlock(false);
-            setOpenTags(true);
-          }}
-        />
-      )}
       {openTags && <TagsModal onClose={() => setOpenTags(false)} />}
       {openConfigGate && (
         <ConfigGateModal
@@ -298,7 +278,6 @@ function AppContentInner() {
       )}
       {showLogsModal && <LogsModal onClose={() => setShowLogsModal(false)} />}
       
-      {/* Update notification - always mounted to check for updates */}
       <UpdateNotification />
     </div>
   );
