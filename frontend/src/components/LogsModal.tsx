@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback, useRef, ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../state/appContext';
+import { useAuth } from '../state/authContext';
+import { getSupabase } from '../lib/supabase';
+import { apiFetch } from '../lib/api-helpers';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
 
@@ -151,21 +154,59 @@ export default function LogsModal({ onClose }: LogsModalProps) {
     }
     try {
       setError(null);
-      const res = await fetch(`${base}/api/logs?lines=500`, {
-        headers: { 'X-API-KEY': apiKey },
-      });
+      const res = await apiFetch(`${base}/api/logs?lines=500`, apiKey);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `Erreur ${res.status}`);
       }
       const data = await res.json();
       setLogs(data.logs || '');
+      
+      // Si des UUID sont trouvés, enrichir les logs avec les pseudos
+      if (data.unique_user_ids && data.unique_user_ids.length > 0) {
+        await enrichLogsWithUsernames(data.logs, data.unique_user_ids);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
   }, [apiUrl]);
+  
+  // Fonction pour enrichir les logs avec les pseudos
+  const enrichLogsWithUsernames = async (rawLogs: string, userIds: string[]) => {
+    try {
+      const sb = getSupabase();
+      if (!sb || userIds.length === 0) return;
+      
+      // Récupérer les profils correspondants aux UUID
+      const { data: profiles } = await sb
+        .from('profiles')
+        .select('id, pseudo')
+        .in('id', userIds);
+      
+      if (!profiles || profiles.length === 0) return;
+      
+      // Créer un mapping UUID -> pseudo
+      const uuidToPseudo: Record<string, string> = {};
+      profiles.forEach(p => {
+        uuidToPseudo[p.id] = p.pseudo || 'Utilisateur';
+      });
+      
+      // Remplacer les UUID par les pseudos dans les logs (pour l'affichage)
+      // Format: [REQUEST] IP | UUID | METHOD PATH
+      let enrichedLogs = rawLogs;
+      Object.entries(uuidToPseudo).forEach(([uuid, pseudo]) => {
+        const regex = new RegExp(` \\| ${uuid.replace(/-/g, '\\-')} \\| `, 'g');
+        enrichedLogs = enrichedLogs.replace(regex, ` | @${pseudo} | `);
+      });
+      
+      setLogs(enrichedLogs);
+    } catch (error) {
+      console.warn('[Logs] Erreur enrichissement avec pseudos:', error);
+      // Ne pas bloquer l'affichage si l'enrichissement échoue
+    }
+  };
 
   useEffect(() => {
     fetchLogs();

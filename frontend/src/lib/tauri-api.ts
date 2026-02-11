@@ -4,9 +4,10 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { createApiHeaders } from './api-helpers';
 
 // Types de retour - Exportés pour utilisation dans les composants
-export interface PublishPostData {
+interface PublishPostData {
   thread_id?: string;
   message_id?: string;
   thread_url?: string;
@@ -68,11 +69,10 @@ export const tauriAPI = {
     try {
       const apiUrl = localStorage.getItem('apiUrl') || '';
       const apiKey = localStorage.getItem('apiKey') || '';
+      const headers = await createApiHeaders(apiKey);
       const response = await fetch(`${apiUrl}/api/forum-post`, {
         method: 'POST',
-        headers: {
-          'X-API-KEY': apiKey
-        },
+        headers,
         body: payload
       });
       if (response.ok) {

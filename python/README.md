@@ -24,9 +24,10 @@ Lance le menu interactif qui donne accÃ¨s Ã  toutes les fonctions :
 - **[5]** Tester l'API Publisher
 - **[6]** VÃ©rifier le pare-feu (iptables)
 - **[7]** Corriger le pare-feu (port 8080)
-- **[8]** Nettoyer les rÃ¨gles iptables dupliquÃ©es
-
-### ðŸ”— CrÃ©er un Raccourci Bureau (RecommandÃ©)
+- **[8]** Nettoyer les rÃ¨gles iptables dupliquÃ©es- **[12]** Bloquer une IP malveillante
+- **[13]** Lister les IP bloquées
+- **[14]** Débloquer une IP- **[15]** Analyser les logs (compter les IP)
+- **[16]** Bloquer plusieurs IP d'un coup### ðŸ”— CrÃ©er un Raccourci Bureau (RecommandÃ©)
 
 Pour accÃ©der rapidement au menu, crÃ©e un raccourci sur le bureau :
 
@@ -181,7 +182,111 @@ Si tu dois ouvrir un nouveau port ou si la connexion Ã©choue :
 2. **Pare-feu Linux (iptables) :** Utilise le script **`SSH_FixFirewall.ps1`** depuis le menu !
 
 ---
+## 🛡️ Sécurité : Blocage d'IP Malveillantes
 
+### Détecter les Attaques
+
+Surveille tes logs pour repérer des tentatives d'intrusion :
+- **Path traversal :** `GET /../../../.env`
+- **Scan de ports** répétés
+- **Tentatives d'accès** à des fichiers sensibles (`.env`, `.aws/credentials`, etc.)
+
+### Bloquer une IP
+
+**Via le Menu PowerShell :**
+```powershell
+.\outils_serveur\0_SSH_Menu.ps1 → [12] Bloquer une IP malveillante
+```
+
+Le script te demandera l'IP à bloquer et confirmera l'action. L'IP sera bloquée immédiatement et le blocage persistera après un reboot du serveur.
+
+**En SSH manuel :**
+```bash
+sudo iptables -I INPUT 1 -s 204.76.203.210 -j DROP
+sudo netfilter-persistent save
+```
+
+### Lister les IP Bloquées
+
+**Via le Menu PowerShell :**
+```powershell
+.\outils_serveur\0_SSH_Menu.ps1 → [13] Lister les IP bloquées
+```
+
+### Débloquer une IP
+
+Si tu as bloqué une IP par erreur :
+
+**Via le Menu PowerShell :**
+```powershell
+.\outils_serveur\0_SSH_Menu.ps1 → [14] Débloquer une IP
+```
+
+**En SSH manuel :**
+```bash
+sudo iptables -D INPUT -s 204.76.203.210 -j DROP
+sudo netfilter-persistent save
+```
+
+### Analyser les Logs (Identifier les IP Suspectes)
+
+**Via le Menu PowerShell :**
+```powershell
+.\outils_serveur\0_SSH_Menu.ps1 → [15] Analyser les logs
+```
+
+Ce script affiche :
+- **Top 20 des IP** les plus fréquentes dans les logs
+- **Tentatives CONNECT** (abus de proxy)
+- **Path traversal** (tentatives `../` d'accès aux fichiers)
+- **Utilisateurs identifiés** : Les logs incluent maintenant l'UUID de l'utilisateur connecté pour tracer les requêtes légitimes
+
+#### 🆕 Système de Traçabilité des Utilisateurs
+
+Votre application envoie automatiquement un header `X-User-ID` avec l'UUID de l'utilisateur connecté. Cela permet de distinguer facilement :
+- ✅ **Vos utilisateurs** (identifiés par UUID → pseudo)
+- ⚠️ **IP suspectes** (pas d'UUID = `NULL`)
+
+**Format des logs :**
+```
+[REQUEST] IP | UUID | METHOD PATH
+
+Exemples :
+[REQUEST] 86.246.87.222 | abc-123-uuid | GET /health  ← Utilisateur légitime
+[REQUEST] 204.76.203.210 | NULL | GET /../.env        ← Attaquant
+```
+
+📖 **Documentation complète :** Voir [TRACABILITE_UTILISATEURS.md](../docs_perso/TRACABILITE_UTILISATEURS.md)
+
+**Regex pour extraire les IP** (si tu veux le faire manuellement) :
+```regex
+\b(?:\d{1,3}\.){3}\d{1,3}\b
+```
+
+Exemple PowerShell local pour analyser un fichier :
+```powershell
+Select-String -Path "log.txt" -Pattern "\b(?:\d{1,3}\.){3}\d{1,3}\b" -AllMatches | 
+  ForEach-Object { $_.Matches.Value } | 
+  Group-Object | 
+  Sort-Object Count -Descending
+```
+
+### Bloquer Plusieurs IP d'Un Coup
+
+**Via le Menu PowerShell :**
+```powershell
+.\outils_serveur\0_SSH_Menu.ps1 → [16] Bloquer plusieurs IP
+```
+
+Entre les IP une par ligne, appuie sur ENTRÉE deux fois pour valider. Le script bloquera toutes les IP confirmées en une seule opération.
+
+### ⚠️ Bonnes Pratiques
+
+- **Vérifie avant de bloquer :** Certaines IP peuvent être des scanners légitimes (ex: Google, Bing)
+- **Note les IP bloquées :** Garde une trace des IP malveillantes pour référence
+- **Ne bloque pas d'IP "importantes" :** Évite de bloquer des plages d'IP de CDN ou services cloud connus
+
+---
 ## ðŸ“‹ Diagnostic et DÃ©pannage
 
 ### ðŸ” Consulter les Logs
@@ -256,7 +361,7 @@ Le script teste automatiquement :
 | **RedÃ©marrer les bots** | Menu â†’ [4] |
 | **Voir les logs** | Menu â†’ [2] |
 | **Tester l'API** | Menu â†’ [5] |
-| **ProblÃ¨me de connexion** | Menu â†’ [6] puis [7] ou [8] |
-
-**Tu Ã©teins ton PC ?** Aucun souci : les bots tournent sur le serveur Oracle Cloud, pas sur ton PC ! ðŸš€
+| **ProblÃ¨me de connexion** | Menu â†’ [6] puis [7] ou [8] || **Bloquer une IP malveillante** | Menu â†' [12] |
+| **Voir les IP bloquÃ©es** | Menu â†' [13] || **Analyser les logs (IP suspectes)** | Menu â†' [15] |
+| **Bloquer plusieurs IP** | Menu â†' [16] |**Tu Ã©teins ton PC ?** Aucun souci : les bots tournent sur le serveur Oracle Cloud, pas sur ton PC ! ðŸš€
 

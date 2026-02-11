@@ -1872,6 +1872,11 @@ def _get_client_ip(request) -> str:
         return real_ip.strip()
     return request.remote or "unknown"
 
+def _get_user_id(request) -> str:
+    """Extrait l'UUID utilisateur du header X-User-ID."""
+    user_id = request.headers.get("X-User-ID", "").strip()
+    return user_id if user_id else "NULL"
+
 def _with_cors(request, resp):
     """Applique les headers CORS avec whitelist d'origines autorisées."""
     origin = request.headers.get("Origin", "")
@@ -1989,6 +1994,27 @@ async def _send_deletion_announcement(
     
     logger.info(f"✅ Annonce de suppression envoyée: {title_clean}")
     return True
+
+
+# ==================== MIDDLEWARE ====================
+@web.middleware
+async def logging_middleware(request, handler):
+    """Middleware pour logger les requêtes avec IP et UUID utilisateur."""
+    client_ip = _get_client_ip(request)
+    user_id = _get_user_id(request)
+    method = request.method
+    path = request.path
+    
+    # Log enrichi avec IP et UUID (formaté pour être facilement parsable)
+    logger.info(f"[REQUEST] {client_ip} | {user_id} | {method} {path}")
+    
+    # Continuer le traitement normal
+    response = await handler(request)
+    
+    # Optionnel : logger aussi la réponse
+    # logger.info(f"[RESPONSE] {client_ip} | {user_id} | {method} {path} → {response.status}")
+    
+    return response
 
 
 # ==================== HANDLERS HTTP ====================
@@ -2455,7 +2481,7 @@ async def forum_post_delete(request):
     return _with_cors(request, web.json_response({"ok": True, "thread_id": thread_id}))
 
 # ==================== APPLICATION WEB ====================
-app = web.Application()
+app = web.Application(middlewares=[logging_middleware])
 app.add_routes([
     web.get('/api/publisher/health', health),
     web.post('/api/forum-post', forum_post),

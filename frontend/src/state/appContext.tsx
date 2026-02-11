@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import ErrorModal from '../components/ErrorModal';
 import { getSupabase } from '../lib/supabase';
 import { tauriAPI } from '../lib/tauri-api';
+import { apiFetch, createApiHeaders } from '../lib/api-helpers';
 import { useAuth } from './authContext';
 import { defaultTemplates, defaultVarsConfig } from './defaults';
 import { useImagesState } from './hooks/useImagesState';
@@ -777,10 +778,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const endpoint = `${baseUrl}/api/history`;
-      const response = await fetch(endpoint, {
+      const response = await apiFetch(endpoint, apiKey, {
         method: 'GET',
         headers: {
-          'X-API-KEY': apiKey,
           'Content-Type': 'application/json'
         }
       });
@@ -1045,11 +1045,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const apiKey = localStorage.getItem('apiKey') || '';
 
+      const headers = await createApiHeaders(apiKey);
       const response = await fetch(apiEndpoint, {
         method: 'POST',
-        headers: {
-          'X-API-KEY': apiKey
-        },
+        headers,
         body: formData
       });
 

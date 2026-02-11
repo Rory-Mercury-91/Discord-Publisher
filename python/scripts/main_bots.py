@@ -37,6 +37,7 @@ from publisher_api import (
     forum_post_delete,
     get_history,
     _with_cors,
+    logging_middleware,  # Import du middleware
 )
 
 
@@ -94,20 +95,40 @@ async def get_logs(request):
         lines = min(max(lines, 50), 2000)
     except ValueError:
         lines = 500
+    
     content = ""
+    unique_user_ids = set()
+    
     if LOG_FILE.exists():
         try:
             with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
                 all_lines = f.readlines()
-                content = "".join(all_lines[-lines:])
+                last_lines = all_lines[-lines:]
+                content = "".join(last_lines)
+                
+                # Parser les lignes pour extraire les UUID (format: [REQUEST] IP | UUID | ...)
+                for line in last_lines:
+                    if "[REQUEST]" in line:
+                        # Format attendu: [REQUEST] IP | UUID | METHOD PATH
+                        parts = line.split(" | ")
+                        if len(parts) >= 2:
+                            user_id = parts[1].strip()
+                            # Vérifier que c'est un UUID (format basique)
+                            if user_id != "NULL" and len(user_id) >= 32 and "-" in user_id:
+                                unique_user_ids.add(user_id)
         except Exception as e:
             logger.warning(f"Erreur lecture logs: {e}")
             content = f"[Erreur lecture: {e}]"
-    return _with_cors(request, web.json_response({"ok": True, "logs": content}))
+    
+    return _with_cors(request, web.json_response({
+        "ok": True,
+        "logs": content,
+        "unique_user_ids": list(unique_user_ids)  # Liste des UUID pour lookup frontend
+    }))
 
 
 def make_app():
-    app = web.Application()
+    app = web.Application(middlewares=[logging_middleware])
 
     # OPTIONS global (CORS) : couvre toutes les routes (status/health/history inclus)
     app.router.add_route("OPTIONS", "/{tail:.*}", options_handler)

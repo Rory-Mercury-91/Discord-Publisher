@@ -3,6 +3,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
 import { getSupabase } from '../lib/supabase';
+import { createApiHeaders } from '../lib/api-helpers';
 import { PublishedPost, useApp } from '../state/appContext';
 import type { Profile } from '../state/authContext';
 import { useAuth } from '../state/authContext';
@@ -157,9 +158,10 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
       return;
     }
     try {
+      const headers = await createApiHeaders(apiKey, { 'Content-Type': 'application/json' });
       const res = await fetch(`${baseUrl}/api/forum-post/delete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-KEY': apiKey },
+        headers,
         body: JSON.stringify({ threadId, postId: post.id, postTitle: post.title, reason: reason || undefined })
       });
       const data = await res.json().catch(() => ({}));
