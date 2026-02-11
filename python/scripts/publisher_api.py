@@ -1997,6 +1997,9 @@ async def _send_deletion_announcement(
 
 
 # ==================== MIDDLEWARE ====================
+# Cache pour stocker les UUID par IP (pour les requêtes OPTIONS sans UUID)
+_ip_user_cache = {}
+
 @web.middleware
 async def logging_middleware(request, handler):
     """Middleware pour logger les requêtes avec IP et UUID utilisateur."""
@@ -2004,6 +2007,14 @@ async def logging_middleware(request, handler):
     user_id = _get_user_id(request)
     method = request.method
     path = request.path
+    
+    # Si pas d'UUID (cas des OPTIONS) : utiliser le dernier UUID connu pour cette IP
+    if not user_id or user_id == "NULL":
+        if client_ip in _ip_user_cache:
+            user_id = _ip_user_cache[client_ip]
+    else:
+        # Mettre en cache l'UUID pour cette IP (pour les prochaines OPTIONS)
+        _ip_user_cache[client_ip] = user_id
     
     # Log enrichi avec IP et UUID (formaté pour être facilement parsable)
     logger.info(f"[REQUEST] {client_ip} | {user_id} | {method} {path}")

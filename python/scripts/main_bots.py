@@ -79,7 +79,7 @@ async def health(request):
 
 
 async def get_logs(request):
-    """Retourne les dernières lignes du fichier de logs (admin, protégé par clé API)."""
+    """Retourne le fichier de logs complet (admin, protégé par clé API)."""
     api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
     if api_key != publisher_config.PUBLISHER_API_KEY:
         # Extraction IP pour logging (helper depuis publisher_api)
@@ -90,11 +90,6 @@ async def get_logs(request):
             client_ip = request.headers.get("X-Real-IP") or request.remote or "unknown"
         logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/logs)")
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
-    try:
-        lines = int(request.query.get("lines", "500"))
-        lines = min(max(lines, 50), 2000)
-    except ValueError:
-        lines = 500
     
     content = ""
     unique_user_ids = set()
@@ -102,12 +97,12 @@ async def get_logs(request):
     if LOG_FILE.exists():
         try:
             with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+                # ✅ Lire TOUT le fichier (pas de limitation)
                 all_lines = f.readlines()
-                last_lines = all_lines[-lines:]
-                content = "".join(last_lines)
+                content = "".join(all_lines)
                 
                 # Parser les lignes pour extraire les UUID (format: [REQUEST] IP | UUID | ...)
-                for line in last_lines:
+                for line in all_lines:
                     if "[REQUEST]" in line:
                         # Format attendu: [REQUEST] IP | UUID | METHOD PATH
                         parts = line.split(" | ")

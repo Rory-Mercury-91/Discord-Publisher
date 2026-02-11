@@ -30,19 +30,44 @@ const LOG_SOURCES = [
   { id: 'orchestrator' as const, label: 'Bot Orchestrateur', default: true },
 ] as const;
 
+
 const LOG_FILTERS = [
   { id: 'security' as const, label: 'Sécurité', default: false },
+  { id: 'publisher-requests' as const, label: 'Requêtes Discord Publisher', default: false },
+  { id: 'discord-api' as const, label: 'API Discord', default: false },
+  { id: 'supabase-api' as const, label: 'API Supabase', default: false }, // ✨ NOUVEAU
   { id: 'debug' as const, label: 'HTTPS / Debug', default: false },
 ] as const;
 
-type LogCategory = 'frelon' | 'publisher' | 'orchestrator' | 'security' | 'debug' | null;
+type LogCategory = 'frelon' | 'publisher' | 'orchestrator' | 'security' | 'publisher-requests' | 'discord-api' | 'supabase-api' | 'debug' | null;
 
 function getLineCategory(line: string): LogCategory {
-  // Filtres spéciaux
-  if (/\[AUTH\]/i.test(line)) return 'security';
-  if (/"(?:OPTIONS|GET)\s+\/api\/logs/i.test(line) || /aiohttp\.access/i.test(line)) return 'debug';
+  // 1. Publisher requests
+  if (/\[REQUEST\].*(?:OPTIONS|GET)\s+\/api\/(?:logs|publisher\/[^\s]+)/i.test(line)) {
+    return 'publisher-requests';
+  }
   
-  // Sources principales
+  // 2. Discord API
+  if (/\[discord\.(?:client|gateway)\]/i.test(line)) {
+    return 'discord-api';
+  }
+  
+  // 3. Sécurité
+  if (/\[AUTH\]/i.test(line)) {
+    return 'security';
+  }
+  
+  // 4. Supabase API (AVANT debug pour avoir priorité)
+  if (/\[httpx\].*supabase\.co/i.test(line)) {
+    return 'supabase-api';
+  }
+  
+  // 5. Debug - aiohttp.* et httpx (autres que Supabase)
+  if (/\[(?:aiohttp\.|httpx)\]/i.test(line)) {
+    return 'debug';
+  }
+  
+  // 6. Sources principales
   if (/\[frelon\]/i.test(line)) return 'frelon';
   if (/\[publisher\]/i.test(line)) return 'publisher';
   if (/\[orchestrator\]/i.test(line)) return 'orchestrator';
@@ -53,19 +78,47 @@ function getLineCategory(line: string): LogCategory {
 function filterLogs(lines: string, activeCategories: Set<string>): string {
   if (activeCategories.size === 0) return '';
   
-  return lines
-    .split('\n')
-    .filter((line) => {
-      const cat = getLineCategory(line);
-      
-      // Ligne sans catégorie (messages génériques) : afficher si au moins une source est active
-      if (!cat) {
-        return LOG_SOURCES.some((s) => activeCategories.has(s.id));
+  const allLines = lines.split('\n');
+  const result: string[] = [];
+  let lastCategory: LogCategory = null;
+  
+  for (let i = 0; i < allLines.length; i++) {
+    const line = allLines[i];
+    const cat = getLineCategory(line);
+    
+    // Si la ligne a une catégorie, on l'évalue
+    if (cat !== null) {
+      lastCategory = cat;
+      if (activeCategories.has(cat)) {
+        result.push(line);
       }
-      
-      return activeCategories.has(cat);
-    })
-    .join('\n');
+    } 
+    // Si la ligne n'a pas de catégorie (continuation/traceback)
+    else {
+      // Garder les lignes vides ou indentées si la dernière catégorie était active
+      // Cela permet de garder les tracebacks, stacktraces, etc.
+      if (lastCategory && activeCategories.has(lastCategory)) {
+        // Vérifier si c'est une ligne de continuation (indentée ou traceback)
+        const isContinuation = 
+          line.trim() === '' || // Ligne vide
+          line.startsWith('  ') || // Indentée (traceback Python)
+          line.startsWith('\t') || // Tab
+          /^Traceback/i.test(line) || // Début traceback
+          /^  File "/.test(line) || // Ligne File du traceback
+          /^    /.test(line) || // Code source dans traceback
+          /^[a-z_]+\.[a-z_]+\./.test(line); // Exception type (ex: aiohttp.http_exceptions)
+        
+        if (isContinuation) {
+          result.push(line);
+        } else {
+          // Si ce n'est pas une continuation, réinitialiser
+          lastCategory = null;
+        }
+      }
+    }
+  }
+  
+  return result.join('\n');
 }
 
 // Coloration des logs selon la source
@@ -91,6 +144,15 @@ function colorizeLogLine(line: string): ReactElement {
         break;
       case 'security':
         color = '#f59e0b'; // Orange
+        break;
+      case 'publisher-requests':
+        color = '#c084fc'; // Violet clair (nuance de publisher)
+        break;
+      case 'discord-api':
+        color = '#5865f2'; // Bleu Discord (couleur officielle)
+        break;
+      case 'supabase-api':
+        color = '#34d399'; // Vert émeraude (couleur Supabase)
         break;
       case 'debug':
         color = '#6b7280'; // Gris
@@ -154,14 +216,14 @@ export default function LogsModal({ onClose }: LogsModalProps) {
     }
     try {
       setError(null);
-      const res = await apiFetch(`${base}/api/logs?lines=500`, apiKey);
+      // On ne met pas de limite de lignes, l'API doit renvoyer tout le fichier courant
+      const res = await apiFetch(`${base}/api/logs`, apiKey);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `Erreur ${res.status}`);
       }
       const data = await res.json();
       setLogs(data.logs || '');
-      
       // Si des UUID sont trouvés, enrichir les logs avec les pseudos
       if (data.unique_user_ids && data.unique_user_ids.length > 0) {
         await enrichLogsWithUsernames(data.logs, data.unique_user_ids);
@@ -447,7 +509,13 @@ export default function LogsModal({ onClose }: LogsModalProps) {
                 }}
                 title={
                   filter.id === 'security'
-                    ? 'Afficher les tentatives d\'authentification échouées'
+                    ? "Afficher les tentatives d'authentification échouées"
+                    : filter.id === 'publisher-requests'
+                    ? "Afficher les requêtes Discord Publisher (GET/OPTIONS sur /api/logs, /api/publisher/*, /api/publisher/health...) - masquées par défaut"
+                    : filter.id === 'discord-api'
+                    ? "Afficher les logs API Discord ([discord.client], [discord.gateway])"
+                    : filter.id === 'supabase-api'
+                    ? "Afficher les requêtes HTTP vers Supabase (lectures/écritures base de données)"
                     : 'Afficher les requêtes HTTP/HTTPS (aiohttp.access)'
                 }
               >
@@ -514,7 +582,7 @@ export default function LogsModal({ onClose }: LogsModalProps) {
           ) : loading ? (
             <div style={{ color: 'var(--muted)', padding: 10 }}>⏳ Chargement des logs...</div>
           ) : displayedLogs ? (
-            displayedLogs.split('\n').map((line, idx) => (
+            displayedLogs.split('\n').map((line: string, idx: number) => (
               <div key={idx}>{line ? colorizeLogLine(line) : '\u00A0'}</div>
             ))
           ) : (
@@ -578,7 +646,17 @@ export default function LogsModal({ onClose }: LogsModalProps) {
           }}
         >
           <div>
-            Auto-refresh: 5s • 500 lignes
+            Auto-refresh: 5s • fichier courant complet
+            <span
+              style={{
+                marginLeft: 8,
+                textDecoration: 'underline dotted',
+                cursor: 'help',
+              }}
+              title="Pour accéder à l'intégralité de l'historique (archives), contactez le développeur. Seul le fichier de logs courant (max 5 Mo) est affiché ici."
+            >
+              ℹ️
+            </span>
             {activeCategories.size > 0 && (
               <>
                 {' • Actifs: '}
