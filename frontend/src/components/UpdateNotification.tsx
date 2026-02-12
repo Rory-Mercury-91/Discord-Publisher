@@ -11,48 +11,35 @@ export default function UpdateNotification() {
   const [error, setError] = useState<string | null>(null);
   const [showSuccessBadge, setShowSuccessBadge] = useState(false);
   const [updatedVersion, setUpdatedVersion] = useState<string | null>(null);
-  const [installDrive, setInstallDrive] = useState<string>('C:');
+  const [isNonStandardInstall, setIsNonStandardInstall] = useState(false);
 
   useEffect(() => {
-    // ✅ NOUVEAU : Obtenir et afficher la lettre du disque d'installation
-    const detectInstallDrive = async () => {
+    const checkInstallLocation = async () => {
       try {
-        const drive = await invoke<string>('get_install_drive');
-        setInstallDrive(drive);
-        console.log('[Updater] 💿 Installation drive:', drive);
-      } catch (err) {
-        console.error('[Updater] ❌ Failed to detect install drive:', err);
-      }
-    };
-
-    detectInstallDrive();
-
-    // ✅ AMÉLIORÉ : Sauvegarder et vérifier le chemin d'installation
-    const saveAndVerifyInstallPath = async () => {
-      try {
-        // 1. Obtenir le chemin
         const appPath = await invoke<string>('get_app_path');
-        console.log('[Updater] 📍 Current app path:', appPath);
+        console.log('[Updater] 📍 Install path:', appPath);
 
-        // 2. Sauvegarder le chemin
-        await invoke('save_install_path', { path: appPath });
-        console.log('[Updater] ✅ Install path saved successfully');
+        // Vérifier si l'installation est dans un emplacement non-standard
+        const isStandard = appPath.toLowerCase().includes('\\appdata\\') ||
+          appPath.toLowerCase().includes('\\program files');
 
-        // 3. Vérifier immédiatement que le chemin a bien été sauvegardé
-        const verifiedPath = await invoke<string>('verify_install_path');
-        console.log('[Updater] ✅ Install path verified:', verifiedPath);
+        setIsNonStandardInstall(!isStandard);
 
-        if (verifiedPath !== appPath) {
-          console.warn('[Updater] ⚠️ Path mismatch! Expected:', appPath, 'Got:', verifiedPath);
+        if (!isStandard) {
+          console.warn('[Updater] ⚠️ Application installée dans un emplacement non-standard');
+          console.warn('[Updater] ⚠️ Les mises à jour automatiques peuvent ne pas fonctionner');
         }
+
+        // Sauvegarder le chemin
+        await invoke('save_install_path', { path: appPath });
+        console.log('[Updater] ✅ Install path saved');
+
       } catch (err) {
-        console.error('[Updater] ❌ Failed to save/verify install path:', err);
-        // Afficher une notification à l'utilisateur si le chemin ne peut pas être sauvegardé
-        setError('Impossible de sauvegarder le chemin d\'installation. Les mises à jour pourraient ne pas fonctionner correctement.');
+        console.error('[Updater] ❌ Failed to check install location:', err);
       }
     };
 
-    saveAndVerifyInstallPath();
+    checkInstallLocation();
 
     // Vérifier si on vient de se mettre à jour
     const justUpdated = localStorage.getItem('justUpdated');
@@ -63,10 +50,7 @@ export default function UpdateNotification() {
       setUpdatedVersion(versionInfo.version);
       localStorage.removeItem('justUpdated');
 
-      // Masquer le badge après 5 secondes
-      setTimeout(() => {
-        setShowSuccessBadge(false);
-      }, 5000);
+      setTimeout(() => setShowSuccessBadge(false), 5000);
     }
 
     // Vérifier au montage après 3 secondes
@@ -82,21 +66,11 @@ export default function UpdateNotification() {
   async function checkForUpdate() {
     try {
       console.log('[Updater] 🔍 Checking for updates...');
-      console.log('[Updater] 📍 Endpoint:', 'https://github.com/Rory-Mercury-91/Discord-Publisher/releases/latest/download/latest.json');
-      console.log('[Updater] 💿 Install drive:', installDrive);
 
       const update = await check();
 
-      console.log('[Updater] 🔍 Update check result:', update);
-
       if (update) {
         console.log(`[Updater] ✨ New version available: ${update.version} (current: ${update.currentVersion})`);
-        console.log('[Updater] 📦 Update details:', {
-          version: update.version,
-          currentVersion: update.currentVersion,
-          date: update.date,
-          body: update.body
-        });
         setUpdateAvailable(true);
         setUpdateVersion(update.version);
       } else {
@@ -104,32 +78,23 @@ export default function UpdateNotification() {
       }
     } catch (err) {
       console.error('[Updater] ❌ Failed to check for updates:', err);
-      console.error('[Updater] ❌ Error details:', {
-        message: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : undefined
-      });
     }
   }
 
   async function handleUpdate() {
+    if (isNonStandardInstall) {
+      // Pour les installations non-standard, proposer le téléchargement manuel
+      handleManualDownload();
+      return;
+    }
+
     try {
       setIsInstalling(true);
       setError(null);
 
-      console.log('[Updater] 📥 Starting update download and installation...');
-      console.log('[Updater] 💿 Current install drive:', installDrive);
-
-      // ✅ NOUVEAU : Vérifier le chemin d'installation avant de mettre à jour
-      try {
-        const verifiedPath = await invoke<string>('verify_install_path');
-        console.log('[Updater] ✅ Pre-update path verification successful:', verifiedPath);
-      } catch (verifyErr) {
-        console.error('[Updater] ❌ Pre-update path verification failed:', verifyErr);
-        throw new Error('Le chemin d\'installation n\'est pas accessible. Veuillez relancer l\'application.');
-      }
+      console.log('[Updater] 📥 Starting automatic update...');
 
       const update = await check();
-      console.log('[Updater] 🔍 Update object before download:', update);
 
       if (!update) {
         throw new Error('No update available');
@@ -138,79 +103,51 @@ export default function UpdateNotification() {
       let downloaded = 0;
       let contentLength = 0;
 
-      console.log('[Updater] 🚀 Calling downloadAndInstall()...');
-
       await update.downloadAndInstall((event) => {
-        console.log('[Updater] 📡 Event received:', event.event);
-
         switch (event.event) {
           case 'Started':
             contentLength = event.data.contentLength ?? 0;
             console.log(`[Updater] 📦 Download size: ${(contentLength / 1024 / 1024).toFixed(2)} MB`);
-            console.log(`[Updater] 📦 Content length: ${contentLength} bytes`);
             break;
           case 'Progress':
             downloaded += event.data.chunkLength;
             const progress = contentLength > 0 ? (downloaded / contentLength) * 100 : 0;
-            console.log(`[Updater] ⏳ Progress: ${Math.round(progress)}% (${downloaded}/${contentLength} bytes)`);
+            console.log(`[Updater] ⏳ Progress: ${Math.round(progress)}%`);
             break;
           case 'Finished':
             console.log('[Updater] ✅ Download complete');
-            console.log(`[Updater] 📊 Total downloaded: ${(downloaded / 1024 / 1024).toFixed(2)} MB`);
             break;
         }
       });
 
       console.log('[Updater] 🔄 Update installed successfully, relaunching...');
 
-      // ✅ NOUVEAU : Re-sauvegarder le chemin juste avant le relaunch
-      try {
-        const currentPath = await invoke<string>('get_app_path');
-        await invoke('save_install_path', { path: currentPath });
-        console.log('[Updater] ✅ Install path re-saved before relaunch:', currentPath);
-      } catch (resaveErr) {
-        console.error('[Updater] ⚠️ Failed to re-save path before relaunch:', resaveErr);
-      }
-
-      // Marquer qu'on vient de se mettre à jour
       localStorage.setItem('justUpdated', JSON.stringify({
         version: update.version,
-        timestamp: Date.now(),
-        installDrive: installDrive
+        timestamp: Date.now()
       }));
-
-      // ✅ NOUVEAU : Petit délai avant le relaunch pour s'assurer que tout est sauvegardé
-      await new Promise(resolve => setTimeout(resolve, 1000));
 
       await relaunch();
     } catch (err: any) {
       console.error('[Updater] ❌ Failed to install update:', err);
-      console.error('[Updater] ❌ Error type:', typeof err);
-
-      if (typeof err === 'string') {
-        console.error('[Updater] ❌ Error string:', err);
-      } else if (err instanceof Error) {
-        console.error('[Updater] ❌ Error object:', {
-          message: err.message,
-          stack: err.stack,
-          name: err.name,
-          cause: err.cause
-        });
-      } else {
-        console.error('[Updater] ❌ Error (unknown type):', JSON.stringify(err));
-      }
 
       const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
-
-      // ✅ Message d'erreur plus explicite pour les problèmes de disque
-      if (installDrive !== 'C:') {
-        setError(`Échec de l'installation sur le disque ${installDrive}. Essayez de relancer l'application en tant qu'administrateur. Détails : ${errorMessage}`);
-      } else {
-        setError('Échec de l\'installation : ' + errorMessage);
-      }
-
+      setError('Échec de l\'installation automatique : ' + errorMessage);
       setIsInstalling(false);
     }
+  }
+
+  function handleManualDownload() {
+    const downloadUrl = 'https://github.com/Rory-Mercury-91/Discord-Publisher/releases/latest';
+
+    // Ouvrir la page de téléchargement
+    invoke('open_url', { url: downloadUrl }).catch(console.error);
+
+    setError(null);
+    setUpdateAvailable(false);
+
+    // Afficher un message d'information
+    console.log('[Updater] 📥 Téléchargement manuel requis - ouverture de la page GitHub');
   }
 
   function handleDismiss() {
@@ -222,7 +159,6 @@ export default function UpdateNotification() {
 
   return (
     <>
-      {/* Badge de succès après mise à jour */}
       {showSuccessBadge && (
         <div
           style={{
@@ -241,36 +177,22 @@ export default function UpdateNotification() {
           <style>
             {`
               @keyframes slideIn {
-                from {
-                  transform: translateX(400px);
-                  opacity: 0;
-                }
-                to {
-                  transform: translateX(0);
-                  opacity: 1;
-                }
+                from { transform: translateX(400px); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
               }
               @keyframes fadeOut {
-                from {
-                  opacity: 1;
-                  transform: translateX(0);
-                }
-                to {
-                  opacity: 0;
-                  transform: translateX(400px);
-                }
+                from { opacity: 1; transform: translateX(0); }
+                to { opacity: 0; transform: translateX(400px); }
               }
             `}
           </style>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ fontSize: 32 }}>✅</div>
-
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
                 Mise à jour réussie !
               </div>
-
               <div style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.95)' }}>
                 Version {updatedVersion} installée avec succès
               </div>
@@ -279,7 +201,6 @@ export default function UpdateNotification() {
         </div>
       )}
 
-      {/* Notification de mise à jour disponible */}
       {updateAvailable && (
         <div
           style={{
@@ -305,10 +226,17 @@ export default function UpdateNotification() {
 
               {updateVersion && (
                 <div style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.9)', marginBottom: 12 }}>
-                  Version {updateVersion} est prête à être installée
-                  {installDrive !== 'C:' && (
-                    <div style={{ marginTop: 4, fontSize: 11, opacity: 0.8 }}>
-                      📍 Installation sur le disque {installDrive}
+                  Version {updateVersion} est disponible
+                  {isNonStandardInstall && (
+                    <div style={{
+                      marginTop: 8,
+                      fontSize: 12,
+                      background: 'rgba(255, 255, 255, 0.15)',
+                      padding: '6px 10px',
+                      borderRadius: 6
+                    }}>
+                      ⚠️ Installation personnalisée détectée<br />
+                      Téléchargement manuel recommandé
                     </div>
                   )}
                 </div>
@@ -345,7 +273,11 @@ export default function UpdateNotification() {
                     transition: 'all 0.2s ease'
                   }}
                 >
-                  {isInstalling ? '⏳ Installation...' : '📥 Installer'}
+                  {isInstalling
+                    ? '⏳ Installation...'
+                    : isNonStandardInstall
+                      ? '📥 Télécharger'
+                      : '📥 Installer'}
                 </button>
 
                 {!isInstalling && (

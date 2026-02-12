@@ -13,46 +13,18 @@ struct PublishPayload {
     images: Vec<String>,
 }
 
-// ✅ NOUVEAU : Normaliser le chemin Windows pour tous les disques
-fn normalize_windows_path(path: &PathBuf) -> String {
-    #[cfg(target_os = "windows")]
-    {
-        // Convertir en chemin Windows standard (C:\, D:\, etc.)
-        let path_str = path.to_string_lossy().to_string();
-        
-        // Gérer les chemins UNC et les convertir en chemins standards
-        if path_str.starts_with(r"\\?\") {
-            path_str.trim_start_matches(r"\\?\").to_string()
-        } else {
-            path_str
-        }
-    }
-    
-    #[cfg(not(target_os = "windows"))]
-    {
-        path.to_string_lossy().to_string()
-    }
-}
-
-// ✅ AMÉLIORÉ : Obtenir le chemin de l'application avec meilleure gestion multi-disques
+// ✅ Obtenir le chemin de l'application
 #[tauri::command]
 async fn get_app_path(_app: AppHandle) -> Result<String, String> {
     let exe_path = std::env::current_exe()
         .map_err(|e| format!("Failed to get exe path: {}", e))?;
     
-    println!("📍 [Updater] Raw exe path: {:?}", exe_path);
+    println!("📍 [Updater] App path: {:?}", exe_path);
     
-    // Utiliser dunce pour nettoyer les chemins UNC sur Windows
     let canonical_path = dunce::canonicalize(&exe_path)
-        .unwrap_or_else(|e| {
-            println!("⚠️ [Updater] Canonicalization failed: {}, using raw path", e);
-            exe_path.clone()
-        });
+        .unwrap_or_else(|_| exe_path.clone());
     
-    let normalized = normalize_windows_path(&canonical_path);
-    println!("✅ [Updater] Normalized install path: {}", normalized);
-    
-    Ok(normalized)
+    Ok(canonical_path.to_string_lossy().to_string())
 }
 
 // ✅ AMÉLIORÉ : Sauvegarder le chemin avec vérification de permissions
@@ -522,8 +494,6 @@ pub fn run() {
             open_url,
             get_app_path,
             save_install_path,
-            verify_install_path,
-            get_install_drive,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
