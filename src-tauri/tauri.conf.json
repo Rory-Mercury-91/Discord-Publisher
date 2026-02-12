@@ -54,7 +54,9 @@
         "languages": [
           "French"
         ],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser"
       }
     }
   },

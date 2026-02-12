@@ -13,10 +13,137 @@ struct PublishPayload {
     images: Vec<String>,
 }
 
-// ✅ NOUVEAU : Fonction pour appliquer l'état de la fenêtre
+// ✅ NOUVEAU : Normaliser le chemin Windows pour tous les disques
+fn normalize_windows_path(path: &PathBuf) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        // Convertir en chemin Windows standard (C:\, D:\, etc.)
+        let path_str = path.to_string_lossy().to_string();
+        
+        // Gérer les chemins UNC et les convertir en chemins standards
+        if path_str.starts_with(r"\\?\") {
+            path_str.trim_start_matches(r"\\?\").to_string()
+        } else {
+            path_str
+        }
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        path.to_string_lossy().to_string()
+    }
+}
+
+// ✅ AMÉLIORÉ : Obtenir le chemin de l'application avec meilleure gestion multi-disques
+#[tauri::command]
+async fn get_app_path(_app: AppHandle) -> Result<String, String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get exe path: {}", e))?;
+    
+    println!("📍 [Updater] Raw exe path: {:?}", exe_path);
+    
+    // Utiliser dunce pour nettoyer les chemins UNC sur Windows
+    let canonical_path = dunce::canonicalize(&exe_path)
+        .unwrap_or_else(|e| {
+            println!("⚠️ [Updater] Canonicalization failed: {}, using raw path", e);
+            exe_path.clone()
+        });
+    
+    let normalized = normalize_windows_path(&canonical_path);
+    println!("✅ [Updater] Normalized install path: {}", normalized);
+    
+    Ok(normalized)
+}
+
+// ✅ AMÉLIORÉ : Sauvegarder le chemin avec vérification de permissions
+#[tauri::command]
+async fn save_install_path(app: AppHandle, path: String) -> Result<(), String> {
+    println!("💾 [Updater] Attempting to save install path: {}", path);
+    
+    // Utiliser app_config_dir qui fonctionne sur tous les disques
+    let config_dir = app.path().app_config_dir()
+        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+    
+    println!("📁 [Updater] Config directory: {:?}", config_dir);
+    
+    // Créer le dossier avec gestion d'erreur détaillée
+    fs::create_dir_all(&config_dir)
+        .map_err(|e| {
+            let err_msg = format!("Failed to create config dir {:?}: {}", config_dir, e);
+            println!("❌ [Updater] {}", err_msg);
+            err_msg
+        })?;
+    
+    let install_path_file = config_dir.join("install_path.txt");
+    
+    // Écrire avec gestion d'erreur détaillée
+    fs::write(&install_path_file, &path)
+        .map_err(|e| {
+            let err_msg = format!("Failed to write to {:?}: {}", install_path_file, e);
+            println!("❌ [Updater] {}", err_msg);
+            err_msg
+        })?;
+    
+    // Vérifier que le fichier a bien été écrit
+    let written_content = fs::read_to_string(&install_path_file)
+        .map_err(|e| format!("Failed to verify written path: {}", e))?;
+    
+    if written_content.trim() == path.trim() {
+        println!("✅ [Updater] Install path successfully saved and verified");
+        Ok(())
+    } else {
+        let err_msg = format!("Path verification failed. Expected: {}, Got: {}", path, written_content);
+        println!("❌ [Updater] {}", err_msg);
+        Err(err_msg)
+    }
+}
+
+// ✅ NOUVEAU : Vérifier si le chemin d'installation existe et est accessible
+#[tauri::command]
+async fn verify_install_path(app: AppHandle) -> Result<String, String> {
+    let config_dir = app.path().app_config_dir()
+        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+    
+    let install_path_file = config_dir.join("install_path.txt");
+    
+    if !install_path_file.exists() {
+        return Err("Install path file does not exist".to_string());
+    }
+    
+    let saved_path = fs::read_to_string(&install_path_file)
+        .map_err(|e| format!("Failed to read install path: {}", e))?;
+    
+    let saved_path_buf = PathBuf::from(saved_path.trim());
+    
+    // Vérifier que le chemin existe
+    if !saved_path_buf.exists() {
+        return Err(format!("Saved path does not exist: {}", saved_path));
+    }
+    
+    println!("✅ [Updater] Verified install path: {}", saved_path);
+    Ok(saved_path.trim().to_string())
+}
+
+// ✅ NOUVEAU : Obtenir la lettre du disque d'installation
+#[tauri::command]
+async fn get_install_drive() -> Result<String, String> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get exe path: {}", e))?;
+    
+    #[cfg(target_os = "windows")]
+    {
+        let path_str = exe_path.to_string_lossy().to_string();
+        
+        // Extraire la lettre du disque (ex: "D:" de "D:\Program Files\...")
+        if let Some(drive) = path_str.chars().take(2).collect::<String>().strip_suffix(':') {
+            return Ok(format!("{}:", drive));
+        }
+    }
+    
+    Ok("C:".to_string()) // Fallback
+}
+
 fn apply_window_state(window: &WebviewWindow) -> Result<(), String> {
-    // Lire l'état sauvegardé depuis localStorage (via une commande JS)
-    // On utilise une approche alternative : lire depuis un fichier de config
     let app = window.app_handle();
     let config_dir = app.path().app_config_dir()
         .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
@@ -36,7 +163,6 @@ fn apply_window_state(window: &WebviewWindow) -> Result<(), String> {
         
         match state.as_str() {
             "normal" => {
-                // Taille normale définie dans tauri.conf.json
                 window.unmaximize().ok();
                 window.set_fullscreen(false).ok();
             },
@@ -50,19 +176,16 @@ fn apply_window_state(window: &WebviewWindow) -> Result<(), String> {
                 window.minimize().ok();
             },
             _ => {
-                // Par défaut : maximisé
                 window.maximize().ok();
             }
         }
     } else {
-        // Par défaut : maximisé
         window.maximize().ok();
     }
     
     Ok(())
 }
 
-// ✅ NOUVEAU : Commande pour sauvegarder l'état de fenêtre
 #[tauri::command]
 async fn save_window_state(app: AppHandle, state: String) -> Result<(), String> {
     let config_dir = app.path().app_config_dir()
@@ -258,9 +381,6 @@ fn local_history_user_folder(author_discord_id: Option<&String>) -> String {
         .unwrap_or_else(|| "default".to_string())
 }
 
-/// Historique local : sauvegarde un post (création ou mise à jour) dans un JSON par utilisateur.
-/// Au-delà de 1000 entrées, les plus anciennes sont archivées dans posts_archive.json (pas de perte).
-/// Dossier : app_data_dir / history / {author_discord_id ou "default"} / posts.json et posts_archive.json
 #[tauri::command]
 async fn save_local_history_post(app: AppHandle, post_json: String, author_discord_id: Option<String>) -> Result<(), String> {
     let data_dir = app.path().app_data_dir()
@@ -316,7 +436,6 @@ async fn save_local_history_post(app: AppHandle, post_json: String, author_disco
     Ok(())
 }
 
-/// Indique si l'utilisateur a un fichier d'archive d'historique local (à afficher la checkbox).
 #[tauri::command]
 async fn has_local_history_archive(app: AppHandle, author_discord_id: Option<String>) -> Result<bool, String> {
     let data_dir = app.path().app_data_dir()
@@ -326,7 +445,6 @@ async fn has_local_history_archive(app: AppHandle, author_discord_id: Option<Str
     Ok(archive_file.exists())
 }
 
-/// Charge le contenu de l'archive d'historique local (tableau JSON de posts, même format que posts.json).
 #[tauri::command]
 async fn get_local_history_archive(app: AppHandle, author_discord_id: Option<String>) -> Result<String, String> {
     let data_dir = app.path().app_data_dir()
@@ -369,32 +487,7 @@ async fn open_url(url: String) -> Result<(), String> {
     
     Ok(())
 }
-#[tauri::command]
-async fn get_app_path(app: AppHandle) -> Result<String, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get exe path: {}", e))?;
-    
-    let canonical_path = dunce::canonicalize(&exe_path)
-        .unwrap_or_else(|_| exe_path.clone());
-    
-    Ok(canonical_path.to_string_lossy().to_string())
-}
 
-#[tauri::command]
-async fn save_install_path(app: AppHandle, path: String) -> Result<(), String> {
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
-    
-    fs::create_dir_all(&config_dir)
-        .map_err(|e| format!("Failed to create config dir: {:?}", e))?;
-    
-    let install_path_file = config_dir.join("install_path.txt");
-    
-    fs::write(&install_path_file, path)
-        .map_err(|e| format!("Failed to write install path: {:?}", e))?;
-    
-    Ok(())
-}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -402,7 +495,6 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            // ✅ Appliquer l'état de fenêtre au démarrage
             let window = app.get_webview_window("main")
                 .ok_or("Failed to get main window")?;
             
@@ -430,6 +522,8 @@ pub fn run() {
             open_url,
             get_app_path,
             save_install_path,
+            verify_install_path,
+            get_install_drive,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

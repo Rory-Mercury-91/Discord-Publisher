@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
-import { check } from '@tauri-apps/plugin-updater';
 import { getVersion } from '@tauri-apps/api/app';
-import { relaunch } from '@tauri-apps/plugin-process';
 import { invoke } from '@tauri-apps/api/core';
+import { relaunch } from '@tauri-apps/plugin-process';
+import { check } from '@tauri-apps/plugin-updater';
+import { useEffect, useState } from 'react';
 
 export default function UpdateNotification() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
@@ -11,20 +11,49 @@ export default function UpdateNotification() {
   const [error, setError] = useState<string | null>(null);
   const [showSuccessBadge, setShowSuccessBadge] = useState(false);
   const [updatedVersion, setUpdatedVersion] = useState<string | null>(null);
+  const [installDrive, setInstallDrive] = useState<string>('C:');
 
   useEffect(() => {
-    // Sauvegarder le chemin d'installation au démarrage
-    const saveInstallPath = async () => {
+    // ✅ NOUVEAU : Obtenir et afficher la lettre du disque d'installation
+    const detectInstallDrive = async () => {
       try {
-        const appPath = await invoke<string>('get_app_path');
-        await invoke('save_install_path', { path: appPath });
-        console.log('[Updater] 📍 Install path saved:', appPath);
+        const drive = await invoke<string>('get_install_drive');
+        setInstallDrive(drive);
+        console.log('[Updater] 💿 Installation drive:', drive);
       } catch (err) {
-        console.error('[Updater] ❌ Failed to save install path:', err);
+        console.error('[Updater] ❌ Failed to detect install drive:', err);
       }
     };
-    
-    saveInstallPath();    
+
+    detectInstallDrive();
+
+    // ✅ AMÉLIORÉ : Sauvegarder et vérifier le chemin d'installation
+    const saveAndVerifyInstallPath = async () => {
+      try {
+        // 1. Obtenir le chemin
+        const appPath = await invoke<string>('get_app_path');
+        console.log('[Updater] 📍 Current app path:', appPath);
+
+        // 2. Sauvegarder le chemin
+        await invoke('save_install_path', { path: appPath });
+        console.log('[Updater] ✅ Install path saved successfully');
+
+        // 3. Vérifier immédiatement que le chemin a bien été sauvegardé
+        const verifiedPath = await invoke<string>('verify_install_path');
+        console.log('[Updater] ✅ Install path verified:', verifiedPath);
+
+        if (verifiedPath !== appPath) {
+          console.warn('[Updater] ⚠️ Path mismatch! Expected:', appPath, 'Got:', verifiedPath);
+        }
+      } catch (err) {
+        console.error('[Updater] ❌ Failed to save/verify install path:', err);
+        // Afficher une notification à l'utilisateur si le chemin ne peut pas être sauvegardé
+        setError('Impossible de sauvegarder le chemin d\'installation. Les mises à jour pourraient ne pas fonctionner correctement.');
+      }
+    };
+
+    saveAndVerifyInstallPath();
+
     // Vérifier si on vient de se mettre à jour
     const justUpdated = localStorage.getItem('justUpdated');
     if (justUpdated) {
@@ -33,20 +62,20 @@ export default function UpdateNotification() {
       setShowSuccessBadge(true);
       setUpdatedVersion(versionInfo.version);
       localStorage.removeItem('justUpdated');
-      
+
       // Masquer le badge après 5 secondes
       setTimeout(() => {
         setShowSuccessBadge(false);
       }, 5000);
     }
-    
+
     // Vérifier au montage après 3 secondes
     const timeout = setTimeout(async () => {
       const version = await getVersion();
       console.log('[Updater] 📱 Current app version:', version);
       checkForUpdate();
     }, 3000);
-    
+
     return () => clearTimeout(timeout);
   }, []);
 
@@ -54,14 +83,12 @@ export default function UpdateNotification() {
     try {
       console.log('[Updater] 🔍 Checking for updates...');
       console.log('[Updater] 📍 Endpoint:', 'https://github.com/Rory-Mercury-91/Discord-Publisher/releases/latest/download/latest.json');
-      console.log('[Updater] 🔑 Public key embedded in this binary for verification:');
-      console.log('[Updater] 🔑 dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNEODU2NzIxRjBGOENGMjYKUldRbXovandJV2VGUGRqZksvMlZtelRZVnpRNGJLdTZ2ZVVMWXo0R2N4Z2JJclJESm9mSlJSVXAK');
-      console.log('[Updater] 🔑 Key ID (decoded): RWQmz/jwIWeF...');
-      
+      console.log('[Updater] 💿 Install drive:', installDrive);
+
       const update = await check();
-      
+
       console.log('[Updater] 🔍 Update check result:', update);
-      
+
       if (update) {
         console.log(`[Updater] ✨ New version available: ${update.version} (current: ${update.currentVersion})`);
         console.log('[Updater] 📦 Update details:', {
@@ -81,8 +108,6 @@ export default function UpdateNotification() {
         message: err instanceof Error ? err.message : String(err),
         stack: err instanceof Error ? err.stack : undefined
       });
-      // Don't show error to user, just log it
-      // Auto-update is not critical for the app to function
     }
   }
 
@@ -92,22 +117,32 @@ export default function UpdateNotification() {
       setError(null);
 
       console.log('[Updater] 📥 Starting update download and installation...');
-      
+      console.log('[Updater] 💿 Current install drive:', installDrive);
+
+      // ✅ NOUVEAU : Vérifier le chemin d'installation avant de mettre à jour
+      try {
+        const verifiedPath = await invoke<string>('verify_install_path');
+        console.log('[Updater] ✅ Pre-update path verification successful:', verifiedPath);
+      } catch (verifyErr) {
+        console.error('[Updater] ❌ Pre-update path verification failed:', verifyErr);
+        throw new Error('Le chemin d\'installation n\'est pas accessible. Veuillez relancer l\'application.');
+      }
+
       const update = await check();
       console.log('[Updater] 🔍 Update object before download:', update);
-      
+
       if (!update) {
         throw new Error('No update available');
       }
-      
+
       let downloaded = 0;
       let contentLength = 0;
-      
+
       console.log('[Updater] 🚀 Calling downloadAndInstall()...');
-      
+
       await update.downloadAndInstall((event) => {
         console.log('[Updater] 📡 Event received:', event.event);
-        
+
         switch (event.event) {
           case 'Started':
             contentLength = event.data.contentLength ?? 0;
@@ -125,21 +160,33 @@ export default function UpdateNotification() {
             break;
         }
       });
-      
+
       console.log('[Updater] 🔄 Update installed successfully, relaunching...');
-      
-      // Marquer qu'on vient de se mettre à jour pour afficher le badge de succès
-      localStorage.setItem('justUpdated', JSON.stringify({ 
+
+      // ✅ NOUVEAU : Re-sauvegarder le chemin juste avant le relaunch
+      try {
+        const currentPath = await invoke<string>('get_app_path');
+        await invoke('save_install_path', { path: currentPath });
+        console.log('[Updater] ✅ Install path re-saved before relaunch:', currentPath);
+      } catch (resaveErr) {
+        console.error('[Updater] ⚠️ Failed to re-save path before relaunch:', resaveErr);
+      }
+
+      // Marquer qu'on vient de se mettre à jour
+      localStorage.setItem('justUpdated', JSON.stringify({
         version: update.version,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        installDrive: installDrive
       }));
-      
+
+      // ✅ NOUVEAU : Petit délai avant le relaunch pour s'assurer que tout est sauvegardé
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       await relaunch();
     } catch (err: any) {
       console.error('[Updater] ❌ Failed to install update:', err);
       console.error('[Updater] ❌ Error type:', typeof err);
-      
-      // Log complet de l'erreur
+
       if (typeof err === 'string') {
         console.error('[Updater] ❌ Error string:', err);
       } else if (err instanceof Error) {
@@ -152,16 +199,22 @@ export default function UpdateNotification() {
       } else {
         console.error('[Updater] ❌ Error (unknown type):', JSON.stringify(err));
       }
-      
+
       const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
-      setError('Échec de l\'installation : ' + errorMessage);
+
+      // ✅ Message d'erreur plus explicite pour les problèmes de disque
+      if (installDrive !== 'C:') {
+        setError(`Échec de l'installation sur le disque ${installDrive}. Essayez de relancer l'application en tant qu'administrateur. Détails : ${errorMessage}`);
+      } else {
+        setError('Échec de l\'installation : ' + errorMessage);
+      }
+
       setIsInstalling(false);
     }
   }
 
   function handleDismiss() {
     setUpdateAvailable(false);
-    // Check again in 24 hours
     setTimeout(checkForUpdate, 24 * 60 * 60 * 1000);
   }
 
@@ -212,12 +265,12 @@ export default function UpdateNotification() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ fontSize: 32 }}>✅</div>
-            
+
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
                 Mise à jour réussie !
               </div>
-              
+
               <div style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.95)' }}>
                 Version {updatedVersion} installée avec succès
               </div>
@@ -242,90 +295,80 @@ export default function UpdateNotification() {
             animation: 'slideIn 0.3s ease-out',
           }}
         >
-          <style>
-            {`
-              @keyframes slideIn {
-                from {
-                  transform: translateX(400px);
-                  opacity: 0;
-                }
-                to {
-                  transform: translateX(0);
-                  opacity: 1;
-                }
-              }
-            `}
-          </style>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ fontSize: 32 }}>🚀</div>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <div style={{ fontSize: 32 }}>🚀</div>
-        
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
-            Nouvelle version disponible !
-          </div>
-          
-          {updateVersion && (
-            <div style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.9)', marginBottom: 12 }}>
-              Version {updateVersion} est prête à être installée
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
+                Nouvelle version disponible !
+              </div>
+
+              {updateVersion && (
+                <div style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.9)', marginBottom: 12 }}>
+                  Version {updateVersion} est prête à être installée
+                  {installDrive !== 'C:' && (
+                    <div style={{ marginTop: 4, fontSize: 11, opacity: 0.8 }}>
+                      📍 Installation sur le disque {installDrive}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {error && (
+                <div style={{
+                  fontSize: 12,
+                  color: '#ff6b6b',
+                  background: 'rgba(255, 107, 107, 0.1)',
+                  padding: '8px 12px',
+                  borderRadius: 6,
+                  marginBottom: 12
+                }}>
+                  {error}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={handleUpdate}
+                  disabled={isInstalling}
+                  style={{
+                    flex: 1,
+                    padding: '8px 16px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: '#fff',
+                    color: '#667eea',
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: isInstalling ? 'not-allowed' : 'pointer',
+                    opacity: isInstalling ? 0.6 : 1,
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {isInstalling ? '⏳ Installation...' : '📥 Installer'}
+                </button>
+
+                {!isInstalling && (
+                  <button
+                    onClick={handleDismiss}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(255, 255, 255, 0.3)',
+                      background: 'transparent',
+                      color: '#fff',
+                      fontWeight: 500,
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    Plus tard
+                  </button>
+                )}
+              </div>
             </div>
-          )}
-
-          {error && (
-            <div style={{
-              fontSize: 12,
-              color: '#ff6b6b',
-              background: 'rgba(255, 107, 107, 0.1)',
-              padding: '8px 12px',
-              borderRadius: 6,
-              marginBottom: 12
-            }}>
-              {error}
-            </div>
-          )}
-
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={handleUpdate}
-              disabled={isInstalling}
-              style={{
-                flex: 1,
-                padding: '8px 16px',
-                borderRadius: 8,
-                border: 'none',
-                background: '#fff',
-                color: '#667eea',
-                fontWeight: 600,
-                fontSize: 13,
-                cursor: isInstalling ? 'not-allowed' : 'pointer',
-                opacity: isInstalling ? 0.6 : 1,
-                transition: 'all 0.2s ease'
-              }}
-            >
-              {isInstalling ? '⏳ Installation...' : '📥 Installer'}
-            </button>
-            
-            {!isInstalling && (
-              <button
-                onClick={handleDismiss}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 8,
-                  border: '1px solid rgba(255, 255, 255, 0.3)',
-                  background: 'transparent',
-                  color: '#fff',
-                  fontWeight: 500,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                Plus tard
-              </button>
-            )}
           </div>
-        </div>
-      </div>
         </div>
       )}
     </>
