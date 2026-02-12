@@ -27,18 +27,16 @@ async fn get_app_path(_app: AppHandle) -> Result<String, String> {
     Ok(canonical_path.to_string_lossy().to_string())
 }
 
-// ✅ AMÉLIORÉ : Sauvegarder le chemin avec vérification de permissions
+// ✅ Sauvegarder le chemin d'installation
 #[tauri::command]
 async fn save_install_path(app: AppHandle, path: String) -> Result<(), String> {
     println!("💾 [Updater] Attempting to save install path: {}", path);
     
-    // Utiliser app_config_dir qui fonctionne sur tous les disques
     let config_dir = app.path().app_config_dir()
         .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
     
     println!("📁 [Updater] Config directory: {:?}", config_dir);
     
-    // Créer le dossier avec gestion d'erreur détaillée
     fs::create_dir_all(&config_dir)
         .map_err(|e| {
             let err_msg = format!("Failed to create config dir {:?}: {}", config_dir, e);
@@ -48,7 +46,6 @@ async fn save_install_path(app: AppHandle, path: String) -> Result<(), String> {
     
     let install_path_file = config_dir.join("install_path.txt");
     
-    // Écrire avec gestion d'erreur détaillée
     fs::write(&install_path_file, &path)
         .map_err(|e| {
             let err_msg = format!("Failed to write to {:?}: {}", install_path_file, e);
@@ -56,7 +53,6 @@ async fn save_install_path(app: AppHandle, path: String) -> Result<(), String> {
             err_msg
         })?;
     
-    // Vérifier que le fichier a bien été écrit
     let written_content = fs::read_to_string(&install_path_file)
         .map_err(|e| format!("Failed to verify written path: {}", e))?;
     
@@ -68,6 +64,143 @@ async fn save_install_path(app: AppHandle, path: String) -> Result<(), String> {
         println!("❌ [Updater] {}", err_msg);
         Err(err_msg)
     }
+}
+
+// 🆕 NOUVEAU : Télécharger et installer la mise à jour
+#[tauri::command]
+async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
+    println!("[Updater] 🚀 Starting 2-phase update process...");
+    
+    // 1. Récupérer les infos de la dernière version
+    let client = reqwest::Client::builder()
+        .user_agent("Discord-Publisher-Updater")
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    
+    let releases_url = "https://api.github.com/repos/Rory-Mercury-91/Discord-Publisher/releases/latest";
+    println!("[Updater] 📡 Fetching release info from: {}", releases_url);
+    
+    let response = client
+        .get(releases_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch release info: {}", e))?;
+    
+    let release_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse release JSON: {}", e))?;
+    
+    // 2. Trouver le fichier .exe de l'installateur NSIS
+    let assets = release_json["assets"]
+        .as_array()
+        .ok_or("No assets found in release")?;
+    
+    let installer_asset = assets
+        .iter()
+        .find(|asset| {
+            let name = asset["name"].as_str().unwrap_or("");
+            name.contains("_x64-setup.exe") || name.contains("_x64_en-US.msi")
+        })
+        .ok_or("No installer executable found in release assets")?;
+    
+    let download_url = installer_asset["browser_download_url"]
+        .as_str()
+        .ok_or("No download URL found")?;
+    
+    let installer_name = installer_asset["name"]
+        .as_str()
+        .ok_or("No installer name found")?;
+    
+    println!("[Updater] 📦 Found installer: {}", installer_name);
+    println!("[Updater] 🔗 Download URL: {}", download_url);
+    
+    // 3. Télécharger l'installateur dans un dossier temporaire
+    let temp_dir = std::env::temp_dir();
+    let installer_path = temp_dir.join(installer_name);
+    
+    println!("[Updater] 📥 Downloading to: {:?}", installer_path);
+    
+    let mut response = client
+        .get(download_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to download installer: {}", e))?;
+    
+    let total_size = response.content_length().unwrap_or(0);
+    println!("[Updater] 📊 Total size: {} MB", total_size / 1024 / 1024);
+    
+    let mut file = fs::File::create(&installer_path)
+        .map_err(|e| format!("Failed to create installer file: {}", e))?;
+    
+    let mut downloaded: u64 = 0;
+    
+    while let Some(chunk) = response.chunk().await.map_err(|e| format!("Download error: {}", e))? {
+        use std::io::Write;
+        file.write_all(&chunk)
+            .map_err(|e| format!("Failed to write chunk: {}", e))?;
+        
+        downloaded += chunk.len() as u64;
+        
+        if total_size > 0 {
+            let progress = (downloaded as f64 / total_size as f64) * 100.0;
+            if downloaded % (1024 * 1024) == 0 { // Log every MB
+                println!("[Updater] ⏳ Progress: {:.1}%", progress);
+            }
+        }
+    }
+    
+    println!("[Updater] ✅ Download complete!");
+    
+    // 4. Obtenir le répertoire d'installation actuel
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to get exe path: {}", e))?;
+    
+    let install_dir = exe_path
+        .parent()
+        .ok_or("Failed to get install directory")?;
+    
+    println!("[Updater] 📂 Current install directory: {:?}", install_dir);
+    
+    // 5. Lancer l'installateur avec des paramètres silencieux
+    #[cfg(target_os = "windows")]
+    {
+        println!("[Updater] 🚀 Launching installer...");
+        
+        // Arguments pour NSIS :
+        // /S = Silent mode (pas d'interface)
+        // /D= = Répertoire d'installation (doit être le dernier argument)
+        let install_dir_str = install_dir.to_string_lossy().to_string();
+        
+        let mut command = std::process::Command::new(&installer_path);
+        command.arg("/S"); // Mode silencieux
+        
+        // Si on veut forcer le répertoire d'installation
+        // Note: /D= doit être le DERNIER argument pour NSIS
+        command.arg(format!("/D={}", install_dir_str));
+        
+        println!("[Updater] 📝 Command: {:?}", command);
+        
+        command
+            .spawn()
+            .map_err(|e| format!("Failed to launch installer: {}", e))?;
+        
+        println!("[Updater] ✅ Installer launched successfully");
+        println!("[Updater] 🔄 Closing application to allow update...");
+        
+        // 6. Attendre un peu pour s'assurer que l'installateur a démarré
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        
+        // 7. Fermer l'application - l'installateur prendra le relais
+        app.exit(0);
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        return Err("Auto-update is only supported on Windows".to_string());
+    }
+    
+    Ok(())
 }
 
 // ✅ NOUVEAU : Vérifier si le chemin d'installation existe et est accessible
@@ -87,7 +220,6 @@ async fn verify_install_path(app: AppHandle) -> Result<String, String> {
     
     let saved_path_buf = PathBuf::from(saved_path.trim());
     
-    // Vérifier que le chemin existe
     if !saved_path_buf.exists() {
         return Err(format!("Saved path does not exist: {}", saved_path));
     }
@@ -106,13 +238,12 @@ async fn get_install_drive() -> Result<String, String> {
     {
         let path_str = exe_path.to_string_lossy().to_string();
         
-        // Extraire la lettre du disque (ex: "D:" de "D:\Program Files\...")
         if let Some(drive) = path_str.chars().take(2).collect::<String>().strip_suffix(':') {
             return Ok(format!("{}:", drive));
         }
     }
     
-    Ok("C:".to_string()) // Fallback
+    Ok("C:".to_string())
 }
 
 fn apply_window_state(window: &WebviewWindow) -> Result<(), String> {
@@ -494,6 +625,7 @@ pub fn run() {
             open_url,
             get_app_path,
             save_install_path,
+            download_and_install_update, // 🆕 Nouvelle fonction
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

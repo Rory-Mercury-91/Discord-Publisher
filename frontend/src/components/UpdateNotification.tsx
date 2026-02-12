@@ -1,13 +1,13 @@
 import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
-import { relaunch } from '@tauri-apps/plugin-process';
 import { check } from '@tauri-apps/plugin-updater';
 import { useEffect, useState } from 'react';
 
 export default function UpdateNotification() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
-  const [isInstalling, setIsInstalling] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showSuccessBadge, setShowSuccessBadge] = useState(false);
   const [updatedVersion, setUpdatedVersion] = useState<string | null>(null);
@@ -19,7 +19,6 @@ export default function UpdateNotification() {
         const appPath = await invoke<string>('get_app_path');
         console.log('[Updater] 📍 Install path:', appPath);
 
-        // Vérifier si l'installation est dans un emplacement non-standard
         const isStandard = appPath.toLowerCase().includes('\\appdata\\') ||
           appPath.toLowerCase().includes('\\program files');
 
@@ -30,7 +29,6 @@ export default function UpdateNotification() {
           console.warn('[Updater] ⚠️ Les mises à jour automatiques peuvent ne pas fonctionner');
         }
 
-        // Sauvegarder le chemin
         await invoke('save_install_path', { path: appPath });
         console.log('[Updater] ✅ Install path saved');
 
@@ -83,70 +81,52 @@ export default function UpdateNotification() {
 
   async function handleUpdate() {
     if (isNonStandardInstall) {
-      // Pour les installations non-standard, proposer le téléchargement manuel
       handleManualDownload();
       return;
     }
 
     try {
-      setIsInstalling(true);
+      setIsDownloading(true);
+      setDownloadProgress(0);
       setError(null);
 
-      console.log('[Updater] 📥 Starting automatic update...');
+      console.log('[Updater] 📥 Starting update process...');
 
-      const update = await check();
-
-      if (!update) {
-        throw new Error('No update available');
-      }
-
-      let downloaded = 0;
-      let contentLength = 0;
-
-      await update.downloadAndInstall((event) => {
-        switch (event.event) {
-          case 'Started':
-            contentLength = event.data.contentLength ?? 0;
-            console.log(`[Updater] 📦 Download size: ${(contentLength / 1024 / 1024).toFixed(2)} MB`);
-            break;
-          case 'Progress':
-            downloaded += event.data.chunkLength;
-            const progress = contentLength > 0 ? (downloaded / contentLength) * 100 : 0;
-            console.log(`[Updater] ⏳ Progress: ${Math.round(progress)}%`);
-            break;
-          case 'Finished':
-            console.log('[Updater] ✅ Download complete');
-            break;
-        }
-      });
-
-      console.log('[Updater] 🔄 Update installed successfully, relaunching...');
-
-      localStorage.setItem('justUpdated', JSON.stringify({
-        version: update.version,
+      // Marquer qu'on attend une mise à jour
+      localStorage.setItem('pendingUpdate', JSON.stringify({
+        version: updateVersion,
         timestamp: Date.now()
       }));
 
-      await relaunch();
+      // Lancer le téléchargement et l'installation via la commande Rust
+      await invoke('download_and_install_update', {
+        onProgress: (progress: number) => {
+          setDownloadProgress(progress);
+          console.log(`[Updater] ⏳ Progress: ${Math.round(progress)}%`);
+        }
+      });
+
+      console.log('[Updater] ✅ Update process initiated, installer will take over...');
+
     } catch (err: any) {
       console.error('[Updater] ❌ Failed to install update:', err);
 
       const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
-      setError('Échec de l\'installation automatique : ' + errorMessage);
-      setIsInstalling(false);
+      setError('Échec de l\'installation : ' + errorMessage);
+      setIsDownloading(false);
+      setDownloadProgress(0);
+      localStorage.removeItem('pendingUpdate');
     }
   }
 
   function handleManualDownload() {
     const downloadUrl = 'https://github.com/Rory-Mercury-91/Discord-Publisher/releases/latest';
 
-    // Ouvrir la page de téléchargement
     invoke('open_url', { url: downloadUrl }).catch(console.error);
 
     setError(null);
     setUpdateAvailable(false);
 
-    // Afficher un message d'information
     console.log('[Updater] 📥 Téléchargement manuel requis - ouverture de la page GitHub');
   }
 
@@ -242,6 +222,28 @@ export default function UpdateNotification() {
                 </div>
               )}
 
+              {isDownloading && downloadProgress > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{
+                    width: '100%',
+                    height: 4,
+                    background: 'rgba(255, 255, 255, 0.2)',
+                    borderRadius: 2,
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${downloadProgress}%`,
+                      height: '100%',
+                      background: '#fff',
+                      transition: 'width 0.3s ease'
+                    }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.8)', marginTop: 4 }}>
+                    Téléchargement... {Math.round(downloadProgress)}%
+                  </div>
+                </div>
+              )}
+
               {error && (
                 <div style={{
                   fontSize: 12,
@@ -258,7 +260,7 @@ export default function UpdateNotification() {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   onClick={handleUpdate}
-                  disabled={isInstalling}
+                  disabled={isDownloading}
                   style={{
                     flex: 1,
                     padding: '8px 16px',
@@ -268,19 +270,19 @@ export default function UpdateNotification() {
                     color: '#667eea',
                     fontWeight: 600,
                     fontSize: 13,
-                    cursor: isInstalling ? 'not-allowed' : 'pointer',
-                    opacity: isInstalling ? 0.6 : 1,
+                    cursor: isDownloading ? 'not-allowed' : 'pointer',
+                    opacity: isDownloading ? 0.6 : 1,
                     transition: 'all 0.2s ease'
                   }}
                 >
-                  {isInstalling
+                  {isDownloading
                     ? '⏳ Installation...'
                     : isNonStandardInstall
                       ? '📥 Télécharger'
                       : '📥 Installer'}
                 </button>
 
-                {!isInstalling && (
+                {!isDownloading && (
                   <button
                     onClick={handleDismiss}
                     style={{
