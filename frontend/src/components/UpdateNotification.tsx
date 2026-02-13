@@ -3,57 +3,40 @@ import { invoke } from '@tauri-apps/api/core';
 import { check } from '@tauri-apps/plugin-updater';
 import { useEffect, useState } from 'react';
 
+type UpdateState =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'installing'
+  | 'updated';
+
 export default function UpdateNotification() {
-  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [state, setState] = useState<UpdateState>('idle');
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showSuccessBadge, setShowSuccessBadge] = useState(false);
-  const [updatedVersion, setUpdatedVersion] = useState<string | null>(null);
+  const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
 
   useEffect(() => {
-    const checkInstallLocation = async () => {
-      try {
-        const appPath = await invoke<string>('get_app_path');
-        console.log('[Updater] 📍 Install path:', appPath);
-
-        // Détection de l'installation (juste pour les logs)
-        const isStandard = appPath.toLowerCase().includes('\\appdata\\') ||
-          appPath.toLowerCase().includes('\\program files');
-
-        if (!isStandard) {
-          console.warn('[Updater] ⚠️ Installation détectée dans un emplacement personnalisé');
-          console.warn('[Updater] 📂 Chemin:', appPath);
-        } else {
-          console.log('[Updater] ✅ Installation standard détectée');
-        }
-
-        await invoke('save_install_path', { path: appPath });
-        console.log('[Updater] ✅ Install path saved');
-
-      } catch (err) {
-        console.error('[Updater] ❌ Failed to check install location:', err);
-      }
-    };
-
-    checkInstallLocation();
-
     // Vérifier si on vient de se mettre à jour
     const justUpdated = localStorage.getItem('justUpdated');
     if (justUpdated) {
       const versionInfo = JSON.parse(justUpdated);
-      console.log('[Updater] 🎉 Update successful! Now running version:', versionInfo.version);
-      setShowSuccessBadge(true);
-      setUpdatedVersion(versionInfo.version);
+      console.log('[Updater] 🎉 Mise à jour réussie ! Maintenant, on utilise la version:', versionInfo.version);
+      setState('updated');
+      setUpdateVersion(versionInfo.version);
       localStorage.removeItem('justUpdated');
 
-      setTimeout(() => setShowSuccessBadge(false), 5000);
+      setTimeout(() => setState('idle'), 5000);
     }
 
     // Vérifier au montage après 3 secondes
     const timeout = setTimeout(async () => {
       const version = await getVersion();
-      console.log('[Updater] 📱 Current app version:', version);
+      setCurrentVersion(version);
+      console.log('[Updater] 📱 Version actuelle de l\'application:', version);
       checkForUpdate();
     }, 3000);
 
@@ -62,28 +45,54 @@ export default function UpdateNotification() {
 
   async function checkForUpdate() {
     try {
-      console.log('[Updater] 🔍 Checking for updates...');
+      setState('checking');
+      console.log('[Updater] 🔍 Vérification des mises à jour...');
 
       const update = await check();
 
       if (update) {
-        console.log(`[Updater] ✨ New version available: ${update.version} (current: ${update.currentVersion})`);
-        setUpdateAvailable(true);
+        console.log(`[Updater] ✨ Nouvelle version disponible: ${update.version} (actuelle: ${update.currentVersion})`);
+        setState('available');
         setUpdateVersion(update.version);
+        setCurrentVersion(update.currentVersion);
       } else {
-        console.log('[Updater] ✅ Application is up to date');
+        console.log('[Updater] ✅ L\'application est à jour');
+        setState('idle');
       }
     } catch (err) {
-      console.error('[Updater] ❌ Failed to check for updates:', err);
+      console.error('[Updater] ❌ Échec de la vérification des mises à jour:', err);
+      setState('idle');
     }
   }
 
-  async function handleUpdate() {
+  async function handleDownload() {
     try {
-      setIsDownloading(true);
+      setState('downloading');
       setError(null);
 
-      console.log('[Updater] 📥 Starting update process...');
+      console.log('[Updater] 📥 Démarrage du processus de téléchargement...');
+
+      const path = await invoke<string>('download_update');
+
+      console.log('[Updater] ✅ Téléchargement terminé:', path);
+      setDownloadedPath(path);
+      setState('downloaded');
+
+    } catch (err: any) {
+      console.error('[Updater] ❌ Échec du téléchargement de la mise à jour:', err);
+
+      const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
+      setError('Échec du téléchargement : ' + errorMessage);
+      setState('available');
+    }
+  }
+
+  async function handleInstall() {
+    try {
+      setState('installing');
+      setError(null);
+
+      console.log('[Updater] 🚀 Démarrage du processus d\'installation...');
 
       // Marquer qu'on attend une mise à jour
       localStorage.setItem('pendingUpdate', JSON.stringify({
@@ -91,158 +100,370 @@ export default function UpdateNotification() {
         timestamp: Date.now()
       }));
 
-      // Lancer le téléchargement et l'installation via la commande Rust
-      await invoke('download_and_install_update');
+      // Lancer l'installation
+      await invoke('install_downloaded_update');
 
-      console.log('[Updater] ✅ Update process initiated, installer will take over...');
+      console.log('[Updater] ✅ Installation démarrée, l\'application va se fermer...');
 
     } catch (err: any) {
-      console.error('[Updater] ❌ Failed to install update:', err);
+      console.error('[Updater] ❌ Échec de l\'installation de la mise à jour:', err);
 
       const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
       setError('Échec de l\'installation : ' + errorMessage);
-      setIsDownloading(false);
+      setState('downloaded');
       localStorage.removeItem('pendingUpdate');
     }
   }
 
   function handleDismiss() {
-    setUpdateAvailable(false);
+    setState('idle');
+    setError(null);
+    // Re-vérifier dans 24h
     setTimeout(checkForUpdate, 24 * 60 * 60 * 1000);
   }
 
-  if (!updateAvailable && !showSuccessBadge) return null;
+  // Ne rien afficher si idle ou checking
+  if (state === 'idle' || state === 'checking') return null;
 
-  return (
-    <>
-      {showSuccessBadge && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 20,
-            right: 20,
-            zIndex: 10001,
-            background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
-            borderRadius: 12,
-            padding: 20,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-            maxWidth: 400,
-            animation: 'slideIn 0.3s ease-out, fadeOut 0.5s ease-out 4.5s forwards',
-          }}
-        >
-          <style>
-            {`
-              @keyframes slideIn {
-                from { transform: translateX(400px); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
-              }
-              @keyframes fadeOut {
-                from { opacity: 1; transform: translateX(0); }
-                to { opacity: 0; transform: translateX(400px); }
-              }
-            `}
-          </style>
+  // Badge de succès après mise à jour
+  if (state === 'updated') {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 20,
+          right: 20,
+          zIndex: 10001,
+          background: 'var(--panel)',
+          border: '1px solid rgba(34, 197, 94, 0.3)',
+          borderRadius: 8,
+          padding: '16px 20px',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+          maxWidth: 400,
+          animation: 'slideIn 0.3s ease-out, fadeOut 0.5s ease-out 4.5s forwards',
+        }}
+      >
+        <style>
+          {`
+            @keyframes slideIn {
+              from { transform: translateX(400px); opacity: 0; }
+              to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes fadeOut {
+              from { opacity: 1; transform: translateX(0); }
+              to { opacity: 0; transform: translateX(400px); }
+            }
+          `}
+        </style>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 32 }}>✅</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
-                Mise à jour réussie !
-              </div>
-              <div style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.95)' }}>
-                Version {updatedVersion} installée avec succès
-              </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            fontSize: 24,
+            width: 40,
+            height: 40,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(34, 197, 94, 0.15)',
+            borderRadius: 6,
+            flexShrink: 0
+          }}>
+            ✅
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{
+              fontSize: 15,
+              fontWeight: 700,
+              color: 'var(--text)',
+              marginBottom: 4
+            }}>
+              Mise à jour réussie !
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+              Version {updateVersion} installée avec succès
             </div>
           </div>
         </div>
-      )}
+      </div>
+    );
+  }
 
-      {updateAvailable && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 20,
-            right: 20,
-            zIndex: 10000,
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            borderRadius: 12,
-            padding: 20,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
-            maxWidth: 400,
-            animation: 'slideIn 0.3s ease-out',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-            <div style={{ fontSize: 32 }}>🚀</div>
+  // Notification principale
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 20,
+        right: 20,
+        zIndex: 10000,
+        background: 'var(--panel)',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+        padding: '16px 20px',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+        maxWidth: 420,
+        animation: 'slideIn 0.3s ease-out',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        {/* Icône */}
+        <div style={{
+          fontSize: 24,
+          width: 40,
+          height: 40,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: state === 'downloading' || state === 'installing'
+            ? 'rgba(59, 130, 246, 0.15)'
+            : 'rgba(99, 102, 241, 0.15)',
+          borderRadius: 6,
+          flexShrink: 0
+        }}>
+          {state === 'downloading' || state === 'installing' ? '⏳' : '🚀'}
+        </div>
 
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
-                Nouvelle version disponible !
-              </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Titre */}
+          <div style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: 'var(--text)',
+            marginBottom: 6
+          }}>
+            {state === 'available' && 'Nouvelle version disponible'}
+            {state === 'downloading' && 'Téléchargement en cours'}
+            {state === 'downloaded' && 'Mise à jour prête'}
+            {state === 'installing' && 'Installation en cours'}
+          </div>
 
-              {updateVersion && (
-                <div style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.9)', marginBottom: 12 }}>
-                  Version {updateVersion} est disponible
-                </div>
+          {/* Informations de version */}
+          {updateVersion && state === 'available' && (
+            <div style={{
+              fontSize: 13,
+              color: 'var(--muted)',
+              marginBottom: 12
+            }}>
+              Version <span style={{
+                fontWeight: 600,
+                color: 'var(--accent)'
+              }}>{updateVersion}</span> est disponible
+              {currentVersion && (
+                <span> (actuelle : {currentVersion})</span>
               )}
+            </div>
+          )}
 
-              {error && (
-                <div style={{
-                  fontSize: 12,
-                  color: '#ff6b6b',
-                  background: 'rgba(255, 107, 107, 0.1)',
-                  padding: '8px 12px',
-                  borderRadius: 6,
-                  marginBottom: 12
-                }}>
-                  {error}
-                </div>
-              )}
+          {state === 'downloading' && (
+            <div style={{
+              fontSize: 13,
+              color: 'var(--muted)',
+              marginBottom: 12
+            }}>
+              Téléchargement de la version {updateVersion}...
+            </div>
+          )}
 
-              <div style={{ display: 'flex', gap: 8 }}>
+          {state === 'downloaded' && (
+            <div style={{
+              fontSize: 13,
+              color: 'var(--muted)',
+              marginBottom: 12
+            }}>
+              La version {updateVersion} a été téléchargée et est prête à être installée
+            </div>
+          )}
+
+          {state === 'installing' && (
+            <div style={{
+              fontSize: 13,
+              color: 'var(--muted)',
+              marginBottom: 12
+            }}>
+              L'installation va démarrer, l'application va se fermer...
+            </div>
+          )}
+
+          {/* Message d'erreur */}
+          {error && (
+            <div style={{
+              fontSize: 12,
+              color: 'var(--error)',
+              background: 'rgba(239, 68, 68, 0.1)',
+              padding: '8px 12px',
+              borderRadius: 6,
+              marginBottom: 12,
+              border: '1px solid rgba(239, 68, 68, 0.2)'
+            }}>
+              {error}
+            </div>
+          )}
+
+          {/* Boutons d'action */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            {state === 'available' && (
+              <>
                 <button
-                  onClick={handleUpdate}
-                  disabled={isDownloading}
+                  onClick={handleDownload}
                   style={{
                     flex: 1,
                     padding: '8px 16px',
-                    borderRadius: 8,
+                    borderRadius: 6,
                     border: 'none',
-                    background: '#fff',
-                    color: '#667eea',
+                    background: 'var(--accent)',
+                    color: 'white',
                     fontWeight: 600,
                     fontSize: 13,
-                    cursor: isDownloading ? 'not-allowed' : 'pointer',
-                    opacity: isDownloading ? 0.6 : 1,
-                    transition: 'all 0.2s ease'
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    height: 36
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = '0.9';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = '1';
                   }}
                 >
-                  {isDownloading ? '⏳ Téléchargement...' : '📥 Installer'}
+                  📥 Télécharger
                 </button>
 
-                {!isDownloading && (
-                  <button
-                    onClick={handleDismiss}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: 8,
-                      border: '1px solid rgba(255, 255, 255, 0.3)',
-                      background: 'transparent',
-                      color: '#fff',
-                      fontWeight: 500,
-                      fontSize: 13,
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    Plus tard
-                  </button>
-                )}
+                <button
+                  onClick={handleDismiss}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border)',
+                    background: 'transparent',
+                    color: 'var(--text)',
+                    fontWeight: 500,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    height: 36
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  Plus tard
+                </button>
+              </>
+            )}
+
+            {state === 'downloading' && (
+              <div style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: '8px 16px',
+                fontSize: 13,
+                color: 'var(--muted)',
+                height: 36
+              }}>
+                <div className="spinner" style={{
+                  width: 14,
+                  height: 14,
+                  border: '2px solid var(--border)',
+                  borderTopColor: 'var(--accent)',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite'
+                }} />
+                <style>
+                  {`
+                    @keyframes spin {
+                      to { transform: rotate(360deg); }
+                    }
+                  `}
+                </style>
+                Téléchargement...
               </div>
-            </div>
+            )}
+
+            {state === 'downloaded' && (
+              <>
+                <button
+                  onClick={handleInstall}
+                  style={{
+                    flex: 1,
+                    padding: '8px 16px',
+                    borderRadius: 6,
+                    border: 'none',
+                    background: 'var(--accent)',
+                    color: 'white',
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    height: 36
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.opacity = '0.9';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = '1';
+                  }}
+                >
+                  🚀 Installer maintenant
+                </button>
+
+                <button
+                  onClick={handleDismiss}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: 6,
+                    border: '1px solid var(--border)',
+                    background: 'transparent',
+                    color: 'var(--text)',
+                    fontWeight: 500,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    height: 36
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  Plus tard
+                </button>
+              </>
+            )}
+
+            {state === 'installing' && (
+              <div style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: '8px 16px',
+                fontSize: 13,
+                color: 'var(--muted)',
+                height: 36
+              }}>
+                <div className="spinner" style={{
+                  width: 14,
+                  height: 14,
+                  border: '2px solid var(--border)',
+                  borderTopColor: 'var(--accent)',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite'
+                }} />
+                Installation...
+              </div>
+            )}
           </div>
         </div>
-      )}
-    </>
+      </div>
+    </div>
   );
 }

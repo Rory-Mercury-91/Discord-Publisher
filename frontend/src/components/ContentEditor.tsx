@@ -334,7 +334,7 @@ export default function ContentEditor() {
       <div
         onClick={async () => {
           const result = await tauriAPI.openUrl(finalUrl);
-          if (!result.ok) console.error('Erreur ouverture URL:', result.error);
+          if (!result.ok) console.error('❌ Erreur ouverture URL:', result.error);
         }}
         style={{
           fontSize: 11,
@@ -525,7 +525,7 @@ export default function ContentEditor() {
 
       showToast('Données importées !', 'success');
     } catch (err) {
-      showToast('Erreur : Presse-papier invalide', 'error');
+      showToast('❌ Erreur : Presse-papier invalide', 'error');
     }
   };
 
@@ -696,7 +696,7 @@ export default function ContentEditor() {
             }}>
               {uploadedImages.length > 0 ? (
                 <FormImageDisplay
-                  imagePath={uploadedImages[0].path || uploadedImages[0].url || ''}
+                  imagePath={uploadedImages[0].url || ''}
                   onDelete={async () => {
                     const ok = await confirm({ title: 'Supprimer', message: 'Supprimer cette image ?', type: 'danger' });
                     if (ok) removeImage(0);
@@ -890,7 +890,7 @@ export default function ContentEditor() {
                   const url = buildFinalLink(linkConfigs.Game_link);
                   if (url && !url.includes('...')) {
                     const result = await tauriAPI.openUrl(url);
-                    if (!result.ok) console.error('Erreur ouverture URL:', result.error);
+                    if (!result.ok) console.error('❌ Erreur ouverture URL:', result.error);
                   }
                 }}
                 title="Ouvrir le lien"
@@ -1056,7 +1056,7 @@ export default function ContentEditor() {
                   const url = buildFinalLink(linkConfigs.Translate_link);
                   if (url && !url.includes('...')) {
                     const result = await tauriAPI.openUrl(url);
-                    if (!result.ok) console.error('Erreur ouverture URL:', result.error);
+                    if (!result.ok) console.error('❌ Erreur ouverture URL:', result.error);
                   }
                 }}
                 title="Ouvrir le lien"
@@ -1107,7 +1107,7 @@ export default function ContentEditor() {
                   />
                   <button
                     type="button"
-                    onClick={async () => { if (link.link.trim()) { const r = await tauriAPI.openUrl(link.link.trim()); if (!r.ok) console.error(r.error); } }}
+                    onClick={async () => { if (link.link.trim()) { const r = await tauriAPI.openUrl(link.link.trim()); if (!r.ok) console.error('❌ Erreur ouverture URL:', r.error); } }}
                     title="Ouvrir le lien"
                     style={{ width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
@@ -1227,7 +1227,7 @@ export default function ContentEditor() {
                   const url = buildFinalLink(linkConfigs.Mod_link);
                   if (url && !url.includes('...')) {
                     const result = await tauriAPI.openUrl(url);
-                    if (!result.ok) console.error('Erreur ouverture URL:', result.error);
+                    if (!result.ok) console.error('❌ Erreur ouverture URL:', result.error);
                   }
                 }}
                 title="Ouvrir le lien"
@@ -1278,7 +1278,7 @@ export default function ContentEditor() {
                   />
                   <button
                     type="button"
-                    onClick={async () => { if (link.link.trim()) { const r = await tauriAPI.openUrl(link.link.trim()); if (!r.ok) console.error(r.error); } }}
+                    onClick={async () => { if (link.link.trim()) { const r = await tauriAPI.openUrl(link.link.trim()); if (!r.ok) console.error('❌ Erreur ouverture URL:', r.error); } }}
                     title="Ouvrir le lien"
                     style={{ width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >

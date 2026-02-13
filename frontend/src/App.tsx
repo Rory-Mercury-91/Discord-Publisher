@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import rootPkg from '../../package.json';
 import ApiStatusBadge from './components/ApiStatusBadge';
 import AuthModal from './components/AuthModal';
-import LogsModal from './components/LogsModal';
 import ConfigGateModal from './components/ConfigGateModal';
 import ConfigModal from './components/ConfigModal';
 import ContentEditor from './components/ContentEditor';
@@ -10,12 +9,13 @@ import DiscordPreviewModal from './components/DiscordPreviewModal';
 import HelpCenterModal from './components/HelpCenterModal';
 import HistoryModal from './components/HistoryModal';
 import InstructionsManagerModal from './components/InstructionsManagerModal';
+import LogsModal from './components/LogsModal';
 import Preview from './components/Preview';
 import StatsModal from './components/StatsModal';
 import TagsModal from './components/TagsModal';
 import TemplatesModal from './components/TemplatesModal';
-import UpdateNotification from './components/UpdateNotification';
 import { ToastProvider, useToast } from './components/ToastProvider';
+import UpdateNotification from './components/UpdateNotification';
 import { AppProvider, useApp } from './state/appContext';
 import { AuthProvider, useAuth } from './state/authContext';
 
@@ -61,7 +61,7 @@ function AppContentInner() {
     showToast('Tous les champs ont été réinitialisés', 'success');
   };
 
-  const mainImagePath = uploadedImages.find(img => img.isMain)?.path;
+  const mainImagePath = uploadedImages.find(img => img.isMain)?.url;
 
   const [openTemplates, setOpenTemplates] = useState(false);
   const [openTags, setOpenTags] = useState(false);
@@ -129,7 +129,7 @@ function AppContentInner() {
         <div style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <button onClick={() => setOpenTemplates(true)}>📝 Gérer le Template</button>
-            <button 
+            <button
               onClick={() => {
                 if (profile?.is_master_admin) {
                   setOpenTags(true);
@@ -277,7 +277,7 @@ function AppContentInner() {
         />
       )}
       {showLogsModal && <LogsModal onClose={() => setShowLogsModal(false)} />}
-      
+
       <UpdateNotification />
     </div>
   );

@@ -117,9 +117,7 @@ export type AppContextValue = {
   saveInstruction: (name: string, text: string) => void;
   deleteInstruction: (name: string) => void;
 
-  uploadedImages: Array<{ id: string, path?: string, url?: string, name: string, isMain: boolean }>;
-  addImages: (files: FileList | File[]) => void;
-  addImageFromPath: (filePath: string) => Promise<void>;
+  uploadedImages: Array<{ id: string, url?: string, name: string, isMain: boolean }>;
   addImageFromUrl: (url: string) => void;
   removeImage: (idx: number) => void;
   setMainImage: (idx: number) => void;

@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import ErrorModal from '../components/ErrorModal';
+import { apiFetch, createApiHeaders } from '../lib/api-helpers';
 import { getSupabase } from '../lib/supabase';
 import { tauriAPI } from '../lib/tauri-api';
-import { apiFetch, createApiHeaders } from '../lib/api-helpers';
 import { useAuth } from './authContext';
 import { defaultTemplates, defaultVarsConfig } from './defaults';
 import { useImagesState } from './hooks/useImagesState';
@@ -89,9 +89,7 @@ type AppContextValue = {
   deleteInstruction: (name: string) => void;
   instructionOwners: Record<string, string>;
 
-  uploadedImages: Array<{ id: string; path?: string; url?: string; name: string; isMain: boolean }>;
-  addImages: (files: FileList | File[]) => void;
-  addImageFromPath: (filePath: string) => Promise<void>;
+  uploadedImages: Array<{ id: string; url?: string; name: string; isMain: boolean }>;
   addImageFromUrl: (url: string) => void;
   removeImage: (idx: number) => void;
   setMainImage: (idx: number) => void;
@@ -947,16 +945,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         let imageUrl = '';
 
         if (mainImage.url) {
-          // URL externe (http:// ou https://), utiliser directement
           imageUrl = mainImage.url;
-        } else if (mainImage.path) {
-          // Fichier local : sans hébergement, on ne peut pas générer une URL publique.
-          // L'utilisateur doit utiliser une URL externe pour que l'embed fonctionne.
-        }
-
-        // Ajouter le lien à la fin du contenu (le backend le retirera après avoir créé l'embed)
-        if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
-          finalContent = content + '\n' + imageUrl.trim();
         }
       }
 
@@ -993,7 +982,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Payload complet pour l'historique (aligné Supabase) : tous les champs
       const now = Date.now();
       const postId = `post_${now}_${Math.random().toString(36).substr(2, 9)}`;
-      const imagePathVal = imagesState.uploadedImages.find(i => i.isMain)?.path || imagesState.uploadedImages.find(i => i.isMain)?.url;
+      const imagePathVal = imagesState.uploadedImages.find(i => i.isMain)?.url;
       if (isEditMode && editingPostData) {
         const mergedForHistory: PublishedPost = {
           ...editingPostData,
@@ -1113,7 +1102,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             title,
             content,
             tags: tagsToSend,
-            imagePath: imagesState.uploadedImages.find(i => i.isMain)?.path || imagesState.uploadedImages.find(i => i.isMain)?.url,
+            imagePath: imagesState.uploadedImages.find(i => i.isMain)?.url,
             translationType,
             isIntegrated,
             savedInputs: { ...inputs },
@@ -1141,7 +1130,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             title,
             content,
             tags: tagsToSend,
-            imagePath: imagesState.uploadedImages.find(i => i.isMain)?.path || imagesState.uploadedImages.find(i => i.isMain)?.url,
+            imagePath: imagesState.uploadedImages.find(i => i.isMain)?.url,
             translationType,
             isIntegrated,
             savedInputs: { ...inputs },
@@ -1759,8 +1748,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     instructionOwners: instructionsState.instructionOwners,
 
     uploadedImages: imagesState.uploadedImages,
-    addImages: imagesState.addImages,
-    addImageFromPath: imagesState.addImageFromPath,
     addImageFromUrl: imagesState.addImageFromUrl,
     removeImage: imagesState.removeImage,
     setMainImage: imagesState.setMainImage,
@@ -1870,33 +1857,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setInput('main_mod_label', post.savedInputs.main_mod_label);
       }
 
-      // ✅ RESTAURER L'IMAGE
-      if (post.imagePath) {
-        if (post.imagePath.startsWith('http://') || post.imagePath.startsWith('https://')) {
-          const fileName = new URL(post.imagePath).pathname.split('/').pop() || 'image.jpg';
-          imagesState.setUploadedImages([{
-            id: Date.now().toString(),
-            url: post.imagePath,
-            name: fileName,
-            isMain: true
-          }]);
-        } else {
-          tauriAPI.readImage(post.imagePath)
-            .then(result => {
-              if (result.ok) {
-                const fileName = post.imagePath!.split(/[/\\]/).pop() || 'image';
-                imagesState.setUploadedImages([{
-                  id: Date.now().toString(),
-                  path: post.imagePath!,
-                  name: fileName,
-                  isMain: true
-                }]);
-              }
-            })
-            .catch(() => {
-              // Image non trouvée
-            });
-        }
+      // ✅ RESTAURER L'IMAGE (URLs uniquement)
+      if (post.imagePath && (post.imagePath.startsWith('http://') || post.imagePath.startsWith('https://'))) {
+        const fileName = new URL(post.imagePath).pathname.split('/').pop() || 'image.jpg';
+        imagesState.setUploadedImages([{
+          id: Date.now().toString(),
+          url: post.imagePath,
+          name: fileName,
+          isMain: true
+        }]);
       }
 
       // Restaurer le contenu du post dans le preview

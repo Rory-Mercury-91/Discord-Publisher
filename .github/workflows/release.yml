@@ -125,7 +125,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_PASSWORD_FRESH }}
         shell: pwsh
         run: |
-          Write-Host "🔍 VÉRIFICATION COMPLÈTE DES SECRETS" -ForegroundColor Cyan
+          Write-Host "🔐 VÉRIFICATION COMPLÈTE DES SECRETS" -ForegroundColor Cyan
           Write-Host "=" * 80
           
           if ($env:TAURI_SIGNING_PRIVATE_KEY) {
@@ -196,12 +196,6 @@ jobs:
               Write-Host "  $($_.FullName) - $($_.Length) bytes"
             }
           }
-          if (Test-Path "src-tauri/target/release/bundle") {
-            Write-Host "`n📂 All bundle files (.sig):"
-            Get-ChildItem -Recurse src-tauri/target/release/bundle -Filter "*.sig" | ForEach-Object {
-              Write-Host "  $($_.FullName)"
-            }
-          }
 
       - name: Create portable version
         shell: pwsh
@@ -228,82 +222,37 @@ jobs:
             exit 1
           }
 
-      - name: Generate latest.json for Tauri updater
+      - name: Generate latest.json for update detection
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.VERSION }}"
           $repoUrl = "https://github.com/${{ github.repository }}"
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
           
-          Write-Host "📝 Generating latest.json for version $version"
+          Write-Host "🔧 Generating latest.json for version $version"
           
-          # Trouver le binaire app.exe (pas le setup NSIS!)
-          $appExe = "src-tauri/target/release/app.exe"
+          # Trouver le fichier setup NSIS
+          $setupFiles = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe"
           
-          if (-not (Test-Path $appExe)) {
-            Write-Host "❌ app.exe not found at: $appExe"
-            Write-Host "📂 Listing release directory:"
-            Get-ChildItem -Path "src-tauri/target/release" | ForEach-Object {
-              Write-Host "  $($_.FullName)"
-            }
+          if ($setupFiles.Count -eq 0) {
+            Write-Host "❌ No NSIS setup file found"
             exit 1
           }
           
-          Write-Host "✅ Found app.exe: $appExe"
-          Write-Host "📊 File size: $((Get-Item $appExe).Length / 1MB) MB"
+          $setupFile = $setupFiles[0]
+          $setupFileName = $setupFile.Name
           
-          # Créer le .nsis.zip avec app.exe (pour l'auto-update)
-          $zipFileName = "Discord_Publisher_${version}_x64_setup.nsis.zip"
+          Write-Host "✅ Found setup file: $setupFileName"
+          Write-Host "📊 File size: $($setupFile.Length / 1MB) MB"
           
-          # Supprimer le .zip si il existe déjà
-          if (Test-Path $zipFileName) {
-            Remove-Item $zipFileName -Force
-          }
-          
-          # Utiliser .NET System.IO.Compression SANS compression (Store method)
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          
-          # Créer le .zip avec Store (pas de compression)
-          $zip = [System.IO.Compression.ZipFile]::Open($zipFileName, 'Create')
-          
-          # Ajouter app.exe au .zip SANS compression (Store method)
-          # Important: Le nom dans le zip doit être app.exe pour que Tauri puisse le remplacer
-          [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $appExe, "app.exe", 'NoCompression')
-          
-          $zip.Dispose()
-          
-          Write-Host "✅ Created: $zipFileName (contains app.exe, Store method)"
-          
-          # IMPORTANT: Signer le .zip
-          Write-Host "🔐 Signing the .zip file with Tauri CLI..."
-          
-          # Utiliser la commande de signature de Tauri sur le .zip
-          npx tauri signer sign "$zipFileName" --private-key "$env:TAURI_SIGNING_PRIVATE_KEY" --password "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
-          
-          # Vérifier que la signature du .zip a été créée
-          $zipSigPath = "$zipFileName.sig"
-          if (-not (Test-Path $zipSigPath)) {
-            Write-Host "❌ Signature file not created at: $zipSigPath"
-            exit 1
-          }
-          
-          Write-Host "✅ Zip file signed: $zipSigPath"
-          
-          # Lire la signature DU .ZIP
-          $signature = Get-Content $zipSigPath -Raw -Encoding UTF8
-          Write-Host "✅ Signature length: $($signature.Length) chars"
-          Write-Host "🔑 Zip signature content:"
-          Write-Host $signature
-          
-          # Créer le JSON pour Tauri updater
+          # Créer le JSON pour la détection de version (simplifié)
           $latestJson = @{
             version = $version
             notes = "Nouvelle version de Discord Publisher"
             pub_date = $pubDate
             platforms = @{
               "windows-x86_64" = @{
-                signature = $signature.Trim()
-                url = "$repoUrl/releases/download/${{ github.ref_name }}/$zipFileName"
+                url = "$repoUrl/releases/download/${{ github.ref_name }}/$setupFileName"
               }
             }
           } | ConvertTo-Json -Depth 10
@@ -317,7 +266,6 @@ jobs:
         with:
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
-            Discord_Publisher_${{ steps.version.outputs.VERSION }}_x64_setup.nsis.zip
             latest.json
             Discord_Publisher_${{ steps.version.outputs.VERSION }}_portable.exe
           name: Discord Publisher v${{ steps.version.outputs.VERSION }}
@@ -345,8 +293,8 @@ jobs:
             
             Si vous avez déjà Discord Publisher installé :
             - L'application détectera automatiquement cette nouvelle version
-            - Une notification vous proposera de mettre à jour
-            - Cliquez sur "Installer" pour télécharger et installer
+            - Une notification vous proposera de télécharger la mise à jour
+            - Cliquez sur "Télécharger" puis "Installer maintenant" pour mettre à jour
             
             ### 📝 Changelog
             
@@ -390,7 +338,7 @@ jobs:
                 },
                 @{
                   name = "Plateforme"
-                  value = "Windows (NSIS + Portable)"
+                  value = "Windows (Version portable + Installateur NSIS)"
                   inline = $true
                 },
                 @{

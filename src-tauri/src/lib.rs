@@ -4,74 +4,12 @@ use tauri::{Manager, AppHandle, WebviewWindow};
 use serde::{Deserialize, Serialize};
 use base64::{Engine as _, engine::general_purpose};
 
-#[derive(Serialize, Deserialize)]
-struct PublishPayload {
-    r#type: String,
-    title: String,
-    content: String,
-    tags: String,
-    images: Vec<String>,
-}
-
-// ✅ Obtenir le chemin de l'application
+// 🆕 Télécharger la mise à jour (sans l'installer)
 #[tauri::command]
-async fn get_app_path(_app: AppHandle) -> Result<String, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get exe path: {}", e))?;
-    
-    println!("📍 [Updater] App path: {:?}", exe_path);
-    
-    let canonical_path = dunce::canonicalize(&exe_path)
-        .unwrap_or_else(|_| exe_path.clone());
-    
-    Ok(canonical_path.to_string_lossy().to_string())
-}
-
-// ✅ Sauvegarder le chemin d'installation
-#[tauri::command]
-async fn save_install_path(app: AppHandle, path: String) -> Result<(), String> {
-    println!("💾 [Updater] Attempting to save install path: {}", path);
-    
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
-    
-    println!("📁 [Updater] Config directory: {:?}", config_dir);
-    
-    fs::create_dir_all(&config_dir)
-        .map_err(|e| {
-            let err_msg = format!("Failed to create config dir {:?}: {}", config_dir, e);
-            println!("❌ [Updater] {}", err_msg);
-            err_msg
-        })?;
-    
-    let install_path_file = config_dir.join("install_path.txt");
-    
-    fs::write(&install_path_file, &path)
-        .map_err(|e| {
-            let err_msg = format!("Failed to write to {:?}: {}", install_path_file, e);
-            println!("❌ [Updater] {}", err_msg);
-            err_msg
-        })?;
-    
-    let written_content = fs::read_to_string(&install_path_file)
-        .map_err(|e| format!("Failed to verify written path: {}", e))?;
-    
-    if written_content.trim() == path.trim() {
-        println!("✅ [Updater] Install path successfully saved and verified");
-        Ok(())
-    } else {
-        let err_msg = format!("Path verification failed. Expected: {}, Got: {}", path, written_content);
-        println!("❌ [Updater] {}", err_msg);
-        Err(err_msg)
-    }
-}
-
-// 🆕 Télécharger et installer la mise à jour
-#[tauri::command]
-async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
+async fn download_update(app: AppHandle) -> Result<String, String> {
     use std::io::Write;
     
-    println!("[Updater] 🚀 Starting update process...");
+    println!("[Updater] 🚀 Starting download process...");
     
     // 1. Récupérer les infos de la dernière version depuis GitHub
     let client = reqwest::Client::builder()
@@ -180,7 +118,48 @@ async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
     
     println!("[Updater] ✅ Installer file verified: {} bytes", file_size);
     
-    // 4. Obtenir le répertoire d'installation actuel
+    // Sauvegarder le chemin de l'installateur téléchargé dans la config
+    let config_dir = app.path().app_config_dir()
+        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+    
+    fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config dir: {:?}", e))?;
+    
+    let download_path_file = config_dir.join("pending_update.txt");
+    fs::write(&download_path_file, installer_path.to_string_lossy().as_bytes())
+        .map_err(|e| format!("Failed to save update path: {}", e))?;
+    
+    // Retourner le chemin de l'installateur téléchargé
+    Ok(installer_path.to_string_lossy().to_string())
+}
+
+// 🆕 Installer la mise à jour téléchargée
+#[tauri::command]
+async fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
+    println!("[Updater] 🚀 Starting installation process...");
+    
+    // 1. Récupérer le chemin de l'installateur téléchargé
+    let config_dir = app.path().app_config_dir()
+        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+    
+    let download_path_file = config_dir.join("pending_update.txt");
+    
+    if !download_path_file.exists() {
+        return Err("No pending update found".to_string());
+    }
+    
+    let installer_path_str = fs::read_to_string(&download_path_file)
+        .map_err(|e| format!("Failed to read update path: {}", e))?;
+    
+    let installer_path = PathBuf::from(installer_path_str.trim());
+    
+    if !installer_path.exists() {
+        return Err("Update installer file not found".to_string());
+    }
+    
+    println!("[Updater] 📦 Installing from: {:?}", installer_path);
+    
+    // 2. Obtenir le répertoire d'installation actuel
     let exe_path = std::env::current_exe()
         .map_err(|e| format!("Failed to get exe path: {}", e))?;
     
@@ -190,7 +169,7 @@ async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
     
     println!("[Updater] 📂 Current install directory: {:?}", install_dir);
     
-    // 5. Lancer l'installateur NSIS
+    // 3. Lancer l'installateur NSIS
     #[cfg(target_os = "windows")]
     {
         println!("[Updater] 🚀 Launching NSIS installer...");
@@ -198,13 +177,11 @@ async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
         let install_dir_str = install_dir.to_string_lossy().to_string();
         
         // Créer la commande pour lancer l'installateur
-        // /S = Mode silencieux (pas d'interface utilisateur)
         // /D= = Force le répertoire d'installation (doit être le DERNIER argument)
         let mut command = std::process::Command::new(&installer_path);
-        //command.arg("/S");
         command.arg(format!("/D={}", install_dir_str));
         
-        println!("[Updater] 📝 Running: {:?}", command);
+        println!("[Updater] 🔍 Running: {:?}", command);
         
         // Lancer l'installateur en arrière-plan
         command
@@ -212,11 +189,15 @@ async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
             .map_err(|e| format!("Failed to launch installer: {} (error code: {})", e, e.raw_os_error().unwrap_or(0)))?;
         
         println!("[Updater] ✅ Installer launched successfully");
-        println!("[Updater] 🔄 Closing application in 2 seconds...");
         
-        // Attendre 2 secondes pour que l'installateur démarre complètement
-        // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        // Nettoyer le fichier de référence
+        let _ = fs::remove_file(&download_path_file);
+        
+        println!("[Updater] 🔄 Closing application in 300ms...");
+        
+        // Attendre un peu pour que l'installateur démarre complètement
         tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+        
         // Fermer l'application - l'installateur NSIS prendra le relais
         println!("[Updater] 👋 Exiting application...");
         app.exit(0);
@@ -228,6 +209,69 @@ async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
     }
     
     Ok(())
+}
+
+// 🧹 Fonction interne pour nettoyer les anciens fichiers d'installation
+async fn cleanup_old_updates_internal(app: &AppHandle) -> Result<u32, String> {
+    println!("[Updater] 🧹 Starting cleanup of old update files...");
+    
+    let temp_dir = std::env::temp_dir();
+    let mut cleaned_count = 0u32;
+    
+    // Nettoyer les fichiers d'installation temporaires
+    match fs::read_dir(&temp_dir) {
+        Ok(entries) => {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let file_name = entry.file_name();
+                    let file_name_str = file_name.to_string_lossy();
+                    
+                    // Supprimer les fichiers qui correspondent au pattern discord_publisher_update_*.exe
+                    if file_name_str.starts_with("discord_publisher_update_") && 
+                       file_name_str.ends_with(".exe") {
+                        match fs::remove_file(entry.path()) {
+                            Ok(_) => {
+                                println!("[Updater] 🗑️  Removed: {:?}", entry.path());
+                                cleaned_count += 1;
+                            }
+                            Err(e) => {
+                                println!("[Updater] ⚠️  Failed to remove {:?}: {}", entry.path(), e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            println!("[Updater] ⚠️  Failed to read temp directory: {}", e);
+        }
+    }
+    
+    // Nettoyer aussi le fichier pending_update.txt s'il existe encore
+    let config_dir = app.path().app_config_dir()
+        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+    
+    let pending_file = config_dir.join("pending_update.txt");
+    if pending_file.exists() {
+        match fs::remove_file(&pending_file) {
+            Ok(_) => {
+                println!("[Updater] 🗑️  Removed pending_update.txt");
+                cleaned_count += 1;
+            }
+            Err(e) => {
+                println!("[Updater] ⚠️  Failed to remove pending_update.txt: {}", e);
+            }
+        }
+    }
+    
+    println!("[Updater] ✅ Cleanup complete. Removed {} file(s)", cleaned_count);
+    Ok(cleaned_count)
+}
+
+// 🧹 Nettoyer les anciens fichiers d'installation temporaires (commande Tauri)
+#[tauri::command]
+async fn cleanup_old_updates(app: AppHandle) -> Result<u32, String> {
+    cleanup_old_updates_internal(&app).await
 }
 
 fn apply_window_state(window: &WebviewWindow) -> Result<(), String> {
@@ -290,21 +334,6 @@ async fn save_window_state(app: AppHandle, state: String) -> Result<(), String> 
     Ok(())
 }
 
-fn get_python_workdir(app: &AppHandle) -> Result<PathBuf, String> {
-    if cfg!(debug_assertions) {
-        std::env::current_dir()
-            .ok()
-            .and_then(|d| d.parent().map(|p| p.to_path_buf()))
-            .ok_or_else(|| "Failed to get current dir".to_string())
-    } else {
-        let resource_dir = app.path().resource_dir()
-            .map_err(|e| format!("Failed to get resource_dir: {:?}", e))?;
-        let canonical = dunce::canonicalize(&resource_dir)
-            .unwrap_or_else(|_| resource_dir.clone());
-        Ok(canonical.join("_up_"))
-    }
-}
-
 #[tauri::command]
 async fn test_api_connection() -> Result<serde_json::Value, String> {
     let client = reqwest::Client::new();
@@ -316,149 +345,6 @@ async fn test_api_connection() -> Result<serde_json::Value, String> {
     let json = response.json::<serde_json::Value>().await
         .map_err(|e| format!("Erreur parsing JSON: {}", e))?;
     Ok(json)
-}
-
-#[tauri::command]
-async fn save_image_from_base64(
-    app: AppHandle,
-    base64_data: String,
-    file_name: String,
-    _mime_type: String,
-) -> Result<String, String> {
-    let image_data = general_purpose::STANDARD
-        .decode(&base64_data)
-        .map_err(|e| format!("Failed to decode base64: {}", e))?;
-    
-    let workdir = get_python_workdir(&app)?;
-    let images_dir = workdir.join("images");
-    
-    fs::create_dir_all(&images_dir)
-        .map_err(|e| format!("Failed to create images directory: {}", e))?;
-    
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let sanitized_name = file_name.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '-', "_");
-    let final_name = format!("image_{}_{}", timestamp, sanitized_name);
-    let file_path = images_dir.join(&final_name);
-    
-    fs::write(&file_path, image_data)
-        .map_err(|e| format!("Failed to write image file: {}", e))?;
-    
-    Ok(final_name)
-}
-
-#[tauri::command]
-async fn publish_post(payload: PublishPayload) -> Result<serde_json::Value, String> {
-    let api_key = std::env::var("PUBLISHER_API_KEY").unwrap_or_default();
-    let client = reqwest::Client::new();
-    let base_url = std::env::var("PUBLISHER_API_URL")
-        .unwrap_or_else(|_| "http://138.2.182.125:8080".to_string());
-    let url = format!("{}/api/forum-post", base_url.trim_end_matches('/'));
-    
-    let response = client.post(&url)
-        .json(&payload)
-        .header("X-API-KEY", api_key)
-        .send().await
-        .map_err(|e| format!("Erreur publication: {}", e))?;
-    let json = response.json::<serde_json::Value>().await
-        .map_err(|e| format!("Erreur parsing JSON: {}", e))?;
-    Ok(json)
-}
-
-#[tauri::command]
-async fn save_image(app: AppHandle, source_path: String) -> Result<String, String> {
-    let workdir = get_python_workdir(&app)?;
-    let images_dir = workdir.join("images");
-    fs::create_dir_all(&images_dir)
-        .map_err(|e| format!("Erreur création dossier images: {}", e))?;
-
-    let source = PathBuf::from(&source_path);
-    let filename = source.file_name()
-        .ok_or("Nom de fichier invalide")?;
-    let dest = images_dir.join(filename);
-
-    fs::copy(&source, &dest)
-        .map_err(|e| format!("Erreur copie image: {}", e))?;
-    Ok(filename.to_string_lossy().to_string())
-}
-
-#[tauri::command]
-async fn read_image(app: AppHandle, image_path: String) -> Result<String, String> {
-    let workdir = get_python_workdir(&app)?;
-    let clean_path = image_path.trim_start_matches("images/").trim_start_matches("images\\");
-    let full_path = workdir.join("images").join(&clean_path);
-    let bytes = fs::read(&full_path)
-        .map_err(|e| format!("Erreur lecture image: {}", e))?;
-    
-    let ext = clean_path.split('.').last().unwrap_or("png").to_lowercase();
-    let mime_type = match ext.as_str() {
-        "jpg" | "jpeg" => "image/jpeg",
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "avif" => "image/avif",
-        "bmp" => "image/bmp",
-        "svg" => "image/svg+xml",
-        "ico" => "image/x-icon",
-        "tiff" | "tif" => "image/tiff",
-        _ => "image/png",
-    };
-    
-    Ok(format!("data:{};base64,{}", mime_type, general_purpose::STANDARD.encode(&bytes)))
-}
-
-#[tauri::command]
-async fn delete_image(app: AppHandle, image_path: String) -> Result<(), String> {
-    let workdir = get_python_workdir(&app)?;
-    let clean_path = image_path.trim_start_matches("images/").trim_start_matches("images\\");
-    let full_path = workdir.join("images").join(&clean_path);
-    fs::remove_file(&full_path)
-        .map_err(|e| format!("Erreur suppression image: {}", e))?;
-    Ok(())
-}
-
-#[tauri::command]
-async fn get_image_size(app: AppHandle, image_path: String) -> Result<u64, String> {
-    let workdir = get_python_workdir(&app)?;
-    let clean_path = image_path.trim_start_matches("images/").trim_start_matches("images\\");
-    let full_path = workdir.join("images").join(&clean_path);
-    let metadata = fs::metadata(&full_path)
-        .map_err(|e| format!("Erreur lecture métadonnées image: {}", e))?;
-    Ok(metadata.len())
-}
-
-#[tauri::command]
-async fn list_images(app: AppHandle) -> Result<Vec<String>, String> {
-    let workdir = get_python_workdir(&app)?;
-    let images_dir = workdir.join("images");
-    if !images_dir.exists() {
-        return Ok(vec![]);
-    }
-    let entries = fs::read_dir(&images_dir)
-        .map_err(|e| format!("Erreur lecture dossier images: {}", e))?;
-    let mut files = Vec::new();
-    for entry in entries {
-        if let Ok(entry) = entry {
-            if let Ok(file_name) = entry.file_name().into_string() {
-                files.push(file_name);
-            }
-        }
-    }
-    Ok(files)
-}
-
-#[tauri::command]
-async fn export_config(config: String) -> Result<String, String> {
-    Ok(config)
-}
-
-#[tauri::command]
-async fn import_config(content: String) -> Result<String, String> {
-    serde_json::from_str::<serde_json::Value>(&content)
-        .map_err(|e| format!("JSON invalide: {}", e))?;
-    Ok(content)
 }
 
 fn local_history_user_folder(author_discord_id: Option<&String>) -> String {
@@ -589,27 +475,33 @@ pub fn run() {
                 eprintln!("⚠️ Erreur application état fenêtre: {}", e);
             }
             
+            // 🧹 Nettoyer les anciens fichiers d'installation au démarrage
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match cleanup_old_updates_internal(&app_handle).await {
+                    Ok(count) => {
+                        if count > 0 {
+                            println!("[Updater] 🧹 Cleaned up {} old update file(s)", count);
+                        }
+                    }
+                    Err(e) => {
+                        println!("[Updater] ⚠️ Cleanup failed: {}", e);
+                    }
+                }
+            });
+            
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             test_api_connection,
-            publish_post,
-            save_image,
-            save_image_from_base64,
-            read_image,
-            delete_image,
-            get_image_size,
-            list_images,
-            export_config,
-            import_config,
             save_window_state,
             save_local_history_post,
             has_local_history_archive,
             get_local_history_archive,
             open_url,
-            get_app_path,
-            save_install_path,
-            download_and_install_update,
+            download_update,
+            install_downloaded_update,
+            cleanup_old_updates,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

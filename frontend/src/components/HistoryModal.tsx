@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConfirm } from '../hooks/useConfirm';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
-import { getSupabase } from '../lib/supabase';
 import { createApiHeaders } from '../lib/api-helpers';
+import { getSupabase } from '../lib/supabase';
 import { PublishedPost, useApp } from '../state/appContext';
 import type { Profile } from '../state/authContext';
 import { useAuth } from '../state/authContext';
@@ -72,7 +72,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
         if (!cancelled) setIsLoading(false);
       })
       .catch((e) => {
-        console.error('[Historique] Erreur chargement:', e);
+        console.error('[Historique] ❌ Erreur chargement:', e);
         if (!cancelled) setIsLoading(false);
       });
     return () => { cancelled = true; };

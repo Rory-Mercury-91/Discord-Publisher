@@ -172,17 +172,17 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
           break;
       }
     } catch (e) {
-      console.error('Erreur application état fenêtre:', e);
+      console.error('❌ Erreur application état fenêtre:', e);
     }
   };
 
   const handleSave = async () => {
     localStorage.setItem('apiKey', apiKey);
-    
+
     // Sauvegarder les labels par défaut
     localStorage.setItem('default_translation_label', defaultTranslationLabel);
     localStorage.setItem('default_mod_label', defaultModLabel);
-    
+
     if (adminMode) {
       localStorage.setItem('apiUrl', apiUrl);
       localStorage.setItem('apiBase', apiUrl);
@@ -216,7 +216,7 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
         showToast("Configuration enregistrée !", "success");
       }
     } catch (e) {
-      console.error('Erreur sauvegarde état fenêtre:', e);
+      console.error('❌ Erreur sauvegarde état fenêtre:', e);
       showToast("Configuration enregistrée (erreur état fenêtre)", "warning");
     }
     onClose?.();
@@ -267,7 +267,7 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
 
       showToast("Sauvegarde complète téléchargée", "success");
     } catch (err: any) {
-      console.error(err?.message || "Erreur export");
+      console.error(err?.message || "❌ Erreur export");
       showToast("Erreur lors de l'export", "error");
     }
   };
@@ -307,7 +307,7 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
         localStorage.setItem('windowState', data.windowState);
         void applyWindowStateLive(data.windowState);
       }
-      
+
       // ✅ Restaurer les labels par défaut si présents
       if (data.defaultTranslationLabel) {
         setDefaultTranslationLabel(data.defaultTranslationLabel);
@@ -320,7 +320,7 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
 
       showToast('Sauvegarde importée avec succès !', 'success');
     } catch (err: any) {
-      console.error(err?.message || err);
+      console.error(err?.message || "❌ Erreur lors de l'import (fichier invalide ?)", err);
       showToast("Erreur lors de l'import (fichier invalide ?)", 'error');
     }
   };
@@ -557,7 +557,7 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
               <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
                 Personnalisez les labels par défaut pour les liens de traduction et mod. Ces valeurs seront préservées lors du vidage du formulaire.
               </p>
-              
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
@@ -580,7 +580,7 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
                     }}
                   />
                 </div>
-                
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
                     Label de mod

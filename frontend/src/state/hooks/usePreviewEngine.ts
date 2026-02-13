@@ -37,7 +37,7 @@ type UsePreviewEngineProps = {
   isIntegrated: boolean;
   additionalTranslationLinks: AdditionalTranslationLink[];
   additionalModLinks: AdditionalTranslationLink[];
-  uploadedImages: Array<{ id: string; path?: string; url?: string; name: string; isMain: boolean }>;
+  uploadedImages: Array<{ id: string; url?: string; name: string; isMain: boolean }>;
   editingPostId: string | null;
 };
 

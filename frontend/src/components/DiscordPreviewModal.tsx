@@ -62,10 +62,10 @@ export default function DiscordPreviewModal({ preview, onClose, onCopy, mainImag
 
   const { uploadedImages } = useApp();
   const mainImage = mainImagePath
-    ? uploadedImages.find(img => img.path === mainImagePath || img.url === mainImagePath)
+    ? uploadedImages.find(img => img.url === mainImagePath)
     : uploadedImages.find(img => img.isMain);
 
-  const imagePathToDisplay = mainImage?.path || mainImage?.url;
+  const imagePathToDisplay = mainImage?.url;
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Pré-traiter le texte pour remplacer les émojis

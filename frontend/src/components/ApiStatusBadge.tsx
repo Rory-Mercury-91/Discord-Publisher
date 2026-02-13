@@ -66,7 +66,7 @@ export default function ApiStatusBadge({ onOpenLogs }: ApiStatusBadgeProps) {
         setStatus('disconnected');
       }
     } catch (error) {
-      console.error("Erreur lors de la vérification du statut:", error);
+      console.error("❌ Erreur lors de la vérification du statut:", error);
       setStatus('disconnected');
     }
   };
