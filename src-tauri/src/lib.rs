@@ -66,7 +66,7 @@ async fn save_install_path(app: AppHandle, path: String) -> Result<(), String> {
     }
 }
 
-// 🆕 NOUVEAU : Télécharger et installer la mise à jour
+// 🆕 Télécharger et installer la mise à jour
 #[tauri::command]
 async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
     use std::io::Write;
@@ -201,7 +201,7 @@ async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
         // /S = Mode silencieux (pas d'interface utilisateur)
         // /D= = Force le répertoire d'installation (doit être le DERNIER argument)
         let mut command = std::process::Command::new(&installer_path);
-        command.arg("/S");
+        //command.arg("/S");
         command.arg(format!("/D={}", install_dir_str));
         
         println!("[Updater] 📝 Running: {:?}", command);
@@ -215,8 +215,8 @@ async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
         println!("[Updater] 🔄 Closing application in 2 seconds...");
         
         // Attendre 2 secondes pour que l'installateur démarre complètement
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        
+        // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
         // Fermer l'application - l'installateur NSIS prendra le relais
         println!("[Updater] 👋 Exiting application...");
         app.exit(0);
@@ -228,49 +228,6 @@ async fn download_and_install_update(app: AppHandle) -> Result<(), String> {
     }
     
     Ok(())
-}
-
-// ✅ NOUVEAU : Vérifier si le chemin d'installation existe et est accessible
-#[tauri::command]
-async fn verify_install_path(app: AppHandle) -> Result<String, String> {
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
-    
-    let install_path_file = config_dir.join("install_path.txt");
-    
-    if !install_path_file.exists() {
-        return Err("Install path file does not exist".to_string());
-    }
-    
-    let saved_path = fs::read_to_string(&install_path_file)
-        .map_err(|e| format!("Failed to read install path: {}", e))?;
-    
-    let saved_path_buf = PathBuf::from(saved_path.trim());
-    
-    if !saved_path_buf.exists() {
-        return Err(format!("Saved path does not exist: {}", saved_path));
-    }
-    
-    println!("✅ [Updater] Verified install path: {}", saved_path);
-    Ok(saved_path.trim().to_string())
-}
-
-// ✅ NOUVEAU : Obtenir la lettre du disque d'installation
-#[tauri::command]
-async fn get_install_drive() -> Result<String, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get exe path: {}", e))?;
-    
-    #[cfg(target_os = "windows")]
-    {
-        let path_str = exe_path.to_string_lossy().to_string();
-        
-        if let Some(drive) = path_str.chars().take(2).collect::<String>().strip_suffix(':') {
-            return Ok(format!("{}:", drive));
-        }
-    }
-    
-    Ok("C:".to_string())
 }
 
 fn apply_window_state(window: &WebviewWindow) -> Result<(), String> {
@@ -652,7 +609,7 @@ pub fn run() {
             open_url,
             get_app_path,
             save_install_path,
-            download_and_install_update, // 🆕 Nouvelle fonction
+            download_and_install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

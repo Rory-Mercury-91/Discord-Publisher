@@ -7,11 +7,9 @@ export default function UpdateNotification() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showSuccessBadge, setShowSuccessBadge] = useState(false);
   const [updatedVersion, setUpdatedVersion] = useState<string | null>(null);
-  const [isNonStandardInstall, setIsNonStandardInstall] = useState(false);
 
   useEffect(() => {
     const checkInstallLocation = async () => {
@@ -19,14 +17,15 @@ export default function UpdateNotification() {
         const appPath = await invoke<string>('get_app_path');
         console.log('[Updater] 📍 Install path:', appPath);
 
+        // Détection de l'installation (juste pour les logs)
         const isStandard = appPath.toLowerCase().includes('\\appdata\\') ||
           appPath.toLowerCase().includes('\\program files');
 
-        setIsNonStandardInstall(!isStandard);
-
         if (!isStandard) {
-          console.warn('[Updater] ⚠️ Application installée dans un emplacement non-standard');
-          console.warn('[Updater] ⚠️ Les mises à jour automatiques peuvent ne pas fonctionner');
+          console.warn('[Updater] ⚠️ Installation détectée dans un emplacement personnalisé');
+          console.warn('[Updater] 📂 Chemin:', appPath);
+        } else {
+          console.log('[Updater] ✅ Installation standard détectée');
         }
 
         await invoke('save_install_path', { path: appPath });
@@ -80,14 +79,8 @@ export default function UpdateNotification() {
   }
 
   async function handleUpdate() {
-    if (isNonStandardInstall) {
-      handleManualDownload();
-      return;
-    }
-
     try {
       setIsDownloading(true);
-      setDownloadProgress(0);
       setError(null);
 
       console.log('[Updater] 📥 Starting update process...');
@@ -99,12 +92,7 @@ export default function UpdateNotification() {
       }));
 
       // Lancer le téléchargement et l'installation via la commande Rust
-      await invoke('download_and_install_update', {
-        onProgress: (progress: number) => {
-          setDownloadProgress(progress);
-          console.log(`[Updater] ⏳ Progress: ${Math.round(progress)}%`);
-        }
-      });
+      await invoke('download_and_install_update');
 
       console.log('[Updater] ✅ Update process initiated, installer will take over...');
 
@@ -114,20 +102,8 @@ export default function UpdateNotification() {
       const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
       setError('Échec de l\'installation : ' + errorMessage);
       setIsDownloading(false);
-      setDownloadProgress(0);
       localStorage.removeItem('pendingUpdate');
     }
-  }
-
-  function handleManualDownload() {
-    const downloadUrl = 'https://github.com/Rory-Mercury-91/Discord-Publisher/releases/latest';
-
-    invoke('open_url', { url: downloadUrl }).catch(console.error);
-
-    setError(null);
-    setUpdateAvailable(false);
-
-    console.log('[Updater] 📥 Téléchargement manuel requis - ouverture de la page GitHub');
   }
 
   function handleDismiss() {
@@ -207,40 +183,6 @@ export default function UpdateNotification() {
               {updateVersion && (
                 <div style={{ fontSize: 13, color: 'rgba(255, 255, 255, 0.9)', marginBottom: 12 }}>
                   Version {updateVersion} est disponible
-                  {isNonStandardInstall && (
-                    <div style={{
-                      marginTop: 8,
-                      fontSize: 12,
-                      background: 'rgba(255, 255, 255, 0.15)',
-                      padding: '6px 10px',
-                      borderRadius: 6
-                    }}>
-                      ⚠️ Installation personnalisée détectée<br />
-                      Téléchargement manuel recommandé
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {isDownloading && downloadProgress > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{
-                    width: '100%',
-                    height: 4,
-                    background: 'rgba(255, 255, 255, 0.2)',
-                    borderRadius: 2,
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      width: `${downloadProgress}%`,
-                      height: '100%',
-                      background: '#fff',
-                      transition: 'width 0.3s ease'
-                    }} />
-                  </div>
-                  <div style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.8)', marginTop: 4 }}>
-                    Téléchargement... {Math.round(downloadProgress)}%
-                  </div>
                 </div>
               )}
 
@@ -275,11 +217,7 @@ export default function UpdateNotification() {
                     transition: 'all 0.2s ease'
                   }}
                 >
-                  {isDownloading
-                    ? '⏳ Installation...'
-                    : isNonStandardInstall
-                      ? '📥 Télécharger'
-                      : '📥 Installer'}
+                  {isDownloading ? '⏳ Téléchargement...' : '📥 Installer'}
                 </button>
 
                 {!isDownloading && (
