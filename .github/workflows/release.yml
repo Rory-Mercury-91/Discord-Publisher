@@ -241,11 +241,22 @@ jobs:
           
           $setupFile = $setupFiles[0]
           $setupFileName = $setupFile.Name
+          $sigFileName = "$setupFileName.sig"
           
           Write-Host "✅ Found setup file: $setupFileName"
           Write-Host "📊 File size: $($setupFile.Length / 1MB) MB"
+          Write-Host "🔐 Signature file: $sigFileName"
           
-          # Créer le JSON pour la détection de version (simplifié)
+          # Vérifier que le fichier de signature existe
+          $sigFile = Join-Path $setupFile.DirectoryName $sigFileName
+          if (-not (Test-Path $sigFile)) {
+            Write-Host "❌ Signature file not found: $sigFile"
+            exit 1
+          }
+          
+          Write-Host "✅ Signature file found"
+          
+          # Créer le JSON pour la détection de version avec signature
           $latestJson = @{
             version = $version
             notes = "Nouvelle version de Discord Publisher"
@@ -253,6 +264,7 @@ jobs:
             platforms = @{
               "windows-x86_64" = @{
                 url = "$repoUrl/releases/download/${{ github.ref_name }}/$setupFileName"
+                signature = "$repoUrl/releases/download/${{ github.ref_name }}/$sigFileName"
               }
             }
           } | ConvertTo-Json -Depth 10
