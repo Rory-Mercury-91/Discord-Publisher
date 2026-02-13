@@ -243,20 +243,18 @@ jobs:
           $setupFileName = $setupFile.Name
           $sigFileName = "$setupFileName.sig"
           
-          Write-Host "✅ Found setup file: $setupFileName"
-          Write-Host "📊 File size: $($setupFile.Length / 1MB) MB"
-          Write-Host "🔐 Signature file: $sigFileName"
-          
           # Vérifier que le fichier de signature existe
           $sigFile = Join-Path $setupFile.DirectoryName $sigFileName
           if (-not (Test-Path $sigFile)) {
             Write-Host "❌ Signature file not found: $sigFile"
             exit 1
           }
+
+          # --- MODIFICATION ICI : Lire le contenu de la signature ---
+          $signatureContent = Get-Content -Path $sigFile -Raw
+          Write-Host "✅ Signature content loaded"
           
-          Write-Host "✅ Signature file found"
-          
-          # Créer le JSON pour la détection de version avec signature
+          # Créer le JSON pour la détection de version avec le CONTENU de la signature
           $latestJson = @{
             version = $version
             notes = "Nouvelle version de Discord Publisher"
@@ -264,13 +262,13 @@ jobs:
             platforms = @{
               "windows-x86_64" = @{
                 url = "$repoUrl/releases/download/${{ github.ref_name }}/$setupFileName"
-                signature = "$repoUrl/releases/download/${{ github.ref_name }}/$sigFileName"
+                signature = $signatureContent  # <--- On utilise la variable contenant le texte
               }
             }
           } | ConvertTo-Json -Depth 10
           
           $latestJson | Out-File -FilePath "latest.json" -Encoding utf8
-          Write-Host "✅ latest.json created:"
+          Write-Host "✅ latest.json created with inline signature"
           Get-Content "latest.json"
 
       - name: Create GitHub Release
