@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 use std::fs;
 use tauri::{Manager, AppHandle, WebviewWindow};
-use serde::{Deserialize, Serialize};
-use base64::{Engine as _, engine::general_purpose};
 
 // 🆕 Télécharger la mise à jour (sans l'installer)
 #[tauri::command]
