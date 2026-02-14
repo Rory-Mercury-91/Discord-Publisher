@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::fs;
 use tauri::{Manager, AppHandle, WebviewWindow};
 #[derive(serde::Deserialize)]

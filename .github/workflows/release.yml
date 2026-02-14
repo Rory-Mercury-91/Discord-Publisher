@@ -184,12 +184,12 @@ jobs:
         run: |
           Write-Host "🔧 Préparation du binaire portable..."
           # On cherche l'exécutable qui n'est pas l'installateur (ne contient pas 'setup')
-          $exePath = Get-ChildItem -Path src-tauri/target/release/bundle/nsis/*.exe | Where-Object { $_.Name -notlike "*setup*" } | Select-Object -First 1
+          $exePath = Get-ChildItem -Path src-tauri/target/release/*.exe | Where-Object { $_.Name -notlike "*setup*" } | Select-Object -First 1
           
           if ($exePath) {
             # On le copie avec le nom fixe attendu par le code Rust
-            Copy-Item $exePath.FullName -Destination "src-tauri/target/release/bundle/nsis/Discord-Publisher-Portable.exe"
-            Write-Host "✅ Binaire portable créé : Discord-Publisher-Portable.exe"
+            Copy-Item $exePath.FullName -Destination "src-tauri/target/release/app.exe"
+            Write-Host "✅ Binaire portable créé : app.exe"
           } else {
             Write-Error "❌ Impossible de trouver le binaire portable original."
             exit 1
