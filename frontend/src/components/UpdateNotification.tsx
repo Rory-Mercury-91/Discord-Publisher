@@ -19,6 +19,11 @@ export default function UpdateNotification() {
   const [error, setError] = useState<string | null>(null);
   const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
 
+  // 🆕 Lire le mode d'installation automatique
+  const [autoInstall, setAutoInstall] = useState<boolean>(() => {
+    return localStorage.getItem('autoInstallUpdates') === 'true';
+  });
+
   useEffect(() => {
     // Vérifier si on vient de se mettre à jour
     const justUpdated = localStorage.getItem('justUpdated');
@@ -77,6 +82,14 @@ export default function UpdateNotification() {
       console.log('[Updater] ✅ Téléchargement terminé:', path);
       setDownloadedPath(path);
       setState('downloaded');
+
+      // 🆕 Si mode auto-install activé, installer automatiquement
+      if (autoInstall) {
+        console.log('[Updater] ⚡ Mode auto-install activé, installation automatique...');
+        // Attendre 500ms pour que l'UI se mette à jour
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await handleInstall();
+      }
 
     } catch (err: any) {
       console.error('[Updater] ❌ Échec du téléchargement de la mise à jour:', err);
@@ -233,7 +246,7 @@ export default function UpdateNotification() {
           }}>
             {state === 'available' && 'Nouvelle version disponible'}
             {state === 'downloading' && 'Téléchargement en cours'}
-            {state === 'downloaded' && 'Mise à jour prête'}
+            {state === 'downloaded' && (autoInstall ? 'Installation automatique...' : 'Mise à jour prête')}
             {state === 'installing' && 'Installation en cours'}
           </div>
 
@@ -261,10 +274,15 @@ export default function UpdateNotification() {
               marginBottom: 12
             }}>
               Téléchargement de la version {updateVersion}...
+              {autoInstall && (
+                <div style={{ marginTop: 4, fontSize: 12, color: 'var(--accent)' }}>
+                  ⚡ Installation automatique après téléchargement
+                </div>
+              )}
             </div>
           )}
 
-          {state === 'downloaded' && (
+          {state === 'downloaded' && !autoInstall && (
             <div style={{
               fontSize: 13,
               color: 'var(--muted)',
@@ -325,7 +343,7 @@ export default function UpdateNotification() {
                     e.currentTarget.style.opacity = '1';
                   }}
                 >
-                  📥 Télécharger
+                  {autoInstall ? '⚡ Télécharger & Installer' : '📥 Télécharger'}
                 </button>
 
                 <button
@@ -381,11 +399,12 @@ export default function UpdateNotification() {
                     }
                   `}
                 </style>
-                Téléchargement...
+                {autoInstall ? 'Téléchargement puis installation...' : 'Téléchargement...'}
               </div>
             )}
 
-            {state === 'downloaded' && (
+            {/* 🆕 Mode manuel : afficher les boutons "Installer maintenant" et "Plus tard" */}
+            {state === 'downloaded' && !autoInstall && (
               <>
                 <button
                   onClick={handleInstall}
@@ -438,7 +457,8 @@ export default function UpdateNotification() {
               </>
             )}
 
-            {state === 'installing' && (
+            {/* 🆕 Mode auto : pas de boutons pendant l'installation, spinner automatique */}
+            {(state === 'installing' || (state === 'downloaded' && autoInstall)) && (
               <div style={{
                 flex: 1,
                 display: 'flex',

@@ -50,6 +50,12 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
   const [defaultTranslationLabel, setDefaultTranslationLabel] = useState(() => localStorage.getItem('default_translation_label') || 'Traduction');
   const [defaultModLabel, setDefaultModLabel] = useState(() => localStorage.getItem('default_mod_label') || 'Mod');
 
+  // 🆕 Mode d'installation des mises à jour
+  const [autoInstallUpdates, setAutoInstallUpdates] = useState(() => {
+    const saved = localStorage.getItem('autoInstallUpdates');
+    return saved === 'true';
+  });
+
   // Droits d'édition : liste des profils et des éditeurs autorisés par l'utilisateur connecté
   const [allProfiles, setAllProfiles] = useState<ProfilePublic[]>([]);
   const [allowedEditorIds, setAllowedEditorIds] = useState<Set<string>>(new Set());
@@ -183,6 +189,9 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
     localStorage.setItem('default_translation_label', defaultTranslationLabel);
     localStorage.setItem('default_mod_label', defaultModLabel);
 
+    // 🆕 Sauvegarder le mode d'installation automatique
+    localStorage.setItem('autoInstallUpdates', autoInstallUpdates.toString());
+
     if (adminMode) {
       localStorage.setItem('apiUrl', apiUrl);
       localStorage.setItem('apiBase', apiUrl);
@@ -203,7 +212,7 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
       }
     }
 
-    // ✅ NOUVEAU : Sauvegarder l'état de fenêtre via Tauri
+    // Sauvegarder l'état de fenêtre via Tauri
     try {
       // @ts-ignore - Tauri API
       if (window.__TAURI__) {
@@ -250,9 +259,10 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
         savedTags,
         savedInstructions,
         publishedPosts,
-        windowState, // ✅ Inclure l'état de fenêtre dans l'export
-        defaultTranslationLabel, // ✅ Inclure les labels par défaut
+        windowState,
+        defaultTranslationLabel,
         defaultModLabel,
+        autoInstallUpdates, // 🆕 Inclure le mode d'installation
         exportDate: new Date().toISOString(),
         version: '1.0'
       };
@@ -301,14 +311,14 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
       setApiUrl(localStorage.getItem('apiUrl') || localStorage.getItem('apiBase') || 'http://138.2.182.125:8080');
       setApiKey(localStorage.getItem('apiKey') || '');
 
-      // ✅ Restaurer l'état de fenêtre si présent
+      // Restaurer l'état de fenêtre si présent
       if (data.windowState) {
         setWindowState(data.windowState);
         localStorage.setItem('windowState', data.windowState);
         void applyWindowStateLive(data.windowState);
       }
 
-      // ✅ Restaurer les labels par défaut si présents
+      // Restaurer les labels par défaut si présents
       if (data.defaultTranslationLabel) {
         setDefaultTranslationLabel(data.defaultTranslationLabel);
         localStorage.setItem('default_translation_label', data.defaultTranslationLabel);
@@ -316,6 +326,12 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
       if (data.defaultModLabel) {
         setDefaultModLabel(data.defaultModLabel);
         localStorage.setItem('default_mod_label', data.defaultModLabel);
+      }
+
+      // 🆕 Restaurer le mode d'installation automatique si présent
+      if (typeof data.autoInstallUpdates === 'boolean') {
+        setAutoInstallUpdates(data.autoInstallUpdates);
+        localStorage.setItem('autoInstallUpdates', data.autoInstallUpdates.toString());
       }
 
       showToast('Sauvegarde importée avec succès !', 'success');
@@ -350,7 +366,6 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
           background: 'var(--panel)',
           borderRadius: '12px',
           width: '90%',
-          // ✅ Même gabarit que InstructionsManagerModal
           maxWidth: '920px',
           maxHeight: '90vh',
           overflowY: 'auto',
@@ -539,7 +554,7 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
 
           </div>
 
-          {/* Colonne droite : Labels par défaut + Fenêtre (tous les utilisateurs) + Sauvegarde (mode admin uniquement) */}
+          {/* Colonne droite : Labels par défaut + Mises à jour + Fenêtre + Sauvegarde */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {/* Section Labels par défaut */}
             <section
@@ -602,6 +617,86 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
                     }}
                   />
                 </div>
+              </div>
+            </section>
+
+            {/* 🆕 Section Mode d'installation des mises à jour */}
+            <section
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 14,
+                padding: 20,
+                background: 'rgba(255,255,255,0.02)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16,
+              }}
+            >
+              <h4 style={{ margin: 0, fontSize: '1rem' }}>🔄 Mises à jour</h4>
+              <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
+                Choisissez comment gérer l'installation des mises à jour après leur téléchargement.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '14px 16px',
+                    background: !autoInstallUpdates ? 'rgba(99, 102, 241, 0.1)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${!autoInstallUpdates ? 'rgba(99, 102, 241, 0.3)' : 'var(--border)'}`,
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="updateMode"
+                    checked={!autoInstallUpdates}
+                    onChange={() => setAutoInstallUpdates(false)}
+                    style={{ cursor: 'pointer', width: 18, height: 18 }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
+                      🎯 Installation manuelle (recommandé)
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      Télécharger puis installer en deux étapes. Vous contrôlez quand installer.
+                    </div>
+                  </div>
+                </label>
+
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '14px 16px',
+                    background: autoInstallUpdates ? 'rgba(99, 102, 241, 0.1)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${autoInstallUpdates ? 'rgba(99, 102, 241, 0.3)' : 'var(--border)'}`,
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="updateMode"
+                    checked={autoInstallUpdates}
+                    onChange={() => setAutoInstallUpdates(true)}
+                    style={{ cursor: 'pointer', width: 18, height: 18 }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
+                      ⚡ Installation automatique
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      Installation immédiate après téléchargement. L'app se fermera automatiquement.
+                    </div>
+                  </div>
+                </label>
               </div>
             </section>
 
@@ -769,7 +864,7 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
                     <span style={{ fontSize: 20 }}>📥</span>
                     <div>
                       <div style={{ fontWeight: 600 }}>Restaurer depuis un fichier</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>Remplace tes données par le contenu d’un fichier de sauvegarde (export précédent).</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>Remplace tes données par le contenu d'un fichier de sauvegarde (export précédent).</div>
                     </div>
                   </button>
                   <button
