@@ -15,7 +15,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -67,44 +67,38 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.VERSION }}"
-          Write-Host "🔧 Setting version to $version in all config files..."
-          
+          Write-Host "🔧 Setting version to $version in all config files."
+
           # package.json
           $pkg = Get-Content package.json | ConvertFrom-Json
           $pkg.version = $version
           $pkg | ConvertTo-Json -Depth 100 | Set-Content package.json -Encoding utf8
-          
+
           # tauri.conf.json
           $tauri = Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json
           $tauri.version = $version
           $tauri | ConvertTo-Json -Depth 100 | Set-Content src-tauri/tauri.conf.json -Encoding utf8
-          
-          # Cargo.toml - SEULEMENT la version dans [package], PAS rust-version
+
+          # Cargo.toml - ONLY [package] version (not rust-version)
           $cargoContent = Get-Content src-tauri/Cargo.toml -Raw
-          
-          # Trouver la section [package]
+
           if ($cargoContent -match '\[package\]([\s\S]*?)(?=\n\[|$)') {
             $packageSection = $matches[1]
-            
-            # Remplacer UNIQUEMENT "version = " (pas rust-version)
             $updatedSection = $packageSection -replace '(?m)^version\s*=\s*"[^"]+"', "version = `"$version`""
-            
-            # Reconstruire le fichier
             $cargoContent = $cargoContent -replace [regex]::Escape($packageSection), $updatedSection
-            
             $cargoContent | Set-Content src-tauri/Cargo.toml -NoNewline -Encoding utf8
             Write-Host "✅ Cargo.toml updated"
           } else {
             Write-Host "❌ Could not find [package] section in Cargo.toml"
             exit 1
           }
-          
+
           Write-Host "✅ Version set to $version in all files"
 
       - name: Clean Cargo cache to avoid feature conflicts
         shell: pwsh
         run: |
-          Write-Host "🧹 Cleaning Cargo build artifacts..."
+          Write-Host "🧹 Cleaning Cargo build artifacts."
           if (Test-Path "src-tauri/Cargo.lock") {
             Remove-Item "src-tauri/Cargo.lock" -Force
             Write-Host "✅ Cargo.lock removed"
@@ -119,58 +113,24 @@ jobs:
           Write-Host "🔄 Using FINAL secret names - no more cache!"
           Write-Host "Build timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 
-      - name: Verify signing keys are set
+      - name: Verify signing keys are set (safe)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY_FRESH }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_PASSWORD_FRESH }}
         shell: pwsh
         run: |
-          Write-Host "🔐 VÉRIFICATION COMPLÈTE DES SECRETS" -ForegroundColor Cyan
-          Write-Host "=" * 80
-          
-          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-            Write-Host "`n✅ TAURI_SIGNING_PRIVATE_KEY trouvée" -ForegroundColor Green
-            Write-Host "Longueur: $($env:TAURI_SIGNING_PRIVATE_KEY.Length) caractères"
-            Write-Host "`n📋 CLÉ COMPLÈTE:" -ForegroundColor Yellow
-            Write-Host $env:TAURI_SIGNING_PRIVATE_KEY
-            
-            Write-Host "`n🎯 CLÉ ATTENDUE:" -ForegroundColor Magenta
-            Write-Host "dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5ClJXUlRZMEl5WHpuUHZwNmJoWDRHakxuS0ZqUXZ3U21DS3MrMk9neHJGaG9BT0RqVGdIOEFBQkFBQUFBQUFBQUFBQUlBQUFBQUtBMzd2SDM5UUJ1anJ4U0tkTXJCSnJLV09icENtWVNla2owN0VCVW9DamUrYmVVaTFuaHR0MFFtZDd5Wjc1SmU1bTJROFp3NVhWNitvOCt5TC84MnMzZm9YaXBlVktCaE9sTVZIOWUyOXRRaWJLeUMvT1gvQkZiT256MCtvN2VrNEw5aUppWWNMa2s9Cg=="
-            
-            if ($env:TAURI_SIGNING_PRIVATE_KEY -eq "dW50cnVzdGVkIGNvbW1lbnQ6IHJzaWduIGVuY3J5cHRlZCBzZWNyZXQga2V5ClJXUlRZMEl5WHpuUHZwNmJoWDRHakxuS0ZqUXZ3U21DS3MrMk9neHJGaG9BT0RqVGdIOEFBQkFBQUFBQUFBQUFBQUlBQUFBQUtBMzd2SDM5UUJ1anJ4U0tkTXJCSnJLV09icENtWVNla2owN0VCVW9DamUrYmVVaTFuaHR0MFFtZDd5Wjc1SmU1bTJROFp3NVhWNitvOCt5TC84MnMzZm9YaXBlVktCaE9sTVZIOWUyOXRRaWJLeUMvT1gvQkZiT256MCtvN2VrNEw5aUppWWNMa2s9Cg==") {
-              Write-Host "`n✅✅✅ PARFAIT! La clé correspond exactement!" -ForegroundColor Green
-            } else {
-              Write-Host "`n❌❌❌ ERREUR! La clé est différente!" -ForegroundColor Red
-              exit 1
-            }
-          } else {
+          Write-Host "🔐 Checking signing env vars (without printing secrets)" -ForegroundColor Cyan
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
             Write-Host "❌ TAURI_SIGNING_PRIVATE_KEY is NOT set" -ForegroundColor Red
             exit 1
           }
-          
-          Write-Host "`n" + ("=" * 80)
-          
-          if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ne $null) {
-            Write-Host "`n✅ TAURI_SIGNING_PRIVATE_KEY_PASSWORD trouvé" -ForegroundColor Green
-            Write-Host "📋 MOT DE PASSE COMPLET:" -ForegroundColor Yellow
-            Write-Host $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-            
-            Write-Host "`n🎯 MOT DE PASSE ATTENDU:" -ForegroundColor Magenta
-            Write-Host "2026"
-            
-            if ($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -eq "2026") {
-              Write-Host "`n✅✅✅ PARFAIT! Le mot de passe correspond!" -ForegroundColor Green
-            } else {
-              Write-Host "`n❌❌❌ ERREUR! Le mot de passe est différent!" -ForegroundColor Red
-              exit 1
-            }
-          } else {
-            Write-Host "⚠️ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is not set" -ForegroundColor Red
+          if (-not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
+            Write-Host "❌ TAURI_SIGNING_PRIVATE_KEY_PASSWORD is NOT set" -ForegroundColor Red
             exit 1
           }
-          
-          Write-Host "`n" + ("=" * 80)
-          Write-Host "🎉 TOUS LES SECRETS SONT CORRECTS!" -ForegroundColor Green
+          Write-Host "✅ Signing env vars are present"
+          Write-Host "Key length: $($env:TAURI_SIGNING_PRIVATE_KEY.Length)"
+          Write-Host "Password length: $($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD.Length)"
 
       - name: Build application
         env:
@@ -178,27 +138,55 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_PASSWORD_FRESH }}
         run: npm run build
 
-# --- AJOUT ICI ---
       - name: Prepare Portable Binary
         shell: pwsh
         run: |
           Write-Host "🔧 Préparation du binaire portable..."
-          # On cherche l'exécutable qui n'est pas l'installateur (ne contient pas 'setup')
-          $exePath = Get-ChildItem -Path src-tauri/target/release/*.exe | Where-Object { $_.Name -notlike "*setup*" } | Select-Object -First 1
-          
+          $releaseDir = "src-tauri/target/release"
+
+          # Cherche un exe principal (pas setup / pas sig)
+          $exePath = Get-ChildItem -Path $releaseDir -Filter *.exe -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notlike "*setup*" -and $_.Name -notlike "*.sig" } |
+            Sort-Object Length -Descending |
+            Select-Object -First 1
+
           if ($exePath) {
-            # On le copie avec le nom fixe attendu par le code Rust
-            Copy-Item $exePath.FullName -Destination "src-tauri/target/release/app.exe"
-            Write-Host "✅ Binaire portable créé : app.exe"
+            Copy-Item $exePath.FullName -Destination "$releaseDir/app.exe" -Force
+            Write-Host "✅ Binaire portable prêt : $releaseDir/app.exe"
           } else {
             Write-Error "❌ Impossible de trouver le binaire portable original."
+            Write-Host "📂 Contenu de $releaseDir :"
+            Get-ChildItem -Path $releaseDir -ErrorAction SilentlyContinue | Format-Table Name, Length
             exit 1
           }
+
+      - name: Create app.exe only asset (zip)
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $exePath = "src-tauri/target/release/app.exe"
+
+          if (-not (Test-Path $exePath)) {
+            Write-Error "❌ app.exe introuvable à $exePath"
+            exit 1
+          }
+
+          $outDir = "app-exe-only"
+          if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+          Copy-Item $exePath -Destination (Join-Path $outDir "app.exe") -Force
+
+          $zipName = "Discord_Publisher_${version}_app.exe_only.zip"
+          if (Test-Path $zipName) { Remove-Item $zipName -Force }
+
+          Compress-Archive -Path "$outDir/app.exe" -DestinationPath $zipName
+          Write-Host "✅ Asset créé : $zipName"
 
       - name: List build artifacts
         shell: pwsh
         run: |
-          Write-Host "📦 Listing build artifacts..."
+          Write-Host "📦 Listing build artifacts."
           if (Test-Path "src-tauri/target/release/bundle/nsis") {
             Write-Host "`n📂 NSIS Bundle contents:"
             Get-ChildItem -Recurse src-tauri/target/release/bundle/nsis | ForEach-Object {
@@ -207,27 +195,27 @@ jobs:
           } else {
             Write-Host "⚠️ NSIS bundle directory not found"
           }
+
           if (Test-Path "src-tauri/target/release") {
-            Write-Host "`n📂 Release exe files:"
-            Get-ChildItem src-tauri/target/release/*.exe | ForEach-Object {
+            Write-Host "`n📂 Release directory files:"
+            Get-ChildItem src-tauri/target/release -File | ForEach-Object {
               Write-Host "  $($_.FullName) - $($_.Length) bytes"
             }
           }
 
-      - name: Create portable version
+      - name: Create portable version (single exe)
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.VERSION }}"
           $exePath = "src-tauri/target/release/app.exe"
           $portableName = "Discord_Publisher_${version}_portable.exe"
-          
+
           Write-Host "🔍 Looking for exe at: $exePath"
-          
+
           if (Test-Path $exePath) {
-            Copy-Item $exePath $portableName
+            Copy-Item $exePath $portableName -Force
             Write-Host "✅ Portable version created: $portableName"
-            
-            # Verify the file was created
+
             if (Test-Path $portableName) {
               $fileSize = (Get-Item $portableName).Length / 1MB
               Write-Host "✅ File size: $($fileSize.ToString('F2')) MB"
@@ -239,53 +227,109 @@ jobs:
             exit 1
           }
 
+      - name: Create portable full package (zip)
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $releaseDir = "src-tauri/target/release"
+          $portableDir = "portable_full"
+
+          if (Test-Path $portableDir) { Remove-Item $portableDir -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+
+          # app.exe (nom fixe à l'intérieur du zip)
+          Copy-Item "$releaseDir/app.exe" -Destination "$portableDir/app.exe" -Force
+
+          # Dépendances typiques (tu peux ajuster si besoin)
+          Get-ChildItem $releaseDir -File -ErrorAction SilentlyContinue |
+            Where-Object {
+              $_.Name -notlike "*setup*" -and
+              $_.Name -notlike "*.sig" -and
+              $_.Extension -in @(".dll",".dat",".bin",".json",".toml",".ini")
+            } |
+            ForEach-Object { Copy-Item $_.FullName -Destination $portableDir -Force }
+
+          # Dossiers optionnels fréquents
+          foreach ($dir in @("resources","locales")) {
+            $src = Join-Path $releaseDir $dir
+            if (Test-Path $src) {
+              Copy-Item $src -Destination (Join-Path $portableDir $dir) -Recurse -Force
+            }
+          }
+
+          $zipName = "Discord_Publisher_${version}_portable_full.zip"
+          if (Test-Path $zipName) { Remove-Item $zipName -Force }
+
+          Compress-Archive -Path "$portableDir/*" -DestinationPath $zipName
+          Write-Host "✅ Portable full zip created: $zipName"
+
       - name: Generate latest.json for update detection
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.VERSION }}"
           $repoUrl = "https://github.com/${{ github.repository }}"
           $pubDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
-          
+
           Write-Host "🔧 Generating latest.json for version $version"
-          
+
           # Trouver le fichier setup NSIS
           $setupFiles = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe"
-          
           if ($setupFiles.Count -eq 0) {
             Write-Host "❌ No NSIS setup file found"
             exit 1
           }
-          
+
           $setupFile = $setupFiles[0]
           $setupFileName = $setupFile.Name
           $sigFileName = "$setupFileName.sig"
-          
-          # Vérifier que le fichier de signature existe
+
+          # Vérifier signature
           $sigFile = Join-Path $setupFile.DirectoryName $sigFileName
           if (-not (Test-Path $sigFile)) {
             Write-Host "❌ Signature file not found: $sigFile"
             exit 1
           }
 
-          # --- MODIFICATION ICI : Lire le contenu de la signature ---
           $signatureContent = Get-Content -Path $sigFile -Raw
           Write-Host "✅ Signature content loaded"
-          
-          # Créer le JSON pour la détection de version avec le CONTENU de la signature
+
+          # Assets additionnels (hybride)
+          $portableFullZip = "Discord_Publisher_${version}_portable_full.zip"
+          $appExeOnlyZip   = "Discord_Publisher_${version}_app.exe_only.zip"
+
+          if (-not (Test-Path $portableFullZip)) { Write-Host "❌ Missing $portableFullZip"; exit 1 }
+          if (-not (Test-Path $appExeOnlyZip))   { Write-Host "❌ Missing $appExeOnlyZip"; exit 1 }
+
+          $portableFullSha = (Get-FileHash $portableFullZip -Algorithm SHA256).Hash.ToLower()
+          $appExeOnlySha   = (Get-FileHash $appExeOnlyZip -Algorithm SHA256).Hash.ToLower()
+
+          # JSON Tauri + champs custom (non cassants)
           $latestJson = @{
-            version = $version
-            notes = "Nouvelle version de Discord Publisher"
+            version  = $version
+            notes    = "Nouvelle version de Discord Publisher"
             pub_date = $pubDate
+
             platforms = @{
               "windows-x86_64" = @{
-                url = "$repoUrl/releases/download/${{ github.ref_name }}/$setupFileName"
-                signature = $signatureContent  # <--- On utilise la variable contenant le texte
+                url       = "$repoUrl/releases/download/${{ github.ref_name }}/$setupFileName"
+                signature = $signatureContent
+              }
+            }
+
+            assets = @{
+              portable_full = @{
+                url    = "$repoUrl/releases/download/${{ github.ref_name }}/$portableFullZip"
+                sha256 = $portableFullSha
+              }
+              app_exe_only = @{
+                url    = "$repoUrl/releases/download/${{ github.ref_name }}/$appExeOnlyZip"
+                sha256 = $appExeOnlySha
               }
             }
           } | ConvertTo-Json -Depth 10
-          
+
           $latestJson | Out-File -FilePath "latest.json" -Encoding utf8
-          Write-Host "✅ latest.json created with inline signature"
+          Write-Host "✅ latest.json created"
           Get-Content "latest.json"
 
       - name: Create GitHub Release
@@ -295,41 +339,39 @@ jobs:
             src-tauri/target/release/bundle/nsis/*.exe
             latest.json
             Discord_Publisher_${{ steps.version.outputs.VERSION }}_portable.exe
+            Discord_Publisher_${{ steps.version.outputs.VERSION }}_portable_full.zip
+            Discord_Publisher_${{ steps.version.outputs.VERSION }}_app.exe_only.zip
           name: Discord Publisher v${{ steps.version.outputs.VERSION }}
           body: |
             ## 🎉 Nouvelle version : ${{ steps.version.outputs.VERSION }}
-            
+
             ### 📦 Fichiers disponibles
-            
-            - **Installateur NSIS** : Installation complète avec mise à jour automatique
-            - **Version portable** : Exécutable standalone sans installation
-            
+
+            - **Installateur NSIS** : installation complète (setup)
+            - **Version portable (1 fichier)** : `Discord_Publisher_${{ steps.version.outputs.VERSION }}_portable.exe`
+            - **Version portable complète (zip)** : `Discord_Publisher_${{ steps.version.outputs.VERSION }}_portable_full.zip`
+            - **Mise à jour hybride (app.exe uniquement)** : `Discord_Publisher_${{ steps.version.outputs.VERSION }}_app.exe_only.zip`
+            - **Fichier de détection** : `latest.json`
+            - **Sources** : disponibles automatiquement via GitHub ("Source code")
+
             ### 🔧 Installation
-            
+
             #### Installateur (recommandé)
             1. Télécharger le fichier `Discord Publisher_*_x64-setup.exe`
             2. Exécuter le fichier et suivre les instructions
             3. Lancer l'application depuis le menu Démarrer
-            
+
             #### Version portable
-            1. Télécharger `Discord_Publisher_${{ steps.version.outputs.VERSION }}_portable.exe`
-            2. Placer le fichier où vous voulez
-            3. Double-cliquer pour lancer (aucune installation requise)
-            
-            ### 🔄 Mise à jour automatique
-            
-            Si vous avez déjà Discord Publisher installé :
-            - L'application détectera automatiquement cette nouvelle version
-            - Une notification vous proposera de télécharger la mise à jour
-            - Cliquez sur "Télécharger" puis "Installer maintenant" pour mettre à jour
-            
-            ### 📝 Changelog
-            
-            *Voir les commits ci-dessous pour les détails des changements.*
-            
+            - **Simple** : télécharger `Discord_Publisher_${{ steps.version.outputs.VERSION }}_portable.exe` et lancer
+            - **Complète** : télécharger `Discord_Publisher_${{ steps.version.outputs.VERSION }}_portable_full.zip`, extraire, puis lancer `app.exe`
+
+            ### 🔄 Mise à jour (hybride)
+            - Installé : détection via `latest.json` + mise à jour via setup
+            - Portable : ton système peut télécharger `*_app.exe_only.zip` et remplacer `app.exe`
+
             ---
-            
-            **Build date** : ${{ github.event.head_commit.timestamp }}  
+
+            **Build date** : ${{ github.event.head_commit.timestamp }}
             **Commit** : `${{ github.sha }}`
           draft: false
           prerelease: false
@@ -348,10 +390,10 @@ jobs:
             Write-Host "Discord webhook not configured, skipping notification"
             exit 0
           }
-          
+
           $version = "${{ steps.version.outputs.VERSION }}"
           $releaseUrl = "https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
-          
+
           $payload = @{
             embeds = @(@{
               title = "🚀 Nouvelle version disponible !"
@@ -365,7 +407,7 @@ jobs:
                 },
                 @{
                   name = "Plateforme"
-                  value = "Windows (Version portable + Installateur NSIS)"
+                  value = "Windows (Portable + NSIS + Hybride)"
                   inline = $true
                 },
                 @{
@@ -381,7 +423,7 @@ jobs:
               }
             })
           } | ConvertTo-Json -Depth 10
-          
+
           try {
             Invoke-RestMethod -Uri $env:DISCORD_WEBHOOK_URL -Method Post -Body $payload -ContentType "application/json"
             Write-Host "✅ Discord notification sent successfully"
@@ -399,10 +441,10 @@ jobs:
           if (-not $env:DISCORD_WEBHOOK_URL) {
             exit 0
           }
-          
+
           $version = "${{ steps.version.outputs.VERSION }}"
           $workflowUrl = "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          
+
           $payload = @{
             embeds = @(@{
               title = "❌ Build échoué"
@@ -427,7 +469,7 @@ jobs:
               }
             })
           } | ConvertTo-Json -Depth 10
-          
+
           try {
             Invoke-RestMethod -Uri $env:DISCORD_WEBHOOK_URL -Method Post -Body $payload -ContentType "application/json"
           } catch {
