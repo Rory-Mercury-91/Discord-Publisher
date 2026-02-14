@@ -48,20 +48,63 @@ export default function UpdateNotification() {
     return () => clearTimeout(timeout);
   }, []);
 
+  function getSelectedUpdateType(): 'nsis' | 'portable' {
+    const v = localStorage.getItem('updateType');
+    return (v === 'portable' ? 'portable' : 'nsis');
+  }
+
+  async function checkForUpdatePortableViaLatestJson(current: string) {
+    // Télécharge latest.json depuis la dernière release (route stable)
+    const url = `https://github.com/Rory-Mercury-91/Discord-Publisher/releases/latest/download/latest.json`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`latest.json fetch failed: ${res.status}`);
+    const json = await res.json();
+
+    const latest = String(json.version ?? '').trim();
+    if (!latest) return null;
+
+    // Compare simple : si différent => update disponible
+    // (si tu veux une vraie comparaison semver, je te le fais aussi)
+    if (latest !== current) {
+      return { version: latest };
+    }
+    return null;
+  }
+
+
   async function checkForUpdate() {
     try {
       setState('checking');
       console.log('[Updater] 🔍 Vérification des mises à jour...');
 
-      const update = await check();
+      const mode = getSelectedUpdateType();
 
-      if (update) {
-        console.log(`[Updater] ✨ Nouvelle version disponible: ${update.version} (actuelle: ${update.currentVersion})`);
+      if (mode === 'nsis') {
+        // ✅ installé : plugin updater
+        const update = await check();
+        if (update) {
+          console.log(`[Updater] ✨ Nouvelle version disponible: ${update.version} (actuelle: ${update.currentVersion})`);
+          setState('available');
+          setUpdateVersion(update.version);
+          setCurrentVersion(update.currentVersion);
+        } else {
+          console.log('[Updater] ✅ L\'application est à jour');
+          setState('idle');
+        }
+        return;
+      }
+
+      // ✅ portable/hybride : latest.json
+      const current = currentVersion ?? (await getVersion());
+      const info = await checkForUpdatePortableViaLatestJson(current);
+
+      if (info) {
+        console.log(`[Updater] ✨ Nouvelle version portable dispo: ${info.version} (actuelle: ${current})`);
         setState('available');
-        setUpdateVersion(update.version);
-        setCurrentVersion(update.currentVersion);
+        setUpdateVersion(info.version);
+        setCurrentVersion(current);
       } else {
-        console.log('[Updater] ✅ L\'application est à jour');
+        console.log('[Updater] ✅ (portable) L\'application est à jour');
         setState('idle');
       }
     } catch (err) {
@@ -70,63 +113,84 @@ export default function UpdateNotification() {
     }
   }
 
+
   async function handleDownload() {
     try {
       setState('downloading');
       setError(null);
 
-      console.log('[Updater] 📥 Démarrage du processus de téléchargement...');
+      const mode = getSelectedUpdateType();
 
-      const path = await invoke<string>('download_update');
+      // ✅ mapping :
+      // - nsis => télécharge le setup
+      // - portable => télécharge le zip app.exe_only (ton hybride)
+      const updateTypeForRust =
+        mode === 'nsis' ? 'nsis' : 'app_exe_only';
+
+      console.log('[Updater] 📥 Download update type:', updateTypeForRust);
+
+      const path = await invoke<string>('download_update', {
+        updateType: updateTypeForRust,
+      });
 
       console.log('[Updater] ✅ Téléchargement terminé:', path);
       setDownloadedPath(path);
       setState('downloaded');
 
-      // 🆕 Si mode auto-install activé, installer automatiquement
       if (autoInstall) {
         console.log('[Updater] ⚡ Mode auto-install activé, installation automatique...');
-        // Attendre 500ms pour que l'UI se mette à jour
         await new Promise(resolve => setTimeout(resolve, 500));
         await handleInstall();
       }
-
     } catch (err: any) {
       console.error('[Updater] ❌ Échec du téléchargement de la mise à jour:', err);
-
       const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
       setError('Échec du téléchargement : ' + errorMessage);
       setState('available');
     }
   }
 
+
   async function handleInstall() {
     try {
+      if (!downloadedPath) {
+        setError("Aucun fichier téléchargé à installer.");
+        setState('available');
+        return;
+      }
+
       setState('installing');
       setError(null);
 
-      console.log('[Updater] 🚀 Démarrage du processus d\'installation...');
+      const mode = getSelectedUpdateType();
+      const updateTypeForRust =
+        mode === 'nsis' ? 'nsis' : 'app_exe_only';
 
-      // Marquer qu'on attend une mise à jour
+      console.log('[Updater] 🚀 Installation via:', updateTypeForRust);
+
       localStorage.setItem('pendingUpdate', JSON.stringify({
         version: updateVersion,
         timestamp: Date.now()
       }));
 
-      // Lancer l'installation
-      await invoke('install_downloaded_update');
+      await invoke('install_downloaded_update', {
+        path: downloadedPath,
+        options: {
+          install_mode: 'immediate',
+          update_type: updateTypeForRust,
+        },
+      });
 
       console.log('[Updater] ✅ Installation démarrée, l\'application va se fermer...');
-
     } catch (err: any) {
       console.error('[Updater] ❌ Échec de l\'installation de la mise à jour:', err);
-
       const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
       setError('Échec de l\'installation : ' + errorMessage);
       setState('downloaded');
       localStorage.removeItem('pendingUpdate');
     }
   }
+
 
   function handleDismiss() {
     setState('idle');

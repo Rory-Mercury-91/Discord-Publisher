@@ -136,35 +136,70 @@ struct UpdateOptions {
 #[tauri::command]
 async fn download_update(app: AppHandle, update_type: String) -> Result<String, String> {
     use std::io::Write;
+
     let client = reqwest::Client::builder()
         .user_agent("Discord-Publisher-Updater")
-        .build().map_err(|e| e.to_string())?;
-    
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // GitHub "latest release"
     let releases_url = "https://api.github.com/repos/Rory-Mercury-91/Discord-Publisher/releases/latest";
-    let response = client.get(releases_url).send().await.map_err(|e| e.to_string())?;
+    let response = client
+        .get(releases_url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
     let release_json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
-    
     let assets = release_json["assets"].as_array().ok_or("No assets found")?;
-    
-    // Modification ici : on cherche soit -setup.exe soit -Portable.exe
-    let target_suffix = if update_type == "nsis" { "-setup.exe" } else { "-Portable.exe" };
-    
-    let asset = assets.iter()
+
+    // ✅ IMPORTANT : correspond exactement à tes noms d'assets dans release.yml
+    let target_suffix = match update_type.as_str() {
+        "nsis" => "-setup.exe",
+        // ton workflow fait ..._portable.exe (underscore), PAS -Portable.exe
+        "portable" | "portable_exe" => "_portable.exe",
+        // ton workflow fait ..._app.exe_only.zip
+        "app_exe_only" => "_app.exe_only.zip",
+        // ton workflow fait ..._portable_full.zip
+        "portable_full" => "_portable_full.zip",
+        _ => return Err(format!("update_type invalide: {}", update_type)),
+    };
+
+    let asset = assets
+        .iter()
         .find(|a| a["name"].as_str().unwrap_or("").ends_with(target_suffix))
         .ok_or(format!("Fichier {} introuvable sur GitHub", target_suffix))?;
-    
-    let download_url = asset["browser_download_url"].as_str().ok_or("No URL")?;
-    let temp_dir = app.path().app_data_dir().unwrap().join("temp_updater");
-    fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
-    let dest_path = temp_dir.join(asset["name"].as_str().unwrap());
 
-    let mut response = client.get(download_url).send().await.map_err(|e| e.to_string())?;
+    let asset_name = asset["name"].as_str().unwrap_or("update.bin");
+    let download_url = asset["browser_download_url"]
+        .as_str()
+        .ok_or("No URL")?;
+
+    // Dossier temp dans AppData (évite les droits admin)
+    let temp_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {:?}", e))?
+        .join("temp_updater");
+
+    fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
+
+    let dest_path = temp_dir.join(asset_name);
+
+    let mut response = client
+        .get(download_url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
     let mut file = fs::File::create(&dest_path).map_err(|e| e.to_string())?;
     while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
         file.write_all(&chunk).map_err(|e| e.to_string())?;
     }
-    Ok(dest_path.to_str().unwrap().to_string())
+
+    Ok(dest_path.to_string_lossy().to_string())
 }
+
 // 🆕 Installer la mise à jour téléchargée
 // #[tauri::command]
 // async fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
@@ -243,26 +278,113 @@ async fn download_update(app: AppHandle, update_type: String) -> Result<String, 
 //     Ok(())
 // }
 #[tauri::command]
-async fn install_downloaded_update(app: AppHandle, path: String, options: UpdateOptions) -> Result<(), String> {
+async fn install_downloaded_update(
+    app: AppHandle,
+    path: String,
+    options: UpdateOptions,
+) -> Result<(), String> {
     let file_path = std::path::PathBuf::from(&path);
-    
-    if options.install_mode == "delayed" { return Ok(()); }
 
-    if options.update_type == "nsis" {
-        std::process::Command::new(file_path).spawn().map_err(|e| e.to_string())?;
-        app.exit(0);
-    } else {
-        let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        let batch_path = current_exe.parent().unwrap().join("swapper.bat");
-        let batch_content = format!(
-            "@echo off\ntimeout /t 2 /nobreak > nul\ndel \"{old}\"\nmove \"{new}\" \"{old}\"\nstart \"\" \"{old}\"\ndel \"%~f0\"",
-            old = current_exe.to_str().unwrap(),
-            new = file_path.to_str().unwrap()
-        );
-        fs::write(&batch_path, batch_content).map_err(|e| e.to_string())?;
-        std::process::Command::new("cmd").args(["/C", batch_path.to_str().unwrap()]).spawn().ok();
-        app.exit(0);
+    // Mode "delayed" : on ne fait rien maintenant
+    if options.install_mode == "delayed" {
+        return Ok(());
     }
+
+    // --- NSIS : on lance le setup ---
+    if options.update_type == "nsis" {
+        std::process::Command::new(&file_path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        app.exit(0);
+        return Ok(());
+    }
+
+    // --- Portable / Hybride : on remplace l'exe courant ---
+    let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let parent_dir = current_exe
+        .parent()
+        .ok_or("Impossible de déterminer le dossier de l'exe courant")?;
+
+    // on place le script dans le dossier de l'exe (pas dans temp)
+    let batch_path = parent_dir.join("swapper.bat");
+
+    let file_path_str = file_path.to_string_lossy().to_string();
+    let current_exe_str = current_exe.to_string_lossy().to_string();
+
+    // Si ZIP : on extrait app.exe puis on swap
+    let is_zip = file_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("zip"))
+        .unwrap_or(false);
+
+    let batch_content = if is_zip {
+        // temp d'extraction proche du zip
+        let extract_dir = parent_dir.join("update_extract_temp");
+        let extract_dir_str = extract_dir.to_string_lossy().to_string();
+
+        format!(
+r#"@echo off
+setlocal
+timeout /t 2 /nobreak > nul
+
+REM --- Clean extract dir ---
+if exist "{extract_dir}" rmdir /s /q "{extract_dir}"
+mkdir "{extract_dir}"
+
+REM --- Extract ZIP (contains app.exe) ---
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -Path '{zip}' -DestinationPath '{extract_dir}' -Force"
+
+REM --- Validate extracted app.exe ---
+if not exist "{extract_dir}\app.exe" (
+  echo [Updater] ERROR: app.exe not found in extracted zip
+  exit /b 1
+)
+
+REM --- Swap ---
+del "{old}"
+move /Y "{extract_dir}\app.exe" "{old}"
+
+REM --- Cleanup ---
+rmdir /s /q "{extract_dir}"
+
+REM --- Relaunch ---
+start "" "{old}"
+
+REM --- Self delete ---
+del "%~f0"
+endlocal
+"#,
+            zip = file_path_str,
+            extract_dir = extract_dir_str,
+            old = current_exe_str
+        )
+    } else {
+        // EXE direct : on swap l'exe téléchargé
+        format!(
+r#"@echo off
+setlocal
+timeout /t 2 /nobreak > nul
+del "{old}"
+move /Y "{new}" "{old}"
+start "" "{old}"
+del "%~f0"
+endlocal
+"#,
+            old = current_exe_str,
+            new = file_path_str
+        )
+    };
+
+    fs::write(&batch_path, batch_content).map_err(|e| e.to_string())?;
+
+    // Lance le batch et ferme l'app
+    std::process::Command::new("cmd")
+        .args(["/C", batch_path.to_string_lossy().as_ref()])
+        .spawn()
+        .ok();
+
+    app.exit(0);
     Ok(())
 }
 // 🧹 Fonction interne pour nettoyer les anciens fichiers d'installation
