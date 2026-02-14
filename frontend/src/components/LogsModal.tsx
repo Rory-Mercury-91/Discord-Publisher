@@ -226,6 +226,7 @@ export default function LogsModal({ onClose }: LogsModalProps) {
     }
   }, [apiUrl]);
 
+
   const enrichLogsWithUsernames = async (rawLogs: string, userIds: string[]) => {
     try {
       const sb = getSupabase();
@@ -254,17 +255,54 @@ export default function LogsModal({ onClose }: LogsModalProps) {
       console.warn('[Logs] ⚠️ Erreur enrichissement avec pseudos:', error);
     }
   };
+  // ✅ Auto-refresh configurable (ms)
+  const DEFAULT_REFRESH_MS = 30000; // 30s par défaut
+
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('logs_auto_refresh_enabled');
+    return saved ? saved === '1' : true;
+  });
+
+  const [refreshMs, setRefreshMs] = useState<number>(() => {
+    const saved = localStorage.getItem('logs_refresh_ms');
+    const n = saved ? Number(saved) : NaN;
+    return Number.isFinite(n) && n >= 1000 ? n : DEFAULT_REFRESH_MS;
+  });
+
+  // champ de saisie en secondes (plus simple pour un humain)
+  const [refreshSecondsInput, setRefreshSecondsInput] = useState<string>(() => {
+    return String(Math.round(refreshMs / 1000));
+  });
+
+  const applyRefreshSeconds = (raw: string) => {
+    const n = Number(raw);
+    // garde-fous : min 5s, max 10min (à adapter)
+    const clamped = Number.isFinite(n) ? Math.min(Math.max(n, 5), 600) : 30;
+    const ms = Math.round(clamped * 1000);
+
+    setRefreshMs(ms);
+    setRefreshSecondsInput(String(clamped));
+
+    localStorage.setItem('logs_refresh_ms', String(ms));
+  };
+
+  useEffect(() => {
+    localStorage.setItem('logs_auto_refresh_enabled', autoRefreshEnabled ? '1' : '0');
+  }, [autoRefreshEnabled]);
 
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
 
   useEffect(() => {
-    if (!loading && !error) {
-      const interval = setInterval(fetchLogs, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [loading, error, fetchLogs]);
+    if (!autoRefreshEnabled) return;
+    if (loading) return;
+    if (error) return;
+
+    const interval = setInterval(fetchLogs, refreshMs);
+    return () => clearInterval(interval);
+  }, [autoRefreshEnabled, loading, error, fetchLogs, refreshMs]);
+
 
   useEffect(() => {
     const container = logsContainerRef.current;
@@ -614,19 +652,24 @@ export default function LogsModal({ onClose }: LogsModalProps) {
           style={{
             padding: '12px 20px',
             borderTop: '1px solid var(--border)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            flexShrink: 0,
+            display: 'grid',
+            gridTemplateColumns: '1fr auto',
+            gridTemplateRows: 'auto auto',
+            gap: 10,
             fontSize: 12,
             color: 'var(--muted)',
-            flexShrink: 0,
+            alignItems: 'center',
           }}
         >
-          <div>
-            Auto-refresh: 5s • fichier courant complet
+          {/* Ligne 1 - infos à gauche */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span>
+              Auto-refresh: {Math.round(refreshMs / 1000)}s • fichier courant complet
+            </span>
+
             <span
               style={{
-                marginLeft: 8,
                 textDecoration: 'underline dotted',
                 cursor: 'help',
               }}
@@ -634,26 +677,116 @@ export default function LogsModal({ onClose }: LogsModalProps) {
             >
               ℹ️
             </span>
-            {activeCategories.size > 0 && (
-              <>
-                {' • Actifs: '}
-                {[...LOG_SOURCES, ...LOG_FILTERS]
-                  .filter((c) => activeCategories.has(c.id))
-                  .map((c) => c.label)
-                  .join(', ')}
-              </>
-            )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
+
+          {/* Ligne 1 - contrôles à droite */}
+          <div
             style={{
-              padding: '8px 20px',
-              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              justifyContent: 'flex-end',
+              whiteSpace: 'nowrap',
             }}
           >
-            🚪 Fermer
-          </button>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+              title="Active/désactive l'actualisation automatique"
+            >
+              <div
+                style={{
+                  position: 'relative',
+                  width: 40,
+                  height: 22,
+                  borderRadius: 11,
+                  background: autoRefreshEnabled ? 'var(--accent)' : 'var(--border)',
+                  transition: 'background 0.2s ease',
+                  cursor: 'pointer',
+                }}
+                onClick={() => setAutoRefreshEnabled((v) => !v)}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 3,
+                    left: autoRefreshEnabled ? 21 : 3,
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    background: '#fff',
+                    transition: 'left 0.2s ease',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                  }}
+                />
+              </div>
+
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: autoRefreshEnabled ? 'var(--text)' : 'var(--muted)',
+                }}
+              >
+                Auto-refresh
+              </span>
+            </label>
+
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              Délai (s)
+              <input
+                type="number"
+                min={5}
+                max={600}
+                step={5}
+                value={refreshSecondsInput}
+                onChange={(e) => setRefreshSecondsInput(e.target.value)}
+                onBlur={(e) => applyRefreshSeconds(e.target.value)}
+                disabled={!autoRefreshEnabled}
+                style={{
+                  width: 64,
+                  padding: '4px 6px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                  background: 'transparent',
+                  color: 'inherit',
+                }}
+              />
+            </label>
+
+            <button
+              type="button"
+              onClick={() => fetchLogs()}
+              style={{
+                padding: '6px 12px',
+                fontWeight: 600,
+                borderRadius: 8,
+              }}
+            >
+              🔄 Rafraîchir
+            </button>
+          </div>
+
+          {/* Ligne 2 - bouton Fermer centré */}
+          <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center' }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                padding: '8px 22px',
+                fontWeight: 700,
+                borderRadius: 10,
+              }}
+            >
+              🚪 Fermer
+            </button>
+          </div>
         </div>
       </div>
     </div>

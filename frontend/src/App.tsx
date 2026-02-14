@@ -276,7 +276,9 @@ function AppContentInner() {
           mainImagePath={mainImagePath}
         />
       )}
-      {showLogsModal && <LogsModal onClose={() => setShowLogsModal(false)} />}
+      {showLogsModal && (
+        <LogsModal onClose={() => setShowLogsModal(false)} />
+      )}
 
       <UpdateNotification />
     </div>
