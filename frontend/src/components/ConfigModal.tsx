@@ -55,7 +55,13 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
     const saved = localStorage.getItem('autoInstallUpdates');
     return saved === 'true';
   });
-
+  // Dans la liste des useState au début du composant
+  const [updateType, setUpdateType] = useState<'nsis' | 'portable'>(
+    (localStorage.getItem('updateType') as 'nsis' | 'portable') || 'nsis'
+  );
+  const [autoInstall, setAutoInstall] = useState<boolean>(
+    localStorage.getItem('autoInstallUpdates') === 'true'
+  );
   // Droits d'édition : liste des profils et des éditeurs autorisés par l'utilisateur connecté
   const [allProfiles, setAllProfiles] = useState<ProfilePublic[]>([]);
   const [allowedEditorIds, setAllowedEditorIds] = useState<Set<string>>(new Set());
@@ -183,6 +189,11 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
   };
 
   const handleSave = async () => {
+    // 🆕 Sauvegarder le type de mise à jour
+    localStorage.setItem('updateType', updateType);
+    // 🆕 Sauvegarder le mode d'installation automatique
+    localStorage.setItem('autoInstallUpdates', autoInstall.toString());
+
     localStorage.setItem('apiKey', apiKey);
 
     // Sauvegarder les labels par défaut
@@ -699,7 +710,44 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
                 </label>
               </div>
             </section>
-
+            {/* Nouveau choix : Type de binaire */}
+            <div style={{
+              marginTop: 8,
+              padding: '14px 16px',
+              background: 'rgba(255,255,255,0.02)',
+              borderRadius: 10,
+              border: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
+                  📦 Format du binaire
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  {updateType === 'portable'
+                    ? "Binaire direct (Rapide, pas d'installation)"
+                    : "Installeur complet (Plus propre, gère Windows)"}
+                </div>
+              </div>
+              <select
+                value={updateType}
+                onChange={(e) => setUpdateType(e.target.value as 'nsis' | 'portable')}
+                style={{
+                  background: 'var(--bg)',
+                  color: 'white',
+                  border: '1px solid var(--border)',
+                  padding: '6px 10px',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontSize: 13
+                }}
+              >
+                <option value="nsis">📦 Installeur (.exe)</option>
+                <option value="portable">🚀 Portable (.exe)</option>
+              </select>
+            </div>
             {/* État de la fenêtre : visible pour tous les utilisateurs */}
             <section
               style={{

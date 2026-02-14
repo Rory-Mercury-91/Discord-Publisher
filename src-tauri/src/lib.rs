@@ -1,214 +1,271 @@
 use std::path::PathBuf;
 use std::fs;
 use tauri::{Manager, AppHandle, WebviewWindow};
-
+#[derive(serde::Deserialize)]
+struct UpdateOptions {
+    install_mode: String, // "immediate" ou "delayed"
+    update_type: String,  // "nsis" ou "portable"
+}
 // 🆕 Télécharger la mise à jour (sans l'installer)
+// #[tauri::command]
+// async fn download_update(app: AppHandle) -> Result<String, String> {
+//     use std::io::Write;
+    
+//     println!("[Updater] 🚀 Starting download process...");
+    
+//     // 1. Récupérer les infos de la dernière version depuis GitHub
+//     let client = reqwest::Client::builder()
+//         .user_agent("Discord-Publisher-Updater")
+//         .build()
+//         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    
+//     let releases_url = "https://api.github.com/repos/Rory-Mercury-91/Discord-Publisher/releases/latest";
+//     println!("[Updater] 📡 Fetching release info from: {}", releases_url);
+    
+//     let response = client
+//         .get(releases_url)
+//         .send()
+//         .await
+//         .map_err(|e| format!("Failed to fetch release info: {}", e))?;
+    
+//     let release_json: serde_json::Value = response
+//         .json()
+//         .await
+//         .map_err(|e| format!("Failed to parse release JSON: {}", e))?;
+    
+//     // 2. Trouver l'installateur NSIS complet (fichier .exe)
+//     let assets = release_json["assets"]
+//         .as_array()
+//         .ok_or("No assets found in release")?;
+    
+//     // Chercher le fichier qui se termine par "-setup.exe" (l'installateur NSIS)
+//     let installer_asset = assets
+//         .iter()
+//         .find(|asset| {
+//             let name = asset["name"].as_str().unwrap_or("");
+//             name.ends_with("-setup.exe")
+//         })
+//         .ok_or("No NSIS installer found in release assets")?;
+    
+//     let download_url = installer_asset["browser_download_url"]
+//         .as_str()
+//         .ok_or("No download URL found")?;
+    
+//     let installer_name = installer_asset["name"]
+//         .as_str()
+//         .ok_or("No installer name found")?;
+    
+//     println!("[Updater] 📦 Found installer: {}", installer_name);
+//     println!("[Updater] 🔗 Download URL: {}", download_url);
+    
+//     // 3. Télécharger l'installateur dans TEMP avec un nom unique pour éviter les conflits
+//     let temp_dir = std::env::temp_dir();
+//     let timestamp = std::time::SystemTime::now()
+//         .duration_since(std::time::UNIX_EPOCH)
+//         .unwrap()
+//         .as_secs();
+//     let temp_installer_name = format!("discord_publisher_update_{}.exe", timestamp);
+//     let installer_path = temp_dir.join(&temp_installer_name);
+    
+//     println!("[Updater] 📥 Downloading to: {:?}", installer_path);
+    
+//     let mut response = client
+//         .get(download_url)
+//         .send()
+//         .await
+//         .map_err(|e| format!("Failed to download installer: {}", e))?;
+    
+//     let total_size = response.content_length().unwrap_or(0);
+//     println!("[Updater] 📊 Total size: {:.2} MB", total_size as f64 / 1024.0 / 1024.0);
+    
+//     // Créer et écrire le fichier
+//     let mut file = fs::File::create(&installer_path)
+//         .map_err(|e| format!("Failed to create installer file: {}", e))?;
+    
+//     let mut downloaded: u64 = 0;
+    
+//     while let Some(chunk) = response.chunk().await.map_err(|e| format!("Download error: {}", e))? {
+//         file.write_all(&chunk)
+//             .map_err(|e| format!("Failed to write chunk: {}", e))?;
+        
+//         downloaded += chunk.len() as u64;
+        
+//         if total_size > 0 && downloaded % (1024 * 1024) == 0 {
+//             let progress = (downloaded as f64 / total_size as f64) * 100.0;
+//             println!("[Updater] ⏳ Progress: {:.1}%", progress);
+//         }
+//     }
+    
+//     // IMPORTANT : Flush et fermer explicitement le fichier
+//     file.flush().map_err(|e| format!("Failed to flush file: {}", e))?;
+//     drop(file); // Fermer le handle explicitement
+    
+//     println!("[Updater] ✅ Download complete: {:?}", installer_path);
+    
+//     // Attendre un peu pour que le système libère complètement le fichier
+//     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    
+//     // Vérifier que le fichier existe et est accessible
+//     if !installer_path.exists() {
+//         return Err("Downloaded installer file not found".to_string());
+//     }
+    
+//     let file_size = fs::metadata(&installer_path)
+//         .map_err(|e| format!("Cannot access installer file: {}", e))?
+//         .len();
+    
+//     if file_size == 0 {
+//         return Err("Downloaded installer file is empty".to_string());
+//     }
+    
+//     println!("[Updater] ✅ Installer file verified: {} bytes", file_size);
+    
+//     // Sauvegarder le chemin de l'installateur téléchargé dans la config
+//     let config_dir = app.path().app_config_dir()
+//         .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+    
+//     fs::create_dir_all(&config_dir)
+//         .map_err(|e| format!("Failed to create config dir: {:?}", e))?;
+    
+//     let download_path_file = config_dir.join("pending_update.txt");
+//     fs::write(&download_path_file, installer_path.to_string_lossy().as_bytes())
+//         .map_err(|e| format!("Failed to save update path: {}", e))?;
+    
+//     // Retourner le chemin de l'installateur téléchargé
+//     Ok(installer_path.to_string_lossy().to_string())
+// }
 #[tauri::command]
-async fn download_update(app: AppHandle) -> Result<String, String> {
+async fn download_update(app: AppHandle, update_type: String) -> Result<String, String> {
     use std::io::Write;
-    
-    println!("[Updater] 🚀 Starting download process...");
-    
-    // 1. Récupérer les infos de la dernière version depuis GitHub
     let client = reqwest::Client::builder()
         .user_agent("Discord-Publisher-Updater")
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+        .build().map_err(|e| e.to_string())?;
     
     let releases_url = "https://api.github.com/repos/Rory-Mercury-91/Discord-Publisher/releases/latest";
-    println!("[Updater] 📡 Fetching release info from: {}", releases_url);
+    let response = client.get(releases_url).send().await.map_err(|e| e.to_string())?;
+    let release_json: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
     
-    let response = client
-        .get(releases_url)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch release info: {}", e))?;
+    let assets = release_json["assets"].as_array().ok_or("No assets found")?;
     
-    let release_json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse release JSON: {}", e))?;
+    // Modification ici : on cherche soit -setup.exe soit -Portable.exe
+    let target_suffix = if update_type == "nsis" { "-setup.exe" } else { "-Portable.exe" };
     
-    // 2. Trouver l'installateur NSIS complet (fichier .exe)
-    let assets = release_json["assets"]
-        .as_array()
-        .ok_or("No assets found in release")?;
+    let asset = assets.iter()
+        .find(|a| a["name"].as_str().unwrap_or("").ends_with(target_suffix))
+        .ok_or(format!("Fichier {} introuvable sur GitHub", target_suffix))?;
     
-    // Chercher le fichier qui se termine par "-setup.exe" (l'installateur NSIS)
-    let installer_asset = assets
-        .iter()
-        .find(|asset| {
-            let name = asset["name"].as_str().unwrap_or("");
-            name.ends_with("-setup.exe")
-        })
-        .ok_or("No NSIS installer found in release assets")?;
-    
-    let download_url = installer_asset["browser_download_url"]
-        .as_str()
-        .ok_or("No download URL found")?;
-    
-    let installer_name = installer_asset["name"]
-        .as_str()
-        .ok_or("No installer name found")?;
-    
-    println!("[Updater] 📦 Found installer: {}", installer_name);
-    println!("[Updater] 🔗 Download URL: {}", download_url);
-    
-    // 3. Télécharger l'installateur dans TEMP avec un nom unique pour éviter les conflits
-    let temp_dir = std::env::temp_dir();
-    let timestamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let temp_installer_name = format!("discord_publisher_update_{}.exe", timestamp);
-    let installer_path = temp_dir.join(&temp_installer_name);
-    
-    println!("[Updater] 📥 Downloading to: {:?}", installer_path);
-    
-    let mut response = client
-        .get(download_url)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to download installer: {}", e))?;
-    
-    let total_size = response.content_length().unwrap_or(0);
-    println!("[Updater] 📊 Total size: {:.2} MB", total_size as f64 / 1024.0 / 1024.0);
-    
-    // Créer et écrire le fichier
-    let mut file = fs::File::create(&installer_path)
-        .map_err(|e| format!("Failed to create installer file: {}", e))?;
-    
-    let mut downloaded: u64 = 0;
-    
-    while let Some(chunk) = response.chunk().await.map_err(|e| format!("Download error: {}", e))? {
-        file.write_all(&chunk)
-            .map_err(|e| format!("Failed to write chunk: {}", e))?;
-        
-        downloaded += chunk.len() as u64;
-        
-        if total_size > 0 && downloaded % (1024 * 1024) == 0 {
-            let progress = (downloaded as f64 / total_size as f64) * 100.0;
-            println!("[Updater] ⏳ Progress: {:.1}%", progress);
-        }
-    }
-    
-    // IMPORTANT : Flush et fermer explicitement le fichier
-    file.flush().map_err(|e| format!("Failed to flush file: {}", e))?;
-    drop(file); // Fermer le handle explicitement
-    
-    println!("[Updater] ✅ Download complete: {:?}", installer_path);
-    
-    // Attendre un peu pour que le système libère complètement le fichier
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    
-    // Vérifier que le fichier existe et est accessible
-    if !installer_path.exists() {
-        return Err("Downloaded installer file not found".to_string());
-    }
-    
-    let file_size = fs::metadata(&installer_path)
-        .map_err(|e| format!("Cannot access installer file: {}", e))?
-        .len();
-    
-    if file_size == 0 {
-        return Err("Downloaded installer file is empty".to_string());
-    }
-    
-    println!("[Updater] ✅ Installer file verified: {} bytes", file_size);
-    
-    // Sauvegarder le chemin de l'installateur téléchargé dans la config
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
-    
-    fs::create_dir_all(&config_dir)
-        .map_err(|e| format!("Failed to create config dir: {:?}", e))?;
-    
-    let download_path_file = config_dir.join("pending_update.txt");
-    fs::write(&download_path_file, installer_path.to_string_lossy().as_bytes())
-        .map_err(|e| format!("Failed to save update path: {}", e))?;
-    
-    // Retourner le chemin de l'installateur téléchargé
-    Ok(installer_path.to_string_lossy().to_string())
-}
+    let download_url = asset["browser_download_url"].as_str().ok_or("No URL")?;
+    let temp_dir = app.path().app_data_dir().unwrap().join("temp_updater");
+    fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
+    let dest_path = temp_dir.join(asset["name"].as_str().unwrap());
 
+    let mut response = client.get(download_url).send().await.map_err(|e| e.to_string())?;
+    let mut file = fs::File::create(&dest_path).map_err(|e| e.to_string())?;
+    while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
+        file.write_all(&chunk).map_err(|e| e.to_string())?;
+    }
+    Ok(dest_path.to_str().unwrap().to_string())
+}
 // 🆕 Installer la mise à jour téléchargée
+// #[tauri::command]
+// async fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
+//     println!("[Updater] 🚀 Starting installation process...");
+    
+//     // 1. Récupérer le chemin de l'installateur téléchargé
+//     let config_dir = app.path().app_config_dir()
+//         .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+    
+//     let download_path_file = config_dir.join("pending_update.txt");
+    
+//     if !download_path_file.exists() {
+//         return Err("No pending update found".to_string());
+//     }
+    
+//     let installer_path_str = fs::read_to_string(&download_path_file)
+//         .map_err(|e| format!("Failed to read update path: {}", e))?;
+    
+//     let installer_path = PathBuf::from(installer_path_str.trim());
+    
+//     if !installer_path.exists() {
+//         return Err("Update installer file not found".to_string());
+//     }
+    
+//     println!("[Updater] 📦 Installing from: {:?}", installer_path);
+    
+//     // 2. Obtenir le répertoire d'installation actuel
+//     let exe_path = std::env::current_exe()
+//         .map_err(|e| format!("Failed to get exe path: {}", e))?;
+    
+//     let install_dir = exe_path
+//         .parent()
+//         .ok_or("Failed to get install directory")?;
+    
+//     println!("[Updater] 📂 Current install directory: {:?}", install_dir);
+    
+//     // 3. Lancer l'installateur NSIS
+//     #[cfg(target_os = "windows")]
+//     {
+//         println!("[Updater] 🚀 Launching NSIS installer...");
+        
+//         let install_dir_str = install_dir.to_string_lossy().to_string();
+        
+//         // Créer la commande pour lancer l'installateur
+//         // /D= = Force le répertoire d'installation (doit être le DERNIER argument)
+//         let mut command = std::process::Command::new(&installer_path);
+//         command.arg(format!("/D={}", install_dir_str));
+        
+//         println!("[Updater] 🔍 Running: {:?}", command);
+        
+//         // Lancer l'installateur en arrière-plan
+//         command
+//             .spawn()
+//             .map_err(|e| format!("Failed to launch installer: {} (error code: {})", e, e.raw_os_error().unwrap_or(0)))?;
+        
+//         println!("[Updater] ✅ Installer launched successfully");
+        
+//         // Nettoyer le fichier de référence
+//         let _ = fs::remove_file(&download_path_file);
+        
+//         println!("[Updater] 🔄 Closing application in 300ms...");
+        
+//         // Attendre un peu pour que l'installateur démarre complètement
+//         tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+        
+//         // Fermer l'application - l'installateur NSIS prendra le relais
+//         println!("[Updater] 👋 Exiting application...");
+//         app.exit(0);
+//     }
+    
+//     #[cfg(not(target_os = "windows"))]
+//     {
+//         return Err("Auto-update is only supported on Windows".to_string());
+//     }
+    
+//     Ok(())
+// }
 #[tauri::command]
-async fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
-    println!("[Updater] 🚀 Starting installation process...");
+async fn install_downloaded_update(app: AppHandle, path: String, options: UpdateOptions) -> Result<(), String> {
+    let file_path = std::path::PathBuf::from(&path);
     
-    // 1. Récupérer le chemin de l'installateur téléchargé
-    let config_dir = app.path().app_config_dir()
-        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
-    
-    let download_path_file = config_dir.join("pending_update.txt");
-    
-    if !download_path_file.exists() {
-        return Err("No pending update found".to_string());
-    }
-    
-    let installer_path_str = fs::read_to_string(&download_path_file)
-        .map_err(|e| format!("Failed to read update path: {}", e))?;
-    
-    let installer_path = PathBuf::from(installer_path_str.trim());
-    
-    if !installer_path.exists() {
-        return Err("Update installer file not found".to_string());
-    }
-    
-    println!("[Updater] 📦 Installing from: {:?}", installer_path);
-    
-    // 2. Obtenir le répertoire d'installation actuel
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get exe path: {}", e))?;
-    
-    let install_dir = exe_path
-        .parent()
-        .ok_or("Failed to get install directory")?;
-    
-    println!("[Updater] 📂 Current install directory: {:?}", install_dir);
-    
-    // 3. Lancer l'installateur NSIS
-    #[cfg(target_os = "windows")]
-    {
-        println!("[Updater] 🚀 Launching NSIS installer...");
-        
-        let install_dir_str = install_dir.to_string_lossy().to_string();
-        
-        // Créer la commande pour lancer l'installateur
-        // /D= = Force le répertoire d'installation (doit être le DERNIER argument)
-        let mut command = std::process::Command::new(&installer_path);
-        command.arg(format!("/D={}", install_dir_str));
-        
-        println!("[Updater] 🔍 Running: {:?}", command);
-        
-        // Lancer l'installateur en arrière-plan
-        command
-            .spawn()
-            .map_err(|e| format!("Failed to launch installer: {} (error code: {})", e, e.raw_os_error().unwrap_or(0)))?;
-        
-        println!("[Updater] ✅ Installer launched successfully");
-        
-        // Nettoyer le fichier de référence
-        let _ = fs::remove_file(&download_path_file);
-        
-        println!("[Updater] 🔄 Closing application in 300ms...");
-        
-        // Attendre un peu pour que l'installateur démarre complètement
-        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-        
-        // Fermer l'application - l'installateur NSIS prendra le relais
-        println!("[Updater] 👋 Exiting application...");
+    if options.install_mode == "delayed" { return Ok(()); }
+
+    if options.update_type == "nsis" {
+        std::process::Command::new(file_path).spawn().map_err(|e| e.to_string())?;
+        app.exit(0);
+    } else {
+        let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let batch_path = current_exe.parent().unwrap().join("swapper.bat");
+        let batch_content = format!(
+            "@echo off\ntimeout /t 2 /nobreak > nul\ndel \"{old}\"\nmove \"{new}\" \"{old}\"\nstart \"\" \"{old}\"\ndel \"%~f0\"",
+            old = current_exe.to_str().unwrap(),
+            new = file_path.to_str().unwrap()
+        );
+        fs::write(&batch_path, batch_content).map_err(|e| e.to_string())?;
+        std::process::Command::new("cmd").args(["/C", batch_path.to_str().unwrap()]).spawn().ok();
         app.exit(0);
     }
-    
-    #[cfg(not(target_os = "windows"))]
-    {
-        return Err("Auto-update is only supported on Windows".to_string());
-    }
-    
     Ok(())
 }
-
 // 🧹 Fonction interne pour nettoyer les anciens fichiers d'installation
 async fn cleanup_old_updates_internal(app: &AppHandle) -> Result<u32, String> {
     println!("[Updater] 🧹 Starting cleanup of old update files...");
