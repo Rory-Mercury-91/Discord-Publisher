@@ -41,7 +41,7 @@ jobs:
           npm ci
           cd frontend && npm ci
 
-      - name: Create .env file with all Vite environment variables
+      - name: Create .env files (root + frontend)
         shell: pwsh
         run: |
           $envContent = @"
@@ -51,8 +51,20 @@ jobs:
           VITE_MASTER_ADMIN_CODE=${{ secrets.VITE_MASTER_ADMIN_CODE }}
           VITE_TAGS_MASTER_CODE=${{ secrets.VITE_TAGS_MASTER_CODE }}
           "@
+
+          # .env à la racine
           $envContent | Out-File -FilePath ".env" -Encoding utf8
-          Write-Host "✅ .env file created at root with all Vite variables"
+
+          # .env dans frontend
+          $envContent | Out-File -FilePath "frontend/.env" -Encoding utf8
+
+          Write-Host "✅ .env created at root and frontend/"
+
+      - name: Check env file content
+        shell: pwsh
+        run: |
+          Get-Content frontend/.env
+
 
       - name: Extract version from tag
         id: version
