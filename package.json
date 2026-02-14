@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.6",
+    "rollup-plugin-visualizer": "^6.0.5",
     "supabase": "^2.0.0"
   }
 }

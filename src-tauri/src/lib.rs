@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::fs;
 use tauri::{Manager, AppHandle, WebviewWindow};
 
@@ -131,81 +130,110 @@ async fn download_update(app: AppHandle) -> Result<String, String> {
     Ok(installer_path.to_string_lossy().to_string())
 }
 
-// 🆕 Installer la mise à jour téléchargée
+// 🆕 Installer la mise à jour téléchargée (NSIS avec élévation UAC)
 #[tauri::command]
 async fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
+    use std::fs;
+    use std::path::PathBuf;
+
     println!("[Updater] 🚀 Starting installation process...");
-    
+
     // 1. Récupérer le chemin de l'installateur téléchargé
-    let config_dir = app.path().app_config_dir()
+    let config_dir = app
+        .path()
+        .app_config_dir()
         .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
-    
+
     let download_path_file = config_dir.join("pending_update.txt");
-    
+
     if !download_path_file.exists() {
         return Err("No pending update found".to_string());
     }
-    
+
     let installer_path_str = fs::read_to_string(&download_path_file)
         .map_err(|e| format!("Failed to read update path: {}", e))?;
-    
+
     let installer_path = PathBuf::from(installer_path_str.trim());
-    
+
     if !installer_path.exists() {
         return Err("Update installer file not found".to_string());
     }
-    
+
     println!("[Updater] 📦 Installing from: {:?}", installer_path);
-    
+
     // 2. Obtenir le répertoire d'installation actuel
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get exe path: {}", e))?;
-    
+    let exe_path = std::env::current_exe().map_err(|e| format!("Failed to get exe path: {}", e))?;
+
     let install_dir = exe_path
         .parent()
         .ok_or("Failed to get install directory")?;
-    
+
     println!("[Updater] 📂 Current install directory: {:?}", install_dir);
-    
+
     // 3. Lancer l'installateur NSIS
     #[cfg(target_os = "windows")]
     {
-        println!("[Updater] 🚀 Launching NSIS installer...");
-        
+        println!("[Updater] 🚀 Launching NSIS installer (admin/UAC)...");
+
         let install_dir_str = install_dir.to_string_lossy().to_string();
-        
-        // Créer la commande pour lancer l'installateur
-        // /D= = Force le répertoire d'installation (doit être le DERNIER argument)
-        let mut command = std::process::Command::new(&installer_path);
-        command.arg(format!("/D={}", install_dir_str));
-        
-        println!("[Updater] 🔍 Running: {:?}", command);
-        
-        // Lancer l'installateur en arrière-plan
-        command
-            .spawn()
-            .map_err(|e| format!("Failed to launch installer: {} (error code: {})", e, e.raw_os_error().unwrap_or(0)))?;
-        
-        println!("[Updater] ✅ Installer launched successfully");
-        
-        // Nettoyer le fichier de référence
-        let _ = fs::remove_file(&download_path_file);
-        
-        println!("[Updater] 🔄 Closing application in 300ms...");
-        
-        // Attendre un peu pour que l'installateur démarre complètement
-        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-        
-        // Fermer l'application - l'installateur NSIS prendra le relais
-        println!("[Updater] 👋 Exiting application...");
-        app.exit(0);
+        let installer_str = installer_path.to_string_lossy().to_string();
+
+        // IMPORTANT:
+        // - /D=... doit être le DERNIER argument NSIS
+        // - Start-Process -Verb RunAs => déclenche l'UAC
+        // - On passe uniquement /D=... donc c'est bien "dernier"
+        let ps_command = format!(
+            "Start-Process -FilePath '{}' -Verb RunAs -ArgumentList @('/D={}')",
+            installer_str.replace('\'', "''"),
+            install_dir_str.replace('\'', "''"),
+        );
+
+        println!("[Updater] 🔍 PowerShell command: {}", ps_command);
+
+        let spawn_result = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_command])
+            .spawn();
+
+        match spawn_result {
+            Ok(_) => {
+                println!("[Updater] ✅ Installer launched successfully (UAC requested)");
+
+                // Nettoyer le fichier de référence
+                let _ = fs::remove_file(&download_path_file);
+
+                println!("[Updater] 🔄 Closing application in 300ms...");
+
+                // Attendre un peu pour que l'installateur démarre complètement
+                tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+
+                // Fermer l'application - l'installateur NSIS prendra le relais
+                println!("[Updater] 👋 Exiting application...");
+                app.exit(0);
+            }
+            Err(e) => {
+                let code = e.raw_os_error().unwrap_or(0);
+
+                // 1223 = "The operation was canceled by the user." (UAC refusé)
+                if code == 1223 {
+                    return Err(
+                        "Mise à jour annulée : l'élévation administrateur a été refusée."
+                            .to_string(),
+                    );
+                }
+
+                return Err(format!(
+                    "Failed to launch installer with elevation: {} (error code: {})",
+                    e, code
+                ));
+            }
+        }
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         return Err("Auto-update is only supported on Windows".to_string());
     }
-    
+
     Ok(())
 }
 
