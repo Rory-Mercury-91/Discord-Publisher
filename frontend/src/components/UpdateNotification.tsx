@@ -105,7 +105,7 @@ export default function UpdateNotification() {
       }));
 
       // 🆕 Passer le paramètre useElevation à la fonction Rust
-      await invoke('install_downloaded_update', { useElevation });
+      invoke('install_downloaded_update', { use_elevation: useElevation });
 
       console.log("[Updater] ✅ Installation démarrée, l'application va se fermer...");
 

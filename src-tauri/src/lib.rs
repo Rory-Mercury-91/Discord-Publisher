@@ -184,9 +184,9 @@ async fn install_downloaded_update(app: AppHandle, use_elevation: bool) -> Resul
             println!("[Updater] 🔐 Lancement avec élévation administrateur (UAC)...");
             
             let ps_command = format!(
-                "Start-Process -FilePath '{}' -Verb RunAs -ArgumentList @('/S', '/D={}')",
-                installer_str.replace('\'', "''"),
-                install_dir_str.replace('\'', "''"),
+              "Start-Process -FilePath '{}' -Verb RunAs -ArgumentList @('/D={}')",
+              installer_str.replace('\'', "''"),
+              install_dir_str.replace('\'', "''"),
             );
 
             println!("[Updater] 📝 Commande PowerShell : {}", ps_command);
@@ -201,8 +201,8 @@ async fn install_downloaded_update(app: AppHandle, use_elevation: bool) -> Resul
             
             // Pas besoin de PowerShell, on lance directement
             std::process::Command::new(&installer_str)
-                .args(&["/S", &format!("/D={}", install_dir_str)])
-                .spawn()
+              .arg(format!("/D={}", install_dir_str))
+              .spawn()
         };
 
         match spawn_result {
