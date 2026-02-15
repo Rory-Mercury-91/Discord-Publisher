@@ -7,8 +7,6 @@ type UpdateState =
   | 'idle'
   | 'checking'
   | 'available'
-  | 'downloading'
-  | 'downloaded'
   | 'installing'
   | 'updated';
 
@@ -17,9 +15,6 @@ export default function UpdateNotification() {
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
-
-  // 🆕 Toggle pour l'élévation admin (par défaut DÉSACTIVÉ pour compatibilité maximale)
   const [useElevation, setUseElevation] = useState<boolean>(false);
 
   useEffect(() => {
@@ -27,11 +22,10 @@ export default function UpdateNotification() {
     const justUpdated = localStorage.getItem('justUpdated');
     if (justUpdated) {
       const versionInfo = JSON.parse(justUpdated);
-      console.log("[Updater] 🎉 Mise à jour réussie ! Version:", versionInfo.version);
+      console.log("[Updater] 🎉 Mise à jour réussie !", versionInfo.version);
       setState('updated');
       setUpdateVersion(versionInfo.version);
       localStorage.removeItem('justUpdated');
-
       setTimeout(() => setState('idle'), 5000);
     }
 
@@ -39,7 +33,7 @@ export default function UpdateNotification() {
     const timeout = setTimeout(async () => {
       const version = await getVersion();
       setCurrentVersion(version);
-      console.log("[Updater] 📱 Version actuelle de l'application:", version);
+      console.log("[Updater] 📱 Version actuelle:", version);
       checkForUpdate();
     }, 3000);
 
@@ -54,39 +48,27 @@ export default function UpdateNotification() {
       const update = await check();
 
       if (update) {
-        console.log(`[Updater] ✨ Nouvelle version disponible: ${update.version} (actuelle: ${update.currentVersion})`);
+        console.log(`[Updater] ✨ Nouvelle version: ${update.version}`);
         setState('available');
         setUpdateVersion(update.version);
         setCurrentVersion(update.currentVersion);
       } else {
-        console.log("[Updater] ✅ L'application est à jour");
+        console.log("[Updater] ✅ Application à jour");
         setState('idle');
       }
-    } catch (err) {
-      console.error("[Updater] ❌ Échec de la vérification des mises à jour:", err);
-      setState('idle');
-    }
-  }
-
-  async function handleDownload() {
-    try {
-      setState('downloading');
-      setError(null);
-
-      console.log("[Updater] 📥 Démarrage du processus de téléchargement...");
-
-      const path = await invoke<string>('download_update');
-
-      console.log("[Updater] ✅ Téléchargement terminé:", path);
-      setDownloadedPath(path);
-      setState('downloaded');
-
     } catch (err: any) {
-      console.error("[Updater] ❌ Échec du téléchargement de la mise à jour:", err);
+      console.error("[Updater] ❌ Erreur vérification:", err);
 
-      const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
-      setError('Échec du téléchargement : ' + errorMessage);
-      setState('available');
+      // Messages d'erreur plus explicites
+      if (err.message?.includes('error sending request')) {
+        setError('Impossible de vérifier les mises à jour. Vérifiez votre connexion Internet.');
+      } else if (err.message?.includes('signature')) {
+        setError('Erreur de signature de la mise à jour. Contactez le support.');
+      } else {
+        setError(`Erreur: ${err.message || err}`);
+      }
+
+      setState('idle');
     }
   }
 
@@ -95,26 +77,26 @@ export default function UpdateNotification() {
       setState('installing');
       setError(null);
 
-      console.log("[Updater] 🚀 Démarrage du processus d'installation...");
-      console.log("[Updater] 🔐 Mode élévation:", useElevation ? 'ACTIVÉ (admin)' : 'DÉSACTIVÉ (utilisateur normal)');
+      console.log("[Updater] 🚀 Installation...");
+      console.log("[Updater] 🔐 Mode:", useElevation ? "AVEC UAC" : "SANS UAC");
 
-      // Marquer qu'on attend une mise à jour
+      // Marquer la mise à jour en attente
       localStorage.setItem('pendingUpdate', JSON.stringify({
         version: updateVersion,
         timestamp: Date.now()
       }));
 
-      // 🆕 Passer le paramètre useElevation à la fonction Rust
-      await invoke('install_downloaded_update', { useElevation });
+      // Appeler la nouvelle commande unifiée
+      await invoke('download_and_install_update', { useElevation });
 
-      console.log("[Updater] ✅ Installation démarrée, l'application va se fermer...");
+      console.log("[Updater] ✅ Installation lancée");
 
     } catch (err: any) {
-      console.error("[Updater] ❌ Échec de l'installation de la mise à jour:", err);
+      console.error("[Updater] ❌ Erreur installation:", err);
 
       const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
-      setError("Échec de l'installation : " + errorMessage);
-      setState('downloaded');
+      setError(errorMessage);
+      setState('available');
       localStorage.removeItem('pendingUpdate');
     }
   }
@@ -129,7 +111,7 @@ export default function UpdateNotification() {
   // Ne rien afficher si idle ou checking
   if (state === 'idle' || state === 'checking') return null;
 
-  // Badge de succès après mise à jour
+  // Badge de succès
   if (state === 'updated') {
     return (
       <div
@@ -154,7 +136,7 @@ export default function UpdateNotification() {
               to { transform: translateX(0); opacity: 1; }
             }
             @keyframes fadeOut {
-              from { opacity: 1; transform: translateX(0); }
+              from { opacity: 1; }
               to { opacity: 0; transform: translateX(400px); }
             }
           `}
@@ -184,7 +166,7 @@ export default function UpdateNotification() {
               Mise à jour réussie !
             </div>
             <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-              Version {updateVersion} installée avec succès
+              Version {updateVersion} installée
             </div>
           </div>
         </div>
@@ -210,7 +192,6 @@ export default function UpdateNotification() {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        {/* Icône */}
         <div style={{
           fontSize: 24,
           width: 40,
@@ -218,17 +199,16 @@ export default function UpdateNotification() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: state === 'downloading' || state === 'installing'
+          background: state === 'installing'
             ? 'rgba(59, 130, 246, 0.15)'
             : 'rgba(99, 102, 241, 0.15)',
           borderRadius: 6,
           flexShrink: 0
         }}>
-          {state === 'downloading' || state === 'installing' ? '⏳' : '🚀'}
+          {state === 'installing' ? '⏳' : '🚀'}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Titre */}
           <div style={{
             fontSize: 15,
             fontWeight: 700,
@@ -236,12 +216,9 @@ export default function UpdateNotification() {
             marginBottom: 6
           }}>
             {state === 'available' && 'Nouvelle version disponible'}
-            {state === 'downloading' && 'Téléchargement en cours'}
-            {state === 'downloaded' && 'Mise à jour prête'}
             {state === 'installing' && 'Installation en cours'}
           </div>
 
-          {/* Informations de version */}
           {updateVersion && state === 'available' && (
             <div style={{
               fontSize: 13,
@@ -251,30 +228,8 @@ export default function UpdateNotification() {
               Version <span style={{
                 fontWeight: 600,
                 color: 'var(--accent)'
-              }}>{updateVersion}</span> est disponible
-              {currentVersion && (
-                <span> (actuelle : {currentVersion})</span>
-              )}
-            </div>
-          )}
-
-          {state === 'downloading' && (
-            <div style={{
-              fontSize: 13,
-              color: 'var(--muted)',
-              marginBottom: 12
-            }}>
-              Téléchargement de la version {updateVersion}...
-            </div>
-          )}
-
-          {state === 'downloaded' && (
-            <div style={{
-              fontSize: 13,
-              color: 'var(--muted)',
-              marginBottom: 12
-            }}>
-              La version {updateVersion} a été téléchargée et est prête à être installée
+              }}>{updateVersion}</span> disponible
+              {currentVersion && <span> (actuelle : {currentVersion})</span>}
             </div>
           )}
 
@@ -284,11 +239,11 @@ export default function UpdateNotification() {
               color: 'var(--muted)',
               marginBottom: 12
             }}>
-              L'installation va démarrer, l'application va se fermer...
+              Téléchargement et installation de la version {updateVersion}...
+              {useElevation && <div style={{ marginTop: 4 }}>🔐 Mode administrateur activé</div>}
             </div>
           )}
 
-          {/* Message d'erreur */}
           {error && (
             <div style={{
               fontSize: 12,
@@ -297,14 +252,15 @@ export default function UpdateNotification() {
               padding: '8px 12px',
               borderRadius: 6,
               marginBottom: 12,
-              border: '1px solid rgba(239, 68, 68, 0.2)'
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              wordBreak: 'break-word'
             }}>
               {error}
             </div>
           )}
 
-          {/* 🆕 Toggle élévation admin (uniquement visible quand downloaded) */}
-          {state === 'downloaded' && (
+          {/* Toggle élévation (uniquement en mode 'available') */}
+          {state === 'available' && (
             <div style={{
               padding: '10px 12px',
               background: useElevation ? 'rgba(99, 102, 241, 0.08)' : 'rgba(100, 116, 139, 0.08)',
@@ -320,7 +276,6 @@ export default function UpdateNotification() {
                   cursor: 'pointer',
                   userSelect: 'none',
                 }}
-                title="Active l'élévation administrateur (UAC) si vous avez besoin d'installer pour tous les utilisateurs"
               >
                 <div
                   style={{
@@ -333,7 +288,7 @@ export default function UpdateNotification() {
                     cursor: 'pointer',
                     flexShrink: 0,
                   }}
-                  onClick={() => setUseElevation((v) => !v)}
+                  onClick={() => setUseElevation(v => !v)}
                 >
                   <div
                     style={{
@@ -356,7 +311,7 @@ export default function UpdateNotification() {
                     color: 'var(--text)',
                     marginBottom: 2,
                   }}>
-                    🔐 Élévation admin (UAC)
+                    🔐 Mode administrateur (UAC)
                   </div>
                   <div style={{
                     fontSize: 11,
@@ -364,13 +319,12 @@ export default function UpdateNotification() {
                     lineHeight: 1.3,
                   }}>
                     {useElevation
-                      ? '⚠️ Demandera les droits administrateur (UAC)'
-                      : '✅ Installation sans UAC (recommandé pour la plupart des utilisateurs)'}
+                      ? '⚠️ Installation avec droits admin'
+                      : '✅ Installation standard (recommandé)'}
                   </div>
                 </div>
               </label>
 
-              {/* Info bulle explicative */}
               <div style={{
                 marginTop: 8,
                 paddingTop: 8,
@@ -380,8 +334,8 @@ export default function UpdateNotification() {
                 lineHeight: 1.4
               }}>
                 💡 <strong>Quand activer ?</strong><br />
-                • Si vous êtes sur un compte restreint : laissez désactivé<br />
-                • Si vous voulez installer pour tous les utilisateurs : activez
+                • Compte restreint : laissez désactivé<br />
+                • Installation système : activez
               </div>
             </div>
           )}
@@ -389,90 +343,6 @@ export default function UpdateNotification() {
           {/* Boutons d'action */}
           <div style={{ display: 'flex', gap: 8 }}>
             {state === 'available' && (
-              <>
-                <button
-                  onClick={handleDownload}
-                  style={{
-                    flex: 1,
-                    padding: '8px 16px',
-                    borderRadius: 6,
-                    border: 'none',
-                    background: 'var(--accent)',
-                    color: 'white',
-                    fontWeight: 600,
-                    fontSize: 13,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    height: 36
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = '0.9';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = '1';
-                  }}
-                >
-                  📥 Télécharger
-                </button>
-
-                <button
-                  onClick={handleDismiss}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: 6,
-                    border: '1px solid var(--border)',
-                    background: 'transparent',
-                    color: 'var(--text)',
-                    fontWeight: 500,
-                    fontSize: 13,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    height: 36
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent';
-                  }}
-                >
-                  Plus tard
-                </button>
-              </>
-            )}
-
-            {state === 'downloading' && (
-              <div style={{
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                padding: '8px 16px',
-                fontSize: 13,
-                color: 'var(--muted)',
-                height: 36
-              }}>
-                <div className="spinner" style={{
-                  width: 14,
-                  height: 14,
-                  border: '2px solid var(--border)',
-                  borderTopColor: 'var(--accent)',
-                  borderRadius: '50%',
-                  animation: 'spin 0.8s linear infinite'
-                }} />
-                <style>
-                  {`
-                    @keyframes spin {
-                      to { transform: rotate(360deg); }
-                    }
-                  `}
-                </style>
-                Téléchargement...
-              </div>
-            )}
-
-            {state === 'downloaded' && (
               <>
                 <button
                   onClick={handleInstall}
@@ -486,17 +356,13 @@ export default function UpdateNotification() {
                     fontWeight: 600,
                     fontSize: 13,
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease',
+                    transition: 'opacity 0.2s',
                     height: 36
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.opacity = '0.9';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = '1';
-                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+                  onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
                 >
-                  🚀 Installer maintenant
+                  🚀 Installer
                 </button>
 
                 <button
@@ -510,15 +376,11 @@ export default function UpdateNotification() {
                     fontWeight: 500,
                     fontSize: 13,
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease',
+                    transition: 'background 0.2s',
                     height: 36
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent';
-                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                 >
                   Plus tard
                 </button>
@@ -537,7 +399,7 @@ export default function UpdateNotification() {
                 color: 'var(--muted)',
                 height: 36
               }}>
-                <div className="spinner" style={{
+                <div style={{
                   width: 14,
                   height: 14,
                   border: '2px solid var(--border)',
@@ -545,6 +407,9 @@ export default function UpdateNotification() {
                   borderRadius: '50%',
                   animation: 'spin 0.8s linear infinite'
                 }} />
+                <style>
+                  {`@keyframes spin { to { transform: rotate(360deg); } }`}
+                </style>
                 Installation...
               </div>
             )}
