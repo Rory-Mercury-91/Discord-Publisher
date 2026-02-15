@@ -130,7 +130,7 @@ async fn download_update(app: AppHandle) -> Result<String, String> {
     Ok(installer_path.to_string_lossy().to_string())
 }
 
-// 🆕 Installer la mise à jour téléchargée (NSIS avec élévation UAC optionnelle)
+// 🆕 Installer la mise à jour téléchargée (avec élévation OPTIONNELLE)
 #[tauri::command]
 async fn install_downloaded_update(app: AppHandle, use_elevation: bool) -> Result<(), String> {
     use std::fs;
@@ -163,7 +163,8 @@ async fn install_downloaded_update(app: AppHandle, use_elevation: bool) -> Resul
     println!("[Updater] 📦 Installer depuis : {:?}", installer_path);
 
     // 2. Obtenir le répertoire d'installation actuel
-    let exe_path = std::env::current_exe().map_err(|e| format!("Impossible de trouver le chemin d'accès à l'exe : {}", e))?;
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Impossible de trouver le chemin d'accès à l'exe : {}", e))?;
 
     let install_dir = exe_path
         .parent()
@@ -171,41 +172,36 @@ async fn install_downloaded_update(app: AppHandle, use_elevation: bool) -> Resul
 
     println!("[Updater] 📂 Répertoire d'installation actuel : {:?}", install_dir);
 
-    // 3. Lancer l'installateur NSIS
+    // 3. Préparer les arguments NSIS
+    let installer_str = installer_path.to_string_lossy().to_string();
+    let install_dir_str = install_dir.to_string_lossy().to_string();
+
     #[cfg(target_os = "windows")]
     {
-        let install_dir_str = install_dir.to_string_lossy().to_string();
-        let installer_str = installer_path.to_string_lossy().to_string();
-
         let spawn_result = if use_elevation {
-            // Mode avec élévation (UAC) - pour utilisateurs standard
-            println!("[Updater] 🚀 Lancer l'installateur NSIS avec les droits administrateur (UAC)...");
+            // 🔐 Mode AVEC élévation (demande UAC)
+            // L'utilisateur VEUT installer pour tous les utilisateurs ou a besoin de droits admin
+            println!("[Updater] 🔐 Lancement avec élévation administrateur (UAC)...");
             
             let ps_command = format!(
-                "Start-Process -FilePath '{}' -Verb RunAs -ArgumentList @('/D={}')",
+                "Start-Process -FilePath '{}' -Verb RunAs -ArgumentList @('/S', '/D={}')",
                 installer_str.replace('\'', "''"),
                 install_dir_str.replace('\'', "''"),
             );
 
-            println!("[Updater] 🔑 Commande PowerShell : {}", ps_command);
+            println!("[Updater] 📝 Commande PowerShell : {}", ps_command);
 
             std::process::Command::new("powershell")
                 .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_command])
                 .spawn()
         } else {
-            // Mode sans élévation - pour utilisateurs avec restrictions UAC
-            println!("[Updater] 🚀 Lancer l'installateur NSIS SANS droits administrateur (utilisateur normal)...");
+            // 🔓 Mode SANS élévation (pas d'UAC)
+            // L'installateur NSIS est compilé en currentUser, donc peut s'installer sans admin
+            println!("[Updater] 🔓 Lancement SANS élévation (utilisateur normal)...");
             
-            let ps_command = format!(
-                "Start-Process -FilePath '{}' -ArgumentList @('/D={}')",
-                installer_str.replace('\'', "''"),
-                install_dir_str.replace('\'', "''"),
-            );
-
-            println!("[Updater] 🔓 Commande PowerShell : {}", ps_command);
-
-            std::process::Command::new("powershell")
-                .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_command])
+            // Pas besoin de PowerShell, on lance directement
+            std::process::Command::new(&installer_str)
+                .args(&["/S", &format!("/D={}", install_dir_str)])
                 .spawn()
         };
 
@@ -218,7 +214,7 @@ async fn install_downloaded_update(app: AppHandle, use_elevation: bool) -> Resul
 
                 println!("[Updater] 🔄 Fermeture de l'appli en 300 ms...");
 
-                // Attendre un peu pour que l'installateur démarre complètement
+                // Attendre que l'installateur démarre
                 tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
                 // Fermer l'application - l'installateur NSIS prendra le relais
@@ -231,12 +227,12 @@ async fn install_downloaded_update(app: AppHandle, use_elevation: bool) -> Resul
                 // 1223 = "The operation was canceled by the user." (UAC refusé)
                 if code == 1223 {
                     return Err(
-                        "Mise à jour annulée : l'élévation administrateur a été refusée."
+                        "Mise à jour annulée : l'élévation administrateur a été refusée. Essayez sans élévation ou contactez votre administrateur système."
                             .to_string(),
                     );
                 }
 
-                // 740 = Elevation required (peut arriver si use_elevation=false mais que l'installateur le requiert)
+                // 740 = Elevation required 
                 if code == 740 {
                     return Err(
                         "L'installateur nécessite des droits administrateur. Activez le mode 'Élévation admin' et réessayez."
@@ -251,10 +247,11 @@ async fn install_downloaded_update(app: AppHandle, use_elevation: bool) -> Resul
             }
         }
     }
+    
 
     #[cfg(not(target_os = "windows"))]
     {
-        return Err("La mise à jour automatique, ça marche juste sur Windows.".to_string());
+        return Err("La mise à jour automatique fonctionne uniquement sur Windows.".to_string());
     }
 
     Ok(())

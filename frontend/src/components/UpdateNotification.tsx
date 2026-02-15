@@ -19,7 +19,7 @@ export default function UpdateNotification() {
   const [error, setError] = useState<string | null>(null);
   const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
 
-  // 🆕 Toggle pour l'élévation admin (par défaut activé pour compatibilité)
+  // 🆕 Toggle pour l'élévation admin (par défaut DÉSACTIVÉ pour compatibilité maximale)
   const [useElevation, setUseElevation] = useState<boolean>(false);
 
   useEffect(() => {
@@ -27,7 +27,7 @@ export default function UpdateNotification() {
     const justUpdated = localStorage.getItem('justUpdated');
     if (justUpdated) {
       const versionInfo = JSON.parse(justUpdated);
-      console.log("[Updater] 🎉 Mise à jour réussie ! Maintenant, on utilise la version:", versionInfo.version);
+      console.log("[Updater] 🎉 Mise à jour réussie ! Version:", versionInfo.version);
       setState('updated');
       setUpdateVersion(versionInfo.version);
       localStorage.removeItem('justUpdated');
@@ -307,10 +307,10 @@ export default function UpdateNotification() {
           {state === 'downloaded' && (
             <div style={{
               padding: '10px 12px',
-              background: 'rgba(99, 102, 241, 0.08)',
+              background: useElevation ? 'rgba(99, 102, 241, 0.08)' : 'rgba(100, 116, 139, 0.08)',
               borderRadius: 6,
               marginBottom: 12,
-              border: '1px solid rgba(99, 102, 241, 0.15)'
+              border: useElevation ? '1px solid rgba(99, 102, 241, 0.15)' : '1px solid rgba(100, 116, 139, 0.15)'
             }}>
               <label
                 style={{
@@ -320,7 +320,7 @@ export default function UpdateNotification() {
                   cursor: 'pointer',
                   userSelect: 'none',
                 }}
-                title="Active/désactive la demande d'élévation administrateur (UAC)"
+                title="Active l'élévation administrateur (UAC) si vous avez besoin d'installer pour tous les utilisateurs"
               >
                 <div
                   style={{
@@ -353,7 +353,7 @@ export default function UpdateNotification() {
                   <div style={{
                     fontSize: 13,
                     fontWeight: 600,
-                    color: useElevation ? 'var(--text)' : 'var(--muted)',
+                    color: 'var(--text)',
                     marginBottom: 2,
                   }}>
                     🔐 Élévation admin (UAC)
@@ -364,11 +364,25 @@ export default function UpdateNotification() {
                     lineHeight: 1.3,
                   }}>
                     {useElevation
-                      ? 'Demande les droits administrateur (recommandé)'
-                      : 'Installation sans UAC (pour comptes restreints)'}
+                      ? '⚠️ Demandera les droits administrateur (UAC)'
+                      : '✅ Installation sans UAC (recommandé pour la plupart des utilisateurs)'}
                   </div>
                 </div>
               </label>
+
+              {/* Info bulle explicative */}
+              <div style={{
+                marginTop: 8,
+                paddingTop: 8,
+                borderTop: '1px solid var(--border)',
+                fontSize: 11,
+                color: 'var(--muted)',
+                lineHeight: 1.4
+              }}>
+                💡 <strong>Quand activer ?</strong><br />
+                • Si vous êtes sur un compte restreint : laissez désactivé<br />
+                • Si vous voulez installer pour tous les utilisateurs : activez
+              </div>
             </div>
           )}
 
