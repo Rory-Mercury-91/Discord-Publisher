@@ -12,9 +12,15 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   const { showToast } = useToast();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
 
+  // 🆕 Index du template actuellement sélectionné/édité
+  const [selectedTemplateIdx, setSelectedTemplateIdx] = useState(0);
+
+  // 🆕 Nom du nouveau template (pour création)
+  const [newTemplateName, setNewTemplateName] = useState('');
+
   const handleCancelAndClose = () => {
     if (templates.length > 0) {
-      setFormContent(templates[0].content);
+      setFormContent(templates[selectedTemplateIdx]?.content || '');
     }
     cancelVarEdit();
     onClose?.();
@@ -31,11 +37,12 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
+  // Charger le contenu du template sélectionné
   useEffect(() => {
-    if (templates.length > 0) {
-      setFormContent(templates[0].content);
+    if (templates.length > 0 && templates[selectedTemplateIdx]) {
+      setFormContent(templates[selectedTemplateIdx].content);
     }
-  }, [templates]);
+  }, [templates, selectedTemplateIdx]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -46,20 +53,88 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [formContent, templates]);
+  }, [formContent, templates, selectedTemplateIdx]);
+
+  // 🆕 Créer un nouveau template
+  function createNewTemplate() {
+    if (!newTemplateName.trim()) {
+      showToast('Veuillez entrer un nom pour le template', 'warning');
+      return;
+    }
+
+    const existingNames = templates.map(t => t.name.toLowerCase());
+    if (existingNames.includes(newTemplateName.trim().toLowerCase())) {
+      showToast('Un template avec ce nom existe déjà', 'warning');
+      return;
+    }
+
+    const newTemplate = {
+      id: `template_${Date.now()}`,
+      name: newTemplateName.trim(),
+      content: '# Nouveau template\n\nContenu du template...',
+      type: 'my',
+      modifiedAt: Date.now(),
+      isDefault: false
+    };
+
+    // Ajouter le nouveau template
+    const updatedTemplates = [...templates, newTemplate];
+    importFullConfig({ templates: updatedTemplates });
+
+    // Sélectionner le nouveau template
+    setSelectedTemplateIdx(updatedTemplates.length - 1);
+    setNewTemplateName('');
+    showToast('Nouveau template créé', 'success');
+  }
+
+  // 🆕 Supprimer un template
+  async function deleteTemplate(idx: number) {
+    if (templates[idx]?.isDefault) {
+      showToast('Impossible de supprimer le template par défaut', 'error');
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'Supprimer le template',
+      message: `Voulez-vous vraiment supprimer le template "${templates[idx]?.name}" ?`,
+      confirmText: 'Supprimer',
+      type: 'danger'
+    });
+
+    if (!ok) return;
+
+    const updatedTemplates = templates.filter((_, i) => i !== idx);
+    importFullConfig({ templates: updatedTemplates });
+
+    // Si on supprime le template sélectionné, revenir au premier
+    if (selectedTemplateIdx >= updatedTemplates.length) {
+      setSelectedTemplateIdx(0);
+    } else if (selectedTemplateIdx === idx) {
+      setSelectedTemplateIdx(0);
+    }
+
+    showToast('Template supprimé', 'success');
+  }
 
   function saveAndClose() {
     if (templates.length === 0) {
       showToast('Aucun template à modifier', 'error');
       return;
     }
-    const currentTemplate = templates[0];
+
+    const currentTemplate = templates[selectedTemplateIdx];
+    if (!currentTemplate) {
+      showToast('Template introuvable', 'error');
+      return;
+    }
+
     const payload = {
       ...currentTemplate,
       content: formContent,
       modifiedAt: Date.now()
     };
-    updateTemplate(0, payload);
+
+    updateTemplate(selectedTemplateIdx, payload);
     showToast('Template enregistré', 'success');
     onClose?.();
   }
@@ -165,6 +240,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
         importFullConfig(payload);
         showToast('Template importé', 'success');
         if (Array.isArray(data.templates) && data.templates.length > 0) {
+          setSelectedTemplateIdx(0);
           setFormContent(data.templates[0].content ?? '');
         }
       } catch (e: unknown) {
@@ -183,13 +259,16 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
     });
     if (ok) {
       restoreDefaultTemplates();
+      setSelectedTemplateIdx(0);
       showToast('Template par défaut restauré', 'success');
-      // Le useEffect([templates]) mettra à jour formContent au prochain rendu
     }
   }
 
   const visibleVars = allVarsConfig;
   const customVars = allVarsConfig.map((v, idx) => ({ v, idx })).filter(({ v }) => v.isCustom);
+
+  // Template sélectionné
+  const currentTemplate = templates[selectedTemplateIdx];
 
   return (
     <div className="modal">
@@ -211,7 +290,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
           paddingTop: 4,
           borderBottom: '2px solid var(--border)'
         }}>
-          <h3 style={{ margin: 0 }}>📄 Gestion du template & variables</h3>
+          <h3 style={{ margin: 0 }}>📄 Gestion des templates & variables</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button
               onClick={exportTemplateLocal}
@@ -259,6 +338,124 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
           </div>
         </div>
 
+        {/* 🆕 Section : Mes templates */}
+        <div style={{
+          marginTop: 16,
+          padding: 16,
+          background: 'rgba(99, 102, 241, 0.08)',
+          border: '1px solid rgba(99, 102, 241, 0.25)',
+          borderRadius: 10
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <h4 style={{ margin: 0, fontSize: 15, color: 'var(--text)' }}>
+              📚 Mes templates ({templates.length})
+            </h4>
+          </div>
+
+          {/* Grille de sélection des templates */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+            gap: 8,
+            marginBottom: 12
+          }}>
+            {templates.map((template, idx) => (
+              <button
+                key={template.id || idx}
+                type="button"
+                onClick={() => setSelectedTemplateIdx(idx)}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  border: selectedTemplateIdx === idx ? '2px solid var(--accent)' : '1px solid var(--border)',
+                  background: selectedTemplateIdx === idx ? 'var(--accent)' : 'rgba(255,255,255,0.05)',
+                  color: selectedTemplateIdx === idx ? '#fff' : 'var(--text)',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontWeight: selectedTemplateIdx === idx ? 700 : 500,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  transition: 'all 0.2s'
+                }}
+              >
+                <span style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  flex: 1,
+                  textAlign: 'left'
+                }}>
+                  {template.isDefault ? '⭐ ' : ''}{template.name || `Template ${idx + 1}`}
+                </span>
+                {!template.isDefault && selectedTemplateIdx === idx && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteTemplate(idx);
+                    }}
+                    style={{
+                      padding: '2px 6px',
+                      background: 'rgba(239, 68, 68, 0.2)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      borderRadius: 4,
+                      color: '#ef4444',
+                      fontSize: 11,
+                      cursor: 'pointer'
+                    }}
+                    title="Supprimer ce template"
+                  >
+                    🗑️
+                  </button>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Création d'un nouveau template */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              type="text"
+              value={newTemplateName}
+              onChange={(e) => setNewTemplateName(e.target.value)}
+              placeholder="Nom du nouveau template..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  createNewTemplate();
+                }
+              }}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                fontSize: 13,
+                color: 'var(--text)'
+              }}
+            />
+            <button
+              type="button"
+              onClick={createNewTemplate}
+              style={{
+                padding: '8px 16px',
+                background: 'var(--accent)',
+                border: 'none',
+                borderRadius: 6,
+                color: '#fff',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              ➕ Créer
+            </button>
+          </div>
+        </div>
+
         {/* Deux colonnes : gauche (Template) | droite (Variables) */}
         <div style={{ display: 'flex', gap: 20, flex: 1, minHeight: 0, overflow: 'hidden', paddingTop: 24 }}>
           {/* Partie gauche : Template */}
@@ -272,7 +469,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h4 style={{ margin: 0, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
-                📄 Template
+                📄 Template : {currentTemplate?.name || 'Sans nom'}
                 <button
                   type="button"
                   onClick={() => setShowMarkdownHelp(true)}
@@ -295,22 +492,24 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
                   ?
                 </button>
               </h4>
-              <button
-                type="button"
-                onClick={handleRestore}
-                style={{
-                  fontSize: 12,
-                  padding: '6px 12px',
-                  background: 'rgba(74, 158, 255, 0.2)',
-                  border: '1px solid rgba(74, 158, 255, 0.4)',
-                  borderRadius: 6,
-                  color: 'var(--text)',
-                  cursor: 'pointer'
-                }}
-                title="Restaurer le template par défaut"
-              >
-                🔄 Restaurer
-              </button>
+              {currentTemplate?.isDefault && (
+                <button
+                  type="button"
+                  onClick={handleRestore}
+                  style={{
+                    fontSize: 12,
+                    padding: '6px 12px',
+                    background: 'rgba(74, 158, 255, 0.2)',
+                    border: '1px solid rgba(74, 158, 255, 0.4)',
+                    borderRadius: 6,
+                    color: 'var(--text)',
+                    cursor: 'pointer'
+                  }}
+                  title="Restaurer le template par défaut"
+                >
+                  🔄 Restaurer
+                </button>
+              )}
             </div>
             <div style={{ flex: 1, minHeight: 120, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <textarea

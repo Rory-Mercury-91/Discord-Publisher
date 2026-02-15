@@ -42,10 +42,29 @@ function AppContentInner() {
     setTranslationType,
     isIntegrated,
     setIsIntegrated,
-    setLinkConfigs
+    setLinkConfigs,
+    templates,          // 🆕 Déjà présent
+    currentTemplateIdx, // 🆕 Déjà présent
+    setCurrentTemplateIdx // 🆕 AJOUTER CETTE LIGNE (nécessite modification appContext.tsx)
   } = useApp();
 
   const { showToast } = useToast();
+
+  // 🆕 Récupérer le template actif et préparer les données pour le dropdown
+  const currentTemplate = templates[currentTemplateIdx];
+  const templateName = currentTemplate?.name || 'Template';
+
+  const availableTemplates = templates.map((t, idx) => ({
+    id: t.id || `template_${idx}`,
+    name: t.name || `Template ${idx + 1}`,
+    isDefault: t.isDefault || false
+  }));
+
+  // 🆕 Fonction pour gérer le changement de template
+  const handleTemplateChange = (newIndex: number) => {
+    setCurrentTemplateIdx(newIndex);
+    showToast(`Template : ${templates[newIndex]?.name}`, 'success');
+  };
 
   const handleCopyPreview = async () => {
     try {
@@ -240,6 +259,10 @@ function AppContentInner() {
               setPreviewContent={setPreviewOverride}
               onCopy={handleCopyPreview}
               onOpenDiscordPreview={() => setOpenDiscordPreview(true)}
+              templateName={templateName}                    // 🆕 Déjà présent
+              availableTemplates={availableTemplates}        // 🆕 NOUVELLE PROP
+              currentTemplateIdx={currentTemplateIdx}        // 🆕 NOUVELLE PROP
+              onTemplateChange={handleTemplateChange}        // 🆕 NOUVELLE PROP
             />
           </div>
         </div>

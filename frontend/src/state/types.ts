@@ -51,22 +51,18 @@ export type Tag = {
 export type PublishedPost = {
   id: string;
   timestamp: number;
-  /** Date de création (ms), pour affichage */
   createdAt?: number;
-  /** Date de dernière modification (ms), pour affichage */
   updatedAt?: number;
   title: string;
   content: string;
   tags: string;
   imagePath?: string;
   translationType?: string;
-  isIntegrated?: boolean;
+  isIntegrated: boolean;
   threadId: string;
   messageId: string;
   discordUrl: string;
   forumId: number;
-
-  // Données pour ré-édition complète
   savedInputs?: Record<string, string>;
   savedLinkConfigs?: {
     Game_link: LinkConfig;
@@ -74,12 +70,10 @@ export type PublishedPost = {
     Mod_link: LinkConfig;
   };
   savedAdditionalTranslationLinks?: AdditionalTranslationLink[];
-  /** Liens additionnels mod (affichés si mod compatible) */
   savedAdditionalModLinks?: AdditionalTranslationLink[];
-  /** ID Discord de l'auteur du post (pour droits d'édition) */
   authorDiscordId?: string;
-  /** Post dans l'onglet Archive (synchronisé Supabase is_archived) */
   archived?: boolean;
+  templateId?: string;
 };
 
 export type AppContextValue = {

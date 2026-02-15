@@ -19,12 +19,15 @@ export default function UpdateNotification() {
   const [error, setError] = useState<string | null>(null);
   const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
 
+  // 🆕 Toggle pour l'élévation admin (par défaut activé pour compatibilité)
+  const [useElevation, setUseElevation] = useState<boolean>(false);
+
   useEffect(() => {
     // Vérifier si on vient de se mettre à jour
     const justUpdated = localStorage.getItem('justUpdated');
     if (justUpdated) {
       const versionInfo = JSON.parse(justUpdated);
-      console.log('[Updater] 🎉 Mise à jour réussie ! Maintenant, on utilise la version:', versionInfo.version);
+      console.log("[Updater] 🎉 Mise à jour réussie ! Maintenant, on utilise la version:", versionInfo.version);
       setState('updated');
       setUpdateVersion(versionInfo.version);
       localStorage.removeItem('justUpdated');
@@ -36,7 +39,7 @@ export default function UpdateNotification() {
     const timeout = setTimeout(async () => {
       const version = await getVersion();
       setCurrentVersion(version);
-      console.log('[Updater] 📱 Version actuelle de l\'application:', version);
+      console.log("[Updater] 📱 Version actuelle de l'application:", version);
       checkForUpdate();
     }, 3000);
 
@@ -46,7 +49,7 @@ export default function UpdateNotification() {
   async function checkForUpdate() {
     try {
       setState('checking');
-      console.log('[Updater] 🔍 Vérification des mises à jour...');
+      console.log("[Updater] 🔍 Vérification des mises à jour...");
 
       const update = await check();
 
@@ -56,11 +59,11 @@ export default function UpdateNotification() {
         setUpdateVersion(update.version);
         setCurrentVersion(update.currentVersion);
       } else {
-        console.log('[Updater] ✅ L\'application est à jour');
+        console.log("[Updater] ✅ L'application est à jour");
         setState('idle');
       }
     } catch (err) {
-      console.error('[Updater] ❌ Échec de la vérification des mises à jour:', err);
+      console.error("[Updater] ❌ Échec de la vérification des mises à jour:", err);
       setState('idle');
     }
   }
@@ -70,16 +73,16 @@ export default function UpdateNotification() {
       setState('downloading');
       setError(null);
 
-      console.log('[Updater] 📥 Démarrage du processus de téléchargement...');
+      console.log("[Updater] 📥 Démarrage du processus de téléchargement...");
 
       const path = await invoke<string>('download_update');
 
-      console.log('[Updater] ✅ Téléchargement terminé:', path);
+      console.log("[Updater] ✅ Téléchargement terminé:", path);
       setDownloadedPath(path);
       setState('downloaded');
 
     } catch (err: any) {
-      console.error('[Updater] ❌ Échec du téléchargement de la mise à jour:', err);
+      console.error("[Updater] ❌ Échec du téléchargement de la mise à jour:", err);
 
       const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
       setError('Échec du téléchargement : ' + errorMessage);
@@ -92,7 +95,8 @@ export default function UpdateNotification() {
       setState('installing');
       setError(null);
 
-      console.log('[Updater] 🚀 Démarrage du processus d\'installation...');
+      console.log("[Updater] 🚀 Démarrage du processus d'installation...");
+      console.log("[Updater] 🔐 Mode élévation:", useElevation ? 'ACTIVÉ (admin)' : 'DÉSACTIVÉ (utilisateur normal)');
 
       // Marquer qu'on attend une mise à jour
       localStorage.setItem('pendingUpdate', JSON.stringify({
@@ -100,16 +104,16 @@ export default function UpdateNotification() {
         timestamp: Date.now()
       }));
 
-      // Lancer l'installation
-      await invoke('install_downloaded_update');
+      // 🆕 Passer le paramètre useElevation à la fonction Rust
+      await invoke('install_downloaded_update', { useElevation });
 
-      console.log('[Updater] ✅ Installation démarrée, l\'application va se fermer...');
+      console.log("[Updater] ✅ Installation démarrée, l'application va se fermer...");
 
     } catch (err: any) {
-      console.error('[Updater] ❌ Échec de l\'installation de la mise à jour:', err);
+      console.error("[Updater] ❌ Échec de l'installation de la mise à jour:", err);
 
       const errorMessage = typeof err === 'string' ? err : (err?.message || 'Erreur inconnue');
-      setError('Échec de l\'installation : ' + errorMessage);
+      setError("Échec de l'installation : " + errorMessage);
       setState('downloaded');
       localStorage.removeItem('pendingUpdate');
     }
@@ -296,6 +300,75 @@ export default function UpdateNotification() {
               border: '1px solid rgba(239, 68, 68, 0.2)'
             }}>
               {error}
+            </div>
+          )}
+
+          {/* 🆕 Toggle élévation admin (uniquement visible quand downloaded) */}
+          {state === 'downloaded' && (
+            <div style={{
+              padding: '10px 12px',
+              background: 'rgba(99, 102, 241, 0.08)',
+              borderRadius: 6,
+              marginBottom: 12,
+              border: '1px solid rgba(99, 102, 241, 0.15)'
+            }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+                title="Active/désactive la demande d'élévation administrateur (UAC)"
+              >
+                <div
+                  style={{
+                    position: 'relative',
+                    width: 40,
+                    height: 22,
+                    borderRadius: 11,
+                    background: useElevation ? 'var(--accent)' : 'var(--border)',
+                    transition: 'background 0.2s ease',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                  onClick={() => setUseElevation((v) => !v)}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 3,
+                      left: useElevation ? 21 : 3,
+                      width: 16,
+                      height: 16,
+                      borderRadius: '50%',
+                      background: '#fff',
+                      transition: 'left 0.2s ease',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                    }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: useElevation ? 'var(--text)' : 'var(--muted)',
+                    marginBottom: 2,
+                  }}>
+                    🔐 Élévation admin (UAC)
+                  </div>
+                  <div style={{
+                    fontSize: 11,
+                    color: 'var(--muted)',
+                    lineHeight: 1.3,
+                  }}>
+                    {useElevation
+                      ? 'Demande les droits administrateur (recommandé)'
+                      : 'Installation sans UAC (pour comptes restreints)'}
+                  </div>
+                </div>
+              </label>
             </div>
           )}
 

@@ -87,6 +87,42 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
     })();
   }, [profile?.id]);
 
+  // ✅ Sauvegarde automatique de l'URL API
+  useEffect(() => {
+    if (!adminMode) return;
+    localStorage.setItem('apiUrl', apiUrl);
+    localStorage.setItem('apiBase', apiUrl);
+    const baseUrl = (apiUrl || '').trim().replace(/\/+$/, '');
+    if (baseUrl) {
+      setApiBaseFromSupabase(baseUrl);
+      const sb = getSupabase();
+      if (sb) {
+        sb.from('app_config')
+          .upsert(
+            { key: 'api_base_url', value: baseUrl, updated_at: new Date().toISOString() },
+            { onConflict: 'key' }
+          )
+          .then((res) => {
+            if (res?.error) console.warn('⚠️ Supabase app_config:', (res.error as { message?: string })?.message);
+          });
+      }
+    }
+  }, [apiUrl, adminMode, setApiBaseFromSupabase]);
+
+  // ✅ Sauvegarde automatique de la clé API
+  useEffect(() => {
+    localStorage.setItem('apiKey', apiKey);
+  }, [apiKey]);
+
+  // ✅ Sauvegarde automatique des labels par défaut
+  useEffect(() => {
+    localStorage.setItem('default_translation_label', defaultTranslationLabel);
+  }, [defaultTranslationLabel]);
+
+  useEffect(() => {
+    localStorage.setItem('default_mod_label', defaultModLabel);
+  }, [defaultModLabel]);
+
   const toggleEditor = async (editorId: string, currentlyAllowed: boolean) => {
     const sb = getSupabase();
     if (!sb || !profile?.id) return;
@@ -176,50 +212,17 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
     }
   };
 
-  const handleSave = async () => {
-    localStorage.setItem('apiKey', apiKey);
-
-    // Sauvegarder les labels par défaut
-    localStorage.setItem('default_translation_label', defaultTranslationLabel);
-    localStorage.setItem('default_mod_label', defaultModLabel);
-
-    if (adminMode) {
-      localStorage.setItem('apiUrl', apiUrl);
-      localStorage.setItem('apiBase', apiUrl);
-      const baseUrl = (apiUrl || '').trim().replace(/\/+$/, '');
-      if (baseUrl) {
-        setApiBaseFromSupabase(baseUrl);
-        const sb = getSupabase();
-        if (sb) {
-          sb.from('app_config')
-            .upsert(
-              { key: 'api_base_url', value: baseUrl, updated_at: new Date().toISOString() },
-              { onConflict: 'key' }
-            )
-            .then((res) => {
-              if (res?.error) console.warn('⚠️ Supabase app_config:', (res.error as { message?: string })?.message);
-            });
-        }
-      }
-    }
-
-    // ✅ NOUVEAU : Sauvegarder l'état de fenêtre via Tauri
+  // ✅ Gestion du changement d'état de fenêtre avec sauvegarde instantanée
+  const handleWindowStateChange = async (state: WindowState) => {
+    setWindowState(state);
+    await applyWindowStateLive(state);
+    localStorage.setItem('windowState', state);
     try {
-      // @ts-ignore - Tauri API
       if (window.__TAURI__) {
         const { invoke } = window.__TAURI__.core;
-        await invoke('save_window_state', { state: windowState });
-        showToast("Configuration enregistrée !", "success");
-      } else {
-        // Fallback pour développement web
-        localStorage.setItem('windowState', windowState);
-        showToast("Configuration enregistrée !", "success");
+        await invoke('save_window_state', { state });
       }
-    } catch (e) {
-      console.error('❌ Erreur sauvegarde état fenêtre:', e);
-      showToast("Configuration enregistrée (erreur état fenêtre)", "warning");
-    }
-    onClose?.();
+    } catch (_e) { /* ignorer */ }
   };
 
   const handleCleanupAllData = async () => {
@@ -250,8 +253,8 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
         savedTags,
         savedInstructions,
         publishedPosts,
-        windowState, // ✅ Inclure l'état de fenêtre dans l'export
-        defaultTranslationLabel, // ✅ Inclure les labels par défaut
+        windowState,
+        defaultTranslationLabel,
         defaultModLabel,
         exportDate: new Date().toISOString(),
         version: '1.0'
@@ -350,8 +353,7 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
           background: 'var(--panel)',
           borderRadius: '12px',
           width: '90%',
-          // ✅ Même gabarit que InstructionsManagerModal
-          maxWidth: '920px',
+          maxWidth: '1100px',
           maxHeight: '90vh',
           overflowY: 'auto',
           border: '1px solid var(--border)',
@@ -394,9 +396,9 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
             alignItems: 'start',
           }}
         >
-          {/* Colonne gauche : API + Droits d'édition */}
+          {/* Colonne gauche */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            {/* Section API — toujours visible */}
+            {/* Section Configuration API */}
             <section
               style={{
                 border: '1px solid var(--border)',
@@ -408,12 +410,12 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
                 gap: 18,
               }}
             >
-              <h4 style={{ margin: 0, fontSize: '1rem' }}>🌐 Configuration</h4>
+              <h4 style={{ margin: 0, fontSize: '1rem' }}>🌐 Configuration API</h4>
 
               {adminMode && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
-                    URL de l'API (admin)
+                    URL de l'API
                   </label>
                   <input
                     type="text"
@@ -431,9 +433,6 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
                       boxSizing: 'border-box',
                     }}
                   />
-                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0 }}>
-                    💡 URL de base du service (sans /api). Réservée à l'admin ; les utilisateurs utilisent l'URL définie ici.
-                  </p>
                 </div>
               )}
 
@@ -458,89 +457,52 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
                   }}
                 />
                 <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0 }}>
-                  🔒 Clé de sécurité pour publier (chaque utilisateur saisit la sienne).
+                  🔒 Clé de sécurité pour publier. Cette clé doit être transmise par l'administrateur.
                 </p>
               </div>
             </section>
 
-            {/* Section Droits d'édition (section utilisateur) : qui peut modifier mes posts */}
-            {profile?.id && (
-              <section
-                style={{
-                  border: '1px solid var(--border)',
-                  borderRadius: 14,
-                  padding: 20,
-                  background: 'rgba(255,255,255,0.02)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 16,
-                }}
-              >
-                <h4 style={{ margin: 0, fontSize: '1rem' }}>👥 Qui peut modifier mes posts</h4>
-                <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
-                  Autorisez ou révoquez le droit d'édition de vos publications pour les autres utilisateurs.
-                </p>
-                {editorsLoading ? (
-                  <div style={{ fontSize: 13, color: 'var(--muted)' }}>Chargement…</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
-                    {allProfiles
-                      .filter(p => p.id !== profile.id)
-                      .map(p => {
-                        const allowed = allowedEditorIds.has(p.id);
-                        return (
-                          <div
-                            key={p.id}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              gap: 12,
-                              padding: '10px 12px',
-                              background: 'rgba(255,255,255,0.03)',
-                              borderRadius: 10,
-                              border: '1px solid var(--border)',
-                            }}
-                          >
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ fontWeight: 600, fontSize: 14 }}>{p.pseudo || '—'}</div>
-                              <div style={{ fontSize: 12, color: 'var(--muted)' }}>ID Discord : {p.discord_id || '—'}</div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => toggleEditor(p.id, allowed)}
-                              title={allowed ? 'Révoquer' : 'Autoriser'}
-                              style={{
-                                padding: '6px 14px',
-                                borderRadius: 8,
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontSize: 12,
-                                fontWeight: 600,
-                                background: allowed ? 'rgba(239, 68, 68, 0.2)' : 'var(--accent)',
-                                color: allowed ? 'var(--error, #ef4444)' : '#fff',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {allowed ? 'Révoquer' : 'Autoriser'}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    {allProfiles.filter(p => p.id !== profile.id).length === 0 && (
-                      <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>
-                        Aucun autre utilisateur en base.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </section>
-            )}
+            {/* Section État de la fenêtre */}
+            <section
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 14,
+                padding: 20,
+                background: 'rgba(255,255,255,0.02)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16,
+              }}
+            >
+              <h4 style={{ margin: 0, fontSize: '1rem' }}>🪟 État de la fenêtre</h4>
 
-          </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
+                  Mode d'affichage
+                </label>
+                <select
+                  value={windowState}
+                  onChange={(e) => handleWindowStateChange(e.target.value as WindowState)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                    background: 'rgba(255,255,255,0.05)',
+                    color: 'var(--text)',
+                    fontSize: 14,
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="normal">🔲 Normal</option>
+                  <option value="maximized">⬜ Maximisé</option>
+                  <option value="fullscreen">🖥️ Plein écran</option>
+                  <option value="minimized">➖ Minimisé</option>
+                </select>
+              </div>
+            </section>
 
-          {/* Colonne droite : Labels par défaut + Fenêtre (tous les utilisateurs) + Sauvegarde (mode admin uniquement) */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {/* Section Labels par défaut */}
             <section
               style={{
@@ -555,7 +517,7 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
             >
               <h4 style={{ margin: 0, fontSize: '1rem' }}>🏷️ Labels par défaut</h4>
               <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
-                Personnalisez les labels par défaut pour les liens de traduction et mod. Ces valeurs seront préservées lors du vidage du formulaire.
+                Personnalisez les labels par défaut. Ces valeurs seront préservées lors du vidage du formulaire.
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -604,73 +566,98 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
                 </div>
               </div>
             </section>
+          </div>
 
-            {/* État de la fenêtre : visible pour tous les utilisateurs */}
-            <section
-              style={{
-                border: '1px solid var(--border)',
-                borderRadius: 14,
-                padding: 20,
-                background: 'rgba(255,255,255,0.02)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 16,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                <h4 style={{ margin: 0, fontSize: '1rem' }}>🪟 État de la fenêtre</h4>
-                <span style={{ color: 'var(--muted)', fontSize: 13 }}>Appliqué immédiatement et au prochain démarrage</span>
-              </div>
-
-              <div
+          {/* Colonne droite */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {/* Section Droits d'édition */}
+            {profile?.id && (
+              <section
                 style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 1fr)',
-                  gap: 10,
+                  border: '1px solid var(--border)',
+                  borderRadius: 14,
+                  padding: 20,
+                  background: 'rgba(255,255,255,0.02)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 16,
                 }}
               >
-                {(['normal', 'maximized', 'fullscreen', 'minimized'] as WindowState[]).map((state) => {
-                  const labels = {
-                    normal: '📐 Normal',
-                    maximized: '⬜ Maximisé',
-                    fullscreen: '🖥️ Plein écran',
-                    minimized: '➖ Minimisé',
-                  };
-                  const active = windowState === state;
-                  return (
-                    <button
-                      key={state}
-                      type="button"
-                      onClick={async () => {
-                        setWindowState(state);
-                        await applyWindowStateLive(state);
-                        localStorage.setItem('windowState', state);
-                        try {
-                          if (window.__TAURI__) {
-                            const { invoke } = window.__TAURI__.core;
-                            await invoke('save_window_state', { state });
-                          }
-                        } catch (_e) { /* ignorer */ }
-                      }}
-                      style={{
-                        padding: '14px 12px',
-                        borderRadius: 10,
-                        border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                        cursor: 'pointer',
-                        background: active ? 'var(--accent)' : 'rgba(255,255,255,0.03)',
-                        color: active ? '#fff' : 'var(--text)',
+                <h4 style={{ margin: 0, fontSize: '1rem' }}>👥 Qui peut modifier mes posts</h4>
+                <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
+                  💡 Autorisez ou révoquez le droit d'édition de vos publications.
+                  <br />
+                  🎨 <strong>Code couleur :</strong> <span style={{ color: '#9ca3af' }}>Gris</span> = Non autorisé • <span style={{ color: '#ef4444' }}>Rouge</span> = Autorisé
+                </p>
+                {editorsLoading ? (
+                  <div style={{ fontSize: 13, color: 'var(--muted)' }}>Chargement…</div>
+                ) : (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: 10,
+                    maxHeight: 280,
+                    overflowY: 'auto'
+                  }}>
+                    {allProfiles
+                      .filter(p => p.id !== profile.id)
+                      .map(p => {
+                        const allowed = allowedEditorIds.has(p.id);
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => toggleEditor(p.id, allowed)}
+                            style={{
+                              padding: '12px 14px',
+                              borderRadius: 10,
+                              border: 'none',
+                              cursor: 'pointer',
+                              fontSize: 13,
+                              fontWeight: 600,
+                              background: allowed
+                                ? 'rgba(239, 68, 68, 0.15)'      // 🔴 Rouge = Autorisé
+                                : 'rgba(156, 163, 175, 0.15)',   // ⚪ Gris = Non autorisé
+                              color: allowed
+                                ? '#ef4444'                       // 🔴 Rouge = Autorisé
+                                : '#9ca3af',                      // ⚪ Gris = Non autorisé
+                              transition: 'all 0.2s',
+                              textAlign: 'center',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.transform = 'scale(1.02)';
+                              e.currentTarget.style.boxShadow = allowed
+                                ? '0 0 0 2px rgba(239, 68, 68, 0.3)'
+                                : '0 0 0 2px rgba(156, 163, 175, 0.3)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.transform = 'scale(1)';
+                              e.currentTarget.style.boxShadow = 'none';
+                            }}
+                          >
+                            {allowed ? '🔓 ' : '🔒 '}
+                            {p.pseudo || '—'}
+                          </button>
+                        );
+                      })}
+                    {allProfiles.filter(p => p.id !== profile.id).length === 0 && (
+                      <div style={{
                         fontSize: 13,
-                        fontWeight: active ? 700 : 500,
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {labels[state]}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+                        color: 'var(--muted)',
+                        fontStyle: 'italic',
+                        gridColumn: '1 / -1',
+                        textAlign: 'center',
+                        padding: '20px 0'
+                      }}>
+                        Aucun autre utilisateur en base.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
 
+            {/* Section Sauvegarde et restauration (admin uniquement) */}
             {!adminMode && (
               <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic', padding: 16 }}>
                 Débloquez le mode admin pour gérer les sauvegardes complètes et le nettoyage des données.
@@ -699,139 +686,124 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
                 />
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenLogs?.()}
-                    style={{
-                      width: '100%',
-                      padding: '14px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      background: 'rgba(156, 163, 175, 0.15)',
-                      border: '1px solid rgba(156, 163, 175, 0.35)',
-                      color: 'var(--text)',
-                      borderRadius: 10,
-                      cursor: 'pointer',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      textAlign: 'left',
-                    }}
-                  >
-                    <span style={{ fontSize: 20 }}>📋</span>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>Voir les logs du serveur</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>Affiche les logs Python en direct (bots, API). Rafraîchissement auto toutes les 5 s.</div>
-                    </div>
-                  </button>
-                  <button
-                    onClick={handleExportConfig}
-                    style={{
-                      width: '100%',
-                      padding: '14px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      background: 'rgba(74, 158, 255, 0.15)',
-                      border: '1px solid rgba(74, 158, 255, 0.35)',
-                      color: 'var(--text)',
-                      borderRadius: 10,
-                      cursor: 'pointer',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      textAlign: 'left',
-                    }}
-                  >
-                    <span style={{ fontSize: 20 }}>📤</span>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>Exporter une copie</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>Télécharge un fichier JSON avec tout : config, templates, tags, instructions, historique.</div>
-                    </div>
-                  </button>
-                  <button
-                    onClick={handleImportClick}
-                    style={{
-                      width: '100%',
-                      padding: '14px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      background: 'rgba(74, 255, 158, 0.1)',
-                      border: '1px solid rgba(74, 255, 158, 0.3)',
-                      color: 'var(--text)',
-                      borderRadius: 10,
-                      cursor: 'pointer',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      textAlign: 'left',
-                    }}
-                  >
-                    <span style={{ fontSize: 20 }}>📥</span>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>Restaurer depuis un fichier</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>Remplace tes données par le contenu d’un fichier de sauvegarde (export précédent).</div>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCleanupAllData}
-                    style={{
-                      width: '100%',
-                      padding: '14px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 12,
-                      background: 'rgba(239, 68, 68, 0.1)',
-                      border: '1px solid rgba(239, 68, 68, 0.35)',
-                      color: 'var(--error, #ef4444)',
-                      borderRadius: 10,
-                      cursor: 'pointer',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      textAlign: 'left',
-                    }}
-                  >
-                    <span style={{ fontSize: 20 }}>🗑️</span>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>Tout supprimer</div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>Supprime toutes les données (Supabase + local). Irréversible.</div>
-                    </div>
-                  </button>
+                  {/* Export */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <button
+                      onClick={handleExportConfig}
+                      style={{
+                        width: '100%',
+                        padding: '14px 16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 10,
+                        background: 'rgba(74, 158, 255, 0.2)',
+                        border: '1px solid rgba(74, 158, 255, 0.4)',
+                        color: '#4a9eff',
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        fontWeight: 700,
+                      }}
+                    >
+                      <span style={{ fontSize: 18 }}>📤</span>
+                      Exporter une copie
+                    </button>
+                    <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, paddingLeft: 4 }}>
+                      Télécharge un fichier JSON avec toute votre configuration.
+                    </p>
+                  </div>
+
+                  {/* Import */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <button
+                      onClick={handleImportClick}
+                      style={{
+                        width: '100%',
+                        padding: '14px 16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 10,
+                        background: 'rgba(74, 255, 158, 0.15)',
+                        border: '1px solid rgba(74, 255, 158, 0.35)',
+                        color: '#4aff9e',
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        fontWeight: 700,
+                      }}
+                    >
+                      <span style={{ fontSize: 18 }}>📥</span>
+                      Restaurer depuis un fichier
+                    </button>
+                    <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, paddingLeft: 4 }}>
+                      Remplace vos données par le contenu d'une sauvegarde.
+                    </p>
+                  </div>
+
+                  {/* Tout supprimer */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                    <button
+                      type="button"
+                      onClick={handleCleanupAllData}
+                      style={{
+                        width: '100%',
+                        padding: '14px 16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 10,
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        color: '#ef4444',
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        fontWeight: 700,
+                      }}
+                    >
+                      <span style={{ fontSize: 18 }}>🗑️</span>
+                      Tout supprimer
+                    </button>
+                    <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, paddingLeft: 4 }}>
+                      Supprime toutes vos données (Supabase + local). Irréversible.
+                    </p>
+                  </div>
                 </div>
               </section>
             )}
           </div>
+        </div>
 
-          {/* Actions principales (pleine largeur) */}
-          <div
+        {/* Footer avec bouton Fermer */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 12,
+            justifyContent: 'flex-end',
+            padding: '16px 28px',
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
             style={{
-              display: 'flex',
-              gap: 12,
-              justifyContent: 'flex-end',
-              flexWrap: 'wrap',
-              paddingTop: 8,
-              borderTop: '1px solid var(--border)',
-              gridColumn: '1 / -1',
+              padding: '12px 24px',
+              borderRadius: 10,
+              border: '1px solid var(--border)',
+              background: 'transparent',
+              color: 'var(--text)',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 600,
             }}
           >
-            <button
-              type="button"
-              onClick={handleSave}
-              style={{
-                padding: '12px 24px',
-                borderRadius: 10,
-                border: 'none',
-                background: 'var(--accent)',
-                color: '#fff',
-                cursor: 'pointer',
-                fontSize: 14,
-                fontWeight: 600,
-              }}
-            >
-              💾 Enregistrer
-            </button>
-          </div>
+            Fermer
+          </button>
         </div>
+
         <ConfirmModal
           isOpen={confirmState.isOpen}
           title={confirmState.title}

@@ -59,6 +59,7 @@ type AppContextValue = {
   updateTemplate: (idx: number, t: Template) => void;
   restoreDefaultTemplates: () => void;
   currentTemplateIdx: number;
+  setCurrentTemplateIdx: (idx: number) => void;
   allVarsConfig: VarConfig[];
   addVarConfig: (v: VarConfig) => void;
   updateVarConfig: (idx: number, v: VarConfig) => void;
@@ -203,8 +204,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return defaultTemplates;
   });
 
-  // currentTemplateIdx toujours à 0 puisqu'il n'y a qu'un seul template
-  const currentTemplateIdx = 0;
+  const [currentTemplateIdx, setCurrentTemplateIdx] = useState(0);
 
   function importFullConfig(config: any) {
     if (!config || typeof config !== 'object') {
@@ -704,10 +704,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       saved_additional_translation_links: Array.isArray(p.savedAdditionalTranslationLinks) ? p.savedAdditionalTranslationLinks : (p.savedAdditionalTranslationLinks ?? null),
       saved_additional_mod_links: Array.isArray(p.savedAdditionalModLinks) ? p.savedAdditionalModLinks : (p.savedAdditionalModLinks ?? null),
       is_archived: p.archived ?? false,
+      template_id: p.templateId ?? null,
       created_at: new Date(createdTs).toISOString(),
       updated_at: new Date(updatedTs).toISOString()
     };
   }
+  // 🆕 Modifier rowToPost pour récupérer template_id
   function rowToPost(r: Record<string, unknown>): PublishedPost {
     const createdStr = r.created_at as string;
     const updatedStr = r.updated_at as string;
@@ -738,7 +740,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       savedAdditionalTranslationLinks: Array.isArray(savedAdditionalTranslationLinks) ? savedAdditionalTranslationLinks : undefined,
       savedAdditionalModLinks: Array.isArray(savedAdditionalModLinks) ? savedAdditionalModLinks : undefined,
       authorDiscordId: r.author_discord_id != null ? String(r.author_discord_id) : undefined,
-      archived: Boolean(r.is_archived)
+      archived: Boolean(r.is_archived),
+      templateId: r.template_id != null ? String(r.template_id) : undefined
     };
   }
 
@@ -828,6 +831,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const title = (postTitle || '').trim();
     const content = previewEngine.preview || '';
     const templateType = (templates[currentTemplateIdx]?.type) || '';
+    const templateId = templates[currentTemplateIdx]?.id || null;
     const isEditMode = editingPostId !== null && editingPostData !== null;
 
     // Résoudre les tags sélectionnés (UUID ou IDs Discord) vers les IDs Discord pour l'API et le stockage
@@ -1002,7 +1006,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           threadId: editingPostData.threadId,
           messageId: editingPostData.messageId,
           discordUrl: editingPostData.discordUrl || '',
-          forumId: editingPostData.forumId ?? 0
+          forumId: editingPostData.forumId ?? 0,
+          templateId: templateId ?? editingPostData.templateId ?? undefined
         };
         formData.append('history_payload', JSON.stringify(postToRow(mergedForHistory)));
       } else {
@@ -1025,7 +1030,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           messageId: '',
           discordUrl: '',
           forumId: 0,
-          authorDiscordId: authorDiscordId ?? undefined
+          authorDiscordId: authorDiscordId ?? undefined,
+          templateId: templateId ?? undefined
         };
         formData.append('history_payload', JSON.stringify(postToRow(newPostForHistory)));
       }
@@ -1718,6 +1724,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateTemplate,
     restoreDefaultTemplates,
     currentTemplateIdx,
+    setCurrentTemplateIdx,
     allVarsConfig,
     addVarConfig,
     updateVarConfig,
@@ -1799,7 +1806,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (post.isIntegrated !== undefined) {
         setIsIntegrated(post.isIntegrated);
       }
-
+      // 🆕 Restaurer le template utilisé
+      if (post.templateId) {
+        const templateIdx = templates.findIndex(t => t.id === post.templateId);
+        if (templateIdx !== -1) {
+          console.log(`[Edit] Post créé avec le template: ${templates[templateIdx].name}`);
+          // Optionnel: setCurrentTemplateIdx(templateIdx) si vous ajoutez cette fonction au context
+        } else {
+          console.log(`[Edit] Template original (${post.templateId}) introuvable, utilisation du template actuel`);
+        }
+      }
       // Restaurer tous les inputs (y compris instruction)
       if (post.savedInputs) {
         // Réinitialiser d'abord tous les inputs pour éviter de garder de vieilles valeurs

@@ -6,32 +6,32 @@ use tauri::{Manager, AppHandle, WebviewWindow};
 async fn download_update(app: AppHandle) -> Result<String, String> {
     use std::io::Write;
     
-    println!("[Updater] 🚀 Starting download process...");
+    println!("[Updater] 🚀 Démarrage du processus de téléchargement...");
     
     // 1. Récupérer les infos de la dernière version depuis GitHub
     let client = reqwest::Client::builder()
         .user_agent("Discord-Publisher-Updater")
         .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+        .map_err(|e| format!("Impossible de créer le client HTTP : {}", e))?;
     
     let releases_url = "https://api.github.com/repos/Rory-Mercury-91/Discord-Publisher/releases/latest";
-    println!("[Updater] 📡 Fetching release info from: {}", releases_url);
+    println!("[Updater] 📡 Récupération des infos de la release depuis : {}", releases_url);
     
     let response = client
         .get(releases_url)
         .send()
         .await
-        .map_err(|e| format!("Failed to fetch release info: {}", e))?;
+        .map_err(|e| format!("Impossible de récupérer les infos de la release : {}", e))?;
     
     let release_json: serde_json::Value = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse release JSON: {}", e))?;
+        .map_err(|e| format!("Impossible de parser le JSON de la release : {}", e))?;
     
     // 2. Trouver l'installateur NSIS complet (fichier .exe)
     let assets = release_json["assets"]
         .as_array()
-        .ok_or("No assets found in release")?;
+        .ok_or("Aucune ressource trouvée dans la release")?;
     
     // Chercher le fichier qui se termine par "-setup.exe" (l'installateur NSIS)
     let installer_asset = assets
@@ -40,18 +40,18 @@ async fn download_update(app: AppHandle) -> Result<String, String> {
             let name = asset["name"].as_str().unwrap_or("");
             name.ends_with("-setup.exe")
         })
-        .ok_or("No NSIS installer found in release assets")?;
+        .ok_or("Installateur NSIS non trouvé dans les ressources de la release")?;
     
     let download_url = installer_asset["browser_download_url"]
         .as_str()
-        .ok_or("No download URL found")?;
+        .ok_or("URL de téléchargement non trouvée")?;
     
     let installer_name = installer_asset["name"]
         .as_str()
-        .ok_or("No installer name found")?;
+        .ok_or("Nom de l'installateur non trouvé")?;
     
-    println!("[Updater] 📦 Found installer: {}", installer_name);
-    println!("[Updater] 🔗 Download URL: {}", download_url);
+    println!("[Updater] 📦 Installateur trouvé : {}", installer_name);
+    println!("[Updater] 🔗 URL de téléchargement : {}", download_url);
     
     // 3. Télécharger l'installateur dans TEMP avec un nom unique pour éviter les conflits
     let temp_dir = std::env::temp_dir();
@@ -62,152 +62,167 @@ async fn download_update(app: AppHandle) -> Result<String, String> {
     let temp_installer_name = format!("discord_publisher_update_{}.exe", timestamp);
     let installer_path = temp_dir.join(&temp_installer_name);
     
-    println!("[Updater] 📥 Downloading to: {:?}", installer_path);
+    println!("[Updater] 📥 Téléchargement vers : {:?}", installer_path);
     
     let mut response = client
         .get(download_url)
         .send()
         .await
-        .map_err(|e| format!("Failed to download installer: {}", e))?;
+        .map_err(|e| format!("Impossible de télécharger l'installateur : {}", e))?;
     
     let total_size = response.content_length().unwrap_or(0);
-    println!("[Updater] 📊 Total size: {:.2} MB", total_size as f64 / 1024.0 / 1024.0);
+    println!("[Updater] 📊 Taille totale : {:.2} MB", total_size as f64 / 1024.0 / 1024.0);
     
     // Créer et écrire le fichier
     let mut file = fs::File::create(&installer_path)
-        .map_err(|e| format!("Failed to create installer file: {}", e))?;
+        .map_err(|e| format!("Impossible de créer le fichier d'installation : {}", e))?;
     
     let mut downloaded: u64 = 0;
     
-    while let Some(chunk) = response.chunk().await.map_err(|e| format!("Download error: {}", e))? {
+    while let Some(chunk) = response.chunk().await.map_err(|e| format!("Erreur de téléchargement : {}", e))? {
         file.write_all(&chunk)
-            .map_err(|e| format!("Failed to write chunk: {}", e))?;
+            .map_err(|e| format!("Impossible d'écrire le morceau : {}", e))?;
         
         downloaded += chunk.len() as u64;
         
         if total_size > 0 && downloaded % (1024 * 1024) == 0 {
             let progress = (downloaded as f64 / total_size as f64) * 100.0;
-            println!("[Updater] ⏳ Progress: {:.1}%", progress);
+            println!("[Updater] ⏳ Progression : {:.1}%", progress);
         }
     }
     
     // IMPORTANT : Flush et fermer explicitement le fichier
-    file.flush().map_err(|e| format!("Failed to flush file: {}", e))?;
+    file.flush().map_err(|e| format!("Impossible de vider le fichier : {}", e))?;
     drop(file); // Fermer le handle explicitement
     
-    println!("[Updater] ✅ Download complete: {:?}", installer_path);
+    println!("[Updater] ✅ Téléchargement complet : {:?}", installer_path);
     
     // Attendre un peu pour que le système libère complètement le fichier
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     
     // Vérifier que le fichier existe et est accessible
     if !installer_path.exists() {
-        return Err("Downloaded installer file not found".to_string());
+        return Err("Le fichier d'installation téléchargé n'a pas été trouvé".to_string());
     }
     
     let file_size = fs::metadata(&installer_path)
-        .map_err(|e| format!("Cannot access installer file: {}", e))?
+        .map_err(|e| format!("Impossible d'accéder au fichier d'installation : {}", e))?
         .len();
     
     if file_size == 0 {
-        return Err("Downloaded installer file is empty".to_string());
+        return Err("Le fichier d'installation téléchargé est vide.".to_string());
     }
     
-    println!("[Updater] ✅ Installer file verified: {} bytes", file_size);
+    println!("[Updater] ✅ Fichier d'installation vérifié : {} octets", file_size);
     
     // Sauvegarder le chemin de l'installateur téléchargé dans la config
     let config_dir = app.path().app_config_dir()
-        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+        .map_err(|e| format!("Impossible d'obtenir le répertoire de configuration : {:?}", e))?;
     
     fs::create_dir_all(&config_dir)
-        .map_err(|e| format!("Failed to create config dir: {:?}", e))?;
+        .map_err(|e| format!("Impossible de créer le répertoire de configuration : {:?}", e))?;
     
     let download_path_file = config_dir.join("pending_update.txt");
     fs::write(&download_path_file, installer_path.to_string_lossy().as_bytes())
-        .map_err(|e| format!("Failed to save update path: {}", e))?;
+        .map_err(|e| format!("Impossible d'enregistrer le chemin de mise à jour : {}", e))?;
     
     // Retourner le chemin de l'installateur téléchargé
     Ok(installer_path.to_string_lossy().to_string())
 }
 
-// 🆕 Installer la mise à jour téléchargée (NSIS avec élévation UAC)
+// 🆕 Installer la mise à jour téléchargée (NSIS avec élévation UAC optionnelle)
 #[tauri::command]
-async fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
+async fn install_downloaded_update(app: AppHandle, use_elevation: bool) -> Result<(), String> {
     use std::fs;
     use std::path::PathBuf;
 
-    println!("[Updater] 🚀 Starting installation process...");
+    println!("[Updater] 🚀 Lancement du processus d'installation...");
+    println!("[Updater] 🔐 Mode élévation : {}", if use_elevation { "ACTIVÉ (admin)" } else { "DÉSACTIVÉ (utilisateur normal)" });
 
     // 1. Récupérer le chemin de l'installateur téléchargé
     let config_dir = app
         .path()
         .app_config_dir()
-        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+        .map_err(|e| format!("Impossible d'obtenir le répertoire de configuration : {:?}", e))?;
 
     let download_path_file = config_dir.join("pending_update.txt");
 
     if !download_path_file.exists() {
-        return Err("No pending update found".to_string());
+        return Err("Aucune mise à jour en attente trouvée".to_string());
     }
 
     let installer_path_str = fs::read_to_string(&download_path_file)
-        .map_err(|e| format!("Failed to read update path: {}", e))?;
+        .map_err(|e| format!("Impossible de lire le chemin de mise à jour : {}", e))?;
 
     let installer_path = PathBuf::from(installer_path_str.trim());
 
     if !installer_path.exists() {
-        return Err("Update installer file not found".to_string());
+        return Err("Le fichier d'installation de mise à jour n'a pas été trouvé".to_string());
     }
 
-    println!("[Updater] 📦 Installing from: {:?}", installer_path);
+    println!("[Updater] 📦 Installer depuis : {:?}", installer_path);
 
     // 2. Obtenir le répertoire d'installation actuel
-    let exe_path = std::env::current_exe().map_err(|e| format!("Failed to get exe path: {}", e))?;
+    let exe_path = std::env::current_exe().map_err(|e| format!("Impossible de trouver le chemin d'accès à l'exe : {}", e))?;
 
     let install_dir = exe_path
         .parent()
-        .ok_or("Failed to get install directory")?;
+        .ok_or("Impossible d'obtenir le répertoire d'installation")?;
 
-    println!("[Updater] 📂 Current install directory: {:?}", install_dir);
+    println!("[Updater] 📂 Répertoire d'installation actuel : {:?}", install_dir);
 
     // 3. Lancer l'installateur NSIS
     #[cfg(target_os = "windows")]
     {
-        println!("[Updater] 🚀 Launching NSIS installer (admin/UAC)...");
-
         let install_dir_str = install_dir.to_string_lossy().to_string();
         let installer_str = installer_path.to_string_lossy().to_string();
 
-        // IMPORTANT:
-        // - /D=... doit être le DERNIER argument NSIS
-        // - Start-Process -Verb RunAs => déclenche l'UAC
-        // - On passe uniquement /D=... donc c'est bien "dernier"
-        let ps_command = format!(
-            "Start-Process -FilePath '{}' -Verb RunAs -ArgumentList @('/D={}')",
-            installer_str.replace('\'', "''"),
-            install_dir_str.replace('\'', "''"),
-        );
+        let spawn_result = if use_elevation {
+            // Mode avec élévation (UAC) - pour utilisateurs standard
+            println!("[Updater] 🚀 Lancer l'installateur NSIS avec les droits administrateur (UAC)...");
+            
+            let ps_command = format!(
+                "Start-Process -FilePath '{}' -Verb RunAs -ArgumentList @('/D={}')",
+                installer_str.replace('\'', "''"),
+                install_dir_str.replace('\'', "''"),
+            );
 
-        println!("[Updater] 🔍 PowerShell command: {}", ps_command);
+            println!("[Updater] 🔑 Commande PowerShell : {}", ps_command);
 
-        let spawn_result = std::process::Command::new("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_command])
-            .spawn();
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_command])
+                .spawn()
+        } else {
+            // Mode sans élévation - pour utilisateurs avec restrictions UAC
+            println!("[Updater] 🚀 Lancer l'installateur NSIS SANS droits administrateur (utilisateur normal)...");
+            
+            let ps_command = format!(
+                "Start-Process -FilePath '{}' -ArgumentList @('/D={}')",
+                installer_str.replace('\'', "''"),
+                install_dir_str.replace('\'', "''"),
+            );
+
+            println!("[Updater] 🔓 Commande PowerShell : {}", ps_command);
+
+            std::process::Command::new("powershell")
+                .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_command])
+                .spawn()
+        };
 
         match spawn_result {
             Ok(_) => {
-                println!("[Updater] ✅ Installer launched successfully (UAC requested)");
+                println!("[Updater] ✅ L'installateur a démarré sans problème.");
 
                 // Nettoyer le fichier de référence
                 let _ = fs::remove_file(&download_path_file);
 
-                println!("[Updater] 🔄 Closing application in 300ms...");
+                println!("[Updater] 🔄 Fermeture de l'appli en 300 ms...");
 
                 // Attendre un peu pour que l'installateur démarre complètement
                 tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
 
                 // Fermer l'application - l'installateur NSIS prendra le relais
-                println!("[Updater] 👋 Exiting application...");
+                println!("[Updater] 👋 Application en cours de fermeture...");
                 app.exit(0);
             }
             Err(e) => {
@@ -221,8 +236,16 @@ async fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
                     );
                 }
 
+                // 740 = Elevation required (peut arriver si use_elevation=false mais que l'installateur le requiert)
+                if code == 740 {
+                    return Err(
+                        "L'installateur nécessite des droits administrateur. Activez le mode 'Élévation admin' et réessayez."
+                            .to_string(),
+                    );
+                }
+
                 return Err(format!(
-                    "Failed to launch installer with elevation: {} (error code: {})",
+                    "Impossible de lancer l'installateur : {} (code d'erreur : {})",
                     e, code
                 ));
             }
@@ -231,7 +254,7 @@ async fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        return Err("Auto-update is only supported on Windows".to_string());
+        return Err("La mise à jour automatique, ça marche juste sur Windows.".to_string());
     }
 
     Ok(())
@@ -239,7 +262,7 @@ async fn install_downloaded_update(app: AppHandle) -> Result<(), String> {
 
 // 🧹 Fonction interne pour nettoyer les anciens fichiers d'installation
 async fn cleanup_old_updates_internal(app: &AppHandle) -> Result<u32, String> {
-    println!("[Updater] 🧹 Starting cleanup of old update files...");
+    println!("[Updater] 🧹 On commence à nettoyer les vieux fichiers de mise à jour...");
     
     let temp_dir = std::env::temp_dir();
     let mut cleaned_count = 0u32;
@@ -257,11 +280,11 @@ async fn cleanup_old_updates_internal(app: &AppHandle) -> Result<u32, String> {
                        file_name_str.ends_with(".exe") {
                         match fs::remove_file(entry.path()) {
                             Ok(_) => {
-                                println!("[Updater] 🗑️  Removed: {:?}", entry.path());
+                                println!("[Updater] 🗑️  Supprimé : {:?}", entry.path());
                                 cleaned_count += 1;
                             }
                             Err(e) => {
-                                println!("[Updater] ⚠️  Failed to remove {:?}: {}", entry.path(), e);
+                                println!("[Updater] ⚠️  Impossible de supprimer {:?} : {}", entry.path(), e);
                             }
                         }
                     }
@@ -269,28 +292,28 @@ async fn cleanup_old_updates_internal(app: &AppHandle) -> Result<u32, String> {
             }
         }
         Err(e) => {
-            println!("[Updater] ⚠️  Failed to read temp directory: {}", e);
+            println!("[Updater] ⚠️  Impossible de lire le répertoire temporaire : {}", e);
         }
     }
     
     // Nettoyer aussi le fichier pending_update.txt s'il existe encore
     let config_dir = app.path().app_config_dir()
-        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+        .map_err(|e| format!("Impossible d'obtenir le répertoire de configuration : {:?}", e))?;
     
     let pending_file = config_dir.join("pending_update.txt");
     if pending_file.exists() {
         match fs::remove_file(&pending_file) {
             Ok(_) => {
-                println!("[Updater] 🗑️  Removed pending_update.txt");
+                println!("[Updater] 🗑️  Suppression du fichier pending_update.txt");
                 cleaned_count += 1;
             }
             Err(e) => {
-                println!("[Updater] ⚠️  Failed to remove pending_update.txt: {}", e);
+                println!("[Updater] ⚠️  Impossible de supprimer le fichier pending_update.txt : {}", e);
             }
         }
     }
     
-    println!("[Updater] ✅ Cleanup complete. Removed {} file(s)", cleaned_count);
+    println!("[Updater] ✅ Nettoyage fini. On a supprimé {} fichier(s).", cleaned_count);
     Ok(cleaned_count)
 }
 
@@ -346,15 +369,15 @@ fn apply_window_state(window: &WebviewWindow) -> Result<(), String> {
 #[tauri::command]
 async fn save_window_state(app: AppHandle, state: String) -> Result<(), String> {
     let config_dir = app.path().app_config_dir()
-        .map_err(|e| format!("Failed to get config dir: {:?}", e))?;
+        .map_err(|e| format!("Impossible d'obtenir le répertoire de configuration : {:?}", e))?;
     
     fs::create_dir_all(&config_dir)
-        .map_err(|e| format!("Failed to create config dir: {:?}", e))?;
+        .map_err(|e| format!("Impossible de créer le répertoire de configuration : {:?}", e))?;
     
     let config_file = config_dir.join("window_state.txt");
     
     fs::write(&config_file, state.trim())
-        .map_err(|e| format!("Failed to write window state: {:?}", e))?;
+        .map_err(|e| format!("Impossible d'écrire l'état de la fenêtre : {:?}", e))?;
     
     println!("✅ État de fenêtre sauvegardé: {}", state);
     Ok(())
@@ -460,29 +483,10 @@ async fn get_local_history_archive(app: AppHandle, author_discord_id: Option<Str
 
 #[tauri::command]
 async fn open_url(url: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", &url])
-            .spawn()
-            .map_err(|e| format!("Erreur ouverture URL: {}", e))?;
-    }
-    
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&url)
-            .spawn()
-            .map_err(|e| format!("Erreur ouverture URL: {}", e))?;
-    }
-    
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&url)
-            .spawn()
-            .map_err(|e| format!("Erreur ouverture URL: {}", e))?;
-    }
+    std::process::Command::new("cmd")
+        .args(["/C", "start", &url])
+        .spawn()
+        .map_err(|e| format!("Erreur ouverture URL: {}", e))?;
     
     Ok(())
 }
@@ -495,7 +499,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let window = app.get_webview_window("main")
-                .ok_or("Failed to get main window")?;
+                .ok_or("Impossible d'afficher la fenêtre principale")?;
             
             if let Err(e) = apply_window_state(&window) {
                 eprintln!("⚠️ Erreur application état fenêtre: {}", e);
@@ -507,11 +511,11 @@ pub fn run() {
                 match cleanup_old_updates_internal(&app_handle).await {
                     Ok(count) => {
                         if count > 0 {
-                            println!("[Updater] 🧹 Cleaned up {} old update file(s)", count);
+                            println!("[Updater] 🧹 On a nettoyé {} vieux fichiers de mise à jour.", count);
                         }
                     }
                     Err(e) => {
-                        println!("[Updater] ⚠️ Cleanup failed: {}", e);
+                        println!("[Updater] ⚠️ Le nettoyage a échoué : {}", e);
                     }
                 }
             });
@@ -530,5 +534,5 @@ pub fn run() {
             cleanup_old_updates,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("Erreur pendant l'exécution de l'appli Tauri");
 }
