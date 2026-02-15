@@ -131,7 +131,7 @@ async fn download_update(app: AppHandle) -> Result<String, String> {
 }
 
 // 🆕 Installer la mise à jour téléchargée (avec élévation OPTIONNELLE)
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 async fn install_downloaded_update(app: AppHandle, use_elevation: bool) -> Result<(), String> {
     use std::fs;
     use std::path::PathBuf;
