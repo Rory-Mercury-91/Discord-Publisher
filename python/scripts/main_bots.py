@@ -121,6 +121,347 @@ async def get_logs(request):
         "unique_user_ids": list(unique_user_ids)  # Liste des UUID pour lookup frontend
     }))
 
+import json  # Ajouter en haut du fichier si pas déjà présent
+
+async def reset_password_page(request):
+    """Page de réinitialisation du mot de passe (HTML)."""
+    
+    # ✅ Récupération depuis .env
+    SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+    SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+    
+    # 🔍 DEBUG
+    logger.info(f"🔍 SUPABASE_URL: {SUPABASE_URL}")
+    logger.info(f"🔍 SUPABASE_ANON_KEY length: {len(SUPABASE_ANON_KEY)} chars")
+    
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        logger.error("❌ SUPABASE_URL ou SUPABASE_ANON_KEY manquant dans .env")
+        return web.Response(
+            text="<h1>Configuration manquante</h1><p>Les variables Supabase ne sont pas configurées sur le serveur.</p>",
+            content_type='text/html',
+            status=500
+        )
+    
+    # ✅ ÉCHAPPEMENT JSON SÉCURISÉ
+    supabase_url_json = json.dumps(SUPABASE_URL)
+    supabase_key_json = json.dumps(SUPABASE_ANON_KEY)
+    
+    html_content = f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Réinitialisation du mot de passe - Discord Publisher</title>
+  <style>
+    * {{
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }}
+    .container {{
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 440px;
+      width: 100%;
+      padding: 40px;
+    }}
+    h1 {{
+      font-size: 24px;
+      color: #1f2937;
+      margin-bottom: 8px;
+      text-align: center;
+    }}
+    .subtitle {{
+      font-size: 14px;
+      color: #6b7280;
+      text-align: center;
+      margin-bottom: 32px;
+    }}
+    .form-group {{
+      margin-bottom: 20px;
+    }}
+    label {{
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 8px;
+    }}
+    input {{
+      width: 100%;
+      padding: 12px 14px;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: all 0.2s;
+    }}
+    input:focus {{
+      outline: none;
+      border-color: #667eea;
+    }}
+    .hint {{
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 4px;
+    }}
+    button {{
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }}
+    button:hover:not(:disabled) {{
+      transform: translateY(-2px);
+    }}
+    button:disabled {{
+      opacity: 0.6;
+      cursor: not-allowed;
+    }}
+    .message {{
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 20px;
+      display: none;
+    }}
+    .message.success {{
+      background: #d1fae5;
+      color: #065f46;
+      border: 1px solid #10b981;
+      display: block;
+    }}
+    .message.error {{
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #ef4444;
+      display: block;
+    }}
+    .footer {{
+      text-align: center;
+      margin-top: 24px;
+      font-size: 13px;
+      color: #6b7280;
+    }}
+    .loading {{
+      text-align: center;
+      padding: 20px;
+      color: #6b7280;
+    }}
+    .spinner {{
+      border: 3px solid #f3f4f6;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }}
+    @keyframes spin {{
+      0% {{ transform: rotate(0deg); }}
+      100% {{ transform: rotate(360deg); }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔑 Nouveau mot de passe</h1>
+    <p class="subtitle">Choisissez un nouveau mot de passe sécurisé</p>
+
+    <div id="message" class="message"></div>
+    
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Vérification du lien de réinitialisation...</p>
+    </div>
+
+    <form id="resetForm" style="display: none;">
+      <div class="form-group">
+        <label for="password">Nouveau mot de passe</label>
+        <input type="password" id="password" placeholder="••••••••" required minlength="6" autocomplete="new-password">
+        <div class="hint">Minimum 6 caractères</div>
+      </div>
+
+      <div class="form-group">
+        <label for="confirmPassword">Confirmer le mot de passe</label>
+        <input type="password" id="confirmPassword" placeholder="••••••••" required minlength="6" autocomplete="new-password">
+      </div>
+
+      <button type="submit" id="submitBtn">Réinitialiser le mot de passe</button>
+    </form>
+
+    <div class="footer">
+      Une fois modifié, retournez dans l'application pour vous connecter.
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    (function() {{
+      // ✅ UTILISER json.dumps() POUR ÉCHAPPEMENT SÉCURISÉ
+      const SUPABASE_URL = {supabase_url_json};
+      const SUPABASE_ANON_KEY = {supabase_key_json};
+
+      console.log('Supabase URL:', SUPABASE_URL);
+      console.log('Anon Key length:', SUPABASE_ANON_KEY.length);
+
+      const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+      const form = document.getElementById('resetForm');
+      const submitBtn = document.getElementById('submitBtn');
+      const messageDiv = document.getElementById('message');
+      const loadingDiv = document.getElementById('loading');
+
+      function showMessage(text, type) {{
+        messageDiv.textContent = text;
+        messageDiv.className = `message ${{type}}`;
+        messageDiv.style.display = 'block';
+      }}
+
+      function hideLoading() {{
+        loadingDiv.style.display = 'none';
+      }}
+
+      function showForm() {{
+        form.style.display = 'block';
+        document.getElementById('password').focus();
+      }}
+
+      function parseHashParams() {{
+        const hash = window.location.hash.substring(1);
+        const params = {{}};
+        
+        if (!hash) return params;
+        
+        hash.split('&').forEach(pair => {{
+          const [key, value] = pair.split('=');
+          if (key && value) {{
+            params[decodeURIComponent(key)] = decodeURIComponent(value);
+          }}
+        }});
+        
+        return params;
+      }}
+
+      async function initPasswordReset() {{
+        try {{
+          const hashParams = parseHashParams();
+          
+          console.log('Hash params:', hashParams);
+          
+          if (!hashParams.access_token) {{
+            hideLoading();
+            showMessage('Lien invalide : token manquant.', 'error');
+            return;
+          }}
+          
+          if (hashParams.type !== 'recovery') {{
+            hideLoading();
+            showMessage('Lien invalide : type incorrect.', 'error');
+            return;
+          }}
+
+          const {{ data, error }} = await supabaseClient.auth.setSession({{
+            access_token: hashParams.access_token,
+            refresh_token: hashParams.refresh_token || ''
+          }});
+
+          if (error) {{
+            console.error('Session error:', error);
+            hideLoading();
+            showMessage(`Erreur : ${{error.message}}. Le lien est peut-être expiré (valide 1h).`, 'error');
+            return;
+          }}
+
+          if (!data.session) {{
+            hideLoading();
+            showMessage('Impossible d\\'établir la session. Le lien est peut-être expiré.', 'error');
+            return;
+          }}
+
+          console.log('Session établie:', data.session.user.email);
+          hideLoading();
+          showForm();
+
+        }} catch (err) {{
+          console.error('Exception:', err);
+          hideLoading();
+          showMessage(`Erreur inattendue : ${{err.message}}`, 'error');
+        }}
+      }}
+
+      initPasswordReset();
+
+      form.addEventListener('submit', async (e) => {{
+        e.preventDefault();
+
+        const password = document.getElementById('password').value;
+        const confirmPassword = document.getElementById('confirmPassword').value;
+
+        if (password !== confirmPassword) {{
+          showMessage('Les mots de passe ne correspondent pas', 'error');
+          return;
+        }}
+
+        if (password.length < 6) {{
+          showMessage('Le mot de passe doit faire au moins 6 caractères', 'error');
+          return;
+        }}
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Réinitialisation...';
+
+        try {{
+          const {{ data, error }} = await supabaseClient.auth.updateUser({{ 
+            password: password 
+          }});
+
+          if (error) {{
+            console.error('Update error:', error);
+            showMessage(`Erreur : ${{error.message}}`, 'error');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Réinitialiser le mot de passe';
+            return;
+          }}
+
+          console.log('Password updated successfully');
+          showMessage('✅ Mot de passe modifié avec succès ! Vous pouvez maintenant retourner dans l\\'application.', 'success');
+          form.style.display = 'none';
+          
+          await supabaseClient.auth.signOut();
+          
+          setTimeout(() => {{
+            window.close();
+          }}, 3000);
+
+        }} catch (err) {{
+          console.error('Exception:', err);
+          showMessage(`Erreur inattendue : ${{err.message}}`, 'error');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Réinitialiser le mot de passe';
+        }}
+      }});
+    }})();
+  </script>
+</body>
+</html>"""
+    
+    return web.Response(text=html_content, content_type='text/html')
 
 def make_app():
     app = web.Application(middlewares=[logging_middleware])
@@ -131,6 +472,9 @@ def make_app():
     # Health / Status
     app.router.add_get("/", health)
     app.router.add_get("/api/status", health)
+
+    # ROUTE RESET PASSWORD
+    app.router.add_get("/reset-password", reset_password_page)
 
     # Configure
     app.router.add_post("/api/configure", configure)

@@ -943,13 +943,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // Ajouter le lien d'image à la fin du contenu si une image est présente.
       // Le backend détectera ce lien, créera un embed avec l'image, puis retirera le lien du contenu.
       // Ainsi l'image sera visible via l'embed sans que le lien soit affiché.
+      // ✅ CORRECTIF : Ajouter l'URL de l'image au contenu
       let finalContent = content;
       if (imagesState.uploadedImages.length > 0) {
         const mainImage = imagesState.uploadedImages.find(img => img.isMain) || imagesState.uploadedImages[0];
-        let imageUrl = '';
 
         if (mainImage.url) {
-          imageUrl = mainImage.url;
+          // Ajouter l'URL à la fin du contenu (le backend Python la détectera et créera l'embed)
+          finalContent = content + '\n' + mainImage.url;
         }
       }
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useCallback, useContext, useState } from 'react';
 
 export interface Toast {
   id: string;
@@ -27,7 +27,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const showToast = useCallback((message: string, type: Toast['type'] = 'info', duration = 3000) => {
     const id = Date.now().toString() + Math.random();
     const newToast: Toast = { id, message, type, duration };
-    
+
     setToasts(prev => [...prev, newToast]);
 
     if (duration > 0) {
@@ -62,7 +62,7 @@ function ToastContainer({ toasts, onRemove }: ToastContainerProps) {
       position: 'fixed',
       bottom: 24,
       right: 24,
-      zIndex: 10001,
+      zIndex: 100002,
       display: 'flex',
       flexDirection: 'column',
       gap: 12,
@@ -120,7 +120,7 @@ function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
       }}>
         {getIcon()}
       </div>
-      
+
       <div style={{
         flex: 1,
         color: '#fff',

@@ -22,7 +22,7 @@ import { AuthProvider, useAuth } from './state/authContext';
 const APP_VERSION = rootPkg.version;
 
 function AppContentInner() {
-  const { profile } = useAuth();
+  const { profile, signOut } = useAuth();
   const {
     resetAllFields,
     apiStatus,
@@ -59,6 +59,14 @@ function AppContentInner() {
     name: t.name || `Template ${idx + 1}`,
     isDefault: t.isDefault || false
   }));
+
+  // 🆕 AJOUTER cette fonction
+  const handleLogout = async () => {
+    const confirm = window.confirm('Voulez-vous vraiment vous déconnecter ?');
+    if (confirm) {
+      await signOut();
+    }
+  };
 
   // 🆕 Fonction pour gérer le changement de template
   const handleTemplateChange = (newIndex: number) => {
@@ -178,6 +186,22 @@ function AppContentInner() {
               <ApiStatusBadge onOpenLogs={() => setShowLogsModal(true)} />
               <button
                 onClick={() => setOpenShortcutsHelp(true)}
+                style={{ fontSize: 18, width: 36, height: 36, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title="Aide des raccourcis clavier"
+              >
+                ❓
+              </button>
+              <button
+                onClick={toggleTheme}
+                style={{ fontSize: 20, width: 36, height: 36, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title={theme === 'dark' ? 'Passer en mode jour' : 'Passer en mode nuit'}
+              >
+                {theme === 'dark' ? '☀️' : '🌙'}
+              </button>
+
+              {/* 🆕 BOUTON DÉCONNEXION */}
+              <button
+                onClick={handleLogout}
                 style={{
                   fontSize: 18,
                   width: 36,
@@ -185,26 +209,14 @@ function AppContentInner() {
                   padding: 0,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#ef4444'
                 }}
-                title="Aide des raccourcis clavier"
+                title={`Déconnexion (${profile?.pseudo || profile?.discord_id || 'Utilisateur'})`}
               >
-                ❓
-              </button>
-              <button
-                onClick={toggleTheme}
-                style={{
-                  fontSize: 20,
-                  width: 36,
-                  height: 36,
-                  padding: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title={theme === 'dark' ? 'Passer en mode jour' : 'Passer en mode nuit'}
-              >
-                {theme === 'dark' ? '☀️' : '🌙'}
+                🚪
               </button>
             </span>
           </div>

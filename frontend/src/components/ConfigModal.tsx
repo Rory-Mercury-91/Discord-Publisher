@@ -49,7 +49,10 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
   // Labels par défaut personnalisés
   const [defaultTranslationLabel, setDefaultTranslationLabel] = useState(() => localStorage.getItem('default_translation_label') || 'Traduction');
   const [defaultModLabel, setDefaultModLabel] = useState(() => localStorage.getItem('default_mod_label') || 'Mod');
-
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
   // Droits d'édition : liste des profils et des éditeurs autorisés par l'utilisateur connecté
   const [allProfiles, setAllProfiles] = useState<ProfilePublic[]>([]);
   const [allowedEditorIds, setAllowedEditorIds] = useState<Set<string>>(new Set());
@@ -142,6 +145,76 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
       }
       setAllowedEditorIds(prev => new Set(prev).add(editorId));
       showToast('Utilisateur autorisé à modifier vos posts', 'success');
+    }
+  };
+
+  // 🆕 AJOUTER cette fonction
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      showToast('Tous les champs sont obligatoires', 'error');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      showToast('Le nouveau mot de passe doit faire au moins 6 caractères', 'error');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      showToast('Les mots de passe ne correspondent pas', 'error');
+      return;
+    }
+
+    if (oldPassword === newPassword) {
+      showToast('Le nouveau mot de passe doit être différent de l\'ancien', 'error');
+      return;
+    }
+
+    setIsChangingPassword(true);
+
+    try {
+      const sb = getSupabase();
+      if (!sb) {
+        showToast('Supabase non configuré', 'error');
+        return;
+      }
+
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user?.email) {
+        showToast('Utilisateur non connecté', 'error');
+        return;
+      }
+
+      // Vérifier l'ancien mot de passe
+      const { error: signInError } = await sb.auth.signInWithPassword({
+        email: user.email,
+        password: oldPassword
+      });
+
+      if (signInError) {
+        showToast('Ancien mot de passe incorrect', 'error');
+        return;
+      }
+
+      // Mettre à jour
+      const { error: updateError } = await sb.auth.updateUser({
+        password: newPassword
+      });
+
+      if (updateError) {
+        showToast(`Erreur : ${updateError.message}`, 'error');
+        return;
+      }
+
+      showToast('Mot de passe modifié avec succès', 'success');
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+
+    } catch (error: any) {
+      showToast(`Erreur : ${error.message || 'Inconnue'}`, 'error');
+    } finally {
+      setIsChangingPassword(false);
     }
   };
 
@@ -585,9 +658,9 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
               >
                 <h4 style={{ margin: 0, fontSize: '1rem' }}>👥 Qui peut modifier mes posts</h4>
                 <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
-                  💡 Autorisez ou révoquez le droit d'édition de vos publications.
+                  💡 Cliquez sur un utilisateur pour autoriser ou révoquer son droit d'édition de vos publications.
                   <br />
-                  🎨 <strong>Code couleur :</strong> <span style={{ color: '#9ca3af' }}>Gris</span> = Non autorisé • <span style={{ color: '#ef4444' }}>Rouge</span> = Autorisé
+                  🎨 <strong>Code couleur :</strong> <span style={{ color: '#9ca3af' }}>⚪ Gris</span> = Non autorisé • <span style={{ color: '#10b981' }}>🟢 Vert</span> = Autorisé
                 </p>
                 {editorsLoading ? (
                   <div style={{ fontSize: 13, color: 'var(--muted)' }}>Chargement…</div>
@@ -616,18 +689,18 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
                               fontSize: 13,
                               fontWeight: 600,
                               background: allowed
-                                ? 'rgba(239, 68, 68, 0.15)'      // 🔴 Rouge = Autorisé
-                                : 'rgba(156, 163, 175, 0.15)',   // ⚪ Gris = Non autorisé
+                                ? 'rgba(16, 185, 129, 0.15)'      // 🟢 Vert = Autorisé
+                                : 'rgba(156, 163, 175, 0.15)',    // ⚪ Gris = Non autorisé
                               color: allowed
-                                ? '#ef4444'                       // 🔴 Rouge = Autorisé
-                                : '#9ca3af',                      // ⚪ Gris = Non autorisé
+                                ? '#10b981'                        // 🟢 Vert = Autorisé
+                                : '#9ca3af',                       // ⚪ Gris = Non autorisé
                               transition: 'all 0.2s',
                               textAlign: 'center',
                             }}
                             onMouseEnter={(e) => {
                               e.currentTarget.style.transform = 'scale(1.02)';
                               e.currentTarget.style.boxShadow = allowed
-                                ? '0 0 0 2px rgba(239, 68, 68, 0.3)'
+                                ? '0 0 0 2px rgba(16, 185, 129, 0.3)'
                                 : '0 0 0 2px rgba(156, 163, 175, 0.3)';
                             }}
                             onMouseLeave={(e) => {
@@ -656,6 +729,117 @@ export default function ConfigModal({ onClose, adminMode = false, onOpenLogs }: 
                 )}
               </section>
             )}
+
+            {/* 🆕 SECTION MOT DE PASSE */}
+            <section
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 14,
+                padding: 20,
+                background: 'rgba(255,255,255,0.02)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16
+              }}
+            >
+              <h4 style={{ margin: 0, fontSize: '1rem' }}>🔐 Sécurité du compte</h4>
+              <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
+                Modifiez votre mot de passe pour sécuriser votre compte.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
+                  Ancien mot de passe
+                </label>
+                <input
+                  type="password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  placeholder="••••••••"
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                    background: 'rgba(255,255,255,0.05)',
+                    color: 'var(--text)',
+                    fontSize: 14,
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
+                  Nouveau mot de passe
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="••••••••"
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                    background: 'rgba(255,255,255,0.05)',
+                    color: 'var(--text)',
+                    fontSize: 14,
+                    boxSizing: 'border-box'
+                  }}
+                />
+                <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>
+                  Minimum 6 caractères
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500 }}>
+                  Confirmer le nouveau mot de passe
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                    background: 'rgba(255,255,255,0.05)',
+                    color: 'var(--text)',
+                    fontSize: 14,
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleChangePassword}
+                disabled={isChangingPassword}
+                style={{
+                  width: '100%',
+                  padding: '14px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  background: 'var(--accent)',
+                  border: 'none',
+                  color: '#fff',
+                  borderRadius: 10,
+                  cursor: isChangingPassword ? 'not-allowed' : 'pointer',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  opacity: isChangingPassword ? 0.6 : 1
+                }}
+              >
+                {isChangingPassword ? '🔄 Changement...' : '🔐 Changer le mot de passe'}
+              </button>
+            </section>
 
             {/* Section Sauvegarde et restauration (admin uniquement) */}
             {!adminMode && (

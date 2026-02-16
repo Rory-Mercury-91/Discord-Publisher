@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Discord Publisher",
-  "version": "1.8.1",
+  "version": "1.8.7",
   "identifier": "com.publication.generator",
   "build": {
     "frontendDist": "../frontend/dist",

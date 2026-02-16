@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
+import { getSupabase } from '../lib/supabase';
 import { useAuth } from '../state/authContext';
 import { useToast } from './ToastProvider';
 
@@ -17,7 +18,7 @@ L'ID ressemble à un long nombre (ex. 394893413843206155).`;
 export default function AuthModal() {
   const { user, profile, loading, signUp, signIn, updateProfile } = useAuth();
   const { showToast } = useToast();
-  const [mode, setMode] = useState<'signin' | 'signup' | 'profile'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'profile' | 'forgot'>('signin'); // 🆕 Ajout 'forgot'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pseudo, setPseudo] = useState(profile?.pseudo ?? '');
@@ -89,6 +90,47 @@ export default function AuthModal() {
     showToast('Profil enregistré', 'success');
   };
 
+  // 🆕 NOUVELLE FONCTION : Réinitialisation mot de passe
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) {
+      showToast('Veuillez saisir votre adresse email', 'error');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const sb = getSupabase();
+      if (!sb) {
+        showToast('Supabase non configuré', 'error');
+        return;
+      }
+
+      // Récupérer l'URL de l'API depuis localStorage ou .env
+      const apiBase = localStorage.getItem('apiBase') ||
+        localStorage.getItem('apiUrl') ||
+        'http://138.2.182.125:8080';
+
+      const { error } = await sb.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${apiBase}/reset-password`
+      });
+
+      if (error) {
+        showToast(error.message || 'Erreur lors de l\'envoi', 'error');
+        return;
+      }
+
+      showToast('Email de réinitialisation envoyé ! Consultez votre boîte mail.', 'success');
+      setMode('signin');
+      setEmail('');
+
+    } catch (error: any) {
+      showToast(error.message || 'Erreur inconnue', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <div style={{
@@ -115,10 +157,38 @@ export default function AuthModal() {
         }}
       >
         <h2 style={{ margin: '0 0 20px', fontSize: 20 }}>
-          {needProfile || mode === 'profile' ? '👤 Compléter mon profil' : '🔐 Connexion'}
+          {needProfile || mode === 'profile' ? '👤 Compléter mon profil' :
+            mode === 'forgot' ? '🔑 Mot de passe oublié' : '🔐 Connexion'}
         </h2>
 
-        {needProfile || mode === 'profile' ? (
+        {/* 🆕 MODE MOT DE PASSE OUBLIÉ */}
+        {mode === 'forgot' ? (
+          <form onSubmit={handleForgotPassword}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16, lineHeight: 1.5 }}>
+              Saisissez votre adresse email. Vous recevrez un lien pour réinitialiser votre mot de passe.
+            </p>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="vous@exemple.com"
+                required
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', color: 'var(--text)' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+              <button type="button" onClick={() => setMode('signin')} style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}>
+                Retour
+              </button>
+              <button type="submit" disabled={busy} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', cursor: busy ? 'not-allowed' : 'pointer', fontWeight: 600 }}>
+                {busy ? 'Envoi…' : 'Envoyer le lien'}
+              </button>
+            </div>
+          </form>
+        ) : needProfile || mode === 'profile' ? (
+          // MODE PROFIL (inchangé)
           <form onSubmit={handleProfile}>
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>Pseudo *</label>
@@ -161,6 +231,7 @@ export default function AuthModal() {
             </div>
           </form>
         ) : (
+          // MODE CONNEXION / INSCRIPTION (avec lien mot de passe oublié)
           <>
             <form onSubmit={mode === 'signin' ? handleSignIn : handleSignUp}>
               <div style={{ marginBottom: 14 }}>
@@ -185,6 +256,27 @@ export default function AuthModal() {
                   style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', color: 'var(--text)' }}
                 />
               </div>
+
+              {/* 🆕 LIEN MOT DE PASSE OUBLIÉ */}
+              {mode === 'signin' && (
+                <div style={{ marginBottom: 14, textAlign: 'right' }}>
+                  <button
+                    type="button"
+                    onClick={() => setMode('forgot')}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent)',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      textDecoration: 'underline'
+                    }}
+                  >
+                    Mot de passe oublié ?
+                  </button>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
                 <button type="submit" disabled={busy} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', cursor: busy ? 'not-allowed' : 'pointer', fontWeight: 600 }}>
                   {busy ? 'Chargement…' : mode === 'signin' ? 'Connexion' : 'Créer mon compte'}
