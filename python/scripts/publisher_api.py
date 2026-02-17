@@ -1324,7 +1324,7 @@ async def generer_cle(interaction: discord.Interaction):
     user_tag = f"{interaction.user} (id={interaction.user.id})"
     logger.info(f"🔑 [generer-cle] Demande reçue de {user_tag}")
 
-    # ── 1. Vérification du rôle ───────────────────────────────────────────────
+    # ── 1. Vérification du rôle (Correctif fetch_member intégré) ──────────────
     if not TRANSLATOR_ROLE_ID:
         logger.error("❌ [generer-cle] TRANSLATOR_ROLE_ID non configuré")
         await interaction.followup.send(
@@ -1333,18 +1333,37 @@ async def generer_cle(interaction: discord.Interaction):
         )
         return
 
-    member = interaction.guild.get_member(interaction.user.id) if interaction.guild else None
-    if not member:
-        logger.warning(f"⚠️ [generer-cle] Impossible de récupérer le membre pour {user_tag}")
+    # On s'assure d'abord qu'on est sur un serveur
+    if not interaction.guild:
+        logger.warning(f"⚠️ [generer-cle] Commande hors serveur par {user_tag}")
         await interaction.followup.send(
-            "❌ Impossible de vérifier vos rôles. Utilisez cette commande depuis le serveur.",
+            "❌ Cette commande doit être utilisée depuis un salon sur le serveur.",
             ephemeral=True
         )
         return
 
+    # CORRECTIF : On tente de récupérer le membre de manière asynchrone (API Discord)
+    # plutôt que de se fier uniquement au cache local du bot.
+    try:
+        member = await interaction.guild.fetch_member(interaction.user.id)
+    except Exception as e:
+        logger.warning(f"⚠️ [generer-cle] Impossible de fetch_member pour {user_tag}: {e}")
+        member = None
+
+    if not member:
+        logger.warning(f"⚠️ [generer-cle] Membre introuvable pour {user_tag}")
+        await interaction.followup.send(
+            "❌ Impossible de vérifier vos rôles. Assurez-vous d'être bien membre du serveur.",
+            ephemeral=True
+        )
+        return
+
+    # Vérification si l'utilisateur a le rôle OU est le propriétaire du serveur
     has_role = any(r.id == TRANSLATOR_ROLE_ID for r in member.roles)
-    if not has_role:
-        logger.warning(f"⛔ [generer-cle] Rôle manquant pour {user_tag}")
+    is_owner = member.id == interaction.guild.owner_id
+
+    if not (has_role or is_owner):
+        logger.warning(f"⛔ [generer-cle] Accès refusé pour {user_tag}")
         await interaction.followup.send(
             "⛔ Vous n'avez pas le rôle requis pour générer une clé API.",
             ephemeral=True
