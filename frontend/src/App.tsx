@@ -193,11 +193,11 @@ function AppWithAuth() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppProvider>
-        <ToastProvider>
+      <ToastProvider> {/* On le remonte ici */}
+        <AppProvider>
           <AppWithAuth />
-        </ToastProvider>
-      </AppProvider>
+        </AppProvider>
+      </ToastProvider>
     </AuthProvider>
   );
 }
