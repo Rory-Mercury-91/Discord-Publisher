@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import ErrorModal from '../components/ErrorModal';
+import { useToast } from '../components/ToastProvider';
 import { apiFetch, createApiHeaders } from '../lib/api-helpers';
 import { getSupabase } from '../lib/supabase';
 import { tauriAPI } from '../lib/tauri-api';
@@ -165,6 +166,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // HOOKS EXTRAITS
   // ========================================
   const { user } = useAuth();
+  const { showToast } = useToast();
   const imagesState = useImagesState();
   const instructionsState = useInstructionsState();
 
@@ -830,17 +832,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   async function publishPost(authorDiscordId?: string, options?: { silentUpdate?: boolean }) {
     const title = (postTitle || '').trim();
     const content = previewEngine.preview || '';
-    const templateType = (templates[currentTemplateIdx]?.type) || '';
     const templateId = templates[currentTemplateIdx]?.id || null;
     const isEditMode = editingPostId !== null && editingPostData !== null;
 
-    // Résoudre les tags sélectionnés (UUID ou IDs Discord) vers les IDs Discord pour l'API et le stockage
     const selectedIds = (postTags || '').split(',').map(s => s.trim()).filter(Boolean);
     const tagsToSend = selectedIds
       .map(id => {
         const tag = savedTags.find(t => (t.id || t.name) === id || String(t.discordTagId ?? '') === id);
         if (tag?.discordTagId) return String(tag.discordTagId);
-        return tag?.name ?? id; // fallback : nom pour résolution côté backend
+        return tag?.name ?? id;
       })
       .filter(Boolean)
       .join(',');
@@ -859,53 +859,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ? `${baseUrl}/api/forum-post/update`
       : `${baseUrl}/api/forum-post`;
 
-    // Validations (inchangées)
     if (!title || title.length === 0) {
       setLastPublishResult('❌ Titre obligatoire');
-      showErrorModal({
-        code: 'VALIDATION_ERROR',
-        message: 'Le titre du post est obligatoire',
-        context: 'Validation avant publication',
-        httpStatus: 400
-      });
+      showErrorModal({ code: 'VALIDATION_ERROR', message: 'Le titre du post est obligatoire', context: 'Validation avant publication', httpStatus: 400 });
       return { ok: false, error: 'missing_title' };
     }
 
     if (!baseUrl || baseUrl.trim().length === 0) {
       setLastPublishResult('❌ URL API manquante dans Configuration');
-      showErrorModal({
-        code: 'CONFIG_ERROR',
-        message: 'URL de l\'API manquante',
-        context: 'Veuillez configurer l\'URL de l\'API dans Configuration',
-        httpStatus: 500
-      });
+      showErrorModal({ code: 'CONFIG_ERROR', message: 'URL de l\'API manquante', context: 'Veuillez configurer l\'URL de l\'API dans Configuration', httpStatus: 500 });
       return { ok: false, error: 'missing_api_url' };
-    }
-
-    if (templateType !== 'my') {
-      setLastPublishResult('❌ Seul le template "Mes traductions" (my) peut être publié');
-      showErrorModal({
-        code: 'VALIDATION_ERROR',
-        message: 'Type de template invalide',
-        context: 'Seul le template "Mes traductions" (my) peut être publié',
-        httpStatus: 400
-      });
-      return { ok: false, error: 'invalid_template_type' };
     }
 
     if (rateLimitCooldown !== null && Date.now() < rateLimitCooldown) {
       const remainingSeconds = Math.ceil((rateLimitCooldown - Date.now()) / 1000);
       setLastPublishResult(`⏳ Rate limit actif. Attendez ${remainingSeconds} secondes.`);
-      showErrorModal({
-        code: 'RATE_LIMIT_COOLDOWN',
-        message: `Rate limit actif`,
-        context: `Veuillez attendre ${remainingSeconds} secondes avant de réessayer pour éviter un bannissement IP.`,
-        httpStatus: 429
-      });
+      showErrorModal({ code: 'RATE_LIMIT_COOLDOWN', message: `Rate limit actif`, context: `Veuillez attendre ${remainingSeconds} secondes avant de réessayer pour éviter un bannissement IP.`, httpStatus: 429 });
       return { ok: false, error: 'rate_limit_cooldown' };
     }
 
-    // Tags obligatoires : au moins un Site, un Type de traduction et un Traducteur (Autres et Statut optionnels)
     const hasSite = selectedTagObjects.some(t => t.tagType === 'sites');
     const hasTranslationType = selectedTagObjects.some(t => t.tagType === 'translationType');
     const hasTranslator = selectedTagObjects.some(t => t.tagType === 'translator');
@@ -915,12 +887,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!hasTranslator) missing.push('Traducteur');
     if (missing.length > 0) {
       setLastPublishResult(`❌ Tags obligatoires manquants : ${missing.join(', ')}`);
-      showErrorModal({
-        code: 'VALIDATION_ERROR',
-        message: 'Tags obligatoires manquants',
-        context: `Vous devez sélectionner au moins un tag pour chaque catégorie : Site, Type de traduction et Traducteur. Manquant : ${missing.join(', ')}. Les tags "Autres" et "Statut du jeu" restent optionnels.`,
-        httpStatus: 400
-      });
+      showErrorModal({ code: 'VALIDATION_ERROR', message: 'Tags obligatoires manquants', context: `Vous devez sélectionner au moins un tag pour chaque catégorie : Site, Type de traduction et Traducteur. Manquant : ${missing.join(', ')}. Les tags "Autres" et "Statut du jeu" restent optionnels.`, httpStatus: 400 });
       return { ok: false, error: 'missing_required_tags' };
     }
 
@@ -928,7 +895,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setLastPublishResult(null);
 
     try {
-      // ✅ NOUVEAU : Créer l'objet de métadonnées structurées
       const metadata = {
         game_name: inputs['Game_name'] || '',
         game_version: inputs['Game_version'] || '',
@@ -939,31 +905,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         timestamp: Date.now()
       };
 
-
-      // Ajouter le lien d'image à la fin du contenu si une image est présente.
-      // Le backend détectera ce lien, créera un embed avec l'image, puis retirera le lien du contenu.
-      // Ainsi l'image sera visible via l'embed sans que le lien soit affiché.
-      // ✅ CORRECTIF : Ajouter l'URL de l'image au contenu
       let finalContent = content;
       if (imagesState.uploadedImages.length > 0) {
         const mainImage = imagesState.uploadedImages.find(img => img.isMain) || imagesState.uploadedImages[0];
-
         if (mainImage.url) {
-          // Ajouter l'URL à la fin du contenu (le backend Python la détectera et créera l'embed)
           finalContent = content + '\n' + mainImage.url;
         }
       }
 
       const formData = new FormData();
       formData.append('title', title);
-      formData.append('content', finalContent); // Utiliser finalContent avec le lien masqué
+      formData.append('content', finalContent);
       formData.append('tags', tagsToSend);
-      formData.append('template', templateType);
-
-      // Métadonnées encodées en base64 (UTF-8)
       formData.append('metadata', b64EncodeUtf8(JSON.stringify(metadata)));
-
-      // Champs pour l'annonce (nouvelle traduction / mise à jour) dans le publisher
       formData.append('translator_label', translatorLabel);
       formData.append('state_label', stateLabel);
       formData.append('game_version', inputs['Game_version'] || '');
@@ -984,7 +938,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Payload complet pour l'historique (aligné Supabase) : tous les champs
       const now = Date.now();
       const postId = `post_${now}_${Math.random().toString(36).substr(2, 9)}`;
       const imagePathVal = imagesState.uploadedImages.find(i => i.isMain)?.url;
@@ -1037,50 +990,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         formData.append('history_payload', JSON.stringify(postToRow(newPostForHistory)));
       }
 
-      // Plus besoin d'envoyer les images comme attachments, elles sont dans le contenu
-
       const apiKey = localStorage.getItem('apiKey') || '';
-
       const headers = await createApiHeaders(apiKey);
-      const response = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers,
-        body: formData
-      });
-
+      const response = await fetch(apiEndpoint, { method: 'POST', headers, body: formData });
       const res = await response.json();
 
-      // Gestion des erreurs (code existant inchangé)
       if (!response.ok) {
         if (response.status === 429) {
           const cooldownEnd = Date.now() + 60000;
           setRateLimitCooldown(cooldownEnd);
           setLastPublishResult('❌ Rate limit Discord (429). Cooldown de 60 secondes activé.');
-          showErrorModal({
-            code: 'RATE_LIMIT_429',
-            message: 'Rate limit Discord atteint',
-            context: 'Discord a limité les requêtes. Le bouton de publication sera désactivé pendant 60 secondes pour éviter un bannissement IP.',
-            httpStatus: 429,
-            discordError: res
-          });
-          setTimeout(() => {
-            setRateLimitCooldown(null);
-            setLastPublishResult(null);
-          }, 60000);
+          showErrorModal({ code: 'RATE_LIMIT_429', message: 'Rate limit Discord atteint', context: 'Discord a limité les requêtes. Le bouton de publication sera désactivé pendant 60 secondes pour éviter un bannissement IP.', httpStatus: 429, discordError: res });
+          setTimeout(() => { setRateLimitCooldown(null); setLastPublishResult(null); }, 60000);
           return { ok: false, error: 'rate_limit_429' };
         }
-
         setLastPublishResult('Erreur API: ' + (res.error || 'unknown'));
         const isNetworkError = !response.status || response.status === 0;
-        showErrorModal({
-          code: res.error || 'API_ERROR',
-          message: isNetworkError
-            ? 'L\'API n\'est pas accessible. Vérifiez l\'URL de l\'API.'
-            : (res.error || 'Erreur inconnue'),
-          context: isEditMode ? 'Mise à jour du post Discord' : 'Publication du post Discord',
-          httpStatus: response.status || 0,
-          discordError: res
-        });
+        showErrorModal({ code: res.error || 'API_ERROR', message: isNetworkError ? 'L\'API n\'est pas accessible. Vérifiez l\'URL de l\'API.' : (res.error || 'Erreur inconnue'), context: isEditMode ? 'Mise à jour du post Discord' : 'Publication du post Discord', httpStatus: response.status || 0, discordError: res });
         return { ok: false, error: res.error };
       }
 
@@ -1091,6 +1017,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let successMsg = isEditMode ? 'Mise à jour réussie' : 'Publication réussie';
       setLastPublishResult(successMsg);
 
+      // ── Warning clé API legacy ──────────────────────────────────────────────
+      // Le backend renvoie ce champ quand l'ancienne clé partagée est utilisée.
+      // On laisse la publication se terminer normalement, puis on avertit.
+      if (res.legacy_key_warning) {
+        setTimeout(() => {
+          showToast(
+            '⚠️ Clé API obsolète — Tapez /generer-cle sur le serveur Discord pour obtenir votre clé personnelle.',
+            'warning',
+            8000
+          );
+        }, 1000);
+      }
+      // ───────────────────────────────────────────────────────────────────────
+
       const threadId = res.thread_id || res.threadId;
       const messageId = res.message_id || res.messageId;
       const threadUrl = res.thread_url || res.threadUrl || res.url || res.discordUrl || '';
@@ -1099,7 +1039,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (threadId && messageId) {
         if (isEditMode && editingPostId && editingPostData) {
           const now = Date.now();
-
           const updatedPost: PublishedPost = {
             ...editingPostData,
             id: editingPostId,
@@ -1122,7 +1061,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             forumId: typeof forumId === 'number' ? forumId : parseInt(String(forumId)) || 0,
             authorDiscordId: editingPostData.authorDiscordId
           };
-
           await updatePublishedPost(editingPostId, updatedPost);
           tauriAPI.saveLocalHistoryPost(postToRow(updatedPost), updatedPost.authorDiscordId);
           setEditingPostId(null);
@@ -1156,14 +1094,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       return { ok: true, data: res };
+
     } catch (e: any) {
       setLastPublishResult('Erreur envoi: ' + String(e?.message || e));
-      showErrorModal({
-        code: 'NETWORK_ERROR',
-        message: String(e?.message || e),
-        context: 'Exception lors de la publication',
-        httpStatus: 0
-      });
+      showErrorModal({ code: 'NETWORK_ERROR', message: String(e?.message || e), context: 'Exception lors de la publication', httpStatus: 0 });
       return { ok: false, error: String(e?.message || e) };
     } finally {
       setPublishInProgress(false);

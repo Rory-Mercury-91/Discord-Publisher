@@ -15,11 +15,14 @@ import asyncio
 import logging
 import datetime
 import random
+import secrets
 import re
 from datetime import datetime as dt
 from typing import Optional, Tuple, List, Dict
 from pathlib import Path
 from zoneinfo import ZoneInfo
+import hashlib
+from dataclasses import dataclass
 
 import aiohttp
 from aiohttp import web
@@ -166,17 +169,7 @@ def _metadata_from_row(row: Dict, new_game_version: Optional[str] = None) -> Opt
     except Exception:
         return None
 
-
-# ==================== LOGGING ====================
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] [%(name)s] %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger("publisher")
-
 # ==================== CONFIGURATION ====================
-# Un seul salon "my" : FORUM = salon qui reçoit les posts, MAJ_NOTIFICATION = salon des alertes version
 class Config:
     def __init__(self):
         # API REST
@@ -457,6 +450,181 @@ class RateLimitTracker:
 
 rate_limiter = RateLimitTracker()
 
+# ==================== RATE LIMIT TRACKER ====================
+
+# ==================== CACHE & VALIDATION CLÉS API ====================
+
+
+# Message d'avertissement renvoyé au frontend quand l'ancienne clé partagée est détectée
+LEGACY_KEY_WARNING = (
+    "Votre clé API est la clé partagée (usage obsolète). "
+    "Tapez /generer-cle sur le serveur Discord pour obtenir votre clé personnelle."
+)
+
+
+@dataclass
+class _CachedEntry:
+    discord_user_id: str   # "" si clé refusée ou legacy
+    discord_name: str      # "" si clé refusée ou legacy
+    is_valid: bool
+    expires_at: float      # time.monotonic()
+
+
+class _ApiKeyCache:
+    """
+    Cache mémoire TTL pour les lookups Supabase.
+    Asyncio est single-threaded → pas besoin de Lock.
+    TTL par défaut : 5 minutes (configurable via env API_KEY_CACHE_TTL).
+    """
+
+    def __init__(self, ttl: int = 300):
+        self._store: dict[str, _CachedEntry] = {}
+        self._ttl = ttl
+
+    def get(self, key_hash: str) -> "_CachedEntry | None":
+        entry = self._store.get(key_hash)
+        if not entry:
+            return None
+        if time.monotonic() > entry.expires_at:
+            del self._store[key_hash]
+            return None
+        return entry
+
+    def set(self, key_hash: str, discord_user_id: str, discord_name: str, is_valid: bool):
+        self._store[key_hash] = _CachedEntry(
+            discord_user_id=discord_user_id,
+            discord_name=discord_name,
+            is_valid=is_valid,
+            expires_at=time.monotonic() + self._ttl,
+        )
+
+    def evict_user(self, discord_user_id: str):
+        """Invalide immédiatement toutes les entrées d'un utilisateur (rotation/révocation)."""
+        to_del = [h for h, e in self._store.items() if e.discord_user_id == discord_user_id]
+        for h in to_del:
+            del self._store[h]
+        if to_del:
+            logger.info(f"🔑 Cache: {len(to_del)} entrée(s) invalidée(s) pour discord_user_id={discord_user_id}")
+
+    def evict_hash(self, key_hash: str):
+        """Invalide immédiatement une clé spécifique par son hash."""
+        if self._store.pop(key_hash, None):
+            logger.info("🔑 Cache: entrée invalidée par hash")
+
+
+_api_key_cache = _ApiKeyCache(
+    ttl=int(os.getenv("API_KEY_CACHE_TTL", "300"))
+)
+
+
+def _hash_raw_key(raw_key: str) -> str:
+    """SHA-256 hex — identique à la fonction SQL hash_api_key()."""
+    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+
+def _update_key_usage_sync(key_hash: str):
+    """
+    Met à jour last_used_at + use_count dans Supabase.
+    Appelé via run_in_executor → non bloquant pour l'event loop.
+    """
+    sb = _get_supabase()
+    if not sb:
+        return
+    try:
+        # Incrémentation atomique via RPC ou UPDATE direct
+        sb.table("api_keys").update({
+            "last_used_at": datetime.datetime.now(ZoneInfo("UTC")).isoformat(),
+        }).eq("key_hash", key_hash).execute()
+        # use_count incrémenté séparément pour éviter une race condition
+        sb.rpc("increment_key_use_count", {"p_key_hash": key_hash}).execute()
+    except Exception as e:
+        # Non bloquant : un échec de comptage ne doit pas casser une publication
+        logger.debug(f"⚠️ Mise à jour usage clé (non critique): {e}")
+
+
+async def _validate_api_key(
+    raw_key: str,
+) -> tuple[bool, "str | None", "str | None", bool]:
+    """
+    Valide une clé API reçue dans X-API-KEY.
+
+    Retourne : (is_valid, discord_user_id, discord_name, is_legacy)
+
+        is_valid        → False = requête rejetée (401)
+        discord_user_id → ID Discord du traducteur, None si legacy ou refusé
+        discord_name    → Pseudo Discord, None si legacy ou refusé
+        is_legacy       → True = ancienne clé partagée (acceptée + warning renvoyé)
+
+    Ordre de vérification :
+        1. Cache mémoire     (< 1 µs, évite les round-trips)
+        2. Ancienne clé partagée  (migration en douceur)
+        3. Supabase          (lookup par hash)
+    """
+    if not raw_key:
+        return False, None, None, False
+
+    # ── 1. Cache ──────────────────────────────────────────────────────────────
+    key_hash = _hash_raw_key(raw_key)
+    cached = _api_key_cache.get(key_hash)
+    if cached is not None:
+        uid = cached.discord_user_id or None
+        name = cached.discord_name or None
+        return cached.is_valid, uid, name, False
+
+    # ── 2. Ancienne clé partagée (legacy) ─────────────────────────────────────
+    # On ne met PAS en cache pour que le check soit refait à chaque requête.
+    # Ainsi, si PUBLISHER_API_KEY change, l'ancienne clé est immédiatement rejetée.
+    if config.PUBLISHER_API_KEY and raw_key == config.PUBLISHER_API_KEY:
+        return True, None, None, True  # is_legacy=True
+
+    # ── 3. Supabase : nouvelle clé individuelle ────────────────────────────────
+    sb = _get_supabase()
+    if not sb:
+        logger.warning("⚠️ Supabase indisponible — validation nouvelle clé impossible")
+        return False, None, None, False
+
+    try:
+        res = (
+            sb.table("api_keys")
+            .select("discord_user_id, discord_name, is_active")
+            .eq("key_hash", key_hash)
+            .eq("is_active", True)
+            .limit(1)
+            .execute()
+        )
+        if res.data:
+            row = res.data[0]
+            _api_key_cache.set(key_hash, row["discord_user_id"], row["discord_name"], True)
+            # Mise à jour usage en arrière-plan (non bloquant)
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, _update_key_usage_sync, key_hash)
+            return True, row["discord_user_id"], row["discord_name"], False
+        else:
+            # Clé inconnue ou révoquée → on cache le refus (protège contre le brute-force)
+            _api_key_cache.set(key_hash, "", "", False)
+            return False, None, None, False
+
+    except Exception as e:
+        logger.error(f"❌ Supabase erreur validation clé: {e}")
+        # Fail-closed : en cas d'erreur Supabase on rejette (sécurité > disponibilité)
+        return False, None, None, False
+
+
+# ── Helper : extraction + validation en une ligne pour les handlers ────────────
+async def _auth_request(request, route: str) -> "tuple[bool, str|None, str|None, bool]":
+    """
+    Utilisé en tête de chaque handler protégé.
+    Retourne (is_valid, discord_user_id, discord_name, is_legacy).
+    Loggue automatiquement les échecs d'auth.
+    """
+    raw_key = (request.headers.get("X-API-KEY") or request.query.get("api_key") or "").strip()
+    is_valid, uid, name, is_legacy = await _validate_api_key(raw_key)
+    if not is_valid:
+        client_ip = _get_client_ip(request)
+        logger.warning(f"[AUTH] 🚫 Échec auth depuis {client_ip} (route: {route})")
+    return is_valid, uid, name, is_legacy
+
+
 # ==================== UTILITAIRES ====================
 def _b64decode_padded(s: str) -> bytes:
     """Décodage base64 tolérant (padding manquant, espaces, etc.)."""
@@ -479,14 +647,6 @@ def _decode_metadata_b64(metadata_b64: str) -> Optional[Dict]:
     except json.JSONDecodeError:
         import urllib.parse
         return json.loads(urllib.parse.unquote(s))
-
-def _extract_version_from_f95_title(title_text: str) -> Optional[str]:
-    """Récupère la version depuis le titre F95, ex: 'Game [Ch.7] [Author]' -> 'Ch.7'"""
-    if not title_text:
-        return None
-    
-    parts = [m.group("val").strip() for m in _RE_BRACKETS.finditer(title_text)]
-    return parts[0] if parts else None
 
 def _extract_f95_thread_id(url: str) -> Optional[str]:
     """
@@ -588,29 +748,6 @@ def _extract_version_from_thread_name(thread_name: str) -> Optional[str]:
         return None
     m = _RE_VERSION_IN_THREAD_NAME.search(thread_name.strip())
     return m.group("ver").strip() if m else None
-
-async def _fetch_f95_title(session: aiohttp.ClientSession, url: str) -> Optional[str]:
-    """Télécharge la page F95 et extrait le titre H1"""
-    try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=25)) as resp:
-            if resp.status >= 300:
-                logger.warning(f"⚠️ F95 HTTP {resp.status} sur {url}")
-                return None
-            html = await resp.text(errors="ignore")
-    except Exception as e:
-        logger.warning(f"⚠️ Erreur fetch F95 {url}: {e}")
-        return None
-
-    # Parsing léger: cherche <h1 class="p-title-value">...</h1>
-    m = re.search(r"<h1[^>]*class=\"p-title-value\"[^>]*>(.*?)</h1>", html, re.IGNORECASE | re.DOTALL)
-    if not m:
-        return None
-    
-    raw = m.group(1)
-    txt = re.sub(r"<[^>]+>", "", raw)  # Supprime les tags HTML
-    txt = re.sub(r"\s+", " ", txt).strip()
-    
-    return txt or None
 
 async def _collect_all_forum_threads(forum: discord.ForumChannel) -> List[discord.Thread]:
     """
@@ -1004,15 +1141,15 @@ async def run_version_check_once():
             
             game_link, post_version = await _extract_post_data(thread)
             if not game_link or not post_version:
-                logger.info(f"⏭️  Thread ignoré (données manquantes): {thread.name}")
+                logger.debug(f"⏭️  Thread ignoré (données manquantes): {thread.name}")
                 continue
             
             if "lewdcorner.com" in game_link.lower():
-                logger.info(f"⏭️  Thread ignoré (LewdCorner): {thread.name}")
+                logger.debug(f"⏭️  Thread ignoré (LewdCorner): {thread.name}")
                 continue
             
             if "f95zone.to" not in game_link.lower():
-                logger.info(f"⏭️  Thread ignoré (non-F95Zone): {thread.name}")
+                logger.debug(f"⏭️  Thread ignoré (non-F95Zone): {thread.name}")
                 continue
             
             # Extraire l'ID F95
@@ -1104,40 +1241,175 @@ async def daily_cleanup_empty_messages():
         logger.error(f"❌ Erreur nettoyage messages vides: {e}")
 
 # ==================== COMMANDES SLASH ====================
-ALLOWED_USER_ID = 394893413843206155
-OWNER_IDS = {394893413843206155}
 
-def owner_only():
-    async def predicate(interaction: discord.Interaction) -> bool:
-        return interaction.user and interaction.user.id in OWNER_IDS
-    return app_commands.check(predicate)
+# Lire l'ID du rôle autorisé depuis .env
+TRANSLATOR_ROLE_ID = int(os.getenv("TRANSLATOR_ROLE_ID", "0")) if os.getenv("TRANSLATOR_ROLE_ID") else 0
+
+
 def _user_can_run_checks(interaction: discord.Interaction) -> bool:
-    """Autorise admin/manage_guild OU un user ID spécifique."""
-    if getattr(interaction.user, "id", None) == ALLOWED_USER_ID:
-        return True
-    perms = getattr(interaction.user, "guild_permissions", None)
-    return bool(perms and (perms.administrator or perms.manage_guild))
+    """Autorise uniquement les membres ayant le rôle TRANSLATOR_ROLE_ID."""
+    if not TRANSLATOR_ROLE_ID or not interaction.guild:
+        return False
+    member = interaction.guild.get_member(interaction.user.id)
+    return bool(member and any(r.id == TRANSLATOR_ROLE_ID for r in member.roles))
 
-@bot.tree.command(name="check_help", description="Affiche la liste des commandes et leur utilité")
-async def check_help(interaction: discord.Interaction):
+
+def _generate_raw_key() -> str:
+    """Génère une clé API lisible et unique. Format : tr_<32 hex chars>"""
+    return f"tr_{secrets.token_hex(16)}"
+
+
+def _revoke_existing_key_sync(discord_user_id: str) -> bool:
+    """
+    Révoque la clé active existante d'un utilisateur (sync, via run_in_executor).
+    Retourne True si une clé a été révoquée, False si l'utilisateur n'en avait pas.
+    """
+    sb = _get_supabase()
+    if not sb:
+        logger.warning("⚠️ [revoke_key] Client Supabase non disponible")
+        return False
     try:
-        await interaction.response.defer(ephemeral=True)
-    except Exception:
-        pass
-    if not _user_can_run_checks(interaction):
-        await interaction.followup.send("⛔ Permission insuffisante.", ephemeral=True)
+        res = (
+            sb.table("api_keys")
+            .update({
+                "is_active": False,
+                "revoked_at": datetime.datetime.now(ZoneInfo("UTC")).isoformat(),
+                "revoked_reason": "replaced_by_user",
+            })
+            .eq("discord_user_id", discord_user_id)
+            .eq("is_active", True)
+            .execute()
+        )
+        revoked = bool(res.data)
+        if revoked:
+            logger.info(f"🔑 [revoke_key] Clé révoquée pour discord_user_id={discord_user_id}")
+        else:
+            logger.info(f"ℹ️ [revoke_key] Aucune clé active trouvée pour discord_user_id={discord_user_id}")
+        return revoked
+    except Exception as e:
+        logger.error(f"❌ [revoke_key] Erreur pour discord_user_id={discord_user_id}: {e}")
+        return False
+
+
+def _insert_new_key_sync(discord_user_id: str, discord_name: str, key_hash: str) -> bool:
+    """Insère la nouvelle clé hachée dans Supabase (sync, via run_in_executor)."""
+    sb = _get_supabase()
+    if not sb:
+        logger.warning("⚠️ [insert_key] Client Supabase non disponible")
+        return False
+    try:
+        sb.table("api_keys").insert({
+            "discord_user_id": discord_user_id,
+            "discord_name": discord_name,
+            "key_hash": key_hash,
+            "is_active": True,
+        }).execute()
+        logger.info(f"✅ [insert_key] Nouvelle clé insérée pour {discord_name} (discord_user_id={discord_user_id})")
+        return True
+    except Exception as e:
+        logger.error(f"❌ [insert_key] Erreur pour discord_user_id={discord_user_id}: {e}")
+        return False
+
+
+@bot.tree.command(name="generer-cle", description="Génère votre clé API personnelle pour publier des traductions")
+async def generer_cle(interaction: discord.Interaction):
+    """
+    Génère (ou renouvelle) la clé API personnelle d'un traducteur.
+    - Réservé aux membres ayant le rôle TRANSLATOR_ROLE_ID.
+    - L'ancienne clé est révoquée immédiatement.
+    - La nouvelle clé est envoyée en MP uniquement (jamais affichée dans un salon).
+    """
+    await interaction.response.defer(ephemeral=True)
+
+    user_tag = f"{interaction.user} (id={interaction.user.id})"
+    logger.info(f"🔑 [generer-cle] Demande reçue de {user_tag}")
+
+    # ── 1. Vérification du rôle ───────────────────────────────────────────────
+    if not TRANSLATOR_ROLE_ID:
+        logger.error("❌ [generer-cle] TRANSLATOR_ROLE_ID non configuré")
+        await interaction.followup.send(
+            "❌ Le bot n'est pas configuré (TRANSLATOR_ROLE_ID manquant). Contactez un administrateur.",
+            ephemeral=True
+        )
         return
-    help_text = (
-        "**🧰 Commandes disponibles (Bot Publisher - Salon my)**\n\n"
-        "**/check_versions** — Lance le contrôle des versions F95 sur le salon my.\n"
-        "**/cleanup_empty_messages** — Supprime les messages vides dans les threads (sauf métadonnées).\n"
-        "**/force_sync** — Force la synchronisation des commandes slash.\n\n"
-        "**ℹ️ Automatique**\n"
-        f"Contrôle des versions : tous les jours à {config.VERSION_CHECK_HOUR:02d}:{config.VERSION_CHECK_MINUTE:02d} (Europe/Paris).\n"
-        f"Nettoyage des messages vides : tous les jours à {config.CLEANUP_EMPTY_MESSAGES_HOUR:02d}:{config.CLEANUP_EMPTY_MESSAGES_MINUTE:02d} (Europe/Paris).\n"
-        "Système anti-doublon actif (30 jours)."
-    )
-    await interaction.followup.send(help_text, ephemeral=True)
+
+    member = interaction.guild.get_member(interaction.user.id) if interaction.guild else None
+    if not member:
+        logger.warning(f"⚠️ [generer-cle] Impossible de récupérer le membre pour {user_tag}")
+        await interaction.followup.send(
+            "❌ Impossible de vérifier vos rôles. Utilisez cette commande depuis le serveur.",
+            ephemeral=True
+        )
+        return
+
+    has_role = any(r.id == TRANSLATOR_ROLE_ID for r in member.roles)
+    if not has_role:
+        logger.warning(f"⛔ [generer-cle] Rôle manquant pour {user_tag}")
+        await interaction.followup.send(
+            "⛔ Vous n'avez pas le rôle requis pour générer une clé API.",
+            ephemeral=True
+        )
+        return
+
+    discord_user_id = str(interaction.user.id)
+    discord_name = interaction.user.display_name
+    loop = asyncio.get_event_loop()
+
+    # ── 2. Révocation de l'ancienne clé (si elle existe) ─────────────────────
+    had_existing = await loop.run_in_executor(None, _revoke_existing_key_sync, discord_user_id)
+    _api_key_cache.evict_user(discord_user_id)
+
+    # ── 3. Génération de la nouvelle clé ─────────────────────────────────────
+    raw_key = _generate_raw_key()
+    key_hash = _hash_raw_key(raw_key)
+    logger.info(f"🔐 [generer-cle] Génération clé pour {discord_name} (renouvellement={had_existing})")
+
+    ok = await loop.run_in_executor(None, _insert_new_key_sync, discord_user_id, discord_name, key_hash)
+    if not ok:
+        await interaction.followup.send(
+            "❌ Erreur lors de la génération de votre clé. Réessayez dans quelques instants.",
+            ephemeral=True
+        )
+        return
+
+    # ── 4. Envoi en MP ────────────────────────────────────────────────────────
+    mp_sent = False
+    try:
+        dm_channel = await interaction.user.create_dm()
+        await dm_channel.send(
+            f"🔑 **Votre clé API personnelle**\n\n"
+            f"```\n{raw_key}\n```\n"
+            f"**Comment l'utiliser :**\n"
+            f"Dans l'application → ⚙️ Configuration → Préférences → **Clé d'accès à l'API**\n\n"
+            f"⚠️ **Gardez cette clé secrète.** Ne la partagez jamais.\n"
+            f"Si elle est compromise, relancez `/generer-cle` pour en obtenir une nouvelle "
+            f"(l'ancienne sera automatiquement révoquée).\n\n"
+            f"{'🔄 *Votre ancienne clé a été révoquée.*' if had_existing else ''}"
+        )
+        mp_sent = True
+        logger.info(f"📨 [generer-cle] Clé envoyée en MP à {user_tag}")
+    except discord.Forbidden:
+        logger.warning(f"⚠️ [generer-cle] MP fermés pour {user_tag}, fallback éphémère")
+        mp_sent = False
+
+    # ── 5. Réponse dans le salon (éphémère) ───────────────────────────────────
+    if mp_sent:
+        msg = (
+            f"✅ **Clé API {'renouvelée' if had_existing else 'générée'} avec succès !**\n"
+            f"Je vous l'ai envoyée en message privé.\n\n"
+            f"{'🔄 Votre ancienne clé a été révoquée immédiatement.' if had_existing else ''}"
+        )
+    else:
+        msg = (
+            f"✅ **Clé API {'renouvelée' if had_existing else 'générée'} !**\n"
+            f"*(Impossible d'envoyer un MP — activez vos messages privés pour plus de sécurité)*\n\n"
+            f"```\n{raw_key}\n```\n"
+            f"⚠️ Copiez cette clé maintenant, elle ne sera plus affichée.\n"
+            f"{'🔄 Votre ancienne clé a été révoquée.' if had_existing else ''}"
+        )
+
+    await interaction.followup.send(msg, ephemeral=True)
+
 
 @bot.tree.command(name="check_versions", description="Contrôle les versions F95 (salon my)")
 async def check_versions(interaction: discord.Interaction):
@@ -1147,18 +1419,22 @@ async def check_versions(interaction: discord.Interaction):
     except Exception:
         pass
     if not _user_can_run_checks(interaction):
+        logger.warning(f"⛔ [check_versions] Permission refusée pour {interaction.user} (id={interaction.user.id})")
         await interaction.followup.send("⛔ Permission insuffisante.", ephemeral=True)
         return
+    logger.info(f"🔍 [check_versions] Lancement manuel par {interaction.user} (id={interaction.user.id})")
     try:
         await interaction.followup.send("⏳ Contrôle des versions F95 en cours…", ephemeral=True)
     except Exception:
         pass
     try:
         await run_version_check_once()
+        logger.info(f"✅ [check_versions] Contrôle terminé (lancé par {interaction.user})")
         await interaction.followup.send("✅ Contrôle terminé.", ephemeral=True)
     except Exception as e:
-        logger.error(f"❌ Erreur commande check_versions: {e}")
+        logger.error(f"❌ [check_versions] Erreur: {e}")
         await interaction.followup.send(f"❌ Erreur: {e}", ephemeral=True)
+
 
 @bot.tree.command(name="cleanup_empty_messages", description="Supprime les messages vides dans les threads (sauf métadonnées)")
 async def cleanup_empty_messages_cmd(interaction: discord.Interaction):
@@ -1168,237 +1444,70 @@ async def cleanup_empty_messages_cmd(interaction: discord.Interaction):
     except Exception:
         pass
     if not _user_can_run_checks(interaction):
+        logger.warning(f"⛔ [cleanup] Permission refusée pour {interaction.user} (id={interaction.user.id})")
         await interaction.followup.send("⛔ Permission insuffisante.", ephemeral=True)
         return
+    logger.info(f"🧹 [cleanup] Lancement manuel par {interaction.user} (id={interaction.user.id})")
     try:
         await interaction.followup.send("⏳ Nettoyage des messages vides en cours…", ephemeral=True)
     except Exception:
         pass
     try:
         await run_cleanup_empty_messages_once()
+        logger.info(f"✅ [cleanup] Nettoyage terminé (lancé par {interaction.user})")
         await interaction.followup.send("✅ Nettoyage terminé.", ephemeral=True)
     except Exception as e:
-        logger.error(f"❌ Erreur commande cleanup_empty_messages: {e}")
+        logger.error(f"❌ [cleanup] Erreur: {e}")
         await interaction.followup.send(f"❌ Erreur: {e}", ephemeral=True)
 
-@bot.tree.command(name="force_sync", description="Force la synchronisation des commandes")
-async def force_sync(interaction: discord.Interaction):
-    """Force le sync des commandes. Autorisé pour admin OU ALLOWED_USER_ID."""
+
+@bot.tree.command(name="check_help", description="Affiche la liste des commandes et leur utilité")
+async def check_help(interaction: discord.Interaction):
     try:
         await interaction.response.defer(ephemeral=True)
     except Exception:
         pass
-
     if not _user_can_run_checks(interaction):
+        logger.warning(f"⛔ [check_help] Permission refusée pour {interaction.user} (id={interaction.user.id})")
         await interaction.followup.send("⛔ Permission insuffisante.", ephemeral=True)
         return
 
-    try:
-        guild = interaction.guild
-        if guild is None:
-            await interaction.followup.send("❌ Impossible: commande utilisable uniquement dans un serveur.", ephemeral=True)
-            return
+    logger.info(f"ℹ️ [check_help] Consulté par {interaction.user} (id={interaction.user.id})")
+    help_text = (
+        "**🧰 Commandes disponibles (Bot Publisher)**\n\n"
 
-        bot.tree.copy_global_to(guild=guild)
-        await bot.tree.sync(guild=guild)
+        "**🔑 Clé API personnelle**\n"
+        "**/generer-cle** — Génère ou renouvelle votre clé API personnelle.\n"
+        "Réservé aux membres ayant le rôle Traducteur. La clé est envoyée en MP.\n"
+        "À entrer dans l'application → ⚙️ Configuration → Préférences → **Clé d'accès à l'API**.\n"
+        "L'ancienne clé est automatiquement révoquée à chaque renouvellement.\n\n"
 
-        await interaction.followup.send("✅ Commandes synchronisées pour ce serveur !", ephemeral=True)
-    except Exception as e:
-        logger.error(f"❌ Erreur force_sync: {e}")
-        await interaction.followup.send(f"❌ Erreur: {e}", ephemeral=True)
+        "**🔍 Contrôle des versions**\n"
+        "**/check_versions** — Lance manuellement le contrôle des versions F95 sur le forum.\n\n"
 
+        "**🧹 Nettoyage**\n"
+        "**/cleanup_empty_messages** — Supprime les messages vides dans les threads (sauf métadonnées).\n\n"
 
-# Définir l'ID du propriétaire (celui qui peut utiliser ces commandes)
-OWNER_IDS = {394893413843206155}
+        "**ℹ️ Tâches automatiques**\n"
+        f"• Contrôle des versions : tous les jours à {config.VERSION_CHECK_HOUR:02d}:{config.VERSION_CHECK_MINUTE:02d} (Europe/Paris)\n"
+        f"• Nettoyage des messages vides : tous les jours à {config.CLEANUP_EMPTY_MESSAGES_HOUR:02d}:{config.CLEANUP_EMPTY_MESSAGES_MINUTE:02d} (Europe/Paris)\n"
+        "• Système anti-doublon actif (30 jours)\n\n"
 
-def owner_only():
-    """Décorateur pour limiter les commandes aux propriétaires uniquement"""
-    async def predicate(interaction: discord.Interaction) -> bool:
-        return interaction.user and interaction.user.id in OWNER_IDS
-    return app_commands.check(predicate)
-
-
-@owner_only()
-@bot.tree.command(name="reset_commands", description="[OWNER] Nettoie et resynchronise TOUTES les commandes (global + serveur)")
-async def reset_commands(interaction: discord.Interaction):
-    """
-    Commande ultime de reset : nettoie tout et resynchronise
-    - Supprime les commandes globales
-    - Supprime les commandes du serveur
-    - Resynchronise tout proprement
-    """
-    try:
-        await interaction.response.defer(ephemeral=True)
-    except Exception as e:
-        logger.warning("⚠️ Erreur defer: %s", e)
-        return
-
-    bot_name = bot.user.name if bot.user else "Bot"
-    guild = interaction.guild
-    
-    try:
-        # ÉTAPE 1: Nettoyage global
-        logger.info("🧹 [%s] Étape 1/4: Suppression commandes globales...", bot_name)
-        bot.tree.clear_commands(guild=None)
-        await bot.tree.sync()
-        await asyncio.sleep(2)
-        
-        # ÉTAPE 2: Nettoyage serveur (si dans un serveur)
-        if guild:
-            logger.info("🧹 [%s] Étape 2/4: Suppression commandes serveur %s...", bot_name, guild.name)
-            bot.tree.clear_commands(guild=guild)
-            await bot.tree.sync(guild=guild)
-            await asyncio.sleep(2)
-        else:
-            logger.info("⏭️  [%s] Étape 2/4: Ignorée (pas dans un serveur)", bot_name)
-        
-        # ÉTAPE 3: Resync global
-        logger.info("🔄 [%s] Étape 3/4: Synchronisation globale...", bot_name)
-        await bot.tree.sync()
-        await asyncio.sleep(2)
-        
-        # ÉTAPE 4: Resync serveur (si dans un serveur)
-        if guild:
-            logger.info("🔄 [%s] Étape 4/4: Synchronisation serveur %s...", bot_name, guild.name)
-            bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
-        else:
-            logger.info("⏭️  [%s] Étape 4/4: Ignorée (pas dans un serveur)", bot_name)
-        
-        # Message de succès
-        success_msg = (
-            f"✅ **Reset terminé pour {bot_name}**\n\n"
-            f"**Actions effectuées:**\n"
-            f"✓ Commandes globales nettoyées\n"
-        )
-        if guild:
-            success_msg += f"✓ Commandes serveur '{guild.name}' nettoyées\n"
-        success_msg += (
-            f"✓ Resynchronisation globale\n"
-        )
-        if guild:
-            success_msg += f"✓ Resynchronisation serveur '{guild.name}'\n"
-        
-        success_msg += f"\n**⏰ Délai total: ~8-10 secondes**\n"
-        success_msg += f"**ℹ️ Les commandes peuvent mettre jusqu'à 1h pour apparaître partout.**"
-        
-        await interaction.followup.send(success_msg, ephemeral=True)
-        logger.info("✅ [%s] Reset complet terminé avec succès!", bot_name)
-        
-    except discord.errors.HTTPException as e:
-        error_msg = f"❌ Erreur Discord HTTP: {e}"
-        logger.error("❌ [%s] %s", bot_name, error_msg)
-        await interaction.followup.send(error_msg, ephemeral=True)
-    except Exception as e:
-        error_msg = f"❌ Erreur inattendue: {type(e).__name__}: {e}"
-        logger.error("❌ [%s] %s", bot_name, error_msg)
-        await interaction.followup.send(error_msg, ephemeral=True)
+        "**ℹ️ Accès**\n"
+        "Toutes les commandes sont réservées aux membres ayant le rôle Traducteur."
+    )
+    await interaction.followup.send(help_text, ephemeral=True)
 
 
-@owner_only()
-@bot.tree.command(name="sync_commands", description="[OWNER] Synchronise les commandes sans nettoyer")
-async def sync_commands(interaction: discord.Interaction):
-    """
-    Synchronise les commandes sans faire de nettoyage
-    Utile pour mettre à jour après modification du code
-    """
-    try:
-        await interaction.response.defer(ephemeral=True)
-    except Exception as e:
-        logger.warning("⚠️ Erreur defer: %s", e)
-        return
-
-    bot_name = bot.user.name if bot.user else "Bot"
-    guild = interaction.guild
-    
-    try:
-        # Sync global
-        logger.info("🔄 [%s] Synchronisation globale...", bot_name)
-        await bot.tree.sync()
-        await asyncio.sleep(1)
-        
-        # Sync serveur si applicable
-        if guild:
-            logger.info("🔄 [%s] Synchronisation serveur %s...", bot_name, guild.name)
-            bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
-        
-        success_msg = f"✅ **Sync terminé pour {bot_name}**\n\n"
-        success_msg += "✓ Commandes globales synchronisées\n"
-        if guild:
-            success_msg += f"✓ Commandes serveur '{guild.name}' synchronisées\n"
-        success_msg += "\n**ℹ️ Les commandes peuvent mettre jusqu'à 1h pour apparaître partout.**"
-        
-        await interaction.followup.send(success_msg, ephemeral=True)
-        logger.info("✅ [%s] Sync terminé avec succès!", bot_name)
-        
-    except discord.errors.HTTPException as e:
-        error_msg = f"❌ Erreur Discord HTTP: {e}"
-        logger.error("❌ [%s] %s", bot_name, error_msg)
-        await interaction.followup.send(error_msg, ephemeral=True)
-    except Exception as e:
-        error_msg = f"❌ Erreur inattendue: {type(e).__name__}: {e}"
-        logger.error("❌ [%s] %s", bot_name, error_msg)
-        await interaction.followup.send(error_msg, ephemeral=True)
-
-
-@owner_only()
-@bot.tree.command(name="list_commands", description="[OWNER] Liste toutes les commandes enregistrées")
-async def list_commands(interaction: discord.Interaction):
-    """
-    Affiche la liste des commandes actuellement enregistrées
-    Utile pour diagnostiquer les problèmes
-    """
-    try:
-        await interaction.response.defer(ephemeral=True)
-    except Exception as e:
-        logger.warning("⚠️ Erreur defer: %s", e)
-        return
-
-    bot_name = bot.user.name if bot.user else "Bot"
-    
-    try:
-        # Récupérer les commandes
-        global_commands = await bot.tree.fetch_commands()
-        
-        msg = f"📋 **Commandes enregistrées pour {bot_name}**\n\n"
-        msg += f"**Commandes globales ({len(global_commands)}):**\n"
-        
-        if global_commands:
-            for cmd in global_commands:
-                msg += f"• `/{cmd.name}` - {cmd.description}\n"
-        else:
-            msg += "*Aucune commande globale*\n"
-        
-        # Commandes serveur (si dans un serveur)
-        if interaction.guild:
-            guild_commands = await bot.tree.fetch_commands(guild=interaction.guild)
-            msg += f"\n**Commandes serveur ({len(guild_commands)}):**\n"
-            if guild_commands:
-                for cmd in guild_commands:
-                    msg += f"• `/{cmd.name}` - {cmd.description}\n"
-            else:
-                msg += "*Aucune commande serveur*\n"
-        
-        await interaction.followup.send(msg, ephemeral=True)
-        
-    except Exception as e:
-        error_msg = f"❌ Erreur: {type(e).__name__}: {e}"
-        logger.error("❌ [%s] %s", bot_name, error_msg)
-        await interaction.followup.send(error_msg, ephemeral=True)
 # ==================== ÉVÉNEMENTS BOT ====================
 @bot.event
 async def on_ready():
-    logger.info(f'🤖 Bot Publisher prêt : {bot.user}')
-    
-    # Sync commandes slash
+    logger.info(f'🤖 Bot Publisher prêt : {bot.user} (id={bot.user.id})')
     try:
-        await bot.tree.sync()
-        logger.info("✅ Commandes slash synchronisées (/check_versions, /cleanup_empty_messages, /check_help)")
+        synced = await bot.tree.sync()
+        logger.info(f"✅ {len(synced)} commande(s) slash synchronisée(s) : {[c.name for c in synced]}")
     except Exception as e:
-        logger.error(f"⚠️ Sync commandes slash échouée: {e}")
-    
-    # Lancement tâches quotidiennes
+        logger.error(f"❌ Sync commandes slash échouée: {e}")
     if not daily_version_check.is_running():
         daily_version_check.start()
         logger.info(f"✅ Contrôle quotidien programmé à {config.VERSION_CHECK_HOUR:02d}:{config.VERSION_CHECK_MINUTE:02d} Europe/Paris")
@@ -1467,14 +1576,6 @@ async def _discord_patch_json(session, path, payload):
         json_data=payload
     )
     return status, data
-
-async def _discord_patch_form(session, path, form):
-    """Envoie une requête PATCH avec FormData et retourne les 3 valeurs attendues"""
-    status, data, headers = await _discord_request(session, "PATCH", path, headers=_auth_headers(), data=form)
-    return status, data, headers
-
-async def _discord_post_form(session, path, form):
-    return await _discord_request(session, "POST", path, headers=_auth_headers(), data=form)
 
 async def _fetch_image_from_url(session, url: str) -> Optional[Tuple[bytes, str, str]]:
     """
@@ -2037,10 +2138,8 @@ async def options_handler(request):
 
 async def configure(request):
     """Handler pour configurer l'API (protégé par clé API)."""
-    api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
-    if api_key != config.PUBLISHER_API_KEY:
-        client_ip = _get_client_ip(request)
-        logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/configure)")
+    is_valid, _, _, _ = await _auth_request(request, "/api/configure")
+    if not is_valid:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     
     try:
@@ -2054,10 +2153,8 @@ async def configure(request):
 
 async def forum_post(request):
     """Handler pour publier un post dans le salon my uniquement."""
-    api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
-    if api_key != config.PUBLISHER_API_KEY:
-        client_ip = _get_client_ip(request)
-        logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/forum-post)")
+    is_valid, discord_user_id, discord_name, is_legacy = await _auth_request(request, "/api/forum-post")
+    if not is_valid:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     if not config.FORUM_MY_ID:
         return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_TRAD_ID non configuré"}, status=500))
@@ -2120,12 +2217,9 @@ async def forum_post(request):
             if "timestamp" not in payload:
                 payload["timestamp"] = ts
             history_manager.update_or_add_post(payload)
-            
-            # 🔥 SAUVEGARDER DANS SUPABASE (source de vérité)
             sb = _get_supabase()
             if sb:
                 try:
-                    # Supprimer les champs qui ne sont pas dans la table Supabase
                     supabase_payload = {k: v for k, v in payload.items() if k not in ['timestamp', 'template']}
                     res = sb.table("published_posts").upsert(supabase_payload, on_conflict="id").execute()
                     logger.info(f"✅ Post enregistré dans Supabase: {payload.get('title')}")
@@ -2146,8 +2240,6 @@ async def forum_post(request):
                 "forum_id": forum_id,
             }
             history_manager.update_or_add_post(fallback_payload)
-            
-            # 🔥 SAUVEGARDER DANS SUPABASE (fallback)
             sb = _get_supabase()
             if sb:
                 try:
@@ -2172,8 +2264,6 @@ async def forum_post(request):
             "forum_id": forum_id,
         }
         history_manager.update_or_add_post(fallback_payload)
-        
-        # 🔥 SAUVEGARDER DANS SUPABASE
         sb = _get_supabase()
         if sb:
             try:
@@ -2185,18 +2275,20 @@ async def forum_post(request):
             except Exception as e:
                 logger.warning(f"⚠️ Échec sauvegarde Supabase no payload: {e}")
 
-    return _with_cors(request, web.json_response({"ok": True, **result}))
+    # ── Réponse finale avec warning legacy si nécessaire ──────────────────────
+    response_data = {"ok": True, **result}
+    if is_legacy:
+        response_data["legacy_key_warning"] = LEGACY_KEY_WARNING
+    return _with_cors(request, web.json_response(response_data))
 
 async def forum_post_update(request):
     """Handler pour mettre à jour un post (salon my uniquement)."""
-    api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
-    if api_key != config.PUBLISHER_API_KEY:
-        client_ip = _get_client_ip(request)
-        logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/forum-post/update)")
+    is_valid, discord_user_id, discord_name, is_legacy = await _auth_request(request, "/api/forum-post/update")
+    if not is_valid:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     if not config.FORUM_MY_ID:
         return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_TRAD_ID non configuré"}, status=500))
-    
+
     title, content, tags, thread_id, message_id, metadata_b64 = "", "", "", None, None, None
     translator_label, state_label, game_version, translate_version, announce_image_url, thread_url = "", "", "", "", "", ""
     history_payload_raw = None
@@ -2242,7 +2334,6 @@ async def forum_post_update(request):
     async with aiohttp.ClientSession() as session:
         message_path = f"/channels/{thread_id}/messages/{message_id}"
 
-        # Détecter une URL d'image dans le contenu (y compris query string complète)
         image_exts = r"(?:jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)"
         image_url_pattern = re.compile(
             rf"https?://[^\s<>\"']+\.{image_exts}(?:\?[^\s<>\"']*)?",
@@ -2272,15 +2363,12 @@ async def forum_post_update(request):
                 file_bytes, filename, content_type
             )
         else:
-            # Mise à jour du contenu uniquement (sans nouvelle image ; pas d'embed)
             message_payload = {"content": final_content or " ", "embeds": []}
             status, data = await _discord_patch_json(session, message_path, message_payload)
 
         if status >= 300:
             return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
 
-        # Mettre à jour/créer le message metadata séparé (et le SUPPRESS)
-        # Structure: Message 1 = contenu + image, Message 2 = métadonnées
         if metadata_b64:
             try:
                 if len(metadata_b64) > 25000:
@@ -2299,19 +2387,14 @@ async def forum_post_update(request):
 
                     meta_payload = {"content": " ", "embeds": [_build_metadata_embed(metadata_b64)]}
                     if metadata_message_id:
-                        # Mettre à jour le message existant
                         s3, d3 = await _discord_patch_json(session, f"/channels/{thread_id}/messages/{metadata_message_id}", meta_payload)
                         if s3 < 300:
                             await _discord_suppress_embeds(session, str(thread_id), str(metadata_message_id))
-                            # Supprimer les autres anciens messages de métadonnées (s'il y en a)
                             await _delete_old_metadata_messages(session, str(thread_id), keep_message_id=str(metadata_message_id))
                         else:
                             logger.warning(f"⚠️ Échec update metadata message (status={s3}): {d3}")
                     else:
-                        # Supprimer tous les anciens messages de métadonnées avant d'en créer un nouveau
                         await _delete_old_metadata_messages(session, str(thread_id))
-                        
-                        # Créer un nouveau message de métadonnées
                         s2, d2, _ = await _discord_post_json(session, f"/channels/{thread_id}/messages", meta_payload)
                         if s2 < 300 and isinstance(d2, dict) and d2.get("id"):
                             await _discord_suppress_embeds(session, str(thread_id), str(d2["id"]))
@@ -2320,7 +2403,6 @@ async def forum_post_update(request):
             except Exception as e:
                 logger.warning(f"⚠️ Exception update/création metadata message: {e}")
 
-        # Mettre à jour le titre et les tags du thread
         applied_tag_ids = await _resolve_applied_tag_ids(session, config.FORUM_MY_ID, tags)
         status, data = await _discord_patch_json(session, f"/channels/{thread_id}", {
             "name": title,
@@ -2345,13 +2427,10 @@ async def forum_post_update(request):
         elif silent_update:
             logger.info(f"🔇 Mise à jour silencieuse (sans annonce): {title}")
 
-        # 🔥 RECONSTRUCTION DU PAYLOAD COMPLET POUR L'HISTORIQUE
         ts = int(time.time() * 1000)
-        
-        # Récupérer l'entrée existante depuis Supabase pour fusionner
         loop = asyncio.get_event_loop()
         existing_row = await loop.run_in_executor(None, _fetch_post_by_thread_id_sync, thread_id)
-        
+
         if history_payload_raw:
             try:
                 payload = json.loads(history_payload_raw)
@@ -2360,17 +2439,13 @@ async def forum_post_update(request):
                 payload = {}
         else:
             payload = {}
-        
-        # Fusionner avec les données existantes (si trouvées)
+
         if existing_row:
-            # Garder les champs non modifiés de l'ancien post
-            final_payload = dict(existing_row)  # Copie de l'existant
-            # Écraser avec les nouvelles valeurs du payload
+            final_payload = dict(existing_row)
             final_payload.update(payload)
         else:
             final_payload = payload
-        
-        # Forcer les champs reçus (priorité aux nouvelles valeurs)
+
         final_payload["thread_id"] = thread_id
         final_payload["message_id"] = message_id
         final_payload["discord_url"] = (thread_url or "").strip() or final_payload.get("discord_url") or ""
@@ -2378,65 +2453,57 @@ async def forum_post_update(request):
         final_payload["content"] = content
         final_payload["tags"] = tags
         final_payload["updated_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
-        
-        # S'assurer que created_at existe
+
         if "created_at" not in final_payload or not final_payload.get("created_at"):
             final_payload["created_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
-        
-        # Normaliser le payload (snake_case)
+
         final_payload = _normalize_history_row(final_payload)
-        
-        # Sauvegarder dans l'historique
         history_manager.update_or_add_post(final_payload)
-        
-        # 🔥 SAUVEGARDER DANS SUPABASE (source de vérité)
+
         sb = _get_supabase()
         if sb:
             try:
-                # Supprimer les clamps qui ne sont pas dans la table Supabase
                 supabase_payload = {k: v for k, v in final_payload.items() if k not in ['timestamp', 'template']}
                 res = sb.table("published_posts").upsert(supabase_payload, on_conflict="id").execute()
                 logger.info(f"✅ Post enregistré dans Supabase: {final_payload.get('title')}")
             except Exception as e:
                 logger.warning(f"⚠️ Échec sauvegarde Supabase lors de la mise à jour: {e}")
 
-    return _with_cors(request, web.json_response({
-        "ok": True, 
-        "updated": True, 
+    # ── Réponse finale avec warning legacy si nécessaire ──────────────────────
+    response_data = {
+        "ok": True,
+        "updated": True,
         "thread_id": thread_id,
         "message_id": message_id,
         "thread_url": thread_url,
         "discord_url": thread_url,
         "forum_id": config.FORUM_MY_ID or 0,
-        # Aliases pour compatibilité
         "threadId": thread_id,
         "messageId": message_id,
         "threadUrl": thread_url,
         "discordUrl": thread_url,
-        "forumId": config.FORUM_MY_ID or 0
-    }))
+        "forumId": config.FORUM_MY_ID or 0,
+    }
+    if is_legacy:
+        response_data["legacy_key_warning"] = LEGACY_KEY_WARNING
+    return _with_cors(request, web.json_response(response_data))
 
 async def get_history(request):
-    api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
-    if api_key != config.PUBLISHER_API_KEY:
-        client_ip = _get_client_ip(request)
-        logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/history)")
+    is_valid, discord_user_id, discord_name, is_legacy = await _auth_request(request, "/api/history")
+    if not is_valid:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+
     posts = history_manager.get_posts()
-    return _with_cors(request, web.json_response({"ok": True, "posts": posts, "count": len(posts)}))
+    response_data = {"ok": True, "posts": posts, "count": len(posts)}
+    if is_legacy:
+        response_data["legacy_key_warning"] = LEGACY_KEY_WARNING
+    return _with_cors(request, web.json_response(response_data))
 
 
 async def forum_post_delete(request):
-    """
-    Supprime définitivement un post de TOUS les systèmes :
-    1. Thread Discord (tous les messages)
-    2. Historique local (JSON)
-    3. Base de données Supabase
-    """
-    api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
-    if api_key != config.PUBLISHER_API_KEY:
-        client_ip = _get_client_ip(request)
-        logger.warning(f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/forum-post/delete)")
+    """Supprime définitivement un post."""
+    is_valid, discord_user_id, discord_name, is_legacy = await _auth_request(request, "/api/forum-post/delete")
+    if not is_valid:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     
     try:
@@ -2496,15 +2563,14 @@ async def forum_post_delete(request):
 def _delete_account_data_sync(user_id: str) -> dict:
     """
     Supprime toutes les données personnelles d'un utilisateur (sync).
-    NE supprime PAS published_posts (contenu communautaire lié au serveur Discord).
-    Retourne un dict avec le détail des suppressions.
+    Retourne un dict avec le détail des suppressions et log un résumé global.
     """
     sb = _get_supabase()
     if not sb:
         return {"ok": False, "error": "Client Supabase non initialisé"}
 
     results = {}
-
+    
     # 1) Autorisations d'édition (propriétaire ET éditeur)
     try:
         sb.table("allowed_editors").delete().eq("owner_id", user_id).execute()
@@ -2542,36 +2608,38 @@ def _delete_account_data_sync(user_id: str) -> dict:
     try:
         sb.auth.admin.delete_user(user_id)
         results["auth_user"] = "ok"
-        logger.info(f"✅ [delete_account] Compte Auth supprimé: {user_id}")
     except Exception as e:
         results["auth_user"] = f"erreur: {e}"
         logger.error(f"❌ [delete_account] Échec suppression compte Auth ({user_id}): {e}")
 
-    return {"ok": results.get("auth_user") == "ok", "details": results}
+    # --- NOUVEAU : Log global de synthèse ---
+    success_count = sum(1 for status in results.values() if status == "ok")
+    total_steps = len(results)
+    is_fully_deleted = success_count == total_steps
 
+    summary_msg = f"📊 [RESUMÉ SUPPRESSION] User: {user_id} | {success_count}/{total_steps} étapes réussies"
+    
+    if is_fully_deleted:
+        logger.info(f"✅ {summary_msg}")
+    else:
+        # On liste les tables qui ont échoué pour un diagnostic rapide
+        failed_tables = [table for table, status in results.items() if status != "ok"]
+        logger.error(f"❌ {summary_msg} | Échecs sur: {', '.join(failed_tables)}")
+
+    return {
+        "ok": results.get("auth_user") == "ok", 
+        "fully_cleared": is_fully_deleted,
+        "details": results
+    }
 
 async def account_delete(request):
     """
     Supprime définitivement le compte d'un utilisateur.
-    Protégé par X-API-KEY.
+    Protégé par X-API-KEY (nouvelle clé individuelle + fallback legacy).
     Body JSON attendu : { "user_id": "<uuid>" }
-
-    Données supprimées :
-      - allowed_editors (owner + editor)
-      - saved_instructions
-      - saved_templates
-      - profiles
-      - auth.users (via admin API — nécessite SUPABASE_SERVICE_ROLE_KEY)
-
-    Non supprimé intentionnellement :
-      - published_posts (contenu communautaire lié au serveur Discord)
     """
-    api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
-    if api_key != config.PUBLISHER_API_KEY:
-        client_ip = _get_client_ip(request)
-        logger.warning(
-            f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/account/delete)"
-        )
+    is_valid, _, _, _ = await _auth_request(request, "/api/account/delete")
+    if not is_valid:
         return _with_cors(
             request,
             web.json_response({"ok": False, "error": "Invalid API key"}, status=401)
