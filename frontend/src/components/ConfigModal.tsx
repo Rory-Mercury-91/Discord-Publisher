@@ -154,6 +154,8 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
           const data = await res.json().catch(() => ({}));
           if (res.ok && data?.valid === true) {
             setAdminUnlocked(true);
+            // ← Notifier AppHeader que le master admin est actif
+            window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
             setCheckingStored(false);
             return;
           }
@@ -161,11 +163,15 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
           setAdminCodeError('Code mémorisé révoqué. Saisissez le nouveau code.');
         } catch {
           setAdminUnlocked(true);
+          // ← Notifier AppHeader (fallback hors-ligne)
+          window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
         }
       } else {
         const refEnv = getMasterAdminCodeEnv().trim();
         if (refEnv && trimmed === refEnv) {
           setAdminUnlocked(true);
+          // ← Notifier AppHeader
+          window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
         } else {
           localStorage.removeItem(STORAGE_KEY_MASTER_ADMIN);
           setAdminCodeError('Code mémorisé invalide.');
@@ -197,6 +203,8 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
           localStorage.setItem(STORAGE_KEY_MASTER_ADMIN, trimmed);
           await _grantMasterAdmin(trimmed, base);
           setAdminUnlocked(true);
+          // ← Notifier AppHeader immédiatement
+          window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
           setAdminCode('');
           showToast('Accès administrateur déverrouillé', 'success');
           return;
@@ -212,6 +220,8 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
         if (trimmed !== refEnv) { setAdminCodeError('Code incorrect.'); return; }
         localStorage.setItem(STORAGE_KEY_MASTER_ADMIN, trimmed);
         setAdminUnlocked(true);
+        // ← Notifier AppHeader
+        window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
         setAdminCode('');
         showToast('Accès administrateur déverrouillé', 'success');
       }
@@ -220,6 +230,8 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
       if (refEnv && trimmed === refEnv) {
         localStorage.setItem(STORAGE_KEY_MASTER_ADMIN, trimmed);
         setAdminUnlocked(true);
+        // ← Notifier AppHeader (mode hors-ligne)
+        window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
         setAdminCode('');
         showToast('Accès administrateur déverrouillé (mode hors-ligne)', 'success');
       } else {
