@@ -198,7 +198,7 @@ async fn download_and_install_update(
 }
 
 // 🧹 Nettoyer les anciens fichiers de mise à jour
-async fn cleanup_old_updates_internal(app: &AppHandle) -> Result<u32, String> {
+async fn cleanup_old_updates_internal(_app: &AppHandle) -> Result<u32, String> {
     println!("[Updater] 🧹 Nettoyage...");
 
     let temp_dir = std::env::temp_dir();

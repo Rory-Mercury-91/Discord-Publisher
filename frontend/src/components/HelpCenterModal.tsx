@@ -849,10 +849,11 @@ function ConfigHelp() {
           ⚙️ À quoi sert la configuration ?
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          La fenêtre <strong>Configuration</strong> regroupe la clé API pour publier, l’état de la fenêtre (Normal, Maximisé, Plein écran, Minimisé), et les droits d’édition (qui peut modifier vos posts). En mode admin, l’URL de l’API, l’export/import complet et le nettoyage des données sont également disponibles.
+          La fenêtre <strong>Configuration</strong> est organisée en trois onglets : <strong>Préférences</strong>, <strong>Mon compte</strong> et <strong>Administration</strong>. Chaque onglet affiche ses sections en grille deux colonnes pour une meilleure lisibilité.
         </p>
       </section>
 
+      {/* ── Onglet Préférences ── */}
       <section style={{
         background: 'rgba(74, 158, 255, 0.08)',
         border: '1px solid rgba(74, 158, 255, 0.25)',
@@ -860,14 +861,27 @@ function ConfigHelp() {
         padding: 16
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4a9eff' }}>
-          🌐 Configuration (API)
+          ⚙️ Onglet — Préférences
         </h4>
         <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
-          <li><strong>URL de l'API (admin)</strong> : visible uniquement en mode admin. URL de base du service de publication (ex. http://138.2.182.125:8080), sans /api. Les utilisateurs non-admin utilisent l’URL définie ici.</li>
-          <li><strong>Clé API</strong> : clé de sécurité pour publier. Chaque utilisateur saisit la sienne. Validez avec « 💾 Enregistrer ».</li>
+          <li>
+            <strong>🔑 Clé API</strong> : clé de sécurité individuelle nécessaire pour publier.
+            Transmise par l'administrateur. Sauvegardée automatiquement à chaque modification.
+          </li>
+          <li>
+            <strong>🪟 Affichage de la fenêtre</strong> : état au démarrage de l'application —
+            <strong> Normal</strong>, <strong>Maximisé</strong>, <strong>Plein écran</strong> ou <strong>Minimisé</strong>.
+            Appliqué immédiatement et conservé au prochain démarrage (application Tauri).
+          </li>
+          <li>
+            <strong>🏷️ Labels par défaut</strong> (pleine largeur) : valeurs préservées lors de la
+            réinitialisation du formulaire — <em>label de traduction</em> et <em>label de mod</em>.
+            Les deux champs sont affichés côte à côte.
+          </li>
         </ul>
       </section>
 
+      {/* ── Onglet Mon compte ── */}
       <section style={{
         background: 'rgba(74, 222, 128, 0.08)',
         border: '1px solid rgba(74, 222, 128, 0.25)',
@@ -875,27 +889,28 @@ function ConfigHelp() {
         padding: 16
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
-          👥 Qui peut modifier mes posts
+          👤 Onglet — Mon compte
         </h4>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          Autorisez ou révoquez le droit d’édition de vos publications pour les autres utilisateurs (profils Supabase). Les utilisateurs autorisés peuvent éditer vos posts depuis l’historique et voient automatiquement vos instructions (synchronisation temps réel). Utilisez les boutons <strong>Autoriser</strong> / <strong>Révoquer</strong> à côté de chaque profil.
-        </p>
+        <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
+          <li>
+            <strong>👥 Qui peut modifier mes posts</strong> : liste tous les utilisateurs enregistrés.
+            Cliquez sur un nom pour lui accorder ou révoquer le droit d'édition de vos publications.
+            <br />
+            <span style={{ color: '#9ca3af' }}>⚪ Gris</span> = Non autorisé &nbsp;•&nbsp;
+            <span style={{ color: '#10b981' }}> 🟢 Vert</span> = Autorisé.
+            Les utilisateurs autorisés peuvent éditer vos posts depuis l'historique et accèdent automatiquement à vos instructions.
+          </li>
+          <li>
+            <strong>🔐 Sécurité du compte</strong> : modification du mot de passe (ancien + nouveau à confirmer, minimum 6 caractères).
+          </li>
+          <li>
+            <strong>☠️ Zone de danger</strong> : suppression définitive du compte après confirmation par mot de passe.
+            Supprime profil, instructions, templates et autorisations. Les publications Discord restent visibles sur le serveur.
+          </li>
+        </ul>
       </section>
 
-      <section style={{
-        background: 'rgba(139, 92, 246, 0.08)',
-        border: '1px solid rgba(139, 92, 246, 0.25)',
-        borderRadius: 8,
-        padding: 16
-      }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#8b5cf6' }}>
-          🪟 État de la fenêtre
-        </h4>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          Choisissez l’état au démarrage de l’application : <strong>Normal</strong>, <strong>Maximisé</strong>, <strong>Plein écran</strong> ou <strong>Minimisé</strong>. L’état est appliqué immédiatement et conservé au prochain démarrage (application Tauri). Validez avec « 💾 Enregistrer ».
-        </p>
-      </section>
-
+      {/* ── Onglet Administration ── */}
       <section style={{
         background: 'rgba(255, 193, 7, 0.1)',
         border: '1px solid rgba(255, 193, 7, 0.3)',
@@ -903,18 +918,28 @@ function ConfigHelp() {
         padding: 16
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#f59e0b' }}>
-          🔐 Mode admin — Sauvegarde et restauration
+          🛡️ Onglet — Administration (accès restreint)
         </h4>
         <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 12px 0' }}>
-          En débloquant le mode admin (code Master Admin à l’accès à la configuration), la section <strong>💾 Sauvegarde et restauration</strong> apparaît :
+          Cet onglet est protégé par un <strong>code Master Admin</strong>. Une fois saisi et validé, le code est mémorisé pour la session. Le contenu se déverrouille et affiche deux sections côte à côte :
         </p>
         <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
-          <li><strong>📤 Exporter une copie</strong> : télécharge un fichier JSON contenant config, templates, tags, instructions et historique.</li>
-          <li><strong>📥 Restaurer depuis un fichier</strong> : remplace vos données par le contenu d’un fichier de sauvegarde (export précédent). Écrase les données actuelles.</li>
-          <li><strong>🗑️ Tout supprimer</strong> : supprime toutes les données sur Supabase et localement. Irréversible. À utiliser avec précaution.</li>
+          <li>
+            <strong>🌐 URL de l'API</strong> : adresse du serveur backend (ex. <code>http://138.2.182.125:8080</code>),
+            sans <code>/api</code>. Propagée automatiquement à tous les utilisateurs via Supabase dès modification.
+          </li>
+          <li>
+            <strong>📤 Exporter une copie</strong> : télécharge un fichier JSON contenant config, templates, tags, instructions et historique.
+          </li>
+          <li>
+            <strong>📥 Restaurer depuis un fichier</strong> : remplace toutes les données par le contenu d'un fichier de sauvegarde. Écrase les données actuelles.
+          </li>
+          <li>
+            <strong>🗑️ Tout supprimer</strong> : supprime toutes les données sur Supabase et localement. Irréversible.
+          </li>
         </ul>
-        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 0 0' }}>
-          Tags, templates et instructions sont synchronisés <strong>automatiquement</strong> avec Supabase à chaque modification. Aucun bouton de sync manuel dans Configuration.
+        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '10px 0 0 0' }}>
+          Tags, templates et instructions sont synchronisés <strong>automatiquement</strong> avec Supabase à chaque modification — aucun bouton de sync manuel n'est nécessaire.
         </p>
       </section>
     </div>

@@ -2491,6 +2491,125 @@ async def forum_post_delete(request):
     logger.info(f"✅ Post supprimé complètement: {post_title or thread_id}")
     return _with_cors(request, web.json_response({"ok": True, "thread_id": thread_id}))
 
+# ==================== SUPPRESSION DE COMPTE ====================
+
+def _delete_account_data_sync(user_id: str) -> dict:
+    """
+    Supprime toutes les données personnelles d'un utilisateur (sync).
+    NE supprime PAS published_posts (contenu communautaire lié au serveur Discord).
+    Retourne un dict avec le détail des suppressions.
+    """
+    sb = _get_supabase()
+    if not sb:
+        return {"ok": False, "error": "Client Supabase non initialisé"}
+
+    results = {}
+
+    # 1) Autorisations d'édition (propriétaire ET éditeur)
+    try:
+        sb.table("allowed_editors").delete().eq("owner_id", user_id).execute()
+        sb.table("allowed_editors").delete().eq("editor_id", user_id).execute()
+        results["allowed_editors"] = "ok"
+    except Exception as e:
+        results["allowed_editors"] = f"erreur: {e}"
+        logger.warning(f"⚠️ [delete_account] allowed_editors: {e}")
+
+    # 2) Instructions sauvegardées
+    try:
+        sb.table("saved_instructions").delete().eq("owner_id", user_id).execute()
+        results["saved_instructions"] = "ok"
+    except Exception as e:
+        results["saved_instructions"] = f"erreur: {e}"
+        logger.warning(f"⚠️ [delete_account] saved_instructions: {e}")
+
+    # 3) Templates sauvegardés
+    try:
+        sb.table("saved_templates").delete().eq("owner_id", user_id).execute()
+        results["saved_templates"] = "ok"
+    except Exception as e:
+        results["saved_templates"] = f"erreur: {e}"
+        logger.warning(f"⚠️ [delete_account] saved_templates: {e}")
+
+    # 4) Profil utilisateur
+    try:
+        sb.table("profiles").delete().eq("id", user_id).execute()
+        results["profile"] = "ok"
+    except Exception as e:
+        results["profile"] = f"erreur: {e}"
+        logger.warning(f"⚠️ [delete_account] profile: {e}")
+
+    # 5) Suppression du compte Auth (nécessite service role key)
+    try:
+        sb.auth.admin.delete_user(user_id)
+        results["auth_user"] = "ok"
+        logger.info(f"✅ [delete_account] Compte Auth supprimé: {user_id}")
+    except Exception as e:
+        results["auth_user"] = f"erreur: {e}"
+        logger.error(f"❌ [delete_account] Échec suppression compte Auth ({user_id}): {e}")
+
+    return {"ok": results.get("auth_user") == "ok", "details": results}
+
+
+async def account_delete(request):
+    """
+    Supprime définitivement le compte d'un utilisateur.
+    Protégé par X-API-KEY.
+    Body JSON attendu : { "user_id": "<uuid>" }
+
+    Données supprimées :
+      - allowed_editors (owner + editor)
+      - saved_instructions
+      - saved_templates
+      - profiles
+      - auth.users (via admin API — nécessite SUPABASE_SERVICE_ROLE_KEY)
+
+    Non supprimé intentionnellement :
+      - published_posts (contenu communautaire lié au serveur Discord)
+    """
+    api_key = request.headers.get("X-API-KEY") or request.query.get("api_key")
+    if api_key != config.PUBLISHER_API_KEY:
+        client_ip = _get_client_ip(request)
+        logger.warning(
+            f"[AUTH] 🚫 API Auth failed from {client_ip} - Invalid API key (route: /api/account/delete)"
+        )
+        return _with_cors(
+            request,
+            web.json_response({"ok": False, "error": "Invalid API key"}, status=401)
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        return _with_cors(
+            request,
+            web.json_response({"ok": False, "error": "Body JSON invalide"}, status=400)
+        )
+
+    user_id = (body.get("user_id") or "").strip()
+    if not user_id:
+        return _with_cors(
+            request,
+            web.json_response({"ok": False, "error": "user_id requis"}, status=400)
+        )
+
+    logger.info(f"🗑️ [delete_account] Suppression demandée pour user_id={user_id}")
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _delete_account_data_sync, user_id)
+
+    if not result["ok"]:
+        logger.error(f"❌ [delete_account] Échec: {result}")
+        return _with_cors(
+            request,
+            web.json_response(
+                {"ok": False, "error": "Échec suppression du compte", "details": result.get("details")},
+                status=500
+            )
+        )
+
+    logger.info(f"✅ [delete_account] Compte supprimé: {user_id} | Détails: {result['details']}")
+    return _with_cors(request, web.json_response({"ok": True, "details": result["details"]}))
+
 # ==================== APPLICATION WEB ====================
 app = web.Application(middlewares=[logging_middleware])
 app.add_routes([

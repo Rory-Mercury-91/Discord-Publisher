@@ -36,8 +36,9 @@ from publisher_api import (
     forum_post_update,
     forum_post_delete,
     get_history,
+    account_delete,
     _with_cors,
-    logging_middleware,  # Import du middleware
+    logging_middleware,
 )
 
 
@@ -492,6 +493,7 @@ def make_app():
     app.router.add_get("/api/publisher/health", publisher_health)
     app.router.add_get("/api/history", get_history)
     app.router.add_get("/api/logs", get_logs)
+    app.router.add_post("/api/account/delete", account_delete)
 
     return app
 
