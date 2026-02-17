@@ -865,18 +865,20 @@ function ConfigHelp() {
         </h4>
         <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
           <li>
-            <strong>🔑 Clé API</strong> : clé de sécurité individuelle nécessaire pour publier.
-            Transmise par l'administrateur. Sauvegardée automatiquement à chaque modification.
+            <strong>🔑 Clé API</strong> : Clé de sécurité personnelle indispensable pour publier.
+            Pour l'obtenir, tapez la commande <code>/generer-cle</code> dans un salon textuel du serveur
+            <strong> "RenExtract & Nexus"</strong>. Le bot vous l'enverra immédiatement en message privé (MP).
+            Une fois collée ici, elle est sauvegardée localement.
           </li>
           <li>
-            <strong>🪟 Affichage de la fenêtre</strong> : état au démarrage de l'application —
+            <strong>🪟 Affichage de la fenêtre</strong> : État au démarrage de l'application —
             <strong> Normal</strong>, <strong>Maximisé</strong>, <strong>Plein écran</strong> ou <strong>Minimisé</strong>.
-            Appliqué immédiatement et conservé au prochain démarrage (application Tauri).
+            Appliqué immédiatement et conservé au prochain démarrage.
           </li>
           <li>
-            <strong>🏷️ Labels par défaut</strong> (pleine largeur) : valeurs préservées lors de la
-            réinitialisation du formulaire — <em>label de traduction</em> et <em>label de mod</em>.
-            Les deux champs sont affichés côte à côte.
+            <strong>🏷️ Labels par défaut</strong> : Valeurs préservées lors de la
+            réinitialisation du formulaire (ex: <em>[FR]</em> ou <em>[MOD]</em>).
+            Ces labels s'affichent côte à côte dans l'interface de saisie.
           </li>
         </ul>
       </section>
