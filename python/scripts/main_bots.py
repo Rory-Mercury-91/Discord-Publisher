@@ -535,14 +535,46 @@ async def start():
     TOKEN_FRELON = os.getenv("FRELON_DISCORD_TOKEN")
     TOKEN_PUB = os.getenv("PUBLISHER_DISCORD_TOKEN")
 
+    # ── Récupérer les salons routés depuis Supabase pour les afficher au démarrage ──
+    async def _fetch_routing_summary() -> dict:
+        """Résumé du routing : salons par défaut + mappings traducteurs."""
+        from publisher_api import _get_supabase
+        sb = _get_supabase()
+        summary = {"mappings": 0, "externals": 0, "forum_ids": set()}
+        if not sb:
+            return summary
+        try:
+            # Mappings profils inscrits
+            r1 = sb.table("translator_forum_mappings").select("forum_channel_id").execute()
+            for row in (r1.data or []):
+                if row.get("forum_channel_id"):
+                    summary["forum_ids"].add(row["forum_channel_id"])
+            summary["mappings"] = len(r1.data or [])
+
+            # Traducteurs externes
+            r2 = sb.table("external_translators").select("forum_channel_id").execute()
+            for row in (r2.data or []):
+                if row.get("forum_channel_id", "").strip():
+                    summary["forum_ids"].add(row["forum_channel_id"])
+            summary["externals"] = len(r2.data or [])
+        except Exception as e:
+            logger.warning(f"⚠️ Impossible de charger le résumé routing: {e}")
+        return summary
+
     logger.info("=" * 60)
     logger.info("🚀 Démarrage de l'orchestrateur")
-    logger.info(f"   Bot Frelon               : {'✓ token présent' if TOKEN_FRELON else '✗ MANQUANT'}")
-    logger.info(f"   Publisher Bot            : {'✓ token présent' if TOKEN_PUB else '⚠ absent (attente config)'}")
+    logger.info(f"   Bot Frelon               : {'✔ token présent' if TOKEN_FRELON else '✗ MANQUANT'}")
+    logger.info(f"   Publisher Bot            : {'✔ token présent' if TOKEN_PUB else '⚠ absent (attente config)'}")
     logger.info(f"   Publisher configured     : {getattr(publisher_config, 'configured', False)}")
-    logger.info(f"   Forum MY ID              : {getattr(publisher_config, 'FORUM_MY_ID', 0)}")
-    logger.info(f"   Notif channel ID         : {getattr(publisher_config, 'PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID', 0)}")
-    logger.info(f"   Announce channel ID      : {getattr(publisher_config, 'PUBLISHER_ANNOUNCE_CHANNEL_ID', 0)}")
+    logger.info("=" * 60)
+    logger.info("📡 Configuration des salons Discord :")
+    logger.info(f"   Salon par défaut (fallback)  : {getattr(publisher_config, 'FORUM_MY_ID', 0)}")
+    logger.info(f"   Salon notifications MAJ      : {getattr(publisher_config, 'PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID', 0)}")
+    logger.info(f"   Salon annonces               : {getattr(publisher_config, 'PUBLISHER_ANNOUNCE_CHANNEL_ID', 0)}")
+    logger.info("=" * 60)
+    logger.info("🕐 Tâches planifiées :")
+    logger.info(f"   Contrôle versions F95   : {getattr(publisher_config, 'VERSION_CHECK_HOUR', 6):02d}:{getattr(publisher_config, 'VERSION_CHECK_MINUTE', 0):02d} Europe/Paris")
+    logger.info(f"   Nettoyage msgs vides    : {getattr(publisher_config, 'CLEANUP_EMPTY_MESSAGES_HOUR', 4):02d}:{getattr(publisher_config, 'CLEANUP_EMPTY_MESSAGES_MINUTE', 0):02d} Europe/Paris")
     logger.info("=" * 60)
 
     if not TOKEN_FRELON:
@@ -558,14 +590,28 @@ async def start():
     await site.start()
     logger.info(f"✅ Serveur Web démarré sur http://0.0.0.0:{PORT}")
 
-    # 2) Initialisation Supabase (sync dans executor pour ne pas bloquer l'event loop)
+    # 2) Initialisation Supabase
     logger.info("🗄️ Initialisation du client Supabase...")
     from publisher_api import _init_supabase
     await asyncio.get_event_loop().run_in_executor(None, _init_supabase)
     logger.info("✅ Client Supabase initialisé")
 
-    # 3) Bot Frelon
+    # 3) Résumé routing (après init Supabase)
+    routing = await _fetch_routing_summary()
     logger.info("=" * 60)
+    logger.info("🗺️ Routing des traducteurs (depuis Supabase) :")
+    logger.info(f"   Traducteurs inscrits mappés  : {routing['mappings']}")
+    logger.info(f"   Traducteurs externes mappés  : {routing['externals']}")
+    if routing["forum_ids"]:
+        logger.info(f"   Salons forum actifs ({len(routing['forum_ids'])})    :")
+        for fid in sorted(routing["forum_ids"]):
+            is_default = str(fid) == str(getattr(publisher_config, 'FORUM_MY_ID', 0))
+            logger.info(f"     • {fid}{' ← défaut' if is_default else ''}")
+    else:
+        logger.info("   Aucun mapping configuré — tout ira dans le salon par défaut")
+    logger.info("=" * 60)
+
+    # 4) Bot Frelon
     logger.info("🐝 ÉTAPE 1/2 : Lancement Bot Frelon (F95 Checker)...")
     logger.info("=" * 60)
 
@@ -576,7 +622,7 @@ async def start():
 
     try:
         await wait_ready(bot_frelon, "Bot Frelon", timeout=180)
-        logger.info("✅🐝 Bot Frelon opérationnel")
+        logger.info(f"✅🐝 Bot Frelon opérationnel → {bot_frelon.user} (id={bot_frelon.user.id})")
     except Exception as e:
         logger.error(f"⛔🐝 Bot Frelon n'a pas pu démarrer: {e}")
         logger.critical("🛑 Arrêt de la séquence de démarrage")
@@ -587,7 +633,7 @@ async def start():
             logger.info("🧹 Task Bot Frelon annulée proprement")
         return
 
-    # 4) Publisher Bot
+    # 5) Publisher Bot
     if not TOKEN_PUB:
         logger.warning("⚠️ PUBLISHER_DISCORD_TOKEN absent — attente de configuration via /api/configure (max 180s)...")
         waited = 0
@@ -617,7 +663,7 @@ async def start():
 
     try:
         await wait_ready(publisher_bot, "PublisherBot", timeout=180)
-        logger.info("✅🤖 PublisherBot opérationnel")
+        logger.info(f"✅🤖 PublisherBot opérationnel → {publisher_bot.user} (id={publisher_bot.user.id})")
     except Exception as e:
         logger.error(f"⛔🤖 PublisherBot n'a pas pu démarrer: {e}")
         logger.warning("⚠️ Bot Frelon continue de fonctionner seul")
@@ -627,12 +673,13 @@ async def start():
     # Tous les bots sont prêts
     logger.info("=" * 60)
     logger.info("🎉 TOUS LES BOTS SONT OPÉRATIONNELS")
-    logger.info(f"  ✅ Bot Frelon    : {bot_frelon.user} (id={bot_frelon.user.id})")
-    logger.info(f"  ✅ PublisherBot  : {publisher_bot.user} (id={publisher_bot.user.id})")
-    logger.info(f"  🌐 API REST      : http://0.0.0.0:{PORT}")
+    logger.info(f"   ✅ Bot Frelon   : {bot_frelon.user} (id={bot_frelon.user.id})")
+    logger.info(f"   ✅ PublisherBot : {publisher_bot.user} (id={publisher_bot.user.id})")
+    logger.info(f"   🌐 API REST     : http://0.0.0.0:{PORT}")
+    logger.info(f"   🗺️ Routing      : {routing['mappings']} inscrit(s), {routing['externals']} externe(s), {len(routing['forum_ids'])} salon(s)")
     logger.info("=" * 60)
 
-    # Surveiller les tasks et loguer si l'une d'elles se termine inopinément
+    # Surveiller les tasks
     done, pending = await asyncio.wait(
         [frelon_task, pub_task],
         return_when=asyncio.FIRST_COMPLETED
@@ -648,7 +695,6 @@ async def start():
         else:
             logger.info(f"ℹ️ Task '{name}' terminée normalement")
 
-    # Attendre la fin des tasks restantes
     if pending:
         logger.info(f"⏳ Attente des {len(pending)} task(s) restante(s)...")
         await asyncio.gather(*pending, return_exceptions=True)

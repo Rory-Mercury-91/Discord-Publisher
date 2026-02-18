@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import ErrorModal from '../components/ErrorModal';
 import { useToast } from '../components/ToastProvider';
-import { apiFetch, createApiHeaders } from '../lib/api-helpers';
+import { createApiHeaders } from '../lib/api-helpers';
 import { getSupabase } from '../lib/supabase';
 import { tauriAPI } from '../lib/tauri-api';
 import { useAuth } from './authContext';
@@ -749,83 +749,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Récupérer l'historique : d'abord Supabase, puis API en backup
   async function fetchHistoryFromAPI() {
-    console.log('[Historique] Début chargement…');
     const sb = getSupabase();
-    if (sb) {
-      try {
-        const { data: rows, error } = await sb
-          .from('published_posts')
-          .select('*')
-          .order('updated_at', { ascending: false })
-          .limit(1000);
-        if (error) {
-          console.warn('[Historique] Supabase erreur:', error.message, error.code);
-        } else if (Array.isArray(rows) && rows.length > 0) {
-          setPublishedPosts(rows.map(rowToPost));
-          console.log('[Historique] Supabase OK:', rows.length, 'publication(s)');
-          return;
-        } else {
-          console.log('[Historique] Supabase OK mais 0 publication, passage à l\'API si configurée');
-        }
-      } catch (e) {
-        console.warn('[Historique] Supabase exception:', e);
-      }
-    } else {
-      console.log('[Historique] Supabase non configuré, tentative API');
-    }
+    if (!sb) return;
     try {
-      const baseUrl = localStorage.getItem('apiBase') || defaultApiBase;
-      const apiKey = localStorage.getItem('apiKey') || '';
-      if (!baseUrl || !apiKey) {
-        console.log('[Historique] API non configurée (apiBase ou apiKey manquant)');
-        return;
-      }
-      const endpoint = `${baseUrl}/api/history`;
-      const response = await apiFetch(endpoint, apiKey, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      if (!response.ok) {
-        console.warn('[Historique] API HTTP', response.status, response.statusText);
-        return;
-      }
-      const data = await response.json();
-      if (Array.isArray(data.posts) || Array.isArray(data)) {
-        const apiPosts = Array.isArray(data.posts) ? data.posts : data;
-        const localPosts = publishedPosts;
-        const newPostsFromApi = apiPosts.filter((p: any) => {
-          const apiThreadId = p.thread_id || p.threadId;
-          const apiMessageId = p.message_id || p.messageId;
-          return !localPosts.some(local =>
-            (local.threadId === apiThreadId && local.messageId === apiMessageId) ||
-            local.id === p.id
-          );
-        });
-        if (newPostsFromApi.length > 0) {
-          const mapped = newPostsFromApi.map((p: Record<string, unknown>) => {
-            const row = {
-              ...p,
-              id: p.id ?? `post_${p.timestamp ?? Date.now()}_api`,
-              thread_id: p.thread_id ?? p.threadId ?? '',
-              message_id: p.message_id ?? p.messageId ?? '',
-              discord_url: p.discord_url ?? p.thread_url ?? '',
-              forum_id: p.forum_id ?? p.forumId ?? 0
-            };
-            return rowToPost(row);
-          });
-          setPublishedPosts(prev => {
-            const merged = [...mapped, ...prev].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-            return merged;
-          });
-          console.log('[Historique] API OK:', newPostsFromApi.length, 'nouvelle(s) publication(s)');
-        } else {
-          console.log('[Historique] API OK mais aucune nouvelle publication');
-        }
+      const { data: rows, error } = await sb
+        .from('published_posts')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(1000);
+      if (!error && Array.isArray(rows) && rows.length > 0) {
+        setPublishedPosts(rows.map(rowToPost));
       }
     } catch (e) {
-      console.warn('[Historique] API exception:', e);
+      console.warn('[Historique] Erreur:', e);
     }
   }
 
@@ -905,6 +841,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         timestamp: Date.now()
       };
 
+      // Résoudre le forum_channel_id depuis le mapping du tag traducteur sélectionné
+      let resolvedForumChannelId: string | null = null;
+      const translatorTag = selectedTagObjects.find(t => t.tagType === 'translator');
+      if (translatorTag?.id) {
+        const sb = getSupabase();
+        if (sb) {
+          try {
+            // 1. Chercher d'abord dans translator_forum_mappings (traducteurs inscrits)
+            const { data: mappingData } = await sb
+              .from('translator_forum_mappings')
+              .select('forum_channel_id')
+              .eq('tag_id', translatorTag.id)
+              .maybeSingle();
+
+            if (mappingData?.forum_channel_id) {
+              resolvedForumChannelId = mappingData.forum_channel_id;
+            } else {
+              // 2. Fallback : chercher dans external_translators (traducteurs externes)
+              const { data: extData } = await sb
+                .from('external_translators')
+                .select('forum_channel_id')
+                .eq('tag_id', translatorTag.id)
+                .maybeSingle();
+
+              if (extData?.forum_channel_id?.trim()) {
+                resolvedForumChannelId = extData.forum_channel_id.trim();
+              }
+            }
+          } catch { /* non bloquant */ }
+        }
+      }
+
       let finalContent = content;
       if (imagesState.uploadedImages.length > 0) {
         const mainImage = imagesState.uploadedImages.find(img => img.isMain) || imagesState.uploadedImages[0];
@@ -927,6 +895,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ? mainImageForAnnounce.url
         : '';
       formData.append('announce_image_url', announceImageUrl);
+      if (resolvedForumChannelId) {
+        formData.append('forum_channel_id', resolvedForumChannelId);
+      }
 
       if (isEditMode && editingPostData) {
         formData.append('threadId', editingPostData.threadId);
@@ -1014,12 +985,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setRateLimitCooldown(null);
       }
 
-      let successMsg = isEditMode ? 'Mise à jour réussie' : 'Publication réussie';
+      let successMsg = isEditMode
+        ? (res.rerouted ? '🔀 Post déplacé dans le bon salon' : 'Mise à jour réussie')
+        : 'Publication réussie';
+
       setLastPublishResult(successMsg);
 
+      if (res.rerouted) {
+        showToast(
+          '🔀 Le post a été déplacé dans le salon correct et l\'ancien a été supprimé.',
+          'success',
+          5000
+        );
+      }
+
       // ── Warning clé API legacy ──────────────────────────────────────────────
-      // Le backend renvoie ce champ quand l'ancienne clé partagée est utilisée.
-      // On laisse la publication se terminer normalement, puis on avertit.
       if (res.legacy_key_warning) {
         setTimeout(() => {
           showToast(

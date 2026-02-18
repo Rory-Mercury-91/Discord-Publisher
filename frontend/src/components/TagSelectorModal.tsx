@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
+import { getSupabase } from '../lib/supabase';
 import { useApp } from '../state/appContext';
+import { useAuth } from '../state/authContext';
 import type { TagType } from '../state/types';
 
 interface TagSelectorModalProps {
@@ -21,6 +23,7 @@ export default function TagSelectorModal({
 }: TagSelectorModalProps) {
   const { savedTags } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
+  const { profile } = useAuth();
 
   useEscapeKey(() => {
     if (isOpen) {
@@ -36,6 +39,41 @@ export default function TagSelectorModal({
       setSearchQuery('');
     }
   }, [isOpen]);
+
+  // Pré-sélection automatique du tag traducteur lié au profil connecté
+  useEffect(() => {
+    if (!isOpen || !profile?.id) return;
+
+    const autoSelect = async () => {
+      const sb = getSupabase();
+      if (!sb) return;
+
+      try {
+        const { data, error } = await sb
+          .from('translator_forum_mappings')
+          .select('tag_id')
+          .eq('profile_id', profile.id)
+          .maybeSingle();
+
+        if (error || !data?.tag_id) return;
+
+        // Vérifier que ce tag existe bien dans savedTags
+        const tag = savedTags.find(t => t.id === data.tag_id);
+        if (!tag) return;
+
+        const tagId = tag.id || tag.name;
+
+        // Ne pré-sélectionner que s'il n'est pas déjà sélectionné
+        if (!selectedTagIds.includes(tagId)) {
+          onSelectTag(tagId);
+        }
+      } catch {
+        // Non bloquant
+      }
+    };
+
+    void autoSelect();
+  }, [isOpen, profile?.id]);
 
   // Fonction pour retirer les emojis au début d'un texte
   const removeLeadingEmojis = (text: string): string => {

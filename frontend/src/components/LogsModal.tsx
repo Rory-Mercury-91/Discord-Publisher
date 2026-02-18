@@ -32,7 +32,7 @@ const LOG_SOURCES = [
 const LOG_FILTERS = [
   { id: 'security' as const, label: 'Sécurité', default: false },
   { id: 'publisher-requests' as const, label: 'Requêtes Discord Publisher', default: false },
-  { id: 'discord-api' as const, label: 'API Discord', default: false },
+  { id: 'discord-api' as const, label: 'API Discord', default: true },
   { id: 'supabase-api' as const, label: 'API Supabase', default: false },
   { id: 'debug' as const, label: 'HTTPS / Debug', default: false },
 ] as const;
@@ -40,6 +40,25 @@ const LOG_FILTERS = [
 type LogCategory = 'frelon' | 'publisher' | 'orchestrator' | 'security' | 'publisher-requests' | 'discord-api' | 'supabase-api' | 'debug' | null;
 
 function getLineCategory(line: string): LogCategory {
+  const l = line.toLowerCase();
+
+  // 1. PRIORITÉ : Rate Limit Discord (Redirection vers 'discord-api')
+  if (l.includes('rate limit proche') || l.includes('requests remaining')) {
+    return 'discord-api';
+  }
+
+  // 2. PRIORITÉ : Tentatives d'exploitation et Erreurs HTTP (Redirection vers 'debug')
+  // On ne prend QUE si c'est explicitement une erreur ou un scan suspect
+  const isSuspicious =
+    l.includes('[http_error]') ||
+    l.includes('nokey') ||
+    (l.includes('status=404') && !l.includes('/api/')) || // 404 hors de ton API = scan de robots
+    (l.includes('get /') && !l.includes('/api/'));        // Accès à la racine ou fichiers sensibles
+
+  if (isSuspicious) {
+    return 'debug';
+  }
+
   if (/\[REQUEST\].*(?:OPTIONS|GET)\s+\/api\/(?:logs|publisher\/[^\s]+)/i.test(line)) {
     return 'publisher-requests';
   }

@@ -107,10 +107,6 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
       showToast('Le nom du tag est requis', 'warning');
       return;
     }
-    if (!form.discordTagId.trim()) {
-      showToast('L\'ID du tag Discord est requis pour que le tag fonctionne avec Discord.', 'warning');
-      return;
-    }
 
     const tagData = {
       name: form.name.trim(),
@@ -491,7 +487,7 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>
-                  ID du tag Discord *
+                  ID du tag Discord <span style={{ fontWeight: 400, opacity: 0.6 }}>(optionnel)</span>
                 </label>
                 <input
                   placeholder="ex: 1234567890123456789 (ID du tag côté Discord)"
@@ -500,7 +496,7 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
                   style={{ width: '100%' }}
                 />
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  ID du tag tel qu’il est défini dans le forum Discord (requis pour la synchronisation).
+                  ID du tag Discord (pour appliquer l'étiquette colorée sur le post). Non requis pour le routing.
                 </div>
               </div>
 

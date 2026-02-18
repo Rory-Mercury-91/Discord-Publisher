@@ -293,10 +293,6 @@ def _mark_as_notified(thread_id: int, f95_version: str):
         "timestamp": dt.now()
     }
 
-# ==================== HISTORIQUE PUBLICATIONS ====================
-# Aligné sur Supabase : tous les champs (saved_inputs, saved_link_configs, etc.) sont stockés et renvoyés.
-HISTORY_FILE = Path("publication_history.json")
-
 def _normalize_history_row(row: Dict) -> Dict:
     """Garantit les clés snake_case attendues par le frontend (rowToPost)."""
     if not row:
@@ -316,110 +312,6 @@ def _normalize_history_row(row: Dict) -> Dict:
         if camel in out and snake not in out:
             out[snake] = out.pop(camel)
     return out
-
-
-class PublicationHistory:
-    def __init__(self, history_file: Path = HISTORY_FILE):
-        self.history_file = history_file
-        self._ensure_file_exists()
-
-    def _ensure_file_exists(self):
-        if not self.history_file.exists():
-            try:
-                self.history_file.parent.mkdir(parents=True, exist_ok=True)
-                self.history_file.write_text(json.dumps([], ensure_ascii=False, indent=2), encoding='utf-8')
-            except Exception as e:
-                logger.warning(f"Impossible de créer le fichier d'historique: {e}")
-
-    def update_or_add_post(self, post_data: Dict) -> None:
-        """
-        Ajoute ou met à jour un post dans l'historique (aligné Supabase).
-        Si post_data a thread_id et qu'un post avec ce thread_id existe, il est remplacé ; sinon insertion en tête.
-        Tous les champs (saved_inputs, saved_link_configs, etc.) sont conservés tels quels.
-        """
-        post_data = _normalize_history_row(post_data)
-        try:
-            if self.history_file.exists():
-                content = self.history_file.read_text(encoding='utf-8')
-                history = json.loads(content) if content.strip() else []
-            else:
-                history = []
-
-            thread_id = post_data.get("thread_id") or ""
-            if thread_id:
-                history = [p for p in history if (p.get("thread_id") or "") != thread_id]
-            history.insert(0, post_data)
-            if len(history) > 1000:
-                history = history[:1000]
-
-            self.history_file.write_text(
-                json.dumps(history, ensure_ascii=False, indent=2),
-                encoding='utf-8'
-            )
-            logger.info(f"✅ Post enregistré dans l'historique: {post_data.get('title', 'N/A')}")
-        except Exception as e:
-            logger.error(f"Erreur lors de l'enregistrement dans l'historique: {e}")
-
-    def add_post(self, post_data: Dict) -> None:
-        """Rétrocompatibilité : délègue à update_or_add_post."""
-        self.update_or_add_post(post_data)
-
-    def get_posts(self, limit: Optional[int] = None) -> List[Dict]:
-        """Retourne la liste complète des posts (tous champs, snake_case)."""
-        try:
-            if not self.history_file.exists():
-                return []
-            content = self.history_file.read_text(encoding='utf-8')
-            history = json.loads(content) if content.strip() else []
-            out = [_normalize_history_row(p) for p in history]
-            return out[:limit] if limit else out
-        except Exception as e:
-            logger.error(f"Erreur lors de la lecture de l'historique: {e}")
-            return []
-    
-    def delete_post(self, thread_id: str = None, post_id: str = None) -> bool:
-        """
-        Supprime un post de l'historique local (JSON) par thread_id ou id.
-        ⚠️ Ne supprime PAS de Supabase (utilisez _delete_from_supabase_sync pour ça)
-        Retourne True si un post a été supprimé, False sinon.
-        """
-        if not thread_id and not post_id:
-            logger.warning("⚠️ delete_post: aucun identifiant fourni")
-            return False
-        
-        try:
-            if not self.history_file.exists():
-                return False
-            
-            content = self.history_file.read_text(encoding='utf-8')
-            history = json.loads(content) if content.strip() else []
-            initial_count = len(history)
-            
-            # Filtrer les posts à supprimer
-            if thread_id:
-                history = [p for p in history if (p.get("thread_id") or "") != thread_id]
-            if post_id:
-                history = [p for p in history if (p.get("id") or "") != post_id]
-            
-            deleted_count = initial_count - len(history)
-            
-            if deleted_count > 0:
-                self.history_file.write_text(
-                    json.dumps(history, ensure_ascii=False, indent=2),
-                    encoding='utf-8'
-                )
-                logger.info(f"✅ {deleted_count} post(s) supprimé(s) de l'historique (thread_id={thread_id}, id={post_id})")
-                return True
-            else:
-                logger.info(f"ℹ️ Aucun post trouvé dans l'historique avec thread_id={thread_id} ou id={post_id}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"❌ Erreur lors de la suppression dans l'historique: {e}")
-            return False
-
-
-history_manager = PublicationHistory()
 
 # ==================== RATE LIMIT TRACKER ====================
 class RateLimitTracker:
@@ -608,7 +500,66 @@ async def _validate_api_key(
         # Fail-closed : en cas d'erreur Supabase on rejette (sécurité > disponibilité)
         return False, None, None, False
 
+# ==================== HELPER RE-ROUTAGE ====================
 
+async def _get_thread_parent_id(session, thread_id: str) -> Optional[str]:
+    """Récupère le parent_id (salon forum) d'un thread via l'API Discord."""
+    status, data = await _discord_get(session, f"/channels/{thread_id}")
+    if status >= 300 or not isinstance(data, dict):
+        logger.warning(f"⚠️ Impossible de récupérer le thread {thread_id} (status={status})")
+        return None
+    return str(data.get("parent_id") or "")
+
+
+async def _reroute_post(
+    session,
+    old_thread_id: str,
+    old_message_id: str,
+    target_forum_id: str,
+    title: str,
+    content: str,
+    tags_raw: str,
+    metadata_b64: Optional[str],
+) -> Optional[dict]:
+    """
+    Re-route un post vers le bon salon :
+    1. Crée un nouveau thread dans target_forum_id
+    2. Supprime l'ancien thread
+    3. Retourne les nouvelles infos (thread_id, message_id, thread_url)
+    ou None en cas d'échec.
+    """
+    logger.info(f"🔀 Re-routage: thread {old_thread_id} → forum {target_forum_id}")
+
+    # 1. Créer dans le bon salon
+    ok, result = await _create_forum_post(
+        session, target_forum_id, title, content, tags_raw, [], metadata_b64
+    )
+    if not ok:
+        logger.error(f"❌ Re-routage: échec création dans forum {target_forum_id}: {result}")
+        return None
+
+    new_thread_id = result.get("thread_id")
+    new_message_id = result.get("message_id")
+    new_thread_url = result.get("thread_url", "")
+
+    logger.info(f"✅ Re-routage: nouveau thread créé → {new_thread_id}")
+
+    # 2. Supprimer l'ancien thread
+    deleted, del_status = await _discord_delete_channel(session, old_thread_id)
+    if not deleted:
+        if del_status == 404:
+            logger.info(f"ℹ️ Re-routage: ancien thread déjà supprimé ({old_thread_id})")
+        else:
+            logger.warning(f"⚠️ Re-routage: échec suppression ancien thread {old_thread_id} (status={del_status})")
+            # On continue quand même — le nouveau post est créé
+
+    return {
+        "thread_id": new_thread_id,
+        "message_id": new_message_id,
+        "thread_url": new_thread_url,
+        "rerouted": True,
+        "old_thread_id": old_thread_id,
+    }
 # ── Helper : extraction + validation en une ligne pour les handlers ────────────
 async def _auth_request(request, route: str) -> "tuple[bool, str|None, str|None, bool]":
     """
@@ -623,6 +574,21 @@ async def _auth_request(request, route: str) -> "tuple[bool, str|None, str|None,
         logger.warning(f"[AUTH] 🚫 Échec auth depuis {client_ip} (route: {route})")
     return is_valid, uid, name, is_legacy
 
+def _build_forum_link(thread_url: str, forum_id: int = None) -> Optional[str]:
+    """
+    Dérive l'URL du forum depuis l'URL d'un thread.
+    Utilise forum_id si fourni, sinon fallback sur config.FORUM_MY_ID.
+    """
+    actual_forum_id = forum_id or config.FORUM_MY_ID
+    if not thread_url or not actual_forum_id:
+        return None
+    parts = thread_url.rstrip("/").split("/")
+    if len(parts) < 2:
+        return None
+    guild_id = parts[-2]
+    if not guild_id.isdigit():
+        return None
+    return f"https://discord.com/channels/{guild_id}/{actual_forum_id}"
 
 # ==================== UTILITAIRES ====================
 def _b64decode_padded(s: str) -> bytes:
@@ -2033,18 +1999,17 @@ async def _send_announcement(
     game_version: str,
     translate_version: str,
     image_url: Optional[str] = None,
+    forum_id: int = None,          # ← nouveau paramètre
 ) -> bool:
-    """
-    Envoie l'annonce (nouvelle traduction ou mise à jour) dans PUBLISHER_ANNOUNCE_CHANNEL_ID.
-    Format défini : titre, nom du jeu (lien), traducteur, versions, état, Bon jeu à vous 😊, embed image.
-    """
     if not config.PUBLISHER_ANNOUNCE_CHANNEL_ID:
         logger.warning("⚠️ PUBLISHER_ANNOUNCE_CHANNEL_ID non configuré, annonce non envoyée")
         return False
+
     title_clean = (title or "").strip() or "Sans titre"
     game_version = (game_version or "").strip() or "Non spécifiée"
     translate_version = (translate_version or "").strip() or "Non spécifiée"
     prefixe = "🔄 **Mise à jour d'une traduction**" if is_update else "🎮 **Nouvelle traduction**"
+
     msg_content = f"{prefixe}\n\n"
     msg_content += f"**Nom du jeu :** [{title_clean}]({thread_url})\n"
     if translator_label and translator_label.strip():
@@ -2054,9 +2019,16 @@ async def _send_announcement(
     if state_label and state_label.strip():
         msg_content += f"\n**État :** {state_label.strip()}\n"
     msg_content += "\n**Bon jeu à vous** 😊"
+
+    # ← forum_id transmis : pointe vers le bon salon
+    forum_link = _build_forum_link(thread_url, forum_id=forum_id)
+    if forum_link:
+        msg_content += f"\n\n> 📚 Retrouvez toutes mes traductions → [Accéder au forum]({forum_link})"
+
     payload = {"content": msg_content}
     if image_url and image_url.strip().startswith("http"):
         payload["embeds"] = [{"color": 0x4ADE80, "image": {"url": image_url.strip()}}]
+
     status, data, _ = await _discord_post_json(
         session,
         f"/channels/{config.PUBLISHER_ANNOUNCE_CHANNEL_ID}/messages",
@@ -2065,6 +2037,7 @@ async def _send_announcement(
     if status >= 300:
         logger.warning(f"⚠️ Échec envoi annonce (status={status}): {data}")
         return False
+
     logger.info(f"✅ Annonce envoyée ({'mise à jour' if is_update else 'nouvelle traduction'}): {title_clean}")
     return True
 
@@ -2073,6 +2046,7 @@ async def _send_deletion_announcement(
     session,
     title: str,
     reason: str = None,
+    thread_url: str = None,
 ) -> bool:
     """
     Envoie une annonce de suppression de post dans PUBLISHER_ANNOUNCE_CHANNEL_ID.
@@ -2091,13 +2065,16 @@ async def _send_deletion_announcement(
     if reason_clean:
         msg_content += f"**Raison :** {reason_clean}\n"
     
+    forum_link = _build_forum_link(thread_url)
+    if forum_link:
+        msg_content += f"\n\n> 📚 Retrouvez toutes mes traductions → [Accéder au forum]({forum_link})"
+
+    footer_text = "Cette publication a été retirée définitivement"
     payload = {
         "content": msg_content,
         "embeds": [{
-            "color": 0xFF6B6B,  # Rouge pour suppression
-            "footer": {
-                "text": "Cette publication a été retirée définitivement"
-            }
+            "color": 0xFF6B6B,
+            "footer": {"text": footer_text}
         }]
     }
     
@@ -2183,7 +2160,7 @@ async def forum_post(request):
     if not config.FORUM_MY_ID:
         return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_TRAD_ID non configuré"}, status=500))
     title, content, tags, metadata_b64 = "", "", "", None
-    translator_label, state_label, game_version, translate_version, announce_image_url = "", "", "", "", ""
+    translator_label, state_label, game_version, received_forum_id, translate_version, announce_image_url = "", "", "", "", "", ""
     history_payload_raw = None
     reader = await request.multipart()
     async for part in reader:
@@ -2205,9 +2182,11 @@ async def forum_post(request):
             translate_version = (await part.text()).strip()
         elif part.name == "announce_image_url":
             announce_image_url = (await part.text()).strip()
+        elif part.name == "forum_channel_id":
+            received_forum_id = (await part.text()).strip()            
         elif part.name == "history_payload":
             history_payload_raw = (await part.text()).strip()
-    forum_id = config.FORUM_MY_ID
+    forum_id = int(received_forum_id) if received_forum_id else config.FORUM_MY_ID
 
     async with aiohttp.ClientSession() as session:
         ok, result = await _create_forum_post(session, forum_id, title, content, tags, [], metadata_b64)
@@ -2222,8 +2201,8 @@ async def forum_post(request):
                 game_version=game_version,
                 translate_version=translate_version,
                 image_url=announce_image_url or None,
+                forum_id=forum_id,
             )
-
     if not ok:
         return _with_cors(request, web.json_response({"ok": False, "details": result}, status=500))
 
@@ -2240,7 +2219,6 @@ async def forum_post(request):
             payload["updated_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
             if "timestamp" not in payload:
                 payload["timestamp"] = ts
-            history_manager.update_or_add_post(payload)
             sb = _get_supabase()
             if sb:
                 try:
@@ -2263,7 +2241,6 @@ async def forum_post(request):
                 "discord_url": result["thread_url"],
                 "forum_id": forum_id,
             }
-            history_manager.update_or_add_post(fallback_payload)
             sb = _get_supabase()
             if sb:
                 try:
@@ -2287,7 +2264,6 @@ async def forum_post(request):
             "discord_url": result["thread_url"],
             "forum_id": forum_id,
         }
-        history_manager.update_or_add_post(fallback_payload)
         sb = _get_supabase()
         if sb:
             try:
@@ -2306,7 +2282,7 @@ async def forum_post(request):
     return _with_cors(request, web.json_response(response_data))
 
 async def forum_post_update(request):
-    """Handler pour mettre à jour un post (salon my uniquement)."""
+    """Handler pour mettre à jour un post — avec re-routage automatique si mauvais salon."""
     is_valid, discord_user_id, discord_name, is_legacy = await _auth_request(request, "/api/forum-post/update")
     if not is_valid:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
@@ -2314,90 +2290,120 @@ async def forum_post_update(request):
         return _with_cors(request, web.json_response({"ok": False, "error": "PUBLISHER_FORUM_TRAD_ID non configuré"}, status=500))
 
     title, content, tags, thread_id, message_id, metadata_b64 = "", "", "", None, None, None
-    translator_label, state_label, game_version, translate_version, announce_image_url, thread_url = "", "", "", "", "", ""
+    translator_label, state_label, game_version, received_forum_id = "", "", "", ""
+    translate_version, announce_image_url, thread_url = "", "", ""
     history_payload_raw = None
     silent_update = False
 
     reader = await request.multipart()
     async for part in reader:
-        if part.name == "silent_update":
+        name = part.name
+        if name == "silent_update":
             val = (await part.text()).strip().lower()
             silent_update = val in ("true", "1", "yes")
-        elif part.name == "title":
-            title = (await part.text()).strip()
-        elif part.name == "content":
-            content = (await part.text()).strip()
-        elif part.name == "tags":
-            tags = (await part.text()).strip()
-        elif part.name == "threadId":
-            thread_id = (await part.text()).strip()
-        elif part.name == "messageId":
-            message_id = (await part.text()).strip()
-        elif part.name == "metadata":
-            metadata_b64 = (await part.text()).strip()
-        elif part.name == "translator_label":
-            translator_label = (await part.text()).strip()
-        elif part.name == "state_label":
-            state_label = (await part.text()).strip()
-        elif part.name == "game_version":
-            game_version = (await part.text()).strip()
-        elif part.name == "translate_version":
-            translate_version = (await part.text()).strip()
-        elif part.name == "announce_image_url":
-            announce_image_url = (await part.text()).strip()
-        elif part.name == "thread_url":
-            thread_url = (await part.text()).strip()
-        elif part.name == "history_payload":
-            history_payload_raw = (await part.text()).strip()
+        elif name == "title":          title = (await part.text()).strip()
+        elif name == "content":        content = (await part.text()).strip()
+        elif name == "tags":           tags = (await part.text()).strip()
+        elif name == "threadId":       thread_id = (await part.text()).strip()
+        elif name == "messageId":      message_id = (await part.text()).strip()
+        elif name == "metadata":       metadata_b64 = (await part.text()).strip()
+        elif name == "translator_label":   translator_label = (await part.text()).strip()
+        elif name == "state_label":        state_label = (await part.text()).strip()
+        elif name == "game_version":       game_version = (await part.text()).strip()
+        elif name == "translate_version":  translate_version = (await part.text()).strip()
+        elif name == "announce_image_url": announce_image_url = (await part.text()).strip()
+        elif name == "forum_channel_id":   received_forum_id = (await part.text()).strip()
+        elif name == "thread_url":         thread_url = (await part.text()).strip()
+        elif name == "history_payload":    history_payload_raw = (await part.text()).strip()
 
     if not thread_id or not message_id:
         return _with_cors(request, web.json_response({"ok": False, "error": "threadId and messageId required"}, status=400))
 
-    logger.info(f"🔄 Mise à jour post: {title} (thread: {thread_id})")
+    target_forum_id = int(received_forum_id) if received_forum_id else config.FORUM_MY_ID
+    reroute_info = None  # Contiendra les infos si re-routage effectué
 
     async with aiohttp.ClientSession() as session:
-        message_path = f"/channels/{thread_id}/messages/{message_id}"
 
-        image_exts = r"(?:jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)"
-        image_url_pattern = re.compile(
-            rf"https?://[^\s<>\"']+\.{image_exts}(?:\?[^\s<>\"']*)?",
-            re.IGNORECASE
+        # ── DÉTECTION RE-ROUTAGE ─────────────────────────────────────────────
+        current_parent_id = await _get_thread_parent_id(session, thread_id)
+        needs_reroute = (
+            current_parent_id
+            and received_forum_id
+            and current_parent_id != received_forum_id
         )
-        image_urls_full = [m.group(0) for m in image_url_pattern.finditer(content or "")]
 
-        final_content = content or " "
-        use_attachment = False
-        file_bytes, filename, content_type = None, "image.png", "image/png"
-
-        if image_urls_full:
-            image_url = image_urls_full[0]
-            fetched = await _fetch_image_from_url(session, image_url)
-            if fetched:
-                file_bytes, filename, content_type = fetched
-                final_content = _strip_image_url_from_content(content or " ", image_url)
-                use_attachment = True
-                logger.info(f"✅ Image en pièce jointe (update message principal): {image_url[:60]}...")
-            else:
-                final_content = _strip_image_url_from_content(content or " ", image_url)
-                logger.info(f"⚠️ Téléchargement image échoué (update), pas de nouvelle image")
-
-        if use_attachment and file_bytes:
-            status, data = await _discord_patch_message_with_attachment(
-                session, str(thread_id), str(message_id), final_content or " ",
-                file_bytes, filename, content_type
+        if needs_reroute:
+            logger.info(
+                f"🔀 Re-routage détecté: thread {thread_id} est dans {current_parent_id}, "
+                f"doit être dans {received_forum_id}"
             )
-        else:
-            message_payload = {"content": final_content or " ", "embeds": []}
-            status, data = await _discord_patch_json(session, message_path, message_payload)
+            reroute_info = await _reroute_post(
+                session,
+                old_thread_id=thread_id,
+                old_message_id=message_id,
+                target_forum_id=received_forum_id,
+                title=title,
+                content=content,
+                tags_raw=tags,
+                metadata_b64=metadata_b64,
+            )
+            if reroute_info:
+                # Mettre à jour les IDs pour la suite (historique, Supabase, réponse)
+                old_thread_id_for_cleanup = thread_id
+                thread_id = reroute_info["thread_id"]
+                message_id = reroute_info["message_id"]
+                thread_url = reroute_info["thread_url"]
+                # Nettoyer l'entrée Supabase/historique de l'ancien thread
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, _delete_from_supabase_sync, old_thread_id_for_cleanup, None
+                )
+            else:
+                logger.error("❌ Re-routage échoué, mise à jour normale en fallback")
+                # On retombe sur la mise à jour classique sans re-routage
+                needs_reroute = False
 
-        if status >= 300:
-            return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
+        # ── MISE À JOUR CLASSIQUE (si pas de re-routage ou re-routage échoué) ─
+        if not needs_reroute:
+            message_path = f"/channels/{thread_id}/messages/{message_id}"
 
-        if metadata_b64:
-            try:
-                if len(metadata_b64) > 25000:
-                    logger.warning("⚠️ metadata_b64 trop long, metadata message ignoré pour éviter un 400 Discord")
+            image_exts = r"(?:jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)"
+            image_url_pattern = re.compile(
+                rf"https?://[^\s<>\"']+\.{image_exts}(?:\?[^\s<>\"']*)?",
+                re.IGNORECASE
+            )
+            image_urls_full = [m.group(0) for m in image_url_pattern.finditer(content or "")]
+
+            final_content = content or " "
+            use_attachment = False
+            file_bytes, filename, content_type = None, "image.png", "image/png"
+
+            if image_urls_full:
+                image_url = image_urls_full[0]
+                fetched = await _fetch_image_from_url(session, image_url)
+                if fetched:
+                    file_bytes, filename, content_type = fetched
+                    final_content = _strip_image_url_from_content(content or " ", image_url)
+                    use_attachment = True
                 else:
+                    final_content = _strip_image_url_from_content(content or " ", image_url)
+
+            if use_attachment and file_bytes:
+                status, data = await _discord_patch_message_with_attachment(
+                    session, str(thread_id), str(message_id), final_content or " ",
+                    file_bytes, filename, content_type
+                )
+            else:
+                status, data = await _discord_patch_json(
+                    session, message_path, {"content": final_content or " ", "embeds": []}
+                )
+
+            if status >= 300:
+                return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
+
+            # Mise à jour metadata
+            if metadata_b64 and len(metadata_b64) <= 25000:
+                try:
                     messages = await _discord_list_messages(session, str(thread_id), limit=50)
                     metadata_message_id = None
                     for m in messages:
@@ -2415,27 +2421,24 @@ async def forum_post_update(request):
                         if s3 < 300:
                             await _discord_suppress_embeds(session, str(thread_id), str(metadata_message_id))
                             await _delete_old_metadata_messages(session, str(thread_id), keep_message_id=str(metadata_message_id))
-                        else:
-                            logger.warning(f"⚠️ Échec update metadata message (status={s3}): {d3}")
                     else:
                         await _delete_old_metadata_messages(session, str(thread_id))
                         s2, d2, _ = await _discord_post_json(session, f"/channels/{thread_id}/messages", meta_payload)
                         if s2 < 300 and isinstance(d2, dict) and d2.get("id"):
                             await _discord_suppress_embeds(session, str(thread_id), str(d2["id"]))
-                        else:
-                            logger.warning(f"⚠️ Échec création metadata message (status={s2}): {d2}")
-            except Exception as e:
-                logger.warning(f"⚠️ Exception update/création metadata message: {e}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Exception update/création metadata message: {e}")
 
-        applied_tag_ids = await _resolve_applied_tag_ids(session, config.FORUM_MY_ID, tags)
-        status, data = await _discord_patch_json(session, f"/channels/{thread_id}", {
-            "name": title,
-            "applied_tags": applied_tag_ids
-        })
+            # Mise à jour titre + tags du thread
+            applied_tag_ids = await _resolve_applied_tag_ids(session, target_forum_id, tags)
+            status, data = await _discord_patch_json(session, f"/channels/{thread_id}", {
+                "name": title,
+                "applied_tags": applied_tag_ids
+            })
+            if status >= 300:
+                return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
 
-        if status >= 300:
-            return _with_cors(request, web.json_response({"ok": False, "details": data}, status=500))
-
+        # ── ANNONCE ───────────────────────────────────────────────────────────
         if config.PUBLISHER_ANNOUNCE_CHANNEL_ID and thread_url and not silent_update:
             await _send_announcement(
                 session,
@@ -2447,29 +2450,25 @@ async def forum_post_update(request):
                 game_version=game_version,
                 translate_version=translate_version,
                 image_url=announce_image_url or None,
-            )
+                forum_id=target_forum_id,
+            )        
         elif silent_update:
             logger.info(f"🔇 Mise à jour silencieuse (sans annonce): {title}")
 
+        # ── HISTORIQUE & SUPABASE ─────────────────────────────────────────────
         ts = int(time.time() * 1000)
         loop = asyncio.get_event_loop()
         existing_row = await loop.run_in_executor(None, _fetch_post_by_thread_id_sync, thread_id)
 
+        payload = {}
         if history_payload_raw:
             try:
                 payload = json.loads(history_payload_raw)
             except Exception as e:
-                logger.warning(f"⚠️ Payload JSON invalide, création minimal: {e}")
-                payload = {}
-        else:
-            payload = {}
+                logger.warning(f"⚠️ Payload JSON invalide: {e}")
 
-        if existing_row:
-            final_payload = dict(existing_row)
-            final_payload.update(payload)
-        else:
-            final_payload = payload
-
+        final_payload = dict(existing_row) if existing_row else {}
+        final_payload.update(payload)
         final_payload["thread_id"] = thread_id
         final_payload["message_id"] = message_id
         final_payload["discord_url"] = (thread_url or "").strip() or final_payload.get("discord_url") or ""
@@ -2477,47 +2476,49 @@ async def forum_post_update(request):
         final_payload["content"] = content
         final_payload["tags"] = tags
         final_payload["updated_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
-
         if "created_at" not in final_payload or not final_payload.get("created_at"):
             final_payload["created_at"] = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
 
         final_payload = _normalize_history_row(final_payload)
-        history_manager.update_or_add_post(final_payload)
 
         sb = _get_supabase()
         if sb:
             try:
                 supabase_payload = {k: v for k, v in final_payload.items() if k not in ['timestamp', 'template']}
-                res = sb.table("published_posts").upsert(supabase_payload, on_conflict="id").execute()
-                logger.info(f"✅ Post enregistré dans Supabase: {final_payload.get('title')}")
+                sb.table("published_posts").upsert(supabase_payload, on_conflict="id").execute()
+                logger.info(f"✅ Post {'re-routé et ' if reroute_info else ''}enregistré dans Supabase: {title}")
             except Exception as e:
-                logger.warning(f"⚠️ Échec sauvegarde Supabase lors de la mise à jour: {e}")
+                logger.warning(f"⚠️ Échec sauvegarde Supabase: {e}")
 
-    # ── Réponse finale avec warning legacy si nécessaire ──────────────────────
+    # ── RÉPONSE ───────────────────────────────────────────────────────────────
     response_data = {
         "ok": True,
         "updated": True,
+        "rerouted": bool(reroute_info),  # ← le frontend sait qu'un re-routage a eu lieu
         "thread_id": thread_id,
         "message_id": message_id,
         "thread_url": thread_url,
         "discord_url": thread_url,
-        "forum_id": config.FORUM_MY_ID or 0,
+        "forum_id": target_forum_id or 0,
         "threadId": thread_id,
         "messageId": message_id,
         "threadUrl": thread_url,
         "discordUrl": thread_url,
-        "forumId": config.FORUM_MY_ID or 0,
+        "forumId": target_forum_id or 0,
     }
     if is_legacy:
         response_data["legacy_key_warning"] = LEGACY_KEY_WARNING
     return _with_cors(request, web.json_response(response_data))
 
 async def get_history(request):
-    is_valid, discord_user_id, discord_name, is_legacy = await _auth_request(request, "/api/history")
+    is_valid, _, _, is_legacy = await _auth_request(request, "/api/history")
     if not is_valid:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
-
-    posts = history_manager.get_posts()
+    sb = _get_supabase()
+    if not sb:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Supabase non configuré"}, status=500))
+    res = sb.table("published_posts").select("*").order("updated_at", desc=True).limit(1000).execute()
+    posts = [_normalize_history_row(r) for r in (res.data or [])]
     response_data = {"ok": True, "posts": posts, "count": len(posts)}
     if is_legacy:
         response_data["legacy_key_warning"] = LEGACY_KEY_WARNING
@@ -2546,8 +2547,6 @@ async def forum_post_delete(request):
     if not thread_id:
         # Pas de thread Discord : succès sans appeler Discord (suppression historique/base uniquement)
         if post_id:
-            # Suppression historique local
-            history_manager.delete_post(post_id=post_id)
             # 🔥 SUPPRESSION SUPABASE
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, _delete_from_supabase_sync, None, post_id)
@@ -2559,8 +2558,6 @@ async def forum_post_delete(request):
         if not deleted:
             if status == 404:
                 logger.info(f"ℹ️ Thread déjà supprimé: {thread_id}")
-                # Supprimer quand même de l'historique et Supabase
-                history_manager.delete_post(thread_id=thread_id)
                 # 🔥 SUPPRESSION SUPABASE
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, _delete_from_supabase_sync, thread_id, post_id)
@@ -2568,16 +2565,14 @@ async def forum_post_delete(request):
             logger.warning(f"⚠️ Échec suppression thread Discord: {thread_id} (status={status})")
             return _with_cors(request, web.json_response({"ok": False, "error": "Échec suppression du thread sur Discord"}, status=500))
         
-        # Supprimer de l'historique
-        history_manager.delete_post(thread_id=thread_id)
-        
         # 🔥 SUPPRESSION SUPABASE
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _delete_from_supabase_sync, thread_id, post_id)
         
         # 🔥 Envoyer l'annonce de suppression dans le salon Discord
         if post_title:  # Seulement si on a un titre
-            await _send_deletion_announcement(session, post_title, reason)
+            discord_url = body.get("discordUrl") or body.get("discord_url") or body.get("thread_url") or ""
+            await _send_deletion_announcement(session, post_title, reason, thread_url=discord_url)
     
     logger.info(f"✅ Post supprimé complètement: {post_title or thread_id}")
     return _with_cors(request, web.json_response({"ok": True, "thread_id": thread_id}))
