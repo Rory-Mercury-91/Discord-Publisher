@@ -23,7 +23,6 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 import hashlib
 from dataclasses import dataclass
-
 import aiohttp
 from aiohttp import web
 from dotenv import load_dotenv
@@ -2122,29 +2121,35 @@ _ip_user_cache = {}
 
 @web.middleware
 async def logging_middleware(request, handler):
-    """Middleware pour logger les requêtes avec IP et UUID utilisateur."""
     client_ip = _get_client_ip(request)
     user_id = _get_user_id(request)
     method = request.method
     path = request.path
-    
-    # Si pas d'UUID (cas des OPTIONS) : utiliser le dernier UUID connu pour cette IP
+
+    # Récupérer la clé API (pour identifier les utilisateurs légitimes)
+    raw_key = (request.headers.get("X-API-KEY") or "").strip()
+    # On loggue seulement les 8 premiers caractères (suffisant pour identifier, pas pour voler)
+    key_hint = raw_key[:8] + "..." if len(raw_key) > 8 else ("NOKEY" if not raw_key else raw_key)
+
+    # Résoudre le cache UUID depuis l'IP pour les OPTIONS
     if not user_id or user_id == "NULL":
         if client_ip in _ip_user_cache:
             user_id = _ip_user_cache[client_ip]
     else:
-        # Mettre en cache l'UUID pour cette IP (pour les prochaines OPTIONS)
         _ip_user_cache[client_ip] = user_id
-    
-    # Log enrichi avec IP et UUID (formaté pour être facilement parsable)
-    logger.info(f"[REQUEST] {client_ip} | {user_id} | {method} {path}")
-    
-    # Continuer le traitement normal
+
+    # Log enrichi — format parsable par fail2ban
+    logger.info(f"[REQUEST] {client_ip} | {user_id} | {key_hint} | {method} {path}")
+
     response = await handler(request)
-    
-    # Optionnel : logger aussi la réponse
-    # logger.info(f"[RESPONSE] {client_ip} | {user_id} | {method} {path} → {response.status}")
-    
+
+    # Log des erreurs 4xx/5xx pour fail2ban
+    if response.status >= 400:
+        logger.warning(
+            f"[HTTP_ERROR] {client_ip} | {user_id} | {key_hint} | "
+            f"{method} {path} | STATUS={response.status}"
+        )
+
     return response
 
 
@@ -2697,6 +2702,20 @@ async def account_delete(request):
     logger.info(f"✅ [delete_account] Compte supprimé: {user_id} | Détails: {result['details']}")
     return _with_cors(request, web.json_response({"ok": True, "details": result["details"]}))
 
+# ==================== HANDLER 404 EXPLICITE ====================
+async def handle_404(request):
+    """Catch-all : logge toutes les routes inconnues pour fail2ban."""
+    client_ip = _get_client_ip(request)
+    user_id = _get_user_id(request)
+    raw_key = (request.headers.get("X-API-KEY") or "").strip()
+    key_hint = raw_key[:8] + "..." if len(raw_key) > 8 else "NOKEY"
+
+    logger.warning(
+        f"[HTTP_ERROR] {client_ip} | {user_id} | {key_hint} | "
+        f"{request.method} {request.path} | STATUS=404"
+    )
+    return _with_cors(request, web.json_response({"error": "Not found"}, status=404))
+
 # ==================== APPLICATION WEB ====================
 app = web.Application(middlewares=[logging_middleware])
 app.add_routes([
@@ -2706,7 +2725,8 @@ app.add_routes([
     web.post('/api/forum-post/delete', forum_post_delete),
     web.get('/api/history', get_history),
     web.post('/api/configure', configure),
-    web.options('/{tail:.*}', options_handler)
+    web.options('/{tail:.*}', options_handler),
+    web.route('*', '/{tail:.*}', handle_404),
 ])
 
 # ==================== LANCEMENT ====================

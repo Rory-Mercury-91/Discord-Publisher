@@ -42,6 +42,7 @@ from publisher_api import (
     _with_cors,
     _auth_request,
     logging_middleware,
+    handle_404,
 )
 
 # Configuration de l'encodage pour Windows si nécessaire
@@ -344,7 +345,6 @@ async def reset_password_page(request):
 
 
 def make_app():
-    logger.info("🌐 [make_app] Enregistrement des routes...")
     app = web.Application(middlewares=[logging_middleware])
 
     routes = [
@@ -360,6 +360,8 @@ def make_app():
         ("GET",     "/api/history",           get_history),
         ("GET",     "/api/logs",              get_logs),
         ("POST",    "/api/account/delete",    account_delete),
+        # ↓ CATCH-ALL en dernier
+        ("*",       "/{tail:.*}",             handle_404),
     ]
 
     for method, path, handler in routes:
