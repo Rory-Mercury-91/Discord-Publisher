@@ -1215,7 +1215,9 @@ def _user_can_run_checks(interaction: discord.Interaction) -> bool:
     """Autorise uniquement les membres ayant le rôle TRANSLATOR_ROLE_ID."""
     if not TRANSLATOR_ROLE_ID or not interaction.guild:
         return False
+    # On récupère le membre depuis le cache du serveur
     member = interaction.guild.get_member(interaction.user.id)
+    # On vérifie si le membre possède l'ID du rôle traducteur
     return bool(member and any(r.id == TRANSLATOR_ROLE_ID for r in member.roles))
 
 
@@ -1404,7 +1406,7 @@ async def check_versions(interaction: discord.Interaction):
         pass
     if not _user_can_run_checks(interaction):
         logger.warning(f"⛔ [check_versions] Permission refusée pour {interaction.user} (id={interaction.user.id})")
-        await interaction.followup.send("⛔ Permission insuffisante.", ephemeral=True)
+        await interaction.followup.send("⛔ Permission insuffisante. Cette commande est réservée aux Traducteurs.", ephemeral=True)
         return
     logger.info(f"🔍 [check_versions] Lancement manuel par {interaction.user} (id={interaction.user.id})")
     try:
@@ -1429,7 +1431,7 @@ async def cleanup_empty_messages_cmd(interaction: discord.Interaction):
         pass
     if not _user_can_run_checks(interaction):
         logger.warning(f"⛔ [cleanup] Permission refusée pour {interaction.user} (id={interaction.user.id})")
-        await interaction.followup.send("⛔ Permission insuffisante.", ephemeral=True)
+        await interaction.followup.send("⛔ Permission insuffisante. Cette commande est réservée aux Traducteurs.", ephemeral=True)
         return
     logger.info(f"🧹 [cleanup] Lancement manuel par {interaction.user} (id={interaction.user.id})")
     try:
@@ -1447,6 +1449,7 @@ async def cleanup_empty_messages_cmd(interaction: discord.Interaction):
 
 @bot.tree.command(name="check_help", description="Affiche la liste des commandes et leur utilité")
 async def check_help(interaction: discord.Interaction):
+    """Affiche l'aide personnalisée."""
     try:
         await interaction.response.defer(ephemeral=True)
     except Exception:
