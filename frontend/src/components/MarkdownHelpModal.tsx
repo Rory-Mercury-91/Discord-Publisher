@@ -1,4 +1,3 @@
-import React from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
 
@@ -69,15 +68,15 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
 
   return (
     <div className="modal">
-      <div 
-        className="panel" 
-        onClick={e => e.stopPropagation()} 
-        style={{ 
-          maxWidth: 1000, 
-          width: '95%', 
-          maxHeight: '90vh', 
-          display: 'flex', 
-          flexDirection: 'column' 
+      <div
+        className="panel"
+        onClick={e => e.stopPropagation()}
+        style={{
+          maxWidth: 1000,
+          width: '95%',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column'
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -85,16 +84,16 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
           <button onClick={onClose} className="btn" style={{ padding: '4px 8px', fontSize: 14 }}>✕</button>
         </div>
 
-        <div style={{ 
-          padding: 12, 
-          background: 'rgba(59, 130, 246, 0.1)', 
+        <div style={{
+          padding: 12,
+          background: 'rgba(59, 130, 246, 0.1)',
           border: '1px solid rgba(59, 130, 246, 0.3)',
           borderRadius: 8,
           marginBottom: 16,
           fontSize: 13,
           lineHeight: 1.6
         }}>
-          <strong>💡 Astuce :</strong> Discord supporte une grande partie de la syntaxe Markdown. 
+          <strong>💡 Astuce :</strong> Discord supporte une grande partie de la syntaxe Markdown.
           Vous pouvez utiliser ces balises pour formater vos publications.
         </div>
 
@@ -103,9 +102,9 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
           <div style={{ display: 'grid', gap: 20 }}>
             {examples.map((section, idx) => (
               <div key={idx}>
-                <h4 style={{ 
-                  fontSize: 15, 
-                  marginBottom: 12, 
+                <h4 style={{
+                  fontSize: 15,
+                  marginBottom: 12,
                   paddingBottom: 8,
                   borderBottom: '1px solid var(--border)'
                 }}>
@@ -113,9 +112,9 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
                 </h4>
                 <div style={{ display: 'grid', gap: 10 }}>
                   {section.items.map((item, itemIdx) => (
-                    <div 
+                    <div
                       key={itemIdx}
-                      style={{ 
+                      style={{
                         display: 'grid',
                         gridTemplateColumns: '1fr 1fr',
                         gap: 12,
@@ -127,16 +126,16 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
                       }}
                     >
                       <div>
-                        <div style={{ 
-                          fontSize: 11, 
-                          color: 'var(--muted)', 
+                        <div style={{
+                          fontSize: 11,
+                          color: 'var(--muted)',
                           marginBottom: 4,
                           textTransform: 'uppercase',
                           letterSpacing: 0.5
                         }}>
                           Syntaxe
                         </div>
-                        <code style={{ 
+                        <code style={{
                           display: 'block',
                           padding: '6px 8px',
                           background: 'rgba(0,0,0,0.3)',
@@ -151,16 +150,16 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
                         </code>
                       </div>
                       <div>
-                        <div style={{ 
-                          fontSize: 11, 
-                          color: 'var(--muted)', 
+                        <div style={{
+                          fontSize: 11,
+                          color: 'var(--muted)',
                           marginBottom: 4,
                           textTransform: 'uppercase',
                           letterSpacing: 0.5
                         }}>
                           Description
                         </div>
-                        <div style={{ 
+                        <div style={{
                           padding: '6px 8px',
                           color: 'var(--text)',
                           lineHeight: 1.5
@@ -177,9 +176,9 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
         </div>
 
         {/* Footer */}
-        <div style={{ 
-          marginTop: 16, 
-          paddingTop: 16, 
+        <div style={{
+          marginTop: 16,
+          paddingTop: 16,
           borderTop: '1px solid var(--border)',
           display: 'flex',
           justifyContent: 'space-between',
@@ -188,9 +187,9 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
           color: 'var(--muted)'
         }}>
           <span>
-            📚 Pour plus d'infos : <a 
-              href="https://support.discord.com/hc/fr/articles/210298617" 
-              target="_blank" 
+            📚 Pour plus d'infos : <a
+              href="https://support.discord.com/hc/fr/articles/210298617"
+              target="_blank"
               rel="noopener noreferrer"
               style={{ color: '#5865f2', textDecoration: 'none' }}
             >
@@ -198,7 +197,7 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
             </a>
           </span>
           <button onClick={onClose} className="btn">
-            🚪 Fermer
+            ↩️ Fermer
           </button>
         </div>
       </div>

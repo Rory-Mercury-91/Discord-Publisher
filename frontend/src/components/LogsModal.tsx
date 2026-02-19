@@ -427,7 +427,7 @@ export default function LogsModal({ onClose }: LogsModalProps) {
               alignItems: 'center',
               justifyContent: 'center',
             }}
-            title="Fermer (Echap)"
+            title="↩️ Fermer (Echap)"
           >
             &times;
           </button>
@@ -803,7 +803,7 @@ export default function LogsModal({ onClose }: LogsModalProps) {
                 borderRadius: 10,
               }}
             >
-              🚪 Fermer
+              ↩️ Fermer
             </button>
           </div>
         </div>

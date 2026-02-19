@@ -240,7 +240,7 @@ export default function InstructionsManagerModal({ onClose }: { onClose?: () => 
           marginTop: 16
         }}>
           <button onClick={onClose} style={{ padding: '8px 20px', fontWeight: 600 }}>
-            🚪 Fermer
+            ↩️ Fermer
           </button>
         </div>
       </div>

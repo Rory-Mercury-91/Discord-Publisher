@@ -289,7 +289,7 @@ export default function StatsModal({ onClose }: StatsModalProps) {
           justifyContent: 'flex-end'
         }}>
           <button onClick={onClose} className="btn">
-            🚪 Fermer
+            ↩️ Fermer
           </button>
         </div>
       </div>

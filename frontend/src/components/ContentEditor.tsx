@@ -144,6 +144,13 @@ export default function ContentEditor() {
     hasRequiredTags;
   const isEditMode = editingPostId !== null;
   const rateLimitRemaining = rateLimitCooldown ? Math.ceil((rateLimitCooldown - Date.now()) / 1000) : 0;
+  const publishTooltipText = (() => {
+    if (publishInProgress) return 'Publication en cours…';
+    if (currentTemplate?.type !== 'my') return 'Template en lecture seule';
+    if (rateLimitCooldown !== null) return `Rate limit : patientez ${rateLimitRemaining}s`;
+    if (missingRequiredTagLabels.length > 0) return `Tags obligatoires manquants : ${missingRequiredTagLabels.join(', ')}`;
+    return '';
+  })();
 
   // 3️⃣ États locaux
   const [showTagSelector, setShowTagSelector] = useState(false);
@@ -153,7 +160,8 @@ export default function ContentEditor() {
   const [showInstructionSuggestions, setShowInstructionSuggestions] = useState(false);
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
   const [silentUpdateMode, setSilentUpdateMode] = useState(false);
-
+  const [showPublishTooltip, setShowPublishTooltip] = useState(false);
+  const overviewRef = useRef<HTMLTextAreaElement | null>(null);
   // ── Injection initiale + changement de traducteur ──────────────────────────
   useEffect(() => {
     // RETIRER isEditMode de cette condition
@@ -203,7 +211,6 @@ export default function ContentEditor() {
   useEffect(() => {
     if (!editingPostId) setSilentUpdateMode(false);
   }, [editingPostId]);
-  const overviewRef = useRef<HTMLTextAreaElement | null>(null);
 
   // 4️⃣ ENFIN : useEffect
   useEffect(() => {
@@ -600,92 +607,104 @@ export default function ContentEditor() {
   };
 
   return (
-    <div style={{ padding: '10px 15px', position: 'relative', height: '100%', minHeight: 0, overflow: 'auto', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
+    <div style={{ padding: '16px 15px', position: 'relative', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
 
-      {/* LIGNE 1 : Titre + Sélecteur aligné à droite */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
-        flexWrap: 'wrap',
-        gap: 15
-      }}>
-        <h4 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+      {/* En-tête formulaire */}
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 10, flexWrap: 'nowrap', height: 32, minHeight: 32 }}>
+        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, lineHeight: '32px' }}>
           📝 Contenu du post Discord
           {editingPostId && (
             <span style={{
-              fontSize: 12,
-              fontWeight: 500,
-              color: 'var(--accent)',
-              background: 'rgba(125, 211, 252, 0.15)',
-              padding: '4px 10px',
-              borderRadius: 6
+              fontSize: 12, fontWeight: 500, color: 'var(--accent)',
+              background: 'rgba(125,211,252,0.15)', padding: '4px 10px', borderRadius: 6
             }}>
               ✏️ Mode modification
             </span>
           )}
         </h4>
 
-        {/* Sélecteur : visible en mode normal ET édition */}
-        {translatorOptions.length > 1 && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '6px 12px',
-            borderRadius: 8,
-            background: 'rgba(88,101,242,0.05)',
-            border: '1px solid rgba(88,101,242,0.2)',
-            marginLeft: 'auto' // Pousse le bloc à droite
-          }}>
-            <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-              👤 Publier pour :
-            </span>
-            <select
-              value={selectedTranslatorId}
-              onChange={e => selectTranslator(e.target.value)}
-              style={{
-                height: 32,
-                padding: '0 10px',
-                borderRadius: 8,
-                border: '1px solid var(--border)',
-                background: 'rgba(255,255,255,0.06)',
-                color: 'var(--text)',
-                fontSize: 13,
-                cursor: 'pointer',
-                width: 'auto', // S'adapte à la longueur du texte
-                minWidth: '150px'
-              }}
-            >
-              {/* Vos optgroups et options restent identiques */}
-              {translatorOptions.some(o => o.kind === 'profile') && (
-                <optgroup label="👤 Utilisateurs inscrits">
-                  {translatorOptions.filter(o => o.kind === 'profile').map(o => (
-                    <option key={o.id} value={o.id}>
-                      {o.id === profile?.id ? `${o.name} (moi)` : o.name}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {/* ... suite des options ... */}
-            </select>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={handlePasteImport}
+            style={{
+              background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)',
+              color: '#818cf8', padding: '0 12px', borderRadius: 6, height: 32,
+              cursor: 'pointer', fontWeight: 600, fontSize: 12,
+              display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+            }}
+          >📥 Importer Données</button>
+          <button
+            type="button"
+            onClick={async () => {
+              const ok = await confirm({
+                title: 'Vider le formulaire',
+                message: 'Voulez-vous vraiment vider tous les champs ? Cette action est irréversible.',
+                confirmText: 'Vider', cancelText: 'Annuler', type: 'danger'
+              });
+              if (ok) { resetAllFields(); selectTranslator(profile?.id || ''); showToast('Formulaire vidé', 'success'); }
+            }}
+            style={{
+              background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+              color: '#ef4444', padding: '0 12px', borderRadius: 6, height: 32,
+              cursor: 'pointer', fontWeight: 600, fontSize: 12,
+              display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+            }}
+          >🗑️ Vider le formulaire</button>
 
-            <span
-              title={translatorTagId ? "Tag injecté" : "Aucun tag configuré"}
-              style={{
-                fontSize: 11,
-                color: translatorTagId ? '#4ade80' : '#f59e0b',
-                background: translatorTagId ? 'rgba(74,222,128,0.1)' : 'rgba(245,158,11,0.1)',
-                padding: '3px 8px',
-                borderRadius: 4,
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {translatorTagId ? '✓' : '⚠️'}
-            </span>
-          </div>
-        )}
+          {translatorOptions.length > 1 && (
+            <>
+              <div style={{ width: 1, height: 22, background: 'var(--border)', flexShrink: 0 }} />
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '0 10px', borderRadius: 8, height: 32,
+                background: 'rgba(88,101,242,0.05)', border: '1px solid rgba(88,101,242,0.2)',
+                flexShrink: 0,
+              }}>
+                <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  👤 Publier pour :
+                </span>
+                <select
+                  value={selectedTranslatorId}
+                  onChange={e => selectTranslator(e.target.value)}
+                  style={{
+                    height: 24, padding: '0 8px', borderRadius: 6,
+                    border: '1px solid var(--border)', background: 'rgba(255,255,255,0.06)',
+                    color: 'var(--text)', fontSize: 12, cursor: 'pointer', minWidth: '140px'
+                  }}
+                >
+                  {translatorOptions.some(o => o.kind === 'profile') && (
+                    <optgroup label="👤 Utilisateurs inscrits">
+                      {translatorOptions.filter(o => o.kind === 'profile').map(o => (
+                        <option key={o.id} value={o.id}>
+                          {o.id === profile?.id ? `${o.name} (moi)` : o.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {translatorOptions.some(o => o.kind === 'external') && (
+                    <optgroup label="🔧 Traducteurs externes">
+                      {translatorOptions.filter(o => o.kind === 'external').map(o => (
+                        <option key={o.id} value={o.id}>{o.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                <span
+                  title={translatorTagId ? 'Tag injecté' : 'Aucun tag configuré'}
+                  style={{
+                    fontSize: 11,
+                    color: translatorTagId ? '#4ade80' : '#f59e0b',
+                    background: translatorTagId ? 'rgba(74,222,128,0.25)' : 'rgba(245,158,11,0.1)',
+                    padding: '2px 7px', borderRadius: 4, whiteSpace: 'nowrap'
+                  }}
+                >
+                  {translatorTagId ? '✔' : '⚠️'}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'grid', gap: 16, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
@@ -1610,127 +1629,55 @@ export default function ContentEditor() {
 
         {/* LIGNE 10 : Footer & Publication */}
         <div style={{
-          marginTop: 8,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 16,
-          paddingTop: 12,
-          borderTop: '1px solid var(--border)'
+          marginTop: 8, display: 'flex', justifyContent: 'flex-end',
+          alignItems: 'center', gap: 12,
+          paddingTop: 12, borderTop: '1px solid var(--border)'
         }}>
+          {rateLimitCooldown !== null && (
+            <div style={{ color: 'var(--error)', fontSize: 13, fontWeight: 700 }}>
+              ⏳ Rate limit : {rateLimitCooldown}s
+            </div>
+          )}
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={handlePasteImport}
-              style={{
-                background: 'rgba(99, 102, 241, 0.1)',
-                border: '1px solid rgba(99, 102, 241, 0.3)',
-                color: '#818cf8',
-                padding: '10px 16px',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: 13,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8
-              }}
-            >
-              <span>📥</span>
-              Importer Data
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                const ok = await confirm({
-                  title: 'Vider le formulaire',
-                  message: 'Voulez-vous vraiment vider tous les champs du formulaire ? Cette action est irréversible.',
-                  confirmText: 'Vider',
-                  cancelText: 'Annuler',
-                  type: 'danger'
-                });
-                if (ok) {
-                  resetAllFields();
-                  showToast('Formulaire vidé', 'success');
-                }
-              }}
-              style={{
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                color: '#ef4444',
-                padding: '10px 16px',
-                borderRadius: 6,
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: 13,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8
-              }}
-            >
-              <span>🗑️</span>
-              Vider le formulaire
-            </button>
-          </div>
+          {editingPostId && (
+            <>
+              <button
+                type="button"
+                onClick={() => { setEditingPostId(null); setEditingPostData(null); showToast('Mode édition annulé', 'info'); }}
+                style={{
+                  background: 'transparent', border: '1px solid var(--border)',
+                  color: 'var(--muted)', padding: '10px 20px',
+                  borderRadius: 6, cursor: 'pointer', fontWeight: 600
+                }}
+              >❌ Annuler l'édition</button>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--muted)', userSelect: 'none' }}
+                title="Ne pas envoyer de notification de mise à jour"
+              >
+                <input type="checkbox" checked={silentUpdateMode} onChange={e => setSilentUpdateMode(e.target.checked)} />
+                <span>📇 Mise à jour silencieuse</span>
+              </label>
+            </>
+          )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            {rateLimitCooldown !== null && (
-              <div style={{ color: 'var(--error)', fontSize: 13, fontWeight: 700 }}>
-                ⏳ Rate limit : {rateLimitCooldown}s
+          <div
+            style={{ position: 'relative' }}
+            onMouseEnter={() => (!canPublish || publishInProgress) && setShowPublishTooltip(true)}
+            onMouseLeave={() => setShowPublishTooltip(false)}
+          >
+            {showPublishTooltip && publishTooltipText && (
+              <div style={{
+                position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%',
+                transform: 'translateX(-50%)',
+                background: 'var(--panel)', border: '1px solid var(--border)',
+                borderRadius: 8, padding: '8px 12px',
+                fontSize: 12, color: 'var(--text)', whiteSpace: 'nowrap',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.4)', zIndex: 100,
+                pointerEvents: 'none',
+              }}>
+                ⚠️ {publishTooltipText}
               </div>
             )}
-
-            {editingPostId && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => { setEditingPostId(null); setEditingPostData(null); showToast('Mode édition annulé', 'info'); }}
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid var(--border)',
-                    color: 'var(--muted)',
-                    padding: '10px 20px',
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    fontWeight: 600
-                  }}
-                >
-                  ❌ Annuler l'édition
-                </button>
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    color: 'var(--muted)',
-                    userSelect: 'none'
-                  }}
-                  title="Ne pas envoyer de notification de mise à jour dans le canal d'annonces (ex. : ajout d'un tag oublié)"
-                >
-                  <input
-                    type="checkbox"
-                    checked={silentUpdateMode}
-                    onChange={(e) => setSilentUpdateMode(e.target.checked)}
-                  />
-                  <span>🔇 Mise à jour silencieuse</span>
-                </label>
-              </>
-            )}
-
-            {!hasRequiredTags && missingRequiredTagLabels.length > 0 && (
-              <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>
-                Tags obligatoires : {missingRequiredTagLabels.map((label, i) => (
-                  <span key={label}>
-                    {i > 0 && ', '}
-                    <strong>{label}</strong>
-                  </span>
-                ))}.
-              </div>
-            )}
-
             <button
               disabled={publishInProgress || !canPublish}
               onClick={async () => {
@@ -1745,49 +1692,30 @@ export default function ContentEditor() {
                   );
                   if (res && res.ok) {
                     showToast('Terminé !', 'success');
-                    if (editingPostId) {
-                      setEditingPostId(null);
-                      setEditingPostData(null);
-                    }
+                    if (editingPostId) { setEditingPostId(null); setEditingPostData(null); }
                   }
                 }
               }}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                padding: '12px 32px',
-                fontSize: 15,
-                fontWeight: 700,
-                background: (publishInProgress || !canPublish) ? 'var(--muted)' : (editingPostId ? '#f59e0b' : '#5865F2'),
-                color: 'white',
-                minWidth: '220px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+                padding: '12px 32px', fontSize: 15, fontWeight: 700,
+                background: (publishInProgress || !canPublish) ? 'rgba(148,163,184,0.4)' : (editingPostId ? '#f59e0b' : '#5865F2'),
+                color: 'white', minWidth: '220px',
                 cursor: (publishInProgress || !canPublish) ? 'not-allowed' : 'pointer',
-                border: 'none',
-                borderRadius: 6
+                border: 'none', borderRadius: 6,
+                transition: 'opacity 0.15s',
               }}
             >
               {publishInProgress ? (
                 <span>⏳ Patientez...</span>
               ) : editingPostId ? (
-                <>
-                  <span style={{ fontSize: 18 }}>✏️</span>
-                  <span>Mettre à jour le post</span>
-                </>
+                <><span style={{ fontSize: 18 }}>✏️</span><span>Mettre à jour le post</span></>
               ) : (
-                <>
-                  <img
-                    src={DiscordIcon}
-                    alt="Discord"
-                    style={{ width: 20, height: 20, filter: 'brightness(0) invert(1)' }}
-                  />
-                  <span>Publier sur Discord</span>
-                </>
+                <><img src={DiscordIcon} alt="Discord" style={{ width: 20, height: 20, filter: 'brightness(0) invert(1)' }} /><span>Publier sur Discord</span></>
               )}
             </button>
           </div>
-        </div> {/* FIN LIGNE 10 */}
+        </div>
 
         {/* Overlay global pour fermer les suggestions */}
         {showInstructionSuggestions && (

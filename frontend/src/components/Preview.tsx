@@ -59,8 +59,8 @@ export default function Preview({
       minHeight: 0,
       background: 'var(--bg)'
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, flexWrap: 'nowrap', gap: 8, height: 32, minHeight: 32 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'nowrap' }}>
           {/* 🆕 Sélecteur de template cliquable */}
           {templateName && availableTemplates.length > 0 && (
             <div ref={dropdownRef} style={{ position: 'relative' }}>
@@ -178,7 +178,7 @@ export default function Preview({
             <button
               onClick={onOpenDiscordPreview}
               style={{
-                padding: '6px 12px',
+                padding: '0 12px',
                 background: 'transparent',
                 color: 'var(--text)',
                 border: '1px solid var(--border)',
@@ -186,7 +186,8 @@ export default function Preview({
                 cursor: 'pointer',
                 fontSize: 13,
                 height: 32,
-                fontWeight: 500
+                fontWeight: 500,
+                display: 'flex', alignItems: 'center', flexShrink: 0,
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = 'rgba(88, 101, 242, 0.1)';
@@ -202,18 +203,19 @@ export default function Preview({
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
           <div style={{
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: 700,
             color: isOverLimit ? 'var(--error)' : 'var(--text)',
-            padding: '6px 12px',
-            background: isOverLimit ? 'rgba(239, 68, 68, 0.1)' : 'rgba(74, 158, 255, 0.1)',
-            border: `1px solid ${isOverLimit ? 'var(--error)' : 'rgba(74, 158, 255, 0.3)'}`,
+            padding: '0 12px',
+            background: isOverLimit ? 'rgba(239, 68, 68, 0.1)' : 'rgba(99,102,241,0.1)',
+            border: `1px solid ${isOverLimit ? 'var(--error)' : 'rgba(99,102,241,0.3)'}`,
             borderRadius: 6,
             height: 32,
             display: 'flex',
-            alignItems: 'center'
+            alignItems: 'center',
+            flexShrink: 0,
           }}>
             {characterCount} / 2000
             {isOverLimit && (
@@ -226,14 +228,15 @@ export default function Preview({
             onClick={onCopy}
             title="Copier le preview"
             style={{
-              padding: '6px 12px',
+              padding: '0 12px',
               fontSize: 13,
               height: 32,
               border: '1px solid var(--border)',
               borderRadius: 6,
               cursor: 'pointer',
               background: 'transparent',
-              color: 'inherit'
+              color: 'inherit',
+              display: 'flex', alignItems: 'center', flexShrink: 0,
             }}
           >
             📋 Copier
@@ -241,7 +244,7 @@ export default function Preview({
         </div>
       </div>
 
-      <div className="preview-body styled-scrollbar" style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+      <div className="preview-body styled-scrollbar" style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
         <textarea
           readOnly={true}
           value={preview}
@@ -249,7 +252,7 @@ export default function Preview({
           style={{
             width: '100%',
             height: '100%',
-            minHeight: 200,
+            minHeight: 0,
             fontFamily: 'monospace',
             padding: 12,
             borderRadius: 6,

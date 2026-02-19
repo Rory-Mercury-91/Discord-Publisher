@@ -14,25 +14,10 @@ import { useAuth } from '../state/authContext';
 import ConfirmModal from './ConfirmModal';
 import { useToast } from './ToastProvider';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 type WindowState = 'normal' | 'maximized' | 'fullscreen' | 'minimized';
 type Tab = 'preferences' | 'account' | 'admin';
 type ProfilePublic = Pick<Profile, 'id' | 'pseudo' | 'discord_id'>;
-
-type MappingRow = {
-  id: string;
-  profile_id: string;
-  tag_id: string;
-  forum_channel_id: string;
-};
-
-// Traducteur externe : géré directement dans external_translators (pas de FK profiles)
-type ExternalTranslator = {
-  id: string;       // UUID Supabase
-  name: string;
-  tag_id: string;
-  forum_channel_id: string;
-};
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
@@ -55,11 +40,6 @@ const inputStyle: React.CSSProperties = {
   border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)',
   color: 'var(--text)', fontSize: 14, boxSizing: 'border-box',
 };
-const rowInputStyle: React.CSSProperties = {
-  width: '100%', padding: '7px 10px', borderRadius: 10,
-  border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)',
-  color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
-};
 const labelStyle: React.CSSProperties = {
   display: 'block', fontSize: 14, color: 'var(--muted)', fontWeight: 500,
 };
@@ -67,70 +47,6 @@ const gridStyle: React.CSSProperties = {
   display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start',
 };
 const fullWidthStyle: React.CSSProperties = { gridColumn: '1 / -1' };
-
-// ─── Sous-composant MappingRowItem ────────────────────────────────────────────
-interface MappingRowProps {
-  label: string;
-  hasMapping: boolean;
-  edit: { tag_id: string; forum_channel_id: string };
-  tags: { id?: string; name: string }[];
-  onEditChange: (field: 'tag_id' | 'forum_channel_id', val: string) => void;
-  onSave: () => void;
-  onDelete: () => void;
-  isExternal?: boolean;
-}
-
-function MappingRowItem({ label, hasMapping, edit, tags, onEditChange, onSave, onDelete, isExternal }: MappingRowProps) {
-  return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: '180px 1fr 1fr 90px 40px',
-      gap: 10, alignItems: 'center',
-      padding: '8px 14px', borderRadius: 10,
-      border: `1px solid ${hasMapping ? 'rgba(74,158,255,0.28)' : 'var(--border)'}`,
-      background: hasMapping ? 'rgba(74,158,255,0.05)' : isExternal ? 'rgba(255,200,74,0.03)' : 'transparent',
-      transition: 'background 0.2s',
-    }}>
-      <div style={{
-        fontSize: 13, fontWeight: 600, color: 'var(--text)',
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        display: 'flex', alignItems: 'center', gap: 6,
-      }}>
-        <span style={{ opacity: 0.5, fontSize: 11 }}>{isExternal ? '🔧' : hasMapping ? '🔗' : '⬜'}</span>
-        {label}
-      </div>
-
-      <select value={edit.tag_id} onChange={e => onEditChange('tag_id', e.target.value)} style={rowInputStyle}>
-        <option value="">— Tag —</option>
-        {tags.map(t => <option key={t.id ?? t.name} value={t.id ?? ''}>{t.name}</option>)}
-      </select>
-
-      <input
-        type="text" value={edit.forum_channel_id}
-        onChange={e => onEditChange('forum_channel_id', e.target.value)}
-        placeholder="ID salon forum" style={rowInputStyle}
-      />
-
-      <button type="button" onClick={onSave} style={{
-        padding: '7px 0', borderRadius: 8, border: 'none',
-        background: 'rgba(74,158,255,0.18)', color: '#4a9eff',
-        cursor: 'pointer', fontSize: 12, fontWeight: 700, width: '100%',
-      }}>
-        💾 Sauver
-      </button>
-
-      <button type="button" onClick={onDelete} title="Supprimer" style={{
-        padding: '7px 0', borderRadius: 8, border: 'none',
-        background: hasMapping || isExternal ? 'rgba(239,68,68,0.13)' : 'transparent',
-        color: hasMapping || isExternal ? '#ef4444' : 'var(--muted)',
-        cursor: hasMapping || isExternal ? 'pointer' : 'default',
-        fontSize: 14, width: '100%', opacity: hasMapping || isExternal ? 1 : 0.3,
-      }}>
-        🗑️
-      </button>
-    </div>
-  );
-}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface ConfigModalProps {
@@ -147,7 +63,7 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
   } = useApp();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
 
-  // ─── Onglet actif ─────────────────────────────────────────────────────────
+  // ─── Onglet actif ──────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<Tab>('preferences');
 
   // ─── Préférences ──────────────────────────────────────────────────────────
@@ -172,22 +88,6 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
-
-  // ─── Administration : mappings (utilisateurs inscrits) ────────────────────
-  const [mappings, setMappings] = useState<MappingRow[]>([]);
-  const [mappingsLoading, setMappingsLoading] = useState(false);
-  const [editingMappings, setEditingMappings] = useState<
-    Record<string, { tag_id: string; forum_channel_id: string }>
-  >({});
-
-  // ─── Administration : traducteurs externes ────────────────────────────────
-  const [externals, setExternals] = useState<ExternalTranslator[]>([]);
-  const [externalsLoading, setExternalsLoading] = useState(false);
-  const [editingExternals, setEditingExternals] = useState<
-    Record<string, { tag_id: string; forum_channel_id: string }>
-  >({});
-  const [newExtName, setNewExtName] = useState('');
-  const [addingExternal, setAddingExternal] = useState(false);
 
   // ─── Administration : général ─────────────────────────────────────────────
   const [apiUrl, setApiUrl] = useState(
@@ -227,8 +127,6 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
           const data = await res.json().catch(() => ({}));
           if (res.ok && data?.valid === true) {
             setAdminUnlocked(true);
-            void loadMappings();
-            void loadExternals();
             window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
             setCheckingStored(false); return;
           }
@@ -236,16 +134,12 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
           setAdminCodeError('Code mémorisé révoqué. Saisissez le nouveau code.');
         } catch {
           setAdminUnlocked(true);
-          void loadMappings();
-          void loadExternals();
           window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
         }
       } else {
         const refEnv = getMasterAdminCodeEnv().trim();
         if (refEnv && trimmed === refEnv) {
           setAdminUnlocked(true);
-          void loadMappings();
-          void loadExternals();
           window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
         } else {
           localStorage.removeItem(STORAGE_KEY_MASTER_ADMIN);
@@ -277,8 +171,6 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
           localStorage.setItem(STORAGE_KEY_MASTER_ADMIN, trimmed);
           await _grantMasterAdmin(trimmed, base);
           setAdminUnlocked(true);
-          void loadMappings();
-          void loadExternals();
           window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
           setAdminCode(''); showToast('Accès administrateur déverrouillé', 'success'); return;
         }
@@ -293,8 +185,6 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
         if (trimmed !== refEnv) { setAdminCodeError('Code incorrect.'); return; }
         localStorage.setItem(STORAGE_KEY_MASTER_ADMIN, trimmed);
         setAdminUnlocked(true);
-        void loadMappings();
-        void loadExternals();
         window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
         setAdminCode(''); showToast('Accès administrateur déverrouillé', 'success');
       }
@@ -303,8 +193,6 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
       if (refEnv && trimmed === refEnv) {
         localStorage.setItem(STORAGE_KEY_MASTER_ADMIN, trimmed);
         setAdminUnlocked(true);
-        void loadMappings();
-        void loadExternals();
         window.dispatchEvent(new CustomEvent('masterAdminUnlocked'));
         setAdminCode(''); showToast('Accès administrateur déverrouillé (mode hors-ligne)', 'success');
       } else {
@@ -317,160 +205,22 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
     const sb = getSupabase();
     if (!sb) return;
     try {
-      // On rafraîchit la session pour être sûr d'avoir un token valide
       const { data: { session } } = await sb.auth.refreshSession();
       const token = session?.access_token;
       if (!token) return;
       const res = await fetch(`${base}/functions/v1/grant-master-admin`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ code }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data?.success) {
-        // 1. Met à jour le profil local pour refléter le statut admin
         await refreshProfile();
-        // 2. FORCE le chargement immédiat des données admin
-        // Cela évite que la liste reste vide juste après le déverrouillage
-        await Promise.all([
-          loadMappings(),
-          loadExternals()
-        ]);
         showToast('Droits administrateur mis à jour', 'success');
       }
     } catch (err) {
       console.error('Erreur lors de l\'attribution des droits:', err);
     }
-  };
-
-  // ─── Mappings (utilisateurs inscrits) ─────────────────────────────────────
-  const loadMappings = async () => {
-    const sb = getSupabase();
-    if (!sb) return;
-    setMappingsLoading(true);
-    try {
-      const { data } = await sb
-        .from('translator_forum_mappings')
-        .select('id, profile_id, tag_id, forum_channel_id');
-      const rows = (data ?? []) as MappingRow[];
-      setMappings(rows);
-      const init: Record<string, { tag_id: string; forum_channel_id: string }> = {};
-      rows.forEach(r => { init[r.profile_id] = { tag_id: r.tag_id, forum_channel_id: r.forum_channel_id }; });
-      setEditingMappings(init);
-    } catch { showToast('Erreur chargement des mappings', 'error'); }
-    finally { setMappingsLoading(false); }
-  };
-
-  const saveMapping = async (profileId: string) => {
-    const sb = getSupabase();
-    if (!sb) return;
-    const edit = editingMappings[profileId];
-    if (!edit?.tag_id || !edit?.forum_channel_id?.trim()) {
-      showToast('Tag traducteur et salon forum requis', 'warning'); return;
-    }
-    const existing = mappings.find(m => m.profile_id === profileId);
-    try {
-      if (existing) {
-        await sb.from('translator_forum_mappings')
-          .update({ tag_id: edit.tag_id, forum_channel_id: edit.forum_channel_id.trim() })
-          .eq('id', existing.id);
-      } else {
-        await sb.from('translator_forum_mappings')
-          .insert({ profile_id: profileId, tag_id: edit.tag_id, forum_channel_id: edit.forum_channel_id.trim() });
-      }
-      showToast('Mapping sauvegardé', 'success');
-      await loadMappings();
-    } catch { showToast('Erreur lors de la sauvegarde', 'error'); }
-  };
-
-  const deleteMapping = async (profileId: string) => {
-    const sb = getSupabase();
-    if (!sb) return;
-    const existing = mappings.find(m => m.profile_id === profileId);
-    if (!existing) return;
-    try {
-      await sb.from('translator_forum_mappings').delete().eq('id', existing.id);
-      showToast('Mapping supprimé', 'success');
-      await loadMappings();
-    } catch { showToast('Erreur lors de la suppression', 'error'); }
-  };
-
-  // ─── Traducteurs externes (table external_translators) ────────────────────
-  const loadExternals = async () => {
-    const sb = getSupabase();
-    if (!sb) return;
-    setExternalsLoading(true);
-    try {
-      const { data, error } = await sb
-        .from('external_translators')
-        .select('id, name, tag_id, forum_channel_id')
-        .order('created_at', { ascending: true });
-      if (error) throw error;
-      const rows = (data ?? []) as ExternalTranslator[];
-      setExternals(rows);
-      const init: Record<string, { tag_id: string; forum_channel_id: string }> = {};
-      rows.forEach(r => { init[r.id] = { tag_id: r.tag_id ?? '', forum_channel_id: r.forum_channel_id ?? '' }; });
-      setEditingExternals(init);
-    } catch { showToast('Erreur chargement des traducteurs externes', 'error'); }
-    finally { setExternalsLoading(false); }
-  };
-
-  const handleAddExternal = async () => {
-    const name = newExtName.trim();
-    if (!name) return;
-    if (externals.some(e => e.name.toLowerCase() === name.toLowerCase())) {
-      showToast('Ce traducteur existe déjà', 'warning'); return;
-    }
-    const sb = getSupabase();
-    if (!sb) return;
-    try {
-      const { data, error } = await sb
-        .from('external_translators')
-        .insert({ name, tag_id: null, forum_channel_id: '' })
-        .select('id, name, tag_id, forum_channel_id')
-        .single();
-      if (error) throw error;
-      const entry = data as ExternalTranslator;
-      setExternals(prev => [...prev, entry]);
-      setEditingExternals(prev => ({ ...prev, [entry.id]: { tag_id: '', forum_channel_id: '' } }));
-      setNewExtName('');
-      setAddingExternal(false);
-      showToast('Traducteur externe créé', 'success');
-    } catch { showToast('Erreur lors de la création', 'error'); }
-  };
-
-  const saveExternal = async (extId: string) => {
-    const sb = getSupabase();
-    if (!sb) return;
-    const edit = editingExternals[extId];
-    if (!edit?.forum_channel_id?.trim()) {
-      showToast('Le salon forum est requis', 'warning'); return;
-    }
-    try {
-      await sb.from('external_translators')
-        .update({
-          tag_id: edit.tag_id || null,
-          forum_channel_id: edit.forum_channel_id.trim(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', extId);
-      showToast('Traducteur externe sauvegardé', 'success');
-      await loadExternals();
-    } catch { showToast('Erreur lors de la sauvegarde', 'error'); }
-  };
-
-  const deleteExternal = async (extId: string) => {
-    const sb = getSupabase();
-    if (!sb) return;
-    try {
-      await sb.from('external_translators').delete().eq('id', extId);
-      setExternals(prev => prev.filter(e => e.id !== extId));
-      setEditingExternals(prev => { const n = { ...prev }; delete n[extId]; return n; });
-      showToast('Traducteur externe supprimé', 'success');
-    } catch { showToast('Erreur lors de la suppression', 'error'); }
   };
 
   // ─── Sauvegarde auto préférences ──────────────────────────────────────────
@@ -511,15 +261,6 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
       finally { setEditorsLoading(false); }
     })();
   }, [activeTab, profile?.id]);
-
-  // ─── Rechargement automatique des données Admin ───────────────────────────
-  useEffect(() => {
-    // Si on est sur l'onglet admin et que c'est déjà déverrouillé, on rafraîchit
-    if (activeTab === 'admin' && adminUnlocked) {
-      void loadMappings();
-      void loadExternals();
-    }
-  }, [activeTab, adminUnlocked]);
 
   const toggleEditor = async (editorId: string, currentlyAllowed: boolean) => {
     const sb = getSupabase();
@@ -694,8 +435,6 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
     { id: 'admin', label: 'Administration', icon: '🛡️' },
   ];
 
-  const translatorTags = savedTags.filter(t => t.tagType === 'translator');
-
   // ─── Rendu ────────────────────────────────────────────────────────────────
   const modalContent = (
     <div
@@ -731,7 +470,7 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
         {/* Contenu scrollable */}
         <div className="styled-scrollbar" style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
 
-          {/* ══ PRÉFÉRENCES ═══════════════════════════════════════════════════ */}
+          {/* ══ PRÉFÉRENCES ══════════════════════════════════════════════════ */}
           {activeTab === 'preferences' && (
             <div style={gridStyle}>
               <section style={sectionStyle}>
@@ -773,7 +512,7 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
             </div>
           )}
 
-          {/* ══ MON COMPTE ════════════════════════════════════════════════════ */}
+          {/* ══ MON COMPTE ═══════════════════════════════════════════════════ */}
           {activeTab === 'account' && (
             <div style={gridStyle}>
               {profile?.id && (
@@ -880,124 +619,14 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
                   </div>
                 </section>
 
-                {/* Routing des traducteurs */}
-                <section style={sectionStyle}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🗺️ Routing des traducteurs</h4>
-                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                      Sans mapping → salon par défaut (<code>PUBLISHER_FORUM_TRAD_ID</code>)
-                    </span>
-                  </div>
-
-                  {/* En-têtes colonnes */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 1fr 90px 40px', gap: 10, padding: '6px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.04)' }}>
-                    {['Traducteur', 'Tag', 'Salon Discord (ID)', 'Action', ''].map(h => (
-                      <span key={h} style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</span>
-                    ))}
-                  </div>
-
-                  {(mappingsLoading || externalsLoading) ? (
-                    <div style={{ fontSize: 13, color: 'var(--muted)', padding: '12px 14px' }}>Chargement…</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-
-                      {/* Utilisateurs inscrits */}
-                      {allProfiles.length > 0 && (
-                        <>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', padding: '4px 14px', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                            👤 Utilisateurs inscrits
-                          </div>
-                          {allProfiles.map(p => (
-                            <MappingRowItem
-                              key={p.id}
-                              label={p.pseudo || '—'}
-                              hasMapping={mappings.some(m => m.profile_id === p.id)}
-                              edit={editingMappings[p.id] ?? { tag_id: '', forum_channel_id: '' }}
-                              tags={translatorTags}
-                              onEditChange={(field, val) => setEditingMappings(prev => ({
-                                ...prev,
-                                [p.id]: { ...(prev[p.id] ?? { tag_id: '', forum_channel_id: '' }), [field]: val }
-                              }))}
-                              onSave={() => saveMapping(p.id)}
-                              onDelete={() => deleteMapping(p.id)}
-                            />
-                          ))}
-                        </>
-                      )}
-                      {allProfiles.length === 0 && (
-                        <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic', padding: '8px 14px' }}>Aucun utilisateur inscrit.</div>
-                      )}
-
-                      {/* Traducteurs externes */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px 4px', marginTop: 4 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                          🔧 Traducteurs externes (gérés par vous)
-                        </span>
-                        <button type="button" onClick={() => setAddingExternal(v => !v)} style={{
-                          padding: '5px 12px', borderRadius: 8, border: '1px dashed rgba(74,158,255,0.5)',
-                          background: 'rgba(74,158,255,0.08)', color: '#4a9eff',
-                          cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                        }}>
-                          {addingExternal ? '✕ Annuler' : '＋ Ajouter'}
-                        </button>
-                      </div>
-
-                      {addingExternal && (
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 14px', borderRadius: 10, border: '1px dashed rgba(74,158,255,0.35)', background: 'rgba(74,158,255,0.05)' }}>
-                          <input
-                            type="text" value={newExtName}
-                            onChange={e => setNewExtName(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleAddExternal()}
-                            placeholder="Nom du traducteur (ex: JohnDoe)"
-                            style={{ ...inputStyle, flex: 1 }}
-                            autoFocus
-                          />
-                          <button type="button" onClick={handleAddExternal} disabled={!newExtName.trim()} style={{
-                            padding: '10px 16px', borderRadius: 8, border: 'none',
-                            background: newExtName.trim() ? 'var(--accent)' : 'rgba(255,255,255,0.08)',
-                            color: newExtName.trim() ? '#fff' : 'var(--muted)',
-                            cursor: newExtName.trim() ? 'pointer' : 'not-allowed',
-                            fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap',
-                          }}>
-                            Créer
-                          </button>
-                        </div>
-                      )}
-
-                      {externals.length === 0 && !addingExternal && (
-                        <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic', padding: '4px 14px 8px' }}>
-                          Aucun traducteur externe. Cliquez sur « Ajouter » pour en créer un.
-                        </div>
-                      )}
-
-                      {externals.map(ext => (
-                        <MappingRowItem
-                          key={ext.id}
-                          label={ext.name}
-                          hasMapping={!!(editingExternals[ext.id]?.forum_channel_id?.trim())}
-                          edit={editingExternals[ext.id] ?? { tag_id: '', forum_channel_id: '' }}
-                          tags={translatorTags}
-                          onEditChange={(field, val) => setEditingExternals(prev => ({
-                            ...prev,
-                            [ext.id]: { ...(prev[ext.id] ?? { tag_id: '', forum_channel_id: '' }), [field]: val }
-                          }))}
-                          onSave={() => saveExternal(ext.id)}
-                          onDelete={() => deleteExternal(ext.id)}
-                          isExternal
-                        />
-                      ))}
-                    </div>
-                  )}
-                </section>
-
                 {/* Sauvegarde & restauration */}
-                <section style={{ ...sectionStyle, background: 'rgba(74,158,255,0.04)', border: '1px solid rgba(74,158,255,0.18)' }}>
+                <section style={{ ...sectionStyle, background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.18)' }}>
                   <h4 style={{ margin: 0, fontSize: '0.95rem' }}>💾 Sauvegarde et restauration</h4>
                   <input ref={fileInputRef} type="file" accept="application/json,.json" onChange={handleImportFile} style={{ display: 'none' }} />
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                     {[
-                      { label: '📤 Exporter', desc: 'Télécharge un JSON complet', color: '#4a9eff', bg: 'rgba(74,158,255,0.14)', border: 'rgba(74,158,255,0.35)', onClick: handleExportConfig },
-                      { label: '📥 Restaurer', desc: 'Importe depuis un fichier', color: '#4aff9e', bg: 'rgba(74,255,158,0.10)', border: 'rgba(74,255,158,0.3)', onClick: () => fileInputRef.current?.click() },
+                      { label: '📤 Exporter', desc: 'Télécharge un JSON complet', color: 'var(--accent)', bg: 'rgba(99,102,241,0.14)', border: 'rgba(99,102,241,0.35)', onClick: handleExportConfig },
+                      { label: '📥 Restaurer', desc: 'Importe depuis un fichier', color: 'var(--success)', bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.3)', onClick: () => fileInputRef.current?.click() },
                       { label: '🗑️ Tout supprimer', desc: 'Efface Supabase + local (irréversible)', color: '#ef4444', bg: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.35)', onClick: handleCleanupAllData },
                     ].map(({ label, desc, color, bg, border, onClick }) => (
                       <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1052,7 +681,7 @@ export default function ConfigModal({ onClose, onOpenLogs }: ConfigModalProps) {
         {/* Footer */}
         <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
           <button type="button" onClick={onClose} style={{ padding: '10px 28px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
-            Fermer
+            ↩️ Fermer
           </button>
         </div>
 

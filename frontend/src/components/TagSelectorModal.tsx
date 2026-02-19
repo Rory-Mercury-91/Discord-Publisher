@@ -45,12 +45,13 @@ export default function TagSelectorModal({
     );
     if (personal.length > 0) return personal;
 
-    // Fallback legacy : tags sans profileId pour le propre profil de l'utilisateur connecté
-    if (activeTranslatorId === profile?.id)
+    // Fallback legacy UNIQUEMENT en mode non-contrôlé pour son propre profil
+    if (!isControlled && activeTranslatorId === profile?.id)
       return savedTags.filter(t => t.tagType !== 'translator');
 
     return [];
-  }, [savedTags, activeTranslatorId, activeTranslatorKind, profile?.id]);
+    // Ligne suivante (inchangée) :
+  }, [savedTags, activeTranslatorId, activeTranslatorKind, profile?.id, isControlled]);
 
   const availableTags = useMemo(
     () => myTags.filter(t => {
@@ -249,7 +250,7 @@ export default function TagSelectorModal({
             padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)',
             background: 'transparent', color: 'var(--text)', cursor: 'pointer'
           }}>
-            🚪 Fermer
+            ↩️ Fermer
           </button>
         </div>
       </div>

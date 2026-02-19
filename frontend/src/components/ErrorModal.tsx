@@ -253,7 +253,7 @@ ${error.discordError ? JSON.stringify(error.discordError, null, 2) : 'N/A'}
                 padding: '10px 16px'
               }}
             >
-              🚪 Fermer
+              ↩️ Fermer
             </button>
           </div>
 

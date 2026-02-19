@@ -379,7 +379,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
           <button onClick={onClose} style={{ padding: '8px 20px', fontWeight: 600 }}>
-            🚪 Fermer
+            ↩️ Fermer
           </button>
         </div>
       </div>

@@ -39,7 +39,7 @@ export default function AppHeader({
   const { publishedPosts, savedTags, loadPostForEditing } = useApp();
   const { showToast } = useToast();
 
-  // ── Master admin unlock (réactif) ─────────────────────────────────────────
+  // ── Master admin ────────────────────────────────────────────────────────────
   const [masterAdmin, setMasterAdmin] = useState(() =>
     !!localStorage.getItem(STORAGE_KEY_MASTER_ADMIN)
   );
@@ -53,7 +53,7 @@ export default function AppHeader({
     };
   }, []);
 
-  // ── Recherche ─────────────────────────────────────────────────────────────
+  // ── Recherche ───────────────────────────────────────────────────────────────
   const [query, setQuery] = useState('');
   const [showDrop, setShowDrop] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement>(null);
@@ -84,24 +84,21 @@ export default function AppHeader({
   }, [savedTags]);
 
   const handleSelect = useCallback((post: PublishedPost) => {
-    const isOwner = profile?.discord_id && post.authorDiscordId === profile.discord_id;
-    if (isOwner) {
+    const canEdit = post.authorDiscordId === profile?.discord_id || masterAdmin;
+    if (canEdit) {
       loadPostForEditing(post);
       showToast('Post chargé en mode édition', 'info');
       setShowDrop(false);
       setQuery('');
     }
-    // Si pas auteur : on ne fait rien (le clic est visuellement désactivé)
-  }, [profile?.discord_id, loadPostForEditing, showToast]);
+  }, [profile?.discord_id, loadPostForEditing, showToast, masterAdmin]);
 
-  // ── Avatar utilisateur ────────────────────────────────────────────────────
+  // ── Avatar ──────────────────────────────────────────────────────────────────
   const pseudo = profile?.pseudo || 'Utilisateur';
-
   const initials = useMemo(() => {
     const w = pseudo.trim().split(/\s+/);
     return (w.length >= 2 ? w[0][0] + w[1][0] : pseudo.slice(0, 2)).toUpperCase();
   }, [pseudo]);
-
   const avatarColor = useMemo(() => {
     const palette = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#14b8a6'];
     let h = 0;
@@ -112,7 +109,7 @@ export default function AppHeader({
   const fmtDate = (ts: number) =>
     new Date(ts).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 
-  // ── Fermeture application ─────────────────────────────────────────────────
+  // ── Fermeture Tauri ─────────────────────────────────────────────────────────
   const handleClose = async () => {
     try {
       if (window.__TAURI__) {
@@ -123,54 +120,85 @@ export default function AppHeader({
           const { getCurrentWindow } = await import('@tauri-apps/api/window' as any);
           await getCurrentWindow().close();
         }
-      } else {
-        window.close();
-      }
+      } else { window.close(); }
     } catch (e) { console.error('Erreur fermeture:', e); }
   };
 
-  // ── Styles utilitaires ────────────────────────────────────────────────────
+  // ── Style helpers ───────────────────────────────────────────────────────────
   const iconBtn = (extra: React.CSSProperties = {}): React.CSSProperties => ({
-    width: 34, height: 34, padding: 0, fontSize: 18,
+    width: 32, height: 32, padding: 0, fontSize: 15,
     border: '1px solid var(--border)', background: 'transparent',
-    borderRadius: 8, cursor: 'pointer',
+    borderRadius: 7, cursor: 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0,
     ...extra,
   });
 
-  const smallBtn: React.CSSProperties = { fontSize: 12, padding: '5px 10px' };
+  const vSep: React.CSSProperties = {
+    width: 1, height: 18, background: 'var(--border)', flexShrink: 0,
+  };
+
+  const toolBtn = (active = false): React.CSSProperties => ({
+    fontSize: 12, padding: '4px 11px', borderRadius: 6, height: 28,
+    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+    background: active ? 'rgba(99,102,241,0.15)' : 'transparent',
+    color: active ? 'var(--accent)' : 'var(--text)',
+    cursor: 'pointer', fontWeight: active ? 600 : 500,
+    display: 'flex', alignItems: 'center', gap: 5,
+    transition: 'all 0.15s', flexShrink: 0,
+  });
 
   return (
-    <header style={{ borderBottom: '1px solid var(--border)', background: 'var(--panel)', flexShrink: 0 }}>
+    <header style={{
+      background: 'var(--panel)',
+      borderBottom: '1px solid var(--border)',
+      flexShrink: 0,
+    }}>
 
-      {/* ══════════════════ LIGNE 1 ══════════════════════════════════════════ */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px' }}>
+      {/* ═══════════════════════════════════════════════════════════════════════
+          LIGNE 1 — Identité · Recherche · Actions système
+      ═══════════════════════════════════════════════════════════════════════ */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px' }}>
 
-        {/* ── Titre ── */}
-        <div style={{ flexShrink: 0, minWidth: 240, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 22, fontFamily: 'Noto Color Emoji, Segoe UI Emoji, Apple Color Emoji' }}>🇫🇷</span>
-          <div style={{ lineHeight: 1.25 }}>
-            <span style={{ fontWeight: 700, fontSize: 15 }}>Générateur de publication</span>
-            <span style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 6, opacity: 0.8 }}>v{APP_VERSION}</span>
+        {/* Branding */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, minWidth: 210 }}>
+          <span style={{
+            fontSize: 20, lineHeight: 1,
+            fontFamily: 'Noto Color Emoji, Segoe UI Emoji, Apple Color Emoji',
+          }}>🇫🇷</span>
+          <div style={{ lineHeight: 1.3 }}>
+            <span style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.01em' }}>
+              Générateur de publication
+            </span>
+            <span style={{
+              fontSize: 10, color: 'var(--muted)', marginLeft: 6,
+              padding: '1px 5px', borderRadius: 4,
+              background: 'rgba(255,255,255,0.07)', verticalAlign: 'middle',
+            }}>v{APP_VERSION}</span>
           </div>
         </div>
 
-        {/* ── Recherche ── */}
+        {/* Barre de recherche (flex center) */}
         <div ref={searchWrapRef} style={{ flex: 1, maxWidth: 520, margin: '0 auto', position: 'relative' }}>
-          <input
-            type="text"
-            value={query}
-            onChange={e => { setQuery(e.target.value); setShowDrop(true); }}
-            onFocus={() => query.trim() && setShowDrop(true)}
-            placeholder={mode === 'translator' ? '🔍 Rechercher parmi mes publications…' : '🔍 Rechercher une traduction…'}
-            style={{
-              width: '100%', padding: '8px 14px', borderRadius: 8,
-              border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)',
-              color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
-            }}
-          />
+          <div style={{ position: 'relative' }}>
+            <span style={{
+              position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+              fontSize: 12, color: 'var(--muted)', pointerEvents: 'none',
+            }}>🔍</span>
+            <input
+              type="text"
+              value={query}
+              onChange={e => { setQuery(e.target.value); setShowDrop(true); }}
+              onFocus={() => query.trim() && setShowDrop(true)}
+              placeholder={mode === 'translator' ? 'Rechercher parmi mes publications…' : 'Rechercher une traduction…'}
+              style={{
+                width: '100%', padding: '7px 12px 7px 30px', borderRadius: 8,
+                border: '1px solid var(--border)', background: 'rgba(255,255,255,0.04)',
+                color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
+              }}
+            />
+          </div>
 
-          {/* Dropdown résultats */}
           {showDrop && query.trim() && (
             <div style={{
               position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
@@ -179,114 +207,138 @@ export default function AppHeader({
               zIndex: 9999, overflow: 'hidden',
             }}>
               {results.length === 0 ? (
-                <div style={{ padding: '16px', textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
+                <div style={{ padding: 16, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
                   Aucune publication trouvée
                 </div>
-              ) : results.map(post => (
-                <div
-                  key={post.id}
-                  onClick={() => handleSelect(post)}
-                  style={{
-                    display: 'flex', height: 72,
-                    borderBottom: '1px solid rgba(255,255,255,0.05)',
-                    // cursor pointer seulement si on est l'auteur
-                    cursor: post.authorDiscordId === profile?.discord_id ? 'pointer' : 'default',
-                    transition: 'background 0.15s',
-                  }}
-                  onMouseEnter={e => {
-                    if (post.authorDiscordId === profile?.discord_id)
-                      (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.05)';
-                  }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
-                >
-                  {/* Vignette — inchangée */}
-                  <div style={{ width: 72, height: 72, flexShrink: 0, background: 'rgba(255,255,255,0.04)', overflow: 'hidden' }}>
-                    {post.imagePath
-                      ? <img src={post.imagePath} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, color: 'var(--muted)' }}>🎮</div>
-                    }
-                  </div>
-
-                  {/* Infos — inchangées */}
-                  <div style={{ flex: 1, padding: '10px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {post.title || 'Sans titre'}
+              ) : results.map(post => {
+                const canEdit = post.authorDiscordId === profile?.discord_id || masterAdmin;
+                return (
+                  <div
+                    key={post.id}
+                    onClick={() => handleSelect(post)}
+                    style={{
+                      display: 'flex', height: 68,
+                      borderBottom: '1px solid rgba(255,255,255,0.05)',
+                      cursor: canEdit ? 'pointer' : 'default',
+                      transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={e => { if (canEdit) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.05)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                  >
+                    <div style={{ width: 68, height: 68, flexShrink: 0, background: 'rgba(255,255,255,0.04)', overflow: 'hidden' }}>
+                      {post.imagePath
+                        ? <img src={post.imagePath} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: 'var(--muted)' }}>🎮</div>
+                      }
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      👤 {getTranslators(post)}
+                    <div style={{ flex: 1, padding: '9px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 3, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {post.title || 'Sans titre'}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        👤 {getTranslators(post)}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>📅 {fmtDate(post.timestamp)}</div>
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                      📅 {fmtDate(post.timestamp)}
+                    <div style={{ display: 'flex', alignItems: 'center', paddingRight: 12, fontSize: 13 }}>
+                      {canEdit
+                        ? <span style={{ color: 'var(--accent)' }}>✏️</span>
+                        : <span title="Vous n'êtes pas l'auteur" style={{ opacity: 0.3 }}>🔒</span>
+                      }
                     </div>
                   </div>
-
-                  {/* Indicateur action : ✏️ si auteur, cadenas si non */}
-                  <div style={{ display: 'flex', alignItems: 'center', paddingRight: 12, fontSize: 12 }}>
-                    {post.authorDiscordId === profile?.discord_id
-                      ? <span style={{ color: 'var(--accent)' }}>✏️</span>
-                      : <span title="Vous n'êtes pas l'auteur" style={{ opacity: 0.35, fontSize: 14 }}>🔒</span>
-                    }
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* ── Boutons d'action ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        {/* Actions système (droite) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 'auto', flexShrink: 0 }}>
           <button onClick={onOpenConfig} style={iconBtn()} title="Configuration">⚙️</button>
           <button onClick={onOpenHelp} style={iconBtn()} title="Aide & raccourcis clavier">❓</button>
           <button
             onClick={onToggleTheme}
             style={iconBtn()}
             title={theme === 'dark' ? 'Passer en mode jour' : 'Passer en mode nuit'}
-          >
-            {theme === 'dark' ? '☀️' : '🌙'}
-          </button>
+          >{theme === 'dark' ? '☀️' : '🌙'}</button>
+
+          <div style={{ ...vSep, margin: '0 3px' }} />
+
           <button
             onClick={handleClose}
             style={iconBtn({
-              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
-              color: '#ef4444', fontSize: 14, fontWeight: 700,
+              background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+              color: '#ef4444', fontWeight: 700, fontSize: 13,
             })}
             title="Fermer l'application"
-          >➜]</button>
+          >✕</button>
         </div>
       </div>
 
-      {/* ══════════════════ LIGNE 2 ══════════════════════════════════════════ */}
+      {/* ═══════════════════════════════════════════════════════════════════════
+          LIGNE 2 — Outils · Mode · Identité
+      ═══════════════════════════════════════════════════════════════════════ */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '6px 16px 10px',
-        borderTop: '1px solid rgba(255,255,255,0.04)',
+        padding: '5px 16px 8px',
+        borderTop: '1px solid rgba(255,255,255,0.05)',
       }}>
 
-        {/* ── Boutons modales ── */}
-        <div style={{ display: 'flex', gap: 6, flex: 1, flexWrap: 'wrap' }}>
-          <button onClick={onOpenTemplates} style={smallBtn}>📝 Templates</button>
+        {/* Outils */}
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+          {[
+            { label: '📄 Templates', onClick: onOpenTemplates },
+            { label: '📋 Instructions', onClick: onOpenInstructions },
+            { label: '📜 Historique', onClick: onOpenHistory },
+            { label: '📈 Statistiques', onClick: onOpenStats },
+          ].map(({ label, onClick }) => (
+            <button
+              key={label}
+              onClick={onClick}
+              style={toolBtn()}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                e.currentTarget.style.borderColor = 'var(--accent)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = 'var(--border)';
+              }}
+            >{label}</button>
+          ))}
           {masterAdmin && (
-            <button onClick={onOpenTags} style={smallBtn}>🏷️ Tags</button>
+            <button
+              onClick={onOpenTags}
+              style={toolBtn()}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                e.currentTarget.style.borderColor = 'var(--accent)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = 'var(--border)';
+              }}
+            >🏷️ Tags</button>
           )}
-          <button onClick={onOpenInstructions} style={smallBtn}>📋 Instructions</button>
-          <button onClick={onOpenHistory} style={smallBtn}>📜 Historique</button>
-          <button onClick={onOpenStats} style={smallBtn}>📈 Statistiques</button>
         </div>
 
-        {/* ── Switch de mode (TODO) ── */}
+        <div style={vSep} />
+
+        {/* Switch de mode */}
         <div style={{
-          flexShrink: 0, display: 'flex',
+          display: 'flex', flexShrink: 0,
           background: 'rgba(255,255,255,0.04)',
           border: '1px solid var(--border)',
-          borderRadius: 8, overflow: 'hidden',
+          borderRadius: 7, overflow: 'hidden',
         }}>
           {(['translator', 'user'] as const).map((m, i) => (
             <button
               key={m}
               onClick={() => onModeChange(m)}
-              title={m === 'user' ? 'Mode utilisateur — Fonctionnalité à venir' : 'Mode traducteur'}
+              title={m === 'user' ? 'Mode utilisateur – Fonctionnalité à venir' : 'Mode traducteur'}
               style={{
-                padding: '5px 12px', fontSize: 12,
+                padding: '4px 12px', fontSize: 12,
                 fontWeight: mode === m ? 700 : 400,
                 background: mode === m ? 'var(--accent)' : 'transparent',
                 color: mode === m ? '#fff' : 'var(--muted)',
@@ -299,7 +351,7 @@ export default function AppHeader({
               {m === 'translator' ? '✏️ Traducteur' : '👁️ Utilisateur'}
               {m === 'user' && (
                 <span style={{
-                  fontSize: 9, padding: '1px 5px', borderRadius: 3, opacity: 0.75,
+                  fontSize: 9, padding: '1px 4px', borderRadius: 3, opacity: 0.7,
                   background: mode === 'user' ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)',
                 }}>TODO</span>
               )}
@@ -307,39 +359,47 @@ export default function AppHeader({
           ))}
         </div>
 
-        {/* ── Utilisateur connecté + API ── */}
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Identité + statut API */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <ApiStatusBadge onOpenLogs={onOpenLogs} />
+
+          <div style={vSep} />
 
           {/* Pill utilisateur */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
-            padding: '4px 10px', borderRadius: 8,
-            background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)',
+            padding: '3px 10px 3px 4px', borderRadius: 20,
+            background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)',
           }}>
             <div style={{
-              width: 26, height: 26, borderRadius: '50%',
+              width: 24, height: 24, borderRadius: '50%',
               background: avatarColor, flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 11, fontWeight: 700, color: '#fff',
+              fontSize: 10, fontWeight: 700, color: '#fff',
             }}>
               {initials}
             </div>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{pseudo}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{pseudo}</span>
           </div>
 
           {/* Déconnexion */}
           <button
             onClick={onLogout}
             style={{
-              height: 34, padding: '0 10px', fontSize: 13, fontWeight: 600,
-              background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.28)',
-              color: '#ef4444', borderRadius: 8, cursor: 'pointer',
+              height: 30, padding: '0 10px', fontSize: 12, fontWeight: 600,
+              background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+              color: '#ef4444', borderRadius: 7, cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 5,
+              transition: 'background 0.15s',
             }}
             title="Se déconnecter"
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.16)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
           >
-            🔓 <span style={{ fontSize: 12 }}>Déconnexion</span>
+            ↩️ <span>Déconnexion</span>
           </button>
         </div>
       </div>

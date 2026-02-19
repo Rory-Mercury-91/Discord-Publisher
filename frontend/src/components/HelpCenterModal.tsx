@@ -148,7 +148,7 @@ export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
             onMouseOver={e => (e.currentTarget.style.opacity = '0.9')}
             onMouseOut={e => (e.currentTarget.style.opacity = '1')}
           >
-            Fermer le centre d'aide
+            ↩️ Fermer le centre d'aide
           </button>
         </div>
       </div>

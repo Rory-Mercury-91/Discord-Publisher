@@ -248,7 +248,7 @@ export default function ApiStatusBadge({ onOpenLogs }: ApiStatusBadgeProps) {
               border: '1px solid var(--border)'
             }}
           >
-            Fermer
+            ↩️ Fermer
           </button>
         </div>
       )}
