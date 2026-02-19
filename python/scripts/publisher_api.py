@@ -1165,26 +1165,77 @@ async def run_version_check_once():
 
 # ==================== NETTOYAGE MESSAGES VIDES ====================
 async def run_cleanup_empty_messages_once():
-    """Supprime les messages vides dans les threads du salon my (sauf message de départ et métadonnées)."""
-    logger.info("🧹 Démarrage nettoyage quotidien des messages vides (salon my)")
-    if not config.FORUM_MY_ID:
-        logger.warning("⚠️ PUBLISHER_FORUM_TRAD_ID non configuré")
+    """
+    Supprime les messages vides dans les threads de TOUS les salons configurés 
+    (Mappings, Externes et salon par défaut).
+    """
+    logger.info("🧹 Démarrage nettoyage global des messages vides")
+    
+    # 1. Récupération de tous les IDs de forums uniques depuis Supabase
+    from publisher_api import _get_supabase
+    sb = _get_supabase()
+    forum_ids = set()
+
+    # On ajoute le salon MY par défaut s'il est configuré
+    if config.FORUM_MY_ID:
+        forum_ids.add(str(config.FORUM_MY_ID))
+
+    if sb:
+        try:
+            # Récupération des mappings profils inscrits
+            r1 = sb.table("translator_forum_mappings").select("forum_channel_id").execute()
+            for row in (r1.data or []):
+                val = str(row.get("forum_channel_id", "")).strip()
+                if val and val != "0":
+                    forum_ids.add(val)
+
+            # Récupération des traducteurs externes
+            r2 = sb.table("external_translators").select("forum_channel_id").execute()
+            for row in (r2.data or []):
+                val = str(row.get("forum_channel_id", "")).strip()
+                if val and val != "0":
+                    forum_ids.add(val)
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur lors de la récupération des salons Supabase pour nettoyage: {e}")
+
+    if not forum_ids:
+        logger.warning("⚠️ Aucun salon trouvé pour le nettoyage.")
         return
-    forum = bot.get_channel(config.FORUM_MY_ID)
-    if not forum:
-        logger.warning(f"⚠️ Forum {config.FORUM_MY_ID} introuvable")
-        return
-    threads = await _collect_all_forum_threads(forum)
-    logger.info(f"🧹 Nettoyage: {len(threads)} threads à traiter")
+
+    logger.info(f"📂 {len(forum_ids)} salon(s) à analyser pour le nettoyage")
+    
     total_deleted = 0
     async with aiohttp.ClientSession() as session:
-        for thread_idx, thread in enumerate(threads, 1):
-            await asyncio.sleep(1.0 + random.random())
-            n = await _clean_empty_messages_in_thread(session, str(thread.id))
-            total_deleted += n
-            if thread_idx % 10 == 0:
-                logger.info(f"📊 Progression: {thread_idx}/{len(threads)} threads traités")
-    logger.info(f"✅ Nettoyage terminé : {total_deleted} message(s) vide(s) supprimé(s)")
+        for forum_id_str in forum_ids:
+            try:
+                forum_id = int(forum_id_str)
+                forum = bot.get_channel(forum_id)
+                
+                if not forum:
+                    logger.warning(f"⚠️ Salon {forum_id} introuvable ou inaccessible par le bot")
+                    continue
+
+                logger.info(f"📁 Nettoyage du salon: {forum.name} ({forum_id})")
+                
+                # Récupération de tous les threads du salon (actifs + archivés)
+                threads = await _collect_all_forum_threads(forum)
+                if not threads:
+                    continue
+
+                for thread_idx, thread in enumerate(threads, 1):
+                    # Petit délai pour éviter le spam API Discord
+                    await asyncio.sleep(0.5 + random.random())
+                    
+                    n = await _clean_empty_messages_in_thread(session, str(thread.id))
+                    total_deleted += n
+                    
+                    if thread_idx % 10 == 0:
+                        logger.info(f"📊 [{forum.name}] Progression: {thread_idx}/{len(threads)} threads traités")
+                
+            except Exception as e:
+                logger.error(f"❌ Erreur lors du traitement du salon {forum_id_str}: {e}")
+
+    logger.info(f"✅ Nettoyage global terminé : {total_deleted} message(s) vide(s) supprimé(s) sur {len(forum_ids)} salons.")
 
 # ==================== TÂCHE QUOTIDIENNE ====================
 @tasks.loop(time=datetime.time(hour=config.VERSION_CHECK_HOUR, minute=config.VERSION_CHECK_MINUTE, tzinfo=ZoneInfo("Europe/Paris")))
