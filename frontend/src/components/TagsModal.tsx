@@ -10,19 +10,19 @@ const SECTIONS: Section[] = ['translationType', 'gameStatus', 'sites'];
 
 const PREDEFINED: Record<Section, { key: string; label: string }[]> = {
   translationType: [
-    { key: 'auto', label: '🤖 Automatique' },
-    { key: 'semi_auto', label: '🖨️ Semi-Automatique' },
     { key: 'manual', label: '🧠 Manuelle' },
+    { key: 'semi_auto', label: '🖨️ Semi-Automatique' },
+    { key: 'auto', label: '🤖 Automatique' },
   ],
   gameStatus: [
-    { key: 'abandoned', label: '❌ Abandonné' },
-    { key: 'ongoing', label: '🔄 En cours' },
     { key: 'completed', label: '✅ Terminé' },
+    { key: 'ongoing', label: '🔄 En cours' },
+    { key: 'abandoned', label: '❌ Abandonné' },
   ],
   sites: [
-    { key: 'other_sites', label: '🔗 Autres Sites' },
     { key: 'f95', label: '🔞 F95' },
     { key: 'lewdcorner', label: '⛔ LewdCorner' },
+    { key: 'other_sites', label: '🔗 Autres Sites' },
   ],
 };
 
