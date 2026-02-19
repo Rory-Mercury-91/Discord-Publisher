@@ -1211,14 +1211,25 @@ async def daily_cleanup_empty_messages():
 TRANSLATOR_ROLE_ID = int(os.getenv("TRANSLATOR_ROLE_ID", "0")) if os.getenv("TRANSLATOR_ROLE_ID") else 0
 
 
-def _user_can_run_checks(interaction: discord.Interaction) -> bool:
-    """Autorise uniquement les membres ayant le rôle TRANSLATOR_ROLE_ID."""
+async def _user_can_run_checks(interaction: discord.Interaction) -> bool:
+    """
+    Vérifie de manière fiable si l'utilisateur possède le rôle TRANSLATOR_ROLE_ID.
+    Utilise fetch_member pour contourner les problèmes de cache.
+    """
     if not TRANSLATOR_ROLE_ID or not interaction.guild:
         return False
-    # On récupère le membre depuis le cache du serveur
-    member = interaction.guild.get_member(interaction.user.id)
-    # On vérifie si le membre possède l'ID du rôle traducteur
-    return bool(member and any(r.id == TRANSLATOR_ROLE_ID for r in member.roles))
+    try:
+        # On force la récupération du membre auprès de Discord (asynchrone)
+        member = await interaction.guild.fetch_member(interaction.user.id)
+    except Exception as e:
+        logger.warning(f"⚠️ [_user_can_run_checks] Impossible de fetch_member pour {interaction.user.id}: {e}")
+        return False
+    if not member:
+        return False
+    # Vérification du rôle ou si c'est le propriétaire du serveur
+    has_role = any(r.id == TRANSLATOR_ROLE_ID for r in member.roles)
+    is_owner = member.id == interaction.guild.owner_id
+    return bool(has_role or is_owner)
 
 
 def _generate_raw_key() -> str:
@@ -1404,10 +1415,13 @@ async def check_versions(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
     except Exception:
         pass
-    if not _user_can_run_checks(interaction):
+
+    # MODIFICATION ICI : ajout de await
+    if not await _user_can_run_checks(interaction):
         logger.warning(f"⛔ [check_versions] Permission refusée pour {interaction.user} (id={interaction.user.id})")
         await interaction.followup.send("⛔ Permission insuffisante. Cette commande est réservée aux Traducteurs.", ephemeral=True)
         return
+
     logger.info(f"🔍 [check_versions] Lancement manuel par {interaction.user} (id={interaction.user.id})")
     try:
         await interaction.followup.send("⏳ Contrôle des versions F95 en cours…", ephemeral=True)
@@ -1429,10 +1443,13 @@ async def cleanup_empty_messages_cmd(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
     except Exception:
         pass
-    if not _user_can_run_checks(interaction):
+
+    # MODIFICATION ICI : ajout de await
+    if not await _user_can_run_checks(interaction):
         logger.warning(f"⛔ [cleanup] Permission refusée pour {interaction.user} (id={interaction.user.id})")
         await interaction.followup.send("⛔ Permission insuffisante. Cette commande est réservée aux Traducteurs.", ephemeral=True)
         return
+
     logger.info(f"🧹 [cleanup] Lancement manuel par {interaction.user} (id={interaction.user.id})")
     try:
         await interaction.followup.send("⏳ Nettoyage des messages vides en cours…", ephemeral=True)
@@ -1454,7 +1471,9 @@ async def check_help(interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
     except Exception:
         pass
-    if not _user_can_run_checks(interaction):
+
+    # MODIFICATION ICI : ajout de await
+    if not await _user_can_run_checks(interaction):
         logger.warning(f"⛔ [check_help] Permission refusée pour {interaction.user} (id={interaction.user.id})")
         await interaction.followup.send("⛔ Permission insuffisante.", ephemeral=True)
         return
@@ -1462,24 +1481,19 @@ async def check_help(interaction: discord.Interaction):
     logger.info(f"ℹ️ [check_help] Consulté par {interaction.user} (id={interaction.user.id})")
     help_text = (
         "**🧰 Commandes disponibles (Bot Publisher)**\n\n"
-
         "**🔑 Clé API personnelle**\n"
         "**/generer-cle** — Génère ou renouvelle votre clé API personnelle.\n"
         "Réservé aux membres ayant le rôle Traducteur. La clé est envoyée en MP.\n"
         "À entrer dans l'application → ⚙️ Configuration → Préférences → **Clé d'accès à l'API**.\n"
         "L'ancienne clé est automatiquement révoquée à chaque renouvellement.\n\n"
-
         "**🔍 Contrôle des versions**\n"
         "**/check_versions** — Lance manuellement le contrôle des versions F95 sur le forum.\n\n"
-
         "**🧹 Nettoyage**\n"
         "**/cleanup_empty_messages** — Supprime les messages vides dans les threads (sauf métadonnées).\n\n"
-
         "**ℹ️ Tâches automatiques**\n"
         f"• Contrôle des versions : tous les jours à {config.VERSION_CHECK_HOUR:02d}:{config.VERSION_CHECK_MINUTE:02d} (Europe/Paris)\n"
         f"• Nettoyage des messages vides : tous les jours à {config.CLEANUP_EMPTY_MESSAGES_HOUR:02d}:{config.CLEANUP_EMPTY_MESSAGES_MINUTE:02d} (Europe/Paris)\n"
         "• Système anti-doublon actif (30 jours)\n\n"
-
         "**ℹ️ Accès**\n"
         "Toutes les commandes sont réservées aux membres ayant le rôle Traducteur."
     )
