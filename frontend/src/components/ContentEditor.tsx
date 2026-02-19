@@ -5,10 +5,10 @@ import { useImageLoader } from '../hooks/useImageLoader';
 import { tauriAPI } from '../lib/tauri-api';
 import { useApp } from '../state/appContext';
 import { useAuth } from '../state/authContext';
+import { useTranslatorSelector } from '../state/hooks/useTranslatorSelector';
 import ConfirmModal from './ConfirmModal';
 import TagSelectorModal from './TagSelectorModal';
 import { useToast } from './ToastProvider';
-
 function FormImageDisplay({ imagePath, onDelete }: { imagePath: string; onDelete: () => void }) {
   const { imageUrl, isLoading, error } = useImageLoader(imagePath);
   return (
@@ -100,6 +100,14 @@ export default function ContentEditor() {
   } = useApp();
 
   const { profile } = useAuth();
+  const {
+    options: translatorOptions,
+    selectedId: selectedTranslatorId,
+    selectedKind: selectedTranslatorKind,
+    translatorTagId,
+    loaded: translatorLoaded,
+    select: selectTranslator,
+  } = useTranslatorSelector(profile?.id);
   const { showToast } = useToast();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
   const { linkConfigs, setLinkConfig, buildFinalLink } = useApp();
@@ -116,19 +124,16 @@ export default function ContentEditor() {
   const hasRequiredTags = useMemo(() => {
     const hasSite = selectedTagObjects.some(t => t.tagType === 'sites');
     const hasTranslationType = selectedTagObjects.some(t => t.tagType === 'translationType');
-    const hasTranslator = selectedTagObjects.some(t => t.tagType === 'translator');
-    return hasSite && hasTranslationType && hasTranslator;
+    return hasSite && hasTranslationType;
   }, [selectedTagObjects]);
 
   // Labels des catégories obligatoires manquantes (pour le message dynamique)
   const missingRequiredTagLabels = useMemo(() => {
     const hasSite = selectedTagObjects.some(t => t.tagType === 'sites');
     const hasTranslationType = selectedTagObjects.some(t => t.tagType === 'translationType');
-    const hasTranslator = selectedTagObjects.some(t => t.tagType === 'translator');
     const labels: string[] = [];
     if (!hasSite) labels.push('Site');
     if (!hasTranslationType) labels.push('Type de traduction');
-    if (!hasTranslator) labels.push('Traducteur');
     return labels;
   }, [selectedTagObjects]);
 
@@ -148,6 +153,52 @@ export default function ContentEditor() {
   const [showInstructionSuggestions, setShowInstructionSuggestions] = useState(false);
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
   const [silentUpdateMode, setSilentUpdateMode] = useState(false);
+
+  // ── Injection initiale + changement de traducteur ──────────────────────────
+  useEffect(() => {
+    // RETIRER isEditMode de cette condition
+    if (!translatorLoaded || !translatorTagId) return;
+
+    if (!translatorInjectedRef.current) {
+      // Premier chargement
+      translatorInjectedRef.current = true;
+      const curr = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+      // On filtre pour ne pas avoir de doublons de tags de type "translator"
+      const sec = curr.filter(id => {
+        const t = savedTags.find(tag => (tag.id || tag.name) === id || String(tag.discordTagId ?? '') === id);
+        return t?.tagType !== 'translator';
+      });
+
+      setPostTags([translatorTagId, ...sec].join(','));
+    } else {
+      // Changement manuel de traducteur via le select
+      // On récupère les tags actuels qui ne sont PAS des tags de traducteur
+      const curr = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const others = curr.filter(id => {
+        const t = savedTags.find(tag => (tag.id || tag.name) === id || String(tag.discordTagId ?? '') === id);
+        return t?.tagType !== 'translator';
+      });
+
+      // On injecte le nouveau tag du traducteur choisi
+      setPostTags([translatorTagId, ...others].join(','));
+    }
+  }, [translatorTagId, translatorLoaded]); // Retrait de isEditMode de la barrière et de la dépendance
+
+  // ── Re-injection à la sortie du mode édition ───────────────────────────────
+  useEffect(() => {
+    if (prevEditingPostIdRef.current === undefined) {
+      prevEditingPostIdRef.current = editingPostId;
+      return;
+    }
+    const wasEditing = prevEditingPostIdRef.current !== null;
+    prevEditingPostIdRef.current = editingPostId;
+
+    if (wasEditing && editingPostId === null) {
+      translatorInjectedRef.current = false; // Permettre une nouvelle injection initiale
+      if (translatorLoaded && translatorTagId) setPostTags(translatorTagId);
+    }
+  }, [editingPostId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!editingPostId) setSilentUpdateMode(false);
@@ -173,8 +224,8 @@ export default function ContentEditor() {
 
   // Référence pour suivre les valeurs précédentes
   const prevTemplateIdxRef = useRef(currentTemplateIdx);
-  const prevEditingPostIdRef = useRef(editingPostId);
-
+  const prevEditingPostIdRef = useRef<string | null | undefined>(undefined);
+  const translatorInjectedRef = useRef(false);
   // ⚠️ IMPORTANT : Ne vider l'instruction que lors du changement de template
   // ou lors de la SORTIE du mode édition (pas lors de l'ENTRÉE)
   useEffect(() => {
@@ -551,22 +602,91 @@ export default function ContentEditor() {
   return (
     <div style={{ padding: '10px 15px', position: 'relative', height: '100%', minHeight: 0, overflow: 'auto', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
 
-      {/* LIGNE 1 : Titre */}
-      <h4 style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        📝 Contenu du post Discord
-        {editingPostId && (
-          <span style={{
-            fontSize: 12,
-            fontWeight: 500,
-            color: 'var(--accent)',
-            background: 'rgba(125, 211, 252, 0.15)',
-            padding: '4px 10px',
-            borderRadius: 6
+      {/* LIGNE 1 : Titre + Sélecteur aligné à droite */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+        flexWrap: 'wrap',
+        gap: 15
+      }}>
+        <h4 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+          📝 Contenu du post Discord
+          {editingPostId && (
+            <span style={{
+              fontSize: 12,
+              fontWeight: 500,
+              color: 'var(--accent)',
+              background: 'rgba(125, 211, 252, 0.15)',
+              padding: '4px 10px',
+              borderRadius: 6
+            }}>
+              ✏️ Mode modification
+            </span>
+          )}
+        </h4>
+
+        {/* Sélecteur : visible en mode normal ET édition */}
+        {translatorOptions.length > 1 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '6px 12px',
+            borderRadius: 8,
+            background: 'rgba(88,101,242,0.05)',
+            border: '1px solid rgba(88,101,242,0.2)',
+            marginLeft: 'auto' // Pousse le bloc à droite
           }}>
-            ✏️ Mode modification
-          </span>
+            <span style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+              👤 Publier pour :
+            </span>
+            <select
+              value={selectedTranslatorId}
+              onChange={e => selectTranslator(e.target.value)}
+              style={{
+                height: 32,
+                padding: '0 10px',
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'rgba(255,255,255,0.06)',
+                color: 'var(--text)',
+                fontSize: 13,
+                cursor: 'pointer',
+                width: 'auto', // S'adapte à la longueur du texte
+                minWidth: '150px'
+              }}
+            >
+              {/* Vos optgroups et options restent identiques */}
+              {translatorOptions.some(o => o.kind === 'profile') && (
+                <optgroup label="👤 Utilisateurs inscrits">
+                  {translatorOptions.filter(o => o.kind === 'profile').map(o => (
+                    <option key={o.id} value={o.id}>
+                      {o.id === profile?.id ? `${o.name} (moi)` : o.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {/* ... suite des options ... */}
+            </select>
+
+            <span
+              title={translatorTagId ? "Tag injecté" : "Aucun tag configuré"}
+              style={{
+                fontSize: 11,
+                color: translatorTagId ? '#4ade80' : '#f59e0b',
+                background: translatorTagId ? 'rgba(74,222,128,0.1)' : 'rgba(245,158,11,0.1)',
+                padding: '3px 8px',
+                borderRadius: 4,
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {translatorTagId ? '✓' : '⚠️'}
+            </span>
+          </div>
         )}
-      </h4>
+      </div>
 
       <div style={{ display: 'grid', gap: 16, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
 
@@ -1686,6 +1806,8 @@ export default function ContentEditor() {
           onSelectTag={handleSelectTag}
           selectedTagIds={selectedTagIds}
           position={tagSelectorPosition}
+          controlledTranslatorId={selectedTranslatorId}
+          controlledTranslatorKind={selectedTranslatorKind}
         />
 
         <ConfirmModal

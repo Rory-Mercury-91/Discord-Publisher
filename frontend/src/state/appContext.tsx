@@ -1095,6 +1095,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [allVarsConfig]);
 
   useEffect(() => {
+    const handler = () => { /* recharger savedTags depuis Supabase */ };
+    window.addEventListener('tagsUpdated', handler);
+    return () => window.removeEventListener('tagsUpdated', handler);
+  }, []);
+
+  useEffect(() => {
     localStorage.setItem('savedTags', JSON.stringify(savedTags));
   }, [savedTags]);
 
@@ -1121,17 +1127,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const sb = getSupabase();
     if (!sb) return;
     sb.from('tags')
-      .select('id, name, tag_type, author_discord_id, discord_tag_id')
+      .select('id, name, tag_type, author_discord_id, discord_tag_id, profile_id, external_translator_id, label_key') // ← colonnes ajoutées
       .order('created_at', { ascending: true })
       .then((res) => {
         if (res.error || !res.data?.length) return;
         setSavedTags(
-          (res.data as Array<{ id: string; name: string; tag_type: string; author_discord_id: string | null; discord_tag_id: string | null }>).map((r) => ({
+          (res.data as Array<{
+            id: string;
+            name: string;
+            tag_type: string;
+            author_discord_id: string | null;
+            discord_tag_id: string | null;
+            profile_id: string | null;           // ← ajouté
+            external_translator_id: string | null; // ← ajouté
+            label_key: string | null;             // ← ajouté
+          }>).map((r) => ({
             id: r.id,
             name: r.name,
             tagType: (r.tag_type as TagType) || 'other',
             authorDiscordId: r.author_discord_id ?? undefined,
-            discordTagId: r.discord_tag_id ?? undefined
+            discordTagId: r.discord_tag_id ?? undefined,
+            profileId: r.profile_id ?? undefined,               // ← ajouté
+            externalTranslatorId: r.external_translator_id ?? undefined, // ← ajouté
+            labelKey: r.label_key ?? undefined,                  // ← ajouté
           }))
         );
       });
@@ -1486,7 +1504,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           name: t.name || '',
           tag_type: t.tagType || 'other',
           author_discord_id: t.authorDiscordId ?? author ?? null,
-          discord_tag_id: t.discordTagId ?? null
+          discord_tag_id: t.discordTagId ?? null,
+          // Nouveaux champs — préservés s'ils existent déjà
+          profile_id: t.profileId ?? null,
+          external_translator_id: t.externalTranslatorId ?? null,
+          label_key: t.labelKey ?? null,
         };
         if (hasValidUuid) {
           const { error } = await sb
@@ -1501,7 +1523,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             .select('id')
             .single();
           if (error) throw new Error((error as { message?: string })?.message ?? 'Insert tag failed');
-          updated.push({ ...t, id: (data as { id: string }).id, authorDiscordId: t.authorDiscordId ?? author, discordTagId: t.discordTagId });
+          updated.push({
+            ...t,
+            id: (data as { id: string }).id,
+            authorDiscordId: t.authorDiscordId ?? author,
+            discordTagId: t.discordTagId,
+          });
         }
       }
       setSavedTags(updated);
@@ -1517,16 +1544,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!sb) return;
     const { data, error } = await sb
       .from('tags')
-      .select('id, name, tag_type, author_discord_id, discord_tag_id')
+      .select('id, name, tag_type, author_discord_id, discord_tag_id, profile_id, external_translator_id, label_key')
       .order('created_at', { ascending: true });
     if (error || !data?.length) return;
     setSavedTags(
-      (data as Array<{ id: string; name: string; tag_type: string; author_discord_id: string | null; discord_tag_id: string | null }>).map((r) => ({
+      (data as Array<{
+        id: string;
+        name: string;
+        tag_type: string;
+        author_discord_id: string | null;
+        discord_tag_id: string | null;
+        profile_id: string | null;
+        external_translator_id: string | null;
+        label_key: string | null;
+      }>).map(r => ({
         id: r.id,
         name: r.name,
         tagType: (r.tag_type as TagType) || 'other',
         authorDiscordId: r.author_discord_id ?? undefined,
-        discordTagId: r.discord_tag_id ?? undefined
+        discordTagId: r.discord_tag_id ?? undefined,
+        profileId: r.profile_id ?? undefined,
+        externalTranslatorId: r.external_translator_id ?? undefined,
+        labelKey: r.label_key ?? undefined,
       }))
     );
   }

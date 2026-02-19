@@ -38,14 +38,15 @@ export type AdditionalTranslationLink = {
 export type TagType = 'translator' | 'translationType' | 'gameStatus' | 'sites' | 'other';
 
 export type Tag = {
-  name: string;
   id?: string;
-  /** Type de tag : 'translator' pour les traducteurs, ou une catégorie pour les tags génériques */
+  name: string;
   tagType: TagType;
-  /** ID Discord de l'utilisateur qui a créé le tag (optionnel) */
   authorDiscordId?: string;
-  /** ID du tag côté Discord (forum/channel) pour que ça marche avec Discord */
   discordTagId?: string;
+  // ── Nouveau système de tags par traducteur ──
+  profileId?: string;               // FK vers profiles.id
+  externalTranslatorId?: string;    // FK vers external_translators.id
+  labelKey?: string;                // ex: 'auto', 'f95', 'abandoned'…
 };
 
 export type PublishedPost = {

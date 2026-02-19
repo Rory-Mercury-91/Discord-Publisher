@@ -1,549 +1,419 @@
-import { useState } from 'react';
-import { useConfirm } from '../hooks/useConfirm';
+import { Fragment, useEffect, useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
-import { useApp } from '../state/appContext';
-import { useAuth } from '../state/authContext';
-import type { TagType } from '../state/types';
-import ConfirmModal from './ConfirmModal';
+import { getSupabase } from '../lib/supabase';
 import { useToast } from './ToastProvider';
 
-export default function TagsModal({ onClose }: { onClose?: () => void }) {
-  const { profile } = useAuth();
-  const { savedTags, addSavedTag, updateSavedTag, deleteSavedTag, syncTagsToSupabase } = useApp();
-  const { showToast } = useToast();
+// ─── Définitions des slots prédéfinis ────────────────────────────────────────
+type Section = 'translationType' | 'gameStatus' | 'sites';
+const SECTIONS: Section[] = ['translationType', 'gameStatus', 'sites'];
 
+const PREDEFINED: Record<Section, { key: string; label: string }[]> = {
+  translationType: [
+    { key: 'auto', label: '🤖 Automatique' },
+    { key: 'semi_auto', label: '🖨️ Semi-Automatique' },
+    { key: 'manual', label: '🧠 Manuelle' },
+  ],
+  gameStatus: [
+    { key: 'abandoned', label: '❌ Abandonné' },
+    { key: 'ongoing', label: '🔄 En cours' },
+    { key: 'completed', label: '✅ Terminé' },
+  ],
+  sites: [
+    { key: 'other_sites', label: '🔗 Autres Sites' },
+    { key: 'f95', label: '🔞 F95' },
+    { key: 'lewdcorner', label: '⛔ LewdCorner' },
+  ],
+};
+
+const SECTION_TITLES: Record<Section, string> = {
+  translationType: '📋 Type de traduction',
+  gameStatus: '🎮 Statut du jeu',
+  sites: '🌐 Sites',
+};
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+type Translator = { id: string; name: string; kind: 'profile' | 'external' };
+type Slot = { id?: string; discordTagId: string };
+type FreeTag = { id?: string; name: string; discordTagId: string; _k: string };
+
+type TagConfig = {
+  translationType: Record<string, Slot>;
+  gameStatus: Record<string, Slot>;
+  sites: Record<string, Slot>;
+  others: FreeTag[];
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+let _seq = 0;
+const uid = () => `_n${++_seq}`;
+
+function emptyConfig(): TagConfig {
+  return {
+    translationType: Object.fromEntries(PREDEFINED.translationType.map(p => [p.key, { discordTagId: '' }])),
+    gameStatus: Object.fromEntries(PREDEFINED.gameStatus.map(p => [p.key, { discordTagId: '' }])),
+    sites: Object.fromEntries(PREDEFINED.sites.map(p => [p.key, { discordTagId: '' }])),
+    others: [],
+  };
+}
+
+// ─── Composant ────────────────────────────────────────────────────────────────
+export default function TagsModal({ onClose }: { onClose?: () => void }) {
+  const { showToast } = useToast();
   useEscapeKey(() => onClose?.(), true);
   useModalScrollLock();
-  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
 
-  const [activeTab, setActiveTab] = useState<'generic' | 'translator'>('generic');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [form, setForm] = useState({ name: '', id: '', discordTagId: '', tagType: 'other' as TagType });
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
-  const [searchGeneric, setSearchGeneric] = useState('');
-  const [searchTranslator, setSearchTranslator] = useState('');
+  // Liste des traducteurs (inscrits + externes)
+  const [translators, setTranslators] = useState<Translator[]>([]);
+  const [loadingList, setLoadingList] = useState(true);
 
-  // Plus de filtrage par template - tous les tags sont disponibles
+  // Traducteur sélectionné
+  const [selId, setSelId] = useState<string | null>(null);
+  const [selKind, setSelKind] = useState<'profile' | 'external'>('profile');
 
-  // Fonction pour retirer les emojis au début d'un texte
-  const removeLeadingEmojis = (text: string): string => {
-    return text.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F000}-\u{1F02F}\u{1F0A0}-\u{1F0FF}\u{1F100}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\s]+/gu, '').trim();
-  };
+  // Config en cours d'édition
+  const [cfg, setCfg] = useState<TagConfig>(emptyConfig());
+  const [loadingCfg, setLoadingCfg] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [delIds, setDelIds] = useState<string[]>([]); // IDs DB des "autres" supprimés
 
-  // Séparer les tags génériques et traducteurs
-  const genericTags = savedTags.filter(t => t.tagType !== 'translator');
-  const translatorTags = savedTags.filter(t => t.tagType === 'translator');
+  // ── Chargement de la liste des traducteurs ──────────────────────────────────
+  useEffect(() => {
+    const sb = getSupabase();
+    if (!sb) return;
+    setLoadingList(true);
+    Promise.all([
+      sb.from('profiles').select('id, pseudo'),
+      sb.from('external_translators').select('id, name'),
+    ]).then(([p, e]) => {
+      const list: Translator[] = [
+        ...((p.data ?? []) as any[]).map(x => ({ id: x.id, name: x.pseudo || '(sans nom)', kind: 'profile' as const })),
+        ...((e.data ?? []) as any[]).map(x => ({ id: x.id, name: x.name || '(sans nom)', kind: 'external' as const })),
+      ];
+      setTranslators(list);
+      if (list.length > 0) { setSelId(list[0].id); setSelKind(list[0].kind); }
+    }).finally(() => setLoadingList(false));
+  }, []);
 
-  // Filtrer avec recherche (en ignorant les emojis)
-  const filterBySearch = (tags: typeof savedTags, searchTerm: string) => {
-    if (!searchTerm.trim()) return tags;
-    const searchLower = searchTerm.toLowerCase();
-    return tags.filter(t => {
-      const nameWithoutEmoji = removeLeadingEmojis(t.name).toLowerCase();
-      const nameWithEmoji = t.name.toLowerCase();
-      return nameWithoutEmoji.includes(searchLower) || nameWithEmoji.includes(searchLower);
-    });
-  };
-
-  const filteredGenericTags = filterBySearch(genericTags, searchGeneric);
-  const filteredTranslatorTags = filterBySearch(translatorTags, searchTranslator);
-
-  // Trier les tags
-  const sortTags = (tags: typeof savedTags) => {
-    return tags.map((tag, idx) => ({ ...tag, originalIdx: savedTags.indexOf(tag) }))
-      .sort((a, b) => {
-        const nameA = removeLeadingEmojis(a.name);
-        const nameB = removeLeadingEmojis(b.name);
-        return nameA.localeCompare(nameB);
-      });
-  };
-
-  // Grouper les tags génériques par type
-  const groupedGenericTags = {
-    translationType: sortTags(filteredGenericTags.filter(t => t.tagType === 'translationType')),
-    gameStatus: sortTags(filteredGenericTags.filter(t => t.tagType === 'gameStatus')),
-    sites: sortTags(filteredGenericTags.filter(t => t.tagType === 'sites')),
-    other: sortTags(filteredGenericTags.filter(t => t.tagType === 'other'))
-  };
-
-  const sortedTranslatorTags = sortTags(filteredTranslatorTags);
-
-  // Labels des types de tags
-  const tagTypeLabels: Record<Exclude<TagType, 'translator'>, string> = {
-    translationType: '📋 Type de traduction',
-    gameStatus: '🎮 Statut du jeu',
-    sites: '🌐 Sites',
-    other: '📦 Autres'
-  };
-
-  function openAddModal() {
-    setForm({ name: '', id: '', discordTagId: '', tagType: 'other' });
-    setEditingIdx(null);
-    setShowAddModal(true);
-  }
-
-  function startEdit(originalIdx: number) {
-    const t = savedTags[originalIdx];
-    setForm({
-      name: t.name,
-      id: t.id || '',
-      discordTagId: t.discordTagId || '',
-      tagType: t.tagType
-    });
-    setEditingIdx(originalIdx);
-    setShowAddModal(true);
-  }
-
-  function closeAddModal() {
-    setForm({ name: '', id: '', discordTagId: '', tagType: 'other' });
-    setEditingIdx(null);
-    setShowAddModal(false);
-  }
-
-  function saveTag() {
-    if (!form.name.trim()) {
-      showToast('Le nom du tag est requis', 'warning');
-      return;
-    }
-
-    const tagData = {
-      name: form.name.trim(),
-      tagType: form.tagType,
-      authorDiscordId: profile?.discord_id,
-      discordTagId: form.discordTagId.trim() || undefined
-    };
-
-    if (editingIdx !== null) {
-      const existing = savedTags[editingIdx];
-      if (existing?.id) {
-        updateSavedTag(existing.id, tagData);
-        showToast('Tag modifié', 'success');
-      } else {
-        addSavedTag(tagData);
-        showToast('Tag modifié (enregistré comme nouveau)', 'success');
+  // ── Chargement de la config du traducteur sélectionné ──────────────────────
+  useEffect(() => {
+    if (!selId) return;
+    const sb = getSupabase();
+    if (!sb) return;
+    setLoadingCfg(true);
+    setDelIds([]);
+    (async () => {
+      try {
+        const { data } = selKind === 'profile'
+          ? await sb.from('tags').select('*').eq('profile_id', selId)
+          : await sb.from('tags').select('*').eq('external_translator_id', selId);
+        const c = emptyConfig();
+        for (const row of (data ?? []) as any[]) {
+          const sec = row.tag_type as string;
+          if (row.label_key && (SECTIONS as string[]).includes(sec)) {
+            const typedSec = sec as Section;
+            c[typedSec][row.label_key] = { id: row.id, discordTagId: row.discord_tag_id ?? '' };
+          } else {
+            c.others.push({ id: row.id, name: row.name ?? '', discordTagId: row.discord_tag_id ?? '', _k: row.id });
+          }
+        }
+        setCfg(c);
+      } finally {
+        setLoadingCfg(false);
       }
-    } else {
-      addSavedTag(tagData);
-      showToast('Tag ajouté', 'success');
-      // Basculer sur l'onglet Traducteurs pour que le nouvel ajout soit visible
-      if (form.tagType === 'translator') {
-        setActiveTab('translator');
-      }
-    }
-    // Ne pas appeler syncTagsToSupabase ici : addSavedTag/updateSavedTag écrivent déjà en BDD,
-    // et syncTagsToSupabase s'exécuterait avec l'ancien état (sans le nouveau tag) et écraserait savedTags.
-    closeAddModal();
-  }
+    })();
+  }, [selId, selKind]);
 
-  async function handleDelete(idx: number) {
-    const ok = await confirm({
-      title: 'Supprimer le tag',
-      message: 'Voulez-vous vraiment supprimer ce tag ?',
-      confirmText: 'Supprimer',
-      type: 'danger'
-    });
-    if (!ok) return;
-    deleteSavedTag(idx);
-    showToast('Tag supprimé', 'success');
-  }
+  // ── Handlers ─────────────────────────────────────────────────────────────────
+  const setSlot = (sec: Section, key: string, val: string) =>
+    setCfg(p => ({ ...p, [sec]: { ...p[sec], [key]: { ...p[sec][key], discordTagId: val } } }));
 
-  const renderTagGrid = (sortedTags: Array<typeof savedTags[0] & { originalIdx: number }>) => {
-    if (sortedTags.length === 0) {
-      return (
-        <div style={{
-          color: 'var(--muted)',
-          fontStyle: 'italic',
-          padding: 24,
-          textAlign: 'center',
-          border: '1px dashed var(--border)',
-          borderRadius: 8
-        }}>
-          Aucun tag trouvé
-        </div>
-      );
-    }
+  const addFree = () =>
+    setCfg(p => ({ ...p, others: [...p.others, { name: '', discordTagId: '', _k: uid() }] }));
 
-    return (
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-        gap: 8
-      }}>
-        {sortedTags.map((t) => (
-          <div key={t.originalIdx} style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            padding: 12,
-            background: 'transparent',
-            transition: 'background 0.2s'
-          }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <strong
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(t.id || t.name);
-                    setCopiedIdx(t.originalIdx);
-                    setTimeout(() => setCopiedIdx(null), 2000);
-                    showToast('ID du tag copié', 'success', 2000);
-                  } catch (e) {
-                    showToast('Erreur lors de la copie', 'error');
-                  }
-                }}
-                style={{
-                  cursor: 'pointer',
-                  color: copiedIdx === t.originalIdx ? '#4ade80' : '#4a9eff',
-                  transition: 'color 0.3s',
-                  display: 'block',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}
-                title={`Cliquer pour copier l'ID: ${t.id}`}
-              >
-                {t.name} {copiedIdx === t.originalIdx && <span style={{ fontSize: 11 }}>✓</span>}
-              </strong>
-              <div style={{
-                color: 'var(--muted)',
-                fontSize: 11,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }}>
-                ID Discord: {t.discordTagId || '—'}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginLeft: 8 }}>
-              <button
-                onClick={() => startEdit(t.originalIdx)}
-                title="Éditer"
-                style={{ padding: '4px 8px', fontSize: 14 }}
-              >
-                ✏️
-              </button>
-              <button
-                onClick={() => handleDelete(t.originalIdx)}
-                title="Supprimer"
-                style={{ padding: '4px 8px', fontSize: 14 }}
-              >
-                🗑️
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    );
+  const setFree = (k: string, f: 'name' | 'discordTagId', v: string) =>
+    setCfg(p => ({ ...p, others: p.others.map(o => o._k === k ? { ...o, [f]: v } : o) }));
+
+  const delFree = (k: string) => {
+    const tag = cfg.others.find(o => o._k === k);
+    if (tag?.id) setDelIds(d => [...d, tag.id!]);
+    setCfg(p => ({ ...p, others: p.others.filter(o => o._k !== k) }));
   };
 
+  // ── Sauvegarde ────────────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!selId) return;
+    const sb = getSupabase();
+    if (!sb) { showToast('Supabase non disponible', 'error'); return; }
+    setSaving(true);
+    const ownerF = selKind === 'profile' ? 'profile_id' : 'external_translator_id';
+
+    try {
+      // 1) Suppression des "autres" retirés
+      for (const id of delIds) {
+        await sb.from('tags').delete().eq('id', id);
+      }
+
+      // 2) Slots prédéfinis
+      for (const sec of SECTIONS) {
+        for (const { key, label } of PREDEFINED[sec]) {
+          const slot = cfg[sec][key] ?? { discordTagId: '' };
+          const did = slot.discordTagId.trim() || null;
+          if (slot.id) {
+            // Mise à jour (on conserve la ligne même si did devient null)
+            await sb.from('tags').update({ discord_tag_id: did, name: label }).eq('id', slot.id);
+          } else if (did) {
+            // Insertion uniquement si un ID Discord a été renseigné
+            const { data: d } = await sb
+              .from('tags')
+              .insert({ name: label, tag_type: sec, label_key: key, discord_tag_id: did, [ownerF]: selId })
+              .select('id')
+              .single();
+            if (d?.id) {
+              const k = key;
+              setCfg(p => ({ ...p, [sec]: { ...p[sec], [k]: { id: d.id, discordTagId: slot.discordTagId } } }));
+            }
+          }
+        }
+      }
+
+      // 3) Tags libres ("autres")
+      for (const o of cfg.others) {
+        if (!o.name.trim()) continue;
+        const did = o.discordTagId.trim() || null;
+        const tk = o._k;
+        if (o.id) {
+          await sb.from('tags').update({ name: o.name.trim(), discord_tag_id: did }).eq('id', o.id);
+        } else {
+          const { data: d } = await sb
+            .from('tags')
+            .insert({ name: o.name.trim(), tag_type: 'other', discord_tag_id: did, [ownerF]: selId })
+            .select('id')
+            .single();
+          if (d?.id) {
+            setCfg(p => ({ ...p, others: p.others.map(x => x._k === tk ? { ...x, id: d.id } : x) }));
+          }
+        }
+      }
+
+      setDelIds([]);
+      window.dispatchEvent(new CustomEvent('tagsUpdated'));
+      showToast('Tags sauvegardés ✓', 'success');
+    } catch (e: any) {
+      showToast(`Erreur : ${e?.message || 'Inconnue'}`, 'error');
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Styles utilitaires ────────────────────────────────────────────────────────
+  const inp: React.CSSProperties = {
+    height: 36, padding: '0 10px', borderRadius: 8,
+    border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)',
+    color: 'var(--text)', fontSize: 13, width: '100%', boxSizing: 'border-box',
+  };
+  const sec: React.CSSProperties = {
+    border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px',
+    background: 'rgba(255,255,255,0.02)', display: 'flex', flexDirection: 'column', gap: 10,
+  };
+  const colHdr: React.CSSProperties = {
+    fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 0.5,
+  };
+  const navHdr: React.CSSProperties = {
+    ...colHdr, padding: '4px 10px', margin: '4px 0 2px',
+  };
+
+  const selEntry = translators.find(t => t.id === selId);
+  const accentColor = selKind === 'external' ? '#ffc84a' : '#4a9eff';
+
+  // ── Rendu ─────────────────────────────────────────────────────────────────────
   return (
-    <>
-      <div className="modal">
-        <div className="panel" onClick={e => e.stopPropagation()} style={{
-          maxWidth: 1000,
-          width: '95%',
-          height: '80vh',  // Changé de 70vh à 80vh
-          display: 'flex',
-          flexDirection: 'column'
-        }}>
-          {/* HEADER : Titre + Navigation */}
-          <div style={{
-            borderBottom: '2px solid var(--border)',
-            paddingBottom: 0
-          }}>
-            <h3 style={{ marginBottom: 12 }}>🏷️ Gestion des tags</h3>
+    <div className="modal" onClick={onClose}>
+      <div className="panel" onClick={e => e.stopPropagation()} style={{
+        maxWidth: 900, width: '95%', height: '88vh', display: 'flex', flexDirection: 'column',
+      }}>
 
-            {/* Onglets avec compteurs */}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => setActiveTab('generic')}
-                style={{
-                  background: activeTab === 'generic' ? 'var(--panel)' : 'transparent',
-                  border: 'none',
-                  borderBottom: activeTab === 'generic' ? '2px solid #4a9eff' : '2px solid transparent',
-                  padding: '8px 16px',
-                  cursor: 'pointer',
-                  fontWeight: activeTab === 'generic' ? 'bold' : 'normal',
-                  color: activeTab === 'generic' ? '#4a9eff' : 'var(--text)',
-                  marginBottom: '-2px'
-                }}
-              >
-                🏷️ Tags génériques ({genericTags.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('translator')}
-                style={{
-                  background: activeTab === 'translator' ? 'var(--panel)' : 'transparent',
-                  border: 'none',
-                  borderBottom: activeTab === 'translator' ? '2px solid #4a9eff' : '2px solid transparent',
-                  padding: '8px 16px',
-                  cursor: 'pointer',
-                  fontWeight: activeTab === 'translator' ? 'bold' : 'normal',
-                  color: activeTab === 'translator' ? '#4a9eff' : 'var(--text)',
-                  marginBottom: '-2px'
-                }}
-              >
-                👤 Tags traducteurs ({translatorTags.length})
-              </button>
-            </div>
+        {/* Header */}
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0, fontSize: '1rem' }}>🏷️ Gestion des Tags</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text)', fontSize: 26, cursor: 'pointer', lineHeight: 1 }}>&times;</button>
+        </div>
+
+        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+
+          {/* ── Panneau gauche : liste des traducteurs ─────────────────────── */}
+          <div className="styled-scrollbar" style={{
+            width: 200, borderRight: '1px solid var(--border)', overflowY: 'auto',
+            padding: '10px 6px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 2,
+          }}>
+            {loadingList ? (
+              <p style={{ fontSize: 13, color: 'var(--muted)', padding: '0 10px' }}>Chargement…</p>
+            ) : (
+              <>
+                {/* Utilisateurs inscrits */}
+                {translators.some(t => t.kind === 'profile') && (
+                  <p style={navHdr}>👤 Inscrits</p>
+                )}
+                {translators.filter(t => t.kind === 'profile').map(t => (
+                  <button key={t.id} onClick={() => { setSelId(t.id); setSelKind('profile'); }} style={{
+                    padding: '8px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', textAlign: 'left',
+                    fontSize: 13, fontWeight: selId === t.id ? 600 : 400, transition: 'all 0.15s',
+                    background: selId === t.id ? 'rgba(74,158,255,0.18)' : 'transparent',
+                    color: selId === t.id ? '#4a9eff' : 'var(--text)',
+                    borderLeft: `2px solid ${selId === t.id ? '#4a9eff' : 'transparent'}`,
+                  }}>{t.name}</button>
+                ))}
+
+                {/* Traducteurs externes */}
+                {translators.some(t => t.kind === 'external') && (
+                  <p style={{ ...navHdr, marginTop: 12 }}>🔧 Externes</p>
+                )}
+                {translators.filter(t => t.kind === 'external').map(t => (
+                  <button key={t.id} onClick={() => { setSelId(t.id); setSelKind('external'); }} style={{
+                    padding: '8px 10px', borderRadius: 8, border: 'none', cursor: 'pointer', textAlign: 'left',
+                    fontSize: 13, fontWeight: selId === t.id ? 600 : 400, transition: 'all 0.15s',
+                    background: selId === t.id ? 'rgba(255,200,74,0.18)' : 'transparent',
+                    color: selId === t.id ? '#ffc84a' : 'var(--text)',
+                    borderLeft: `2px solid ${selId === t.id ? '#ffc84a' : 'transparent'}`,
+                  }}>{t.name}</button>
+                ))}
+
+                {translators.length === 0 && (
+                  <p style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic', padding: '0 10px' }}>
+                    Aucun traducteur
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
-          {/* CONTENU SCROLLABLE */}
-          <div style={{
-            flex: 1,
-            padding: '16px',
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 16
+          {/* ── Panneau droit : configuration des tags ─────────────────────── */}
+          <div className="styled-scrollbar" style={{
+            flex: 1, overflowY: 'auto', padding: 20,
+            display: 'flex', flexDirection: 'column', gap: 14,
           }}>
-            {/* SECTION TAGS GÉNÉRIQUES */}
-            {activeTab === 'generic' && (
-              <div style={{
-                flex: 1,
-                minHeight: 0,
-                display: 'flex',
-                flexDirection: 'column'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: 12,
-                  gap: 16
-                }}>
-                  <h4 style={{
-                    margin: 0,
-                    fontSize: 16,
-                    color: 'var(--text)',
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8
-                  }}>
-                    🏷️ Tags génériques
-                  </h4>
-                  <input
-                    type="text"
-                    placeholder="🔍 Rechercher..."
-                    value={searchGeneric}
-                    onChange={e => setSearchGeneric(e.target.value)}
-                    style={{
-                      width: '250px',
-                      padding: '6px 12px',
-                      fontSize: 13
-                    }}
-                  />
+            {!selId ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontStyle: 'italic', fontSize: 14 }}>
+                Sélectionnez un traducteur
+              </div>
+            ) : loadingCfg ? (
+              <p style={{ color: 'var(--muted)', fontSize: 14 }}>Chargement…</p>
+            ) : (
+              <>
+                {/* Titre du traducteur */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 4, borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 20 }}>{selKind === 'external' ? '🔧' : '👤'}</span>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: '0.95rem' }}>{selEntry?.name}</h4>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--muted)' }}>
+                      {selKind === 'external' ? 'Traducteur externe' : 'Utilisateur inscrit'} — IDs propres à son salon Discord
+                    </p>
+                  </div>
+                  <div style={{ marginLeft: 'auto' }}>
+                    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: `${accentColor}22`, color: accentColor, fontWeight: 600 }}>
+                      {cfg.others.length + Object.values(cfg.translationType).filter(s => s.discordTagId).length + Object.values(cfg.gameStatus).filter(s => s.discordTagId).length + Object.values(cfg.sites).filter(s => s.discordTagId).length} tag(s) configuré(s)
+                    </span>
+                  </div>
                 </div>
-                <div style={{
-                  flex: 1,
-                  overflowY: 'auto',
-                  minHeight: 0,
-                  paddingRight: 8
-                }} className="styled-scrollbar">
-                  {/* Affichage groupé par type */}
-                  {(['translationType', 'gameStatus', 'sites', 'other'] as const).map(tagType => {
-                    const tagsInType = groupedGenericTags[tagType];
-                    if (tagsInType.length === 0) return null;
 
-                    return (
-                      <div key={tagType} style={{ marginBottom: 24 }}>
-                        <h5 style={{
-                          margin: '0 0 12px 0',
-                          fontSize: 14,
-                          color: 'var(--muted)',
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          paddingBottom: 8,
-                          borderBottom: '1px solid var(--border)'
-                        }}>
-                          {tagTypeLabels[tagType]}
-                          <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 'normal' }}>
-                            ({tagsInType.length})
-                          </span>
-                        </h5>
-                        {renderTagGrid(tagsInType)}
-                      </div>
-                    );
-                  })}
-                  {/* Message si aucun tag */}
-                  {filteredGenericTags.length === 0 && (
-                    <div style={{
-                      padding: '32px',
-                      textAlign: 'center',
-                      color: 'var(--muted)'
+                {/* Sections prédéfinies */}
+                {(['translationType', 'gameStatus', 'sites'] as Section[]).map(s => (
+                  <div key={s} style={sec}>
+                    <h5 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{SECTION_TITLES[s]}</h5>
+                    <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '8px 14px', alignItems: 'center' }}>
+                      <span style={colHdr}>Label</span>
+                      <span style={colHdr}>ID Discord du tag</span>
+                      {PREDEFINED[s].map(({ key, label }) => (
+                        <Fragment key={key}>
+                          <label style={{ fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {label}
+                            {cfg[s][key]?.discordTagId && (
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: accentColor, flexShrink: 0, display: 'inline-block' }} />
+                            )}
+                          </label>
+                          <input
+                            value={cfg[s][key]?.discordTagId ?? ''}
+                            onChange={e => setSlot(s, key, e.target.value)}
+                            placeholder="ex: 1234567890123456789"
+                            style={inp}
+                          />
+                        </Fragment>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Tags libres */}
+                <div style={sec}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h5 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>📦 Tags libres</h5>
+                    <button onClick={addFree} style={{
+                      padding: '5px 12px', borderRadius: 8, border: '1px dashed rgba(74,158,255,0.5)',
+                      background: 'rgba(74,158,255,0.08)', color: '#4a9eff', cursor: 'pointer', fontSize: 12, fontWeight: 700,
                     }}>
-                      {searchGeneric ? 'Aucun tag trouvé' : 'Aucun tag générique'}
+                      ➕ Ajouter
+                    </button>
+                  </div>
+
+                  {cfg.others.length === 0 ? (
+                    <p style={{ margin: 0, fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>
+                      Aucun tag libre. Cliquez sur « Ajouter ».
+                    </p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 36px', gap: '0 8px' }}>
+                        <span style={colHdr}>Label</span>
+                        <span style={colHdr}>ID Discord</span>
+                        <span />
+                      </div>
+                      {cfg.others.map(o => (
+                        <div key={o._k} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 36px', gap: 8, alignItems: 'center' }}>
+                          <input
+                            value={o.name}
+                            onChange={e => setFree(o._k, 'name', e.target.value)}
+                            placeholder="Ex: VF Complète, Guide…"
+                            style={inp}
+                          />
+                          <input
+                            value={o.discordTagId}
+                            onChange={e => setFree(o._k, 'discordTagId', e.target.value)}
+                            placeholder="ID Discord du tag…"
+                            style={inp}
+                          />
+                          <button onClick={() => delFree(o._k)} style={{
+                            height: 36, width: 36, borderRadius: 8, border: 'none',
+                            background: 'rgba(239,68,68,0.12)', color: '#ef4444', cursor: 'pointer', fontSize: 14,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>🗑️</button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
-              </div>
-            )}
 
-            {/* SECTION TAGS TRADUCTEURS */}
-            {activeTab === 'translator' && (
-              <div style={{
-                flex: 1,
-                minHeight: 0,
-                display: 'flex',
-                flexDirection: 'column'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: 12,
-                  gap: 16
-                }}>
-                  <h4 style={{
-                    margin: 0,
-                    fontSize: 16,
-                    color: 'var(--text)',
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8
+                {/* Bouton sauvegarder */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>
+                  <button onClick={handleSave} disabled={saving} style={{
+                    padding: '10px 28px', borderRadius: 10, border: 'none',
+                    background: saving ? 'rgba(74,158,255,0.3)' : 'var(--accent)',
+                    color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 700,
                   }}>
-                    👤 Tags traducteurs
-                  </h4>
-                  <input
-                    type="text"
-                    placeholder="🔍 Rechercher..."
-                    value={searchTranslator}
-                    onChange={e => setSearchTranslator(e.target.value)}
-                    style={{
-                      width: '250px',
-                      padding: '6px 12px',
-                      fontSize: 13
-                    }}
-                  />
+                    {saving ? '⏳ Sauvegarde…' : '💾 Sauvegarder'}
+                  </button>
                 </div>
-                <div style={{
-                  flex: 1,
-                  overflowY: 'auto',
-                  minHeight: 0,
-                  paddingRight: 8
-                }} className="styled-scrollbar">
-                  {renderTagGrid(sortedTranslatorTags)}
-                </div>
-              </div>
+              </>
             )}
           </div>
-
-          {/* FOOTER : Boutons */}
-          <div style={{
-            borderTop: '2px solid var(--border)',
-            paddingTop: 16,
-            display: 'flex',
-            justifyContent: 'space-between',
-            gap: 8
-          }}>
-            <button onClick={openAddModal} style={{ background: '#4a9eff', color: 'white' }}>
-              ➕ Ajouter un tag
-            </button>
-            <button onClick={onClose}>🚪 Fermer</button>
-          </div>
         </div>
 
-        <ConfirmModal
-          isOpen={confirmState.isOpen}
-          title={confirmState.title}
-          message={confirmState.message}
-          confirmText={confirmState.confirmText}
-          cancelText={confirmState.cancelText}
-          type={confirmState.type}
-          onConfirm={handleConfirm}
-          onCancel={handleCancel}
-        />
+        {/* Footer */}
+        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>
+            🚪 Fermer
+          </button>
+        </div>
       </div>
-
-      {/* Modale d'ajout/édition */}
-      {showAddModal && (
-        <div className="modal" style={{ zIndex: 1001 }}>
-          <div className="panel" onClick={e => e.stopPropagation()} style={{
-            maxWidth: 500,
-            width: '90%'
-          }}>
-            <h3>{editingIdx !== null ? '✏️ Modifier le tag' : '➕ Ajouter un tag'}</h3>
-
-            <div style={{ display: 'grid', gap: 12 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>
-                  Nom du tag *
-                </label>
-                <input
-                  placeholder="ex: Traduction FR"
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                  style={{ width: '100%' }}
-                  autoFocus
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>
-                  ID du tag Discord <span style={{ fontWeight: 400, opacity: 0.6 }}>(optionnel)</span>
-                </label>
-                <input
-                  placeholder="ex: 1234567890123456789 (ID du tag côté Discord)"
-                  value={form.discordTagId}
-                  onChange={e => setForm({ ...form, discordTagId: e.target.value })}
-                  style={{ width: '100%' }}
-                />
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  ID du tag Discord (pour appliquer l'étiquette colorée sur le post). Non requis pour le routing.
-                </div>
-              </div>
-
-              {/* Sélecteur de type/catégorie unique */}
-              <div>
-                <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>
-                  Type de tag *
-                </label>
-                <select
-                  value={form.tagType}
-                  onChange={e => setForm({ ...form, tagType: e.target.value as TagType })}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    fontSize: 14,
-                    background: 'var(--bg)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 4
-                  }}
-                >
-                  <optgroup label="🏷️ Tags génériques">
-                    <option value="translationType">📋 Type de traduction</option>
-                    <option value="gameStatus">🎮 Statut du jeu</option>
-                    <option value="sites">🌐 Sites</option>
-                    <option value="other">📦 Autres</option>
-                  </optgroup>
-                  <optgroup label="👤 Tags traducteurs">
-                    <option value="translator">👤 Tag traducteur</option>
-                  </optgroup>
-                </select>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                  Sélectionnez la catégorie qui correspond le mieux à ce tag.
-                </div>
-              </div>
-
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-              <button onClick={closeAddModal}>Annuler</button>
-              <button onClick={saveTag} style={{ background: '#4a9eff', color: 'white' }}>
-                {editingIdx !== null ? '✅ Enregistrer' : '➕ Ajouter'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   );
 }
