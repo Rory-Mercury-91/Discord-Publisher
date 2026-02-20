@@ -332,11 +332,12 @@ export default function AppHeader({
           border: '1px solid var(--border)',
           borderRadius: 7, overflow: 'hidden',
         }}>
+
           {(['translator', 'user'] as const).map((m, i) => (
             <button
               key={m}
               onClick={() => onModeChange(m)}
-              title={m === 'user' ? 'Mode utilisateur – Fonctionnalité à venir' : 'Mode traducteur'}
+              title={m === 'translator' ? 'Mode traducteur' : 'Mode utilisateur – Bibliothèque des jeux'}
               style={{
                 padding: '4px 12px', fontSize: 12,
                 fontWeight: mode === m ? 700 : 400,
@@ -348,13 +349,7 @@ export default function AppHeader({
                 display: 'flex', alignItems: 'center', gap: 5,
               }}
             >
-              {m === 'translator' ? '✏️ Traducteur' : '👁️ Utilisateur'}
-              {m === 'user' && (
-                <span style={{
-                  fontSize: 9, padding: '1px 4px', borderRadius: 3, opacity: 0.7,
-                  background: mode === 'user' ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)',
-                }}>TODO</span>
-              )}
+              {m === 'translator' ? '✏️ Traducteur' : '📚 Bibliothèque'}
             </button>
           ))}
         </div>

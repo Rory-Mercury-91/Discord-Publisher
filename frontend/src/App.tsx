@@ -9,6 +9,7 @@ import DiscordPreviewModal from './components/DiscordPreviewModal';
 import HelpCenterModal from './components/HelpCenterModal';
 import HistoryModal from './components/HistoryModal';
 import InstructionsManagerModal from './components/InstructionsManagerModal';
+import LibraryView from './components/LibraryView';
 import LogsModal from './components/LogsModal';
 import Preview from './components/Preview';
 import StatsModal from './components/StatsModal';
@@ -18,7 +19,6 @@ import { ToastProvider, useToast } from './components/ToastProvider';
 import UpdateNotification from './components/UpdateNotification';
 import { AppProvider, useApp } from './state/appContext';
 import { AuthProvider, useAuth } from './state/authContext';
-
 const APP_VERSION = rootPkg.version;
 
 function AppContentInner() {
@@ -141,14 +141,16 @@ function AppContentInner() {
             </div>
           </div>
         </main>
+        // ) : (
+        //   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, color: 'var(--muted)' }}>
+        //     <span style={{ fontSize: 72, lineHeight: 1 }}>🚧</span>
+        //     <h2 style={{ margin: 0, fontSize: '1.4rem', color: 'var(--text)' }}>Mode utilisateur</h2>
+        //     <p style={{ margin: 0, fontSize: 14, opacity: 0.7 }}>Fonctionnalité en cours de développement</p>
+        //   </div>
+        // )}
       ) : (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, color: 'var(--muted)' }}>
-          <span style={{ fontSize: 72, lineHeight: 1 }}>🚧</span>
-          <h2 style={{ margin: 0, fontSize: '1.4rem', color: 'var(--text)' }}>Mode utilisateur</h2>
-          <p style={{ margin: 0, fontSize: 14, opacity: 0.7 }}>Fonctionnalité en cours de développement</p>
-        </div>
+        <LibraryView />
       )}
-
       {/* ── Modales ───────────────────────────────────────────────────────── */}
       {openTemplates && <TemplatesModal onClose={() => setOpenTemplates(false)} />}
       {openTags && <TagsModal onClose={() => setOpenTags(false)} />}

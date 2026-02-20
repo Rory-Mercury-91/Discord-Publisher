@@ -2198,6 +2198,103 @@ async def logging_middleware(request, handler):
     return response
 
 
+# ── Ajouter dans publisher_api.py ──────────────────────────────────────────
+
+F95FR_API_URL = "https://f95fr.duckdns.org/api/jeux"
+F95FR_API_KEY = os.getenv("F95FR_API_KEY", "NL7A1A7p9hPwY9Qf6dgV")
+
+async def get_jeux(request):
+    """
+    Proxy vers l'API f95fr — retourne la liste des jeux traduits.
+    Protégé par X-API-KEY comme les autres routes.
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/jeux")
+    if not is_valid:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "Invalid API key"}, status=401
+        ))
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                F95FR_API_URL,
+                headers={"X-API-KEY": F95FR_API_KEY},
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"[get_jeux] API f95fr error {resp.status}")
+                    return _with_cors(request, web.json_response(
+                        {"ok": False, "error": f"API upstream {resp.status}"}, status=502
+                    ))
+                data = await resp.json()
+
+        # Optionnel : sync vers Supabase en arrière-plan
+        sb = _get_supabase()
+        if sb and isinstance(data, list):
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, _sync_jeux_to_supabase, data)
+
+        logger.info(f"[get_jeux] {len(data) if isinstance(data, list) else '?'} jeux retournés")
+        return _with_cors(request, web.json_response({"ok": True, "jeux": data, "count": len(data)}))
+
+    except Exception as e:
+        logger.error(f"[get_jeux] Exception: {e}")
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": str(e)}, status=500
+        ))
+
+
+def _sync_jeux_to_supabase(jeux: list):
+    """
+    Upsert des jeux dans la table f95_jeux (sync arrière-plan).
+    Préserve le champ published_post_id s'il existe déjà.
+    """
+    sb = _get_supabase()
+    if not sb or not jeux:
+        return
+    try:
+        now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+        rows = []
+        for j in jeux:
+            rows.append({
+                "id":                 j.get("id"),
+                "site_id":            j.get("site_id"),
+                "site":               j.get("site"),
+                "nom_du_jeu":         j.get("nom_du_jeu") or "",
+                "nom_url":            j.get("nom_url"),
+                "version":            j.get("version"),
+                "trad_ver":           j.get("trad_ver"),
+                "lien_trad":          j.get("lien_trad"),
+                "statut":             j.get("statut"),
+                "tags":               j.get("tags"),
+                "type":               j.get("type"),
+                "traducteur":         j.get("traducteur"),
+                "traducteur_url":     j.get("traducteur_url"),
+                "relecture":          j.get("relecture"),
+                "type_de_traduction": j.get("type_de_traduction"),
+                "ac":                 str(j.get("ac") or ""),
+                "image":              j.get("image"),
+                "type_maj":           j.get("type_maj"),
+                "date_maj":           j.get("date_maj"),
+                "synced_at":          now,
+                "updated_at":         now,
+            })
+        # Upsert par lots de 50 (limite Supabase)
+        for i in range(0, len(rows), 50):
+            sb.table("f95_jeux").upsert(
+                rows[i:i+50],
+                on_conflict="id",
+                # Ne pas écraser published_post_id s'il existe
+                ignore_duplicates=False
+            ).execute()
+        logger.info(f"[sync_jeux] {len(rows)} jeux synchronisés dans Supabase")
+    except Exception as e:
+        logger.warning(f"[sync_jeux] Erreur sync Supabase: {e}")
+
+
+# ── Ajouter la route dans make_app() ou dans la liste des routes ────────────
+# ("GET", "/api/jeux", get_jeux),
+
 # ==================== HANDLERS HTTP ====================
 async def health(request):
     return _with_cors(request, web.json_response({"ok": True, "configured": config.configured, "rate_limit": rate_limiter.get_info()}))
@@ -2783,6 +2880,7 @@ async def handle_404(request):
 app = web.Application(middlewares=[logging_middleware])
 app.add_routes([
     web.get('/api/publisher/health', health),
+    web.get('/api/jeux', get_jeux),
     web.post('/api/forum-post', forum_post),
     web.post('/api/forum-post/update', forum_post_update),
     web.post('/api/forum-post/delete', forum_post_delete),

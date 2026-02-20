@@ -38,6 +38,7 @@ from publisher_api import (
     forum_post_update,
     forum_post_delete,
     get_history,
+    get_jeux,          # ← AJOUT
     account_delete,
     _with_cors,
     _auth_request,
@@ -360,6 +361,7 @@ def make_app():
         ("GET",     "/api/history",           get_history),
         ("GET",     "/api/logs",              get_logs),
         ("POST",    "/api/account/delete",    account_delete),
+        ("GET",     "/api/jeux",              get_jeux),
         # ↓ CATCH-ALL en dernier
         ("*",       "/{tail:.*}",             handle_404),
     ]
