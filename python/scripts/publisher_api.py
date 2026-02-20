@@ -2230,6 +2230,43 @@ async def logging_middleware(request, handler):
 F95FR_API_URL = "https://f95fr.duckdns.org/api/jeux"
 F95FR_API_KEY = os.getenv("F95FR_API_KEY", "NL7A1A7p9hPwY9Qf6dgV")
 
+def _fetch_all_jeux_sync() -> list:
+    """
+    Récupère TOUS les jeux de f95_jeux avec pagination (contourne la limite 1000 de Supabase).
+    Retourne une liste vide en cas d'erreur.
+    """
+    sb = _get_supabase()
+    if not sb:
+        return []
+
+    PAGE_SIZE = 1000
+    all_rows = []
+    offset = 0
+
+    while True:
+        try:
+            res = (
+                sb.table("f95_jeux")
+                .select("*")
+                .order("nom_du_jeu")
+                .range(offset, offset + PAGE_SIZE - 1)
+                .execute()
+            )
+            batch = res.data or []
+            all_rows.extend(batch)
+            logger.debug(f"[fetch_all_jeux] Page offset={offset}: {len(batch)} jeux")
+
+            if len(batch) < PAGE_SIZE:
+                break  # Dernière page atteinte
+            offset += PAGE_SIZE
+        except Exception as e:
+            logger.warning(f"[fetch_all_jeux] Erreur à offset={offset}: {e}")
+            break
+
+    logger.info(f"[fetch_all_jeux] Total récupéré: {len(all_rows)} jeux")
+    return all_rows
+
+
 async def get_jeux(request):
     """
     Sert les jeux depuis le cache Supabase (f95_jeux).
@@ -2244,15 +2281,16 @@ async def get_jeux(request):
 
     sb = _get_supabase()
 
-    # ── Priorité : lire depuis le cache Supabase ──────────────────────────────
+    # ── Priorité : lire depuis le cache Supabase (avec pagination complète) ──
     if sb:
         try:
-            res = sb.table("f95_jeux").select("*").order("nom_du_jeu").execute()
-            if res.data:
-                logger.info(f"[get_jeux] {len(res.data)} jeux depuis Supabase (cache)")
+            loop = asyncio.get_event_loop()
+            data = await loop.run_in_executor(None, _fetch_all_jeux_sync)
+            if data:
+                logger.info(f"[get_jeux] {len(data)} jeux depuis Supabase (cache)")
                 return _with_cors(request, web.json_response({
-                    "ok": True, "jeux": res.data,
-                    "count": len(res.data), "source": "cache"
+                    "ok": True, "jeux": data,
+                    "count": len(data), "source": "cache"
                 }))
         except Exception as e:
             logger.warning(f"[get_jeux] Supabase indisponible, fallback API externe: {e}")
