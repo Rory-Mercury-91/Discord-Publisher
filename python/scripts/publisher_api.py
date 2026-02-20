@@ -1256,6 +1256,30 @@ async def daily_cleanup_empty_messages():
     except Exception as e:
         logger.error(f"❌ Erreur nettoyage messages vides: {e}")
 
+@tasks.loop(hours=2)
+async def sync_jeux_task():
+    """Synchronise les jeux depuis f95fr vers la table Supabase f95_jeux (toutes les 2h)."""
+    logger.info("⏰ [sync_jeux] Synchronisation automatique toutes les 2h...")
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                F95FR_API_URL,
+                headers={"X-API-KEY": F95FR_API_KEY},
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if isinstance(data, list) and data:
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(None, _sync_jeux_to_supabase, data)
+                        logger.info(f"✅ [sync_jeux] {len(data)} jeux synchronisés dans f95_jeux")
+                    else:
+                        logger.warning("[sync_jeux] Réponse vide ou invalide")
+                else:
+                    logger.warning(f"⚠️ [sync_jeux] API f95fr HTTP {resp.status}")
+    except Exception as e:
+        logger.error(f"❌ [sync_jeux] Erreur: {e}")
+
 # ==================== COMMANDES SLASH ====================
 
 # Lire l'ID du rôle autorisé depuis .env
@@ -1566,6 +1590,9 @@ async def on_ready():
     if not daily_cleanup_empty_messages.is_running():
         daily_cleanup_empty_messages.start()
         logger.info(f"✅ Nettoyage messages vides programmé à {config.CLEANUP_EMPTY_MESSAGES_HOUR:02d}:{config.CLEANUP_EMPTY_MESSAGES_MINUTE:02d} Europe/Paris")
+    if not sync_jeux_task.is_running():
+            sync_jeux_task.start()
+            logger.info("✅ Synchronisation jeux planifiée (toutes les 2h)")        
 
 # ==================== HELPERS API REST ====================
 def _build_metadata_embed(metadata_b64: str) -> dict:
@@ -2205,8 +2232,9 @@ F95FR_API_KEY = os.getenv("F95FR_API_KEY", "NL7A1A7p9hPwY9Qf6dgV")
 
 async def get_jeux(request):
     """
-    Proxy vers l'API f95fr — retourne la liste des jeux traduits.
-    Protégé par X-API-KEY comme les autres routes.
+    Sert les jeux depuis le cache Supabase (f95_jeux).
+    Fallback sur l'API externe si la table est vide ou inaccessible.
+    Le bot se charge de rafraîchir toutes les 2h via sync_jeux_task.
     """
     is_valid, _, _, _ = await _auth_request(request, "/api/jeux")
     if not is_valid:
@@ -2214,6 +2242,22 @@ async def get_jeux(request):
             {"ok": False, "error": "Invalid API key"}, status=401
         ))
 
+    sb = _get_supabase()
+
+    # ── Priorité : lire depuis le cache Supabase ──────────────────────────────
+    if sb:
+        try:
+            res = sb.table("f95_jeux").select("*").order("nom_du_jeu").execute()
+            if res.data:
+                logger.info(f"[get_jeux] {len(res.data)} jeux depuis Supabase (cache)")
+                return _with_cors(request, web.json_response({
+                    "ok": True, "jeux": res.data,
+                    "count": len(res.data), "source": "cache"
+                }))
+        except Exception as e:
+            logger.warning(f"[get_jeux] Supabase indisponible, fallback API externe: {e}")
+
+    # ── Fallback : API externe (table vide au premier démarrage) ─────────────
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -2228,14 +2272,16 @@ async def get_jeux(request):
                     ))
                 data = await resp.json()
 
-        # Optionnel : sync vers Supabase en arrière-plan
-        sb = _get_supabase()
+        # Peupler le cache en arrière-plan
         if sb and isinstance(data, list):
             loop = asyncio.get_event_loop()
             loop.run_in_executor(None, _sync_jeux_to_supabase, data)
 
-        logger.info(f"[get_jeux] {len(data) if isinstance(data, list) else '?'} jeux retournés")
-        return _with_cors(request, web.json_response({"ok": True, "jeux": data, "count": len(data)}))
+        logger.info(f"[get_jeux] {len(data) if isinstance(data, list) else '?'} jeux depuis API externe (fallback)")
+        return _with_cors(request, web.json_response({
+            "ok": True, "jeux": data,
+            "count": len(data), "source": "api"
+        }))
 
     except Exception as e:
         logger.error(f"[get_jeux] Exception: {e}")

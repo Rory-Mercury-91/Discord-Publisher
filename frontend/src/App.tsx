@@ -141,15 +141,8 @@ function AppContentInner() {
             </div>
           </div>
         </main>
-        // ) : (
-        //   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, color: 'var(--muted)' }}>
-        //     <span style={{ fontSize: 72, lineHeight: 1 }}>🚧</span>
-        //     <h2 style={{ margin: 0, fontSize: '1.4rem', color: 'var(--text)' }}>Mode utilisateur</h2>
-        //     <p style={{ margin: 0, fontSize: 14, opacity: 0.7 }}>Fonctionnalité en cours de développement</p>
-        //   </div>
-        // )}
       ) : (
-        <LibraryView />
+        <LibraryView onModeChange={setMode} />
       )}
       {/* ── Modales ───────────────────────────────────────────────────────── */}
       {openTemplates && <TemplatesModal onClose={() => setOpenTemplates(false)} />}

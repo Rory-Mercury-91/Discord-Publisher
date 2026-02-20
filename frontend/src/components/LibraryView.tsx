@@ -1,66 +1,43 @@
 // frontend/src/components/LibraryView.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Cell, Legend,
+  Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import { tauriAPI } from '../lib/tauri-api';
 import { useApp } from '../state/appContext';
 import { useToast } from './ToastProvider';
 
-/* ── Types ─────────────────────────────────────────────────────────── */
+/* ── Types ─────────────────────────────────────────────────────── */
 export type JeuF95 = {
-  id: number;
-  site_id: number;
-  site: string;
-  nom_du_jeu: string;
-  nom_url: string;
-  version: string;
-  trad_ver: string;
-  lien_trad: string;
-  statut: string;
-  tags: string;
-  type: string;
-  traducteur: string;
-  traducteur_url: string;
-  relecture: string;
-  type_de_traduction: string;
-  ac: string;
-  image: string;
-  type_maj: string;
-  date_maj: string;
-  _sync?: SyncStatus;
+  id: number; site_id: number; site: string;
+  nom_du_jeu: string; nom_url: string; version: string;
+  trad_ver: string; lien_trad: string; statut: string;
+  tags: string; type: string; traducteur: string;
+  traducteur_url: string; relecture: string;
+  type_de_traduction: string; ac: string; image: string;
+  type_maj: string; date_maj: string; _sync?: SyncStatus;
 };
-
 type SyncStatus = 'ok' | 'outdated' | 'unknown';
+type AppMode = 'translator' | 'user';
 
-/* ── Normalisation version ──────────────────────────────────────────── */
-function normalizeVersion(v: string): string {
+/* ── Sync helpers ────────────────────────────────────────────────── */
+function normalizeVersion(v: string) {
   return (v || '').trim().toLowerCase().replace(/\s+/g, '');
 }
-
-function getSyncStatus(jeu: JeuF95): SyncStatus {
-  const t = normalizeVersion(jeu.trad_ver);
-  // Traduction intégrée = toujours considérée à jour
+function getSyncStatus(j: JeuF95): SyncStatus {
+  const t = normalizeVersion(j.trad_ver);
   if (t.includes('intégr') || t.includes('integr')) return 'ok';
-  const v = normalizeVersion(jeu.version);
+  const v = normalizeVersion(j.version);
   if (!v || !t) return 'unknown';
   return v === t ? 'ok' : 'outdated';
 }
 
-/* ── Palettes ────────────────────────────────────────────────────────── */
-const SYNC_META: Record<SyncStatus, { bg: string; border: string; text: string; label: string }> = {
-  ok: { bg: '#052e16', border: '#22c55e', text: '#4ade80', label: '✓ À jour' },
-  outdated: { bg: '#450a0a', border: '#ef4444', text: '#f87171', label: '⚠ Non à jour' },
-  unknown: { bg: '#1c1917', border: '#78716c', text: '#a8a29e', label: '? Inconnu' },
+/* ── Palettes ────────────────────────────────────────────────────── */
+const SYNC_META: Record<SyncStatus, { border: string; text: string; label: string }> = {
+  ok: { border: '#22c55e', text: '#4ade80', label: '✓ À jour' },
+  outdated: { border: '#ef4444', text: '#f87171', label: '⚠ Non à jour' },
+  unknown: { border: '#78716c', text: '#a8a29e', label: '? Inconnu' },
 };
 
 const STATUS_MAP: Record<string, { bg: string; border: string; text: string }> = {
@@ -72,15 +49,12 @@ const STATUS_MAP: Record<string, { bg: string; border: string; text: string }> =
   'PAUSE': { bg: '#422006', border: '#f59e0b', text: '#fbbf24' },
   'SUSPENDU': { bg: '#422006', border: '#f59e0b', text: '#fbbf24' },
 };
-
 function statusColor(s: string) {
-  const key = (s || '').toUpperCase();
-  for (const [k, v] of Object.entries(STATUS_MAP)) {
-    if (key.includes(k)) return v;
-  }
-  return { bg: '#1f2937', border: '#6b7280', text: '#9ca3af' };
+  const k = (s || '').toUpperCase();
+  for (const [key, v] of Object.entries(STATUS_MAP))
+    if (k.includes(key)) return v;
+  return { bg: 'rgba(128,128,128,0.1)', border: '#6b7280', text: '#9ca3af' };
 }
-
 function tradTypeColor(t: string) {
   const v = (t || '').toLowerCase();
   if (v.includes('manuelle') || v.includes('humaine')) return '#a78bfa';
@@ -88,13 +62,37 @@ function tradTypeColor(t: string) {
   if (v.includes('auto')) return '#fb923c';
   return '#34d399';
 }
-
 const CHART_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#38bdf8', '#a78bfa', '#fb923c', '#34d399'];
+
+/* ── Section repliable ───────────────────────────────────────────── */
+function CollapsibleChart({ title, children, defaultOpen = true }:
+  { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ background: 'var(--panel)', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
+      <div onClick={() => setOpen(p => !p)} style={{
+        padding: '10px 16px', cursor: 'pointer',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        borderBottom: open ? '1px solid var(--border)' : 'none',
+        userSelect: 'none',
+      }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{title}</span>
+        <span style={{
+          fontSize: 11, color: 'var(--muted)',
+          display: 'inline-block', transition: 'transform 0.2s',
+          transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+        }}>▼</span>
+      </div>
+      {open && <div style={{ padding: '16px' }}>{children}</div>}
+    </div>
+  );
+}
 
 /* ══════════════════════════════════════════════════════════════════════
    COMPOSANT PRINCIPAL
+   Props : onModeChange → permet de basculer en mode traducteur après edit
 ══════════════════════════════════════════════════════════════════════ */
-export default function LibraryView() {
+export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMode) => void }) {
   const { publishedPosts, loadPostForEditing } = useApp();
   const { showToast } = useToast();
 
@@ -113,7 +111,14 @@ export default function LibraryView() {
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [lastSync, setLastSync] = useState<Date | null>(null);
 
-  /* ── Fetch ─────────────────────────────────────────────────────── */
+  /* ── Edit : charge le post ET bascule en mode traducteur ── */
+  const handleEdit = useCallback((post: any) => {
+    loadPostForEditing(post);
+    onModeChange('translator');
+    showToast('Post chargé — passage en mode Traducteur', 'info');
+  }, [loadPostForEditing, onModeChange, showToast]);
+
+  /* ── Fetch (lit le cache Supabase via l'API) ─────────────────── */
   const fetchJeux = useCallback(async () => {
     setLoading(true); setError(null);
     try {
@@ -149,35 +154,29 @@ export default function LibraryView() {
     return map;
   }, [publishedPosts]);
 
-  const findPost = useCallback((jeu: JeuF95) => {
-    const byId = postByGameLink.get(String(jeu.site_id));
+  const findPost = useCallback((j: JeuF95) => {
+    const byId = postByGameLink.get(String(j.site_id));
     if (byId) return byId;
-    for (const [k, v] of postByGameLink) {
-      if (k.includes(String(jeu.site_id))) return v;
-    }
+    for (const [k, v] of postByGameLink)
+      if (k.includes(String(j.site_id))) return v;
     return null;
   }, [postByGameLink]);
 
-  /* ── Enrichissement sync ────────────────────────────────────────── */
+  /* ── Enrichissement + filtrage ──────────────────────────────────── */
   const jeuxEnriched = useMemo<JeuF95[]>(
-    () => jeux.map(j => ({ ...j, _sync: getSyncStatus(j) })),
-    [jeux]
+    () => jeux.map(j => ({ ...j, _sync: getSyncStatus(j) })), [jeux]
   );
-
-  /* ── Compteurs sync ─────────────────────────────────────────────── */
   const syncCounts = useMemo(() => {
     const c = { ok: 0, outdated: 0, unknown: 0 };
     jeuxEnriched.forEach(j => c[j._sync!]++);
     return c;
   }, [jeuxEnriched]);
 
-  /* ── Options filtres ────────────────────────────────────────────── */
   const statuts = useMemo(() => [...new Set(jeux.map(j => j.statut).filter(Boolean))].sort(), [jeux]);
   const traducteurs = useMemo(() => [...new Set(jeux.map(j => j.traducteur).filter(Boolean))].sort(), [jeux]);
   const types = useMemo(() => [...new Set(jeux.map(j => j.type).filter(Boolean))].sort(), [jeux]);
   const tradTypes = useMemo(() => [...new Set(jeux.map(j => j.type_de_traduction).filter(Boolean))].sort(), [jeux]);
 
-  /* ── Filtrage + tri ─────────────────────────────────────────────── */
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return jeuxEnriched
@@ -201,20 +200,20 @@ export default function LibraryView() {
     setSearch(''); setFilterStatut(''); setFilterTrad('');
     setFilterType(''); setFilterTradType(''); setFilterSync('');
   };
-
   const toggleSort = (key: string) => {
-    if (sortKey === key) setSortDir(d => (d === 1 ? -1 : 1));
+    if (sortKey === key) setSortDir(d => d === 1 ? -1 : 1);
     else { setSortKey(key); setSortDir(1); }
   };
 
-  /* ── Styles communs ─────────────────────────────────────────────── */
+  // Style select/input adapté au thème clair et sombre
   const sel: React.CSSProperties = {
     height: 30, padding: '0 8px', borderRadius: 6,
-    border: '1px solid var(--border)', background: 'rgba(255,255,255,0.04)',
+    border: '1px solid var(--border)',
+    background: 'var(--bg)',          // ← était rgba(255,255,255,0.04), cassait le thème clair
     color: 'var(--text)', fontSize: 12, cursor: 'pointer',
   };
 
-  /* ══════════════════ RENDER ══════════════════ */
+  /* ══════════ RENDER ══════════ */
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)' }}>
 
@@ -237,7 +236,7 @@ export default function LibraryView() {
           {/* ── Toolbar ── */}
           <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', flexShrink: 0 }}>
 
-            {/* Sync quick-filters */}
+            {/* Filtres sync */}
             <div style={{ display: 'flex', gap: 4 }}>
               {([
                 ['', 'Tous', 'var(--muted)', 'var(--border)'] as const,
@@ -254,7 +253,7 @@ export default function LibraryView() {
                 }}>
                   {label}
                   {val && (
-                    <span style={{ marginLeft: 5, background: 'rgba(255,255,255,0.1)', borderRadius: 10, padding: '0 5px' }}>
+                    <span style={{ marginLeft: 5, background: 'rgba(128,128,128,0.15)', borderRadius: 10, padding: '0 5px' }}>
                       {syncCounts[val as SyncStatus] ?? 0}
                     </span>
                   )}
@@ -264,20 +263,18 @@ export default function LibraryView() {
 
             <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
 
-            {/* Titre + compteur */}
             <span style={{ fontWeight: 700, fontSize: 14 }}>📚</span>
             {jeux.length > 0 && (
-              <span style={{ fontSize: 11, color: 'var(--muted)', background: 'rgba(255,255,255,0.07)', padding: '2px 8px', borderRadius: 10 }}>
+              <span style={{ fontSize: 11, color: 'var(--muted)', background: 'rgba(128,128,128,0.1)', padding: '2px 8px', borderRadius: 10 }}>
                 {filtered.length}/{jeux.length}
               </span>
             )}
 
-            {/* Recherche */}
+            {/* Recherche catalogue — distincte de la recherche AppHeader (publications Discord) */}
             <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Rechercher un jeu ou traducteur…"
+              placeholder="Rechercher dans le catalogue (jeu, traducteur)…"
               style={{ ...sel, flex: 1, minWidth: 160, padding: '0 10px' }} />
 
-            {/* Filtres dropdown */}
             <select value={filterStatut} onChange={e => setFilterStatut(e.target.value)} style={sel}>
               <option value="">Tous les statuts</option>
               {statuts.map(s => <option key={s} value={s}>{s}</option>)}
@@ -308,7 +305,7 @@ export default function LibraryView() {
                   cursor: 'pointer', fontSize: 14,
                 }}>{v === 'grid' ? '⊞' : '≡'}</button>
               ))}
-              <button onClick={fetchJeux} disabled={loading} title="Actualiser" style={{
+              <button onClick={fetchJeux} disabled={loading} title="Forcer la synchronisation" style={{
                 width: 30, height: 30, borderRadius: 6, border: '1px solid var(--border)',
                 background: 'transparent', cursor: loading ? 'wait' : 'pointer',
                 fontSize: 14, color: 'var(--muted)',
@@ -317,8 +314,8 @@ export default function LibraryView() {
           </div>
 
           {lastSync && (
-            <div style={{ padding: '3px 16px', fontSize: 10, color: 'var(--muted)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-              Dernière synchro : {lastSync.toLocaleTimeString('fr-FR')}
+            <div style={{ padding: '3px 16px', fontSize: 10, color: 'var(--muted)', borderBottom: '1px solid rgba(128,128,128,0.08)' }}>
+              Cache local : {lastSync.toLocaleTimeString('fr-FR')} — mis à jour automatiquement toutes les 2h par le bot
             </div>
           )}
 
@@ -346,9 +343,7 @@ export default function LibraryView() {
             {/* Vue grille */}
             {!loading && !error && view === 'grid' && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
-                {filtered.map(jeu => (
-                  <GameCard key={jeu.id} jeu={jeu} post={findPost(jeu)} onEdit={loadPostForEditing} />
-                ))}
+                {filtered.map(j => <GameCard key={j.id} jeu={j} post={findPost(j)} onEdit={handleEdit} />)}
               </div>
             )}
 
@@ -356,21 +351,16 @@ export default function LibraryView() {
             {!loading && !error && view === 'list' && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
+                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
                     {([
-                      ['nom_du_jeu', 'Jeu'],
-                      ['version', 'Version jeu'],
-                      ['trad_ver', 'Version trad.'],
-                      ['_sync', 'Sync'],
-                      ['statut', 'Statut'],
-                      ['type_de_traduction', 'Type trad.'],
-                      ['traducteur', 'Traducteur'],
-                      ['date_maj', 'Date MAJ'],
-                      [null, 'Actions'],
+                      ['nom_du_jeu', 'Jeu'], ['version', 'Version jeu'], ['trad_ver', 'Version trad.'],
+                      ['_sync', 'Sync'], ['statut', 'Statut'], ['type_de_traduction', 'Type trad.'],
+                      ['traducteur', 'Traducteur'], ['date_maj', 'Date MAJ'], [null, 'Actions'],
                     ] as [string | null, string][]).map(([k, h]) => (
                       <th key={h} onClick={k ? () => toggleSort(k) : undefined} style={{
                         padding: '8px 10px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap',
                         cursor: k ? 'pointer' : 'default', userSelect: 'none', fontSize: 13,
+                        color: 'var(--text)',
                       }}>
                         {h}{k && sortKey === k ? (sortDir > 0 ? ' ↑' : ' ↓') : ''}
                       </th>
@@ -378,9 +368,7 @@ export default function LibraryView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(jeu => (
-                    <GameRow key={jeu.id} jeu={jeu} post={findPost(jeu)} onEdit={loadPostForEditing} />
-                  ))}
+                  {filtered.map(j => <GameRow key={j.id} jeu={j} post={findPost(j)} onEdit={handleEdit} />)}
                 </tbody>
               </table>
             )}
@@ -395,7 +383,7 @@ export default function LibraryView() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   GAME CARD (vue grille)
+   GAME CARD
 ══════════════════════════════════════════════════════════════════════ */
 function GameCard({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: any) => void }) {
   const sc = statusColor(jeu.statut);
@@ -403,92 +391,67 @@ function GameCard({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: a
   const [imgErr, setImgErr] = useState(false);
 
   return (
-    <div style={{
-      borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden',
-      background: 'var(--panel)', display: 'flex', flexDirection: 'column',
-      transition: 'transform 0.15s, box-shadow 0.15s',
-    }}
-      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.4)'; }}
+    <div
+      style={{ borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden', background: 'var(--panel)', display: 'flex', flexDirection: 'column', transition: 'transform 0.15s, box-shadow 0.15s' }}
+      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.3)'; }}
       onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}
     >
-      {/* Bandeau sync (3px) */}
-      <div style={{ height: 3, background: sync.border, width: '100%', flexShrink: 0 }} />
-
-      {/* Image */}
-      <div style={{ width: '100%', aspectRatio: '16/9', background: 'rgba(255,255,255,0.05)', overflow: 'hidden', position: 'relative', flexShrink: 0 }}>
-        {jeu.image && !imgErr ? (
-          <img src={jeu.image} alt="" onError={() => setImgErr(true)}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, color: 'var(--muted)' }}>🎮</div>
-        )}
-        {/* Badge sync */}
-        <div style={{
-          position: 'absolute', bottom: 5, right: 5,
-          padding: '2px 7px', borderRadius: 10,
-          background: `${sync.border}cc`, fontSize: 10, fontWeight: 700, color: '#fff',
-        }}>{sync.label}</div>
-        {/* Badge publié */}
+      <div style={{ height: 3, background: sync.border, flexShrink: 0 }} />
+      <div style={{ width: '100%', aspectRatio: '16/9', background: 'rgba(128,128,128,0.08)', overflow: 'hidden', position: 'relative', flexShrink: 0 }}>
+        {jeu.image && !imgErr
+          ? <img src={jeu.image} alt="" onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, color: 'var(--muted)' }}>🎮</div>
+        }
+        <div style={{ position: 'absolute', bottom: 5, right: 5, padding: '2px 7px', borderRadius: 10, background: `${sync.border}cc`, fontSize: 10, fontWeight: 700, color: '#fff' }}>
+          {sync.label}
+        </div>
         {post && (
-          <div style={{
-            position: 'absolute', top: 6, right: 6,
-            padding: '2px 7px', borderRadius: 10,
-            background: 'rgba(16,185,129,0.9)', fontSize: 10, fontWeight: 700, color: '#fff',
-          }}>✓ Publié</div>
+          <div style={{ position: 'absolute', top: 6, right: 6, padding: '2px 7px', borderRadius: 10, background: 'rgba(16,185,129,0.9)', fontSize: 10, fontWeight: 700, color: '#fff' }}>
+            ✓ Publié
+          </div>
         )}
       </div>
 
-      {/* Infos */}
       <div style={{ padding: '10px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+        <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3, color: 'var(--text)', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
           {jeu.nom_du_jeu}
         </div>
-
-        {/* Versions diff */}
         <VersionBadge game={jeu.version} trad={jeu.trad_ver} sync={jeu._sync!} />
-
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.text, fontWeight: 600 }}>
             {jeu.statut || '—'}
           </span>
           {jeu.type && (
-            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
+            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(128,128,128,0.1)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
               {jeu.type}
             </span>
           )}
         </div>
-
         {jeu.traducteur && (
           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
             👤 <span style={{ color: 'var(--text)' }}>{jeu.traducteur}</span>
           </div>
         )}
         {jeu.type_de_traduction && (
-          <div style={{ fontSize: 10, color: tradTypeColor(jeu.type_de_traduction) }}>
-            ⚙ {jeu.type_de_traduction}
-          </div>
+          <div style={{ fontSize: 10, color: tradTypeColor(jeu.type_de_traduction) }}>⚙ {jeu.type_de_traduction}</div>
         )}
       </div>
 
-      {/* Actions */}
-      <div style={{ padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: 6 }}>
+      <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', display: 'flex', gap: 6 }}>
         {jeu.nom_url && (
-          <button onClick={() => tauriAPI.openUrl(jeu.nom_url)}
-            title="Ouvrir le jeu"
+          <button onClick={() => tauriAPI.openUrl(jeu.nom_url)} title="Ouvrir le jeu"
             style={{ flex: 1, height: 28, borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--muted)', fontSize: 11, cursor: 'pointer' }}>
             🔗 Jeu
           </button>
         )}
         {jeu.lien_trad && (
-          <button onClick={() => tauriAPI.openUrl(jeu.lien_trad)}
-            title="Ouvrir la traduction"
+          <button onClick={() => tauriAPI.openUrl(jeu.lien_trad)} title="Ouvrir la traduction"
             style={{ flex: 1, height: 28, borderRadius: 5, border: '1px solid rgba(99,102,241,0.3)', background: 'rgba(99,102,241,0.08)', color: '#818cf8', fontSize: 11, cursor: 'pointer' }}>
             🇫🇷 Trad.
           </button>
         )}
         {post && (
-          <button onClick={() => onEdit(post)}
-            title="Modifier le post Discord"
+          <button onClick={() => onEdit(post)} title="Modifier le post — ouvre le mode Traducteur"
             style={{ height: 28, width: 28, borderRadius: 5, border: '1px solid rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.08)', color: '#4ade80', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             ✏️
           </button>
@@ -498,7 +461,6 @@ function GameCard({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: a
   );
 }
 
-/* ── VersionBadge ────────────────────────────────────────────────────── */
 function VersionBadge({ game, trad, sync }: { game: string; trad: string; sync: SyncStatus }) {
   if (!game && !trad) return <div style={{ fontSize: 11, color: 'var(--muted)' }}>Versions inconnues</div>;
   const arrowColor = sync === 'ok' ? '#22c55e' : sync === 'outdated' ? '#ef4444' : '#6b7280';
@@ -506,34 +468,36 @@ function VersionBadge({ game, trad, sync }: { game: string; trad: string; sync: 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, flexWrap: 'wrap' }}>
       <span style={{ color: 'var(--muted)' }}>🎮</span>
-      <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 3 }}>{game || '?'}</code>
+      <code style={{ background: 'rgba(128,128,128,0.1)', padding: '1px 5px', borderRadius: 3, color: 'var(--text)' }}>{game || '?'}</code>
       <span style={{ color: arrowColor }}>→</span>
       <span style={{ color: 'var(--muted)' }}>🇫🇷</span>
-      <code style={{ background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 3, color: tradColor }}>{trad || '?'}</code>
+      <code style={{ background: 'rgba(128,128,128,0.1)', padding: '1px 5px', borderRadius: 3, color: tradColor }}>{trad || '?'}</code>
     </div>
   );
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   GAME ROW (vue liste)
+   GAME ROW
 ══════════════════════════════════════════════════════════════════════ */
 function GameRow({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: any) => void }) {
   const sc = statusColor(jeu.statut);
   const sync = SYNC_META[jeu._sync!];
   const tradCol = jeu._sync === 'ok' ? '#4ade80' : jeu._sync === 'outdated' ? '#f87171' : 'var(--muted)';
   const td = (extra?: React.CSSProperties): React.CSSProperties => ({
-    padding: '9px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)',
-    verticalAlign: 'middle', fontSize: 14, ...extra,
+    padding: '9px 10px', borderBottom: '1px solid var(--border)',
+    verticalAlign: 'middle', fontSize: 14, color: 'var(--text)', ...extra,
   });
 
   return (
-    <tr onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}
-      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+    <tr
+      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(128,128,128,0.05)')}
+      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+    >
       <td style={td({ maxWidth: 220 })}>
         <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{jeu.nom_du_jeu}</div>
         {jeu.type && <div style={{ fontSize: 10, color: 'var(--muted)' }}>{jeu.type}</div>}
       </td>
-      <td style={td()}><code style={{ fontSize: 11 }}>{jeu.version || '—'}</code></td>
+      <td style={td()}><code style={{ fontSize: 11, color: 'var(--text)' }}>{jeu.version || '—'}</code></td>
       <td style={td()}><code style={{ fontSize: 11, color: tradCol }}>{jeu.trad_ver || '—'}</code></td>
       <td style={td()}>
         <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: `${sync.border}22`, border: `1px solid ${sync.border}`, color: sync.text, fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -551,21 +515,18 @@ function GameRow({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: an
       <td style={td()}>
         <div style={{ display: 'flex', gap: 4 }}>
           {jeu.nom_url && (
-            <button onClick={() => tauriAPI.openUrl(jeu.nom_url)}
-              title="Ouvrir le jeu"
+            <button onClick={() => tauriAPI.openUrl(jeu.nom_url)} title="Jeu"
               style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 12 }}>🔗</button>
           )}
           {jeu.lien_trad && (
-            <button onClick={() => tauriAPI.openUrl(jeu.lien_trad)}
-              title="Ouvrir la traduction"
+            <button onClick={() => tauriAPI.openUrl(jeu.lien_trad)} title="Traduction"
               style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid rgba(99,102,241,0.3)', background: 'rgba(99,102,241,0.08)', cursor: 'pointer', fontSize: 12 }}>🇫🇷</button>
           )}
           {post ? (
-            <button onClick={() => onEdit(post)}
-              title="Modifier le post Discord"
+            <button onClick={() => onEdit(post)} title="Modifier le post Discord"
               style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.08)', color: '#4ade80', cursor: 'pointer', fontSize: 11 }}>✏️</button>
           ) : (
-            <span style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'var(--muted)' }}>—</span>
+            <span style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'var(--muted)' }}>—</span>
           )}
         </div>
       </td>
@@ -574,7 +535,7 @@ function GameRow({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: an
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   STATS VIEW
+   STATS VIEW — sections repliables + hauteurs dynamiques
 ══════════════════════════════════════════════════════════════════════ */
 function StatsView({ jeux }: { jeux: JeuF95[] }) {
   const total = jeux.length;
@@ -622,8 +583,13 @@ function StatsView({ jeux }: { jeux: JeuF95[] }) {
   const pct = (n: number) => (total ? Math.round(n / total * 100) : 0);
   const tt = { contentStyle: { background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: 12 } };
 
+  // Hauteurs dynamiques — chaque entrée ~30px, min garanti
+  const siteH = Math.max(120, bySite.length * 30);
+  const tradH = Math.max(220, byTraducteur.length * 32);
+  const syncH = Math.max(200, syncByTrad.length * 32);
+
   return (
-    <div className="styled-scrollbar" style={{ flex: 1, overflow: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="styled-scrollbar" style={{ flex: 1, overflow: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
 
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 12 }}>
@@ -642,13 +608,12 @@ function StatsView({ jeux }: { jeux: JeuF95[] }) {
         ))}
       </div>
 
-      {/* Barre progression sync */}
-      <div style={{ background: 'var(--panel)', borderRadius: 12, padding: 18, border: '1px solid var(--border)' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>📊 Progression sync globale</div>
+      {/* Barre sync */}
+      <CollapsibleChart title="📊 Progression sync globale">
         <div style={{ display: 'flex', height: 18, borderRadius: 9, overflow: 'hidden', gap: 1 }}>
-          {kpis.ok > 0 && <div style={{ flex: kpis.ok, background: '#22c55e' }} title={`À jour: ${kpis.ok}`} />}
-          {kpis.outdated > 0 && <div style={{ flex: kpis.outdated, background: '#ef4444' }} title={`Non à jour: ${kpis.outdated}`} />}
-          {kpis.unknown > 0 && <div style={{ flex: kpis.unknown, background: '#374151' }} title={`Inconnu: ${kpis.unknown}`} />}
+          {kpis.ok > 0 && <div style={{ flex: kpis.ok, background: '#22c55e' }} />}
+          {kpis.outdated > 0 && <div style={{ flex: kpis.outdated, background: '#ef4444' }} />}
+          {kpis.unknown > 0 && <div style={{ flex: kpis.unknown, background: 'var(--border)' }} />}
         </div>
         <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 11 }}>
           {([['#22c55e', 'À jour', kpis.ok], ['#ef4444', 'Non à jour', kpis.outdated], ['#6b7280', 'Inconnu', kpis.unknown]] as [string, string, number][]).map(([c, l, n]) => (
@@ -658,12 +623,11 @@ function StatsView({ jeux }: { jeux: JeuF95[] }) {
             </span>
           ))}
         </div>
-      </div>
+      </CollapsibleChart>
 
-      {/* Charts ligne 1 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <div style={{ background: 'var(--panel)', borderRadius: 12, padding: 18, border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>📁 Par statut</div>
+      {/* Pie charts */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <CollapsibleChart title="📁 Par statut">
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie data={byStatut} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75}>
@@ -673,10 +637,9 @@ function StatsView({ jeux }: { jeux: JeuF95[] }) {
               <Legend iconSize={10} wrapperStyle={{ fontSize: 11, color: 'var(--muted)' }} />
             </PieChart>
           </ResponsiveContainer>
-        </div>
+        </CollapsibleChart>
 
-        <div style={{ background: 'var(--panel)', borderRadius: 12, padding: 18, border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>⚙ Par type de traduction</div>
+        <CollapsibleChart title="⚙ Par type de traduction">
           <ResponsiveContainer width="100%" height={200}>
             <PieChart>
               <Pie data={byTradType} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75}>
@@ -686,56 +649,53 @@ function StatsView({ jeux }: { jeux: JeuF95[] }) {
               <Legend iconSize={10} wrapperStyle={{ fontSize: 11, color: 'var(--muted)' }} />
             </PieChart>
           </ResponsiveContainer>
-        </div>
+        </CollapsibleChart>
       </div>
 
-      {/* Charts ligne 2 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <div style={{ background: 'var(--panel)', borderRadius: 12, padding: 18, border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>🌐 Par site</div>
-          <ResponsiveContainer width="100%" height={150}>
+      {/* Bar charts — hauteur dynamique */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <CollapsibleChart title={`🌐 Par site (${bySite.length})`}>
+          <ResponsiveContainer width="100%" height={siteH}>
             <BarChart data={bySite} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis type="number" tick={{ fill: 'var(--muted)', fontSize: 11 }} />
-              <YAxis type="category" dataKey="name" width={90} tick={{ fill: 'var(--muted)', fontSize: 11 }} />
+              <YAxis type="category" dataKey="name" width={100} tick={{ fill: 'var(--text)', fontSize: 11 }} />
               <Tooltip {...tt} />
               <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                 {bySite.map((_, i) => <Cell key={i} fill={CHART_PALETTE[i % CHART_PALETTE.length]} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </CollapsibleChart>
 
-        <div style={{ background: 'var(--panel)', borderRadius: 12, padding: 18, border: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>👤 Par traducteur (top 10)</div>
-          <ResponsiveContainer width="100%" height={150}>
+        <CollapsibleChart title={`👤 Par traducteur — top ${byTraducteur.length}`}>
+          <ResponsiveContainer width="100%" height={tradH}>
             <BarChart data={byTraducteur} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis type="number" tick={{ fill: 'var(--muted)', fontSize: 11 }} />
-              <YAxis type="category" dataKey="name" width={70} tick={{ fill: 'var(--muted)', fontSize: 11 }} />
+              <YAxis type="category" dataKey="name" width={100} tick={{ fill: 'var(--text)', fontSize: 11 }} />
               <Tooltip {...tt} />
               <Bar dataKey="value" fill="var(--accent)" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </CollapsibleChart>
       </div>
 
-      {/* Sync par traducteur */}
-      <div style={{ background: 'var(--panel)', borderRadius: 12, padding: 18, border: '1px solid var(--border)' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>🔄 Sync par traducteur</div>
-        <ResponsiveContainer width="100%" height={Math.max(160, syncByTrad.length * 32)}>
+      {/* Sync par traducteur — hauteur dynamique */}
+      <CollapsibleChart title={`🔄 Sync par traducteur (${syncByTrad.length})`}>
+        <ResponsiveContainer width="100%" height={syncH}>
           <BarChart data={syncByTrad} layout="vertical">
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis type="number" tick={{ fill: 'var(--muted)', fontSize: 11 }} />
-            <YAxis type="category" dataKey="name" width={80} tick={{ fill: 'var(--muted)', fontSize: 11 }} />
+            <YAxis type="category" dataKey="name" width={100} tick={{ fill: 'var(--text)', fontSize: 11 }} />
             <Tooltip {...tt} />
-            <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+            <Legend iconSize={10} wrapperStyle={{ fontSize: 11, color: 'var(--muted)' }} />
             <Bar dataKey="ok" name="À jour" stackId="a" fill="#22c55e" />
             <Bar dataKey="outdated" name="Non à jour" stackId="a" fill="#ef4444" />
-            <Bar dataKey="unknown" name="Inconnu" stackId="a" fill="#374151" radius={[0, 4, 4, 0]} />
+            <Bar dataKey="unknown" name="Inconnu" stackId="a" fill="#6b7280" radius={[0, 4, 4, 0]} />
           </BarChart>
         </ResponsiveContainer>
-      </div>
+      </CollapsibleChart>
 
     </div>
   );
