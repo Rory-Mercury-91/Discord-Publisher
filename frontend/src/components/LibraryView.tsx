@@ -1,14 +1,11 @@
 // frontend/src/components/LibraryView.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Bar, BarChart, CartesianGrid, Cell, Legend,
-  Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
-} from 'recharts';
 import { tauriAPI } from '../lib/tauri-api';
 import { useApp } from '../state/appContext';
+import StatsView from './StatsView';
 import { useToast } from './ToastProvider';
 
-/* ── Types ─────────────────────────────────────────────────────── */
+/* ── Types exportés (réutilisés dans StatsView) ─────────────── */
 export type JeuF95 = {
   id: number; site_id: number; site: string;
   nom_du_jeu: string; nom_url: string; version: string;
@@ -16,12 +13,15 @@ export type JeuF95 = {
   tags: string; type: string; traducteur: string;
   traducteur_url: string; relecture: string;
   type_de_traduction: string; ac: string; image: string;
-  type_maj: string; date_maj: string; _sync?: SyncStatus;
+  type_maj: string; date_maj: string;
+  published_post_id?: number | null;
+  synced_at?: string; created_at?: string; updated_at?: string;
+  _sync?: SyncStatus;
 };
-type SyncStatus = 'ok' | 'outdated' | 'unknown';
+export type SyncStatus = 'ok' | 'outdated' | 'unknown';
 type AppMode = 'translator' | 'user';
 
-/* ── Sync helpers ────────────────────────────────────────────────── */
+/* ── Sync helpers ─────────────────────────────────────────────── */
 function normalizeVersion(v: string) {
   return (v || '').trim().toLowerCase().replace(/\s+/g, '');
 }
@@ -33,8 +33,8 @@ function getSyncStatus(j: JeuF95): SyncStatus {
   return v === t ? 'ok' : 'outdated';
 }
 
-/* ── Palettes ────────────────────────────────────────────────────── */
-const SYNC_META: Record<SyncStatus, { border: string; text: string; label: string }> = {
+/* ── Palettes ─────────────────────────────────────────────────── */
+export const SYNC_META: Record<SyncStatus, { border: string; text: string; label: string }> = {
   ok: { border: '#22c55e', text: '#4ade80', label: '✓ À jour' },
   outdated: { border: '#ef4444', text: '#f87171', label: '⚠ Non à jour' },
   unknown: { border: '#78716c', text: '#a8a29e', label: '? Inconnu' },
@@ -49,49 +49,32 @@ const STATUS_MAP: Record<string, { bg: string; border: string; text: string }> =
   'PAUSE': { bg: '#422006', border: '#f59e0b', text: '#fbbf24' },
   'SUSPENDU': { bg: '#422006', border: '#f59e0b', text: '#fbbf24' },
 };
-function statusColor(s: string) {
+export function statusColor(s: string) {
   const k = (s || '').toUpperCase();
-  for (const [key, v] of Object.entries(STATUS_MAP))
-    if (k.includes(key)) return v;
+  for (const [key, v] of Object.entries(STATUS_MAP)) if (k.includes(key)) return v;
   return { bg: 'rgba(128,128,128,0.1)', border: '#6b7280', text: '#9ca3af' };
 }
-function tradTypeColor(t: string) {
+export function tradTypeColor(t: string) {
   const v = (t || '').toLowerCase();
   if (v.includes('manuelle') || v.includes('humaine')) return '#a78bfa';
   if (v.includes('semi')) return '#38bdf8';
   if (v.includes('auto')) return '#fb923c';
   return '#34d399';
 }
-const CHART_PALETTE = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#38bdf8', '#a78bfa', '#fb923c', '#34d399'];
 
-/* ── Section repliable ───────────────────────────────────────────── */
-function CollapsibleChart({ title, children, defaultOpen = true }:
-  { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div style={{ background: 'var(--panel)', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
-      <div onClick={() => setOpen(p => !p)} style={{
-        padding: '10px 16px', cursor: 'pointer',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        borderBottom: open ? '1px solid var(--border)' : 'none',
-        userSelect: 'none',
-      }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{title}</span>
-        <span style={{
-          fontSize: 11, color: 'var(--muted)',
-          display: 'inline-block', transition: 'transform 0.2s',
-          transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
-        }}>▼</span>
-      </div>
-      {open && <div style={{ padding: '16px' }}>{children}</div>}
-    </div>
-  );
+/* ── Badge type_maj ───────────────────────────────────────────── */
+const TYPE_MAJ_META: Record<string, { color: string; bg: string; icon: string }> = {
+  'AJOUT DE JEU': { color: '#4ade80', bg: 'rgba(34,197,94,0.12)', icon: '🆕' },
+  'MISE À JOUR': { color: '#60a5fa', bg: 'rgba(59,130,246,0.12)', icon: '🔄' },
+};
+function typeMajStyle(t: string) {
+  const k = (t || '').toUpperCase().trim();
+  return TYPE_MAJ_META[k] || { color: '#a8a29e', bg: 'rgba(128,128,128,0.12)', icon: '📌' };
 }
 
-/* ══════════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════
    COMPOSANT PRINCIPAL
-   Props : onModeChange → permet de basculer en mode traducteur après edit
-══════════════════════════════════════════════════════════════════════ */
+════════════════════════════════════════════════════════════════ */
 export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMode) => void }) {
   const { publishedPosts, loadPostForEditing } = useApp();
   const { showToast } = useToast();
@@ -111,14 +94,24 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [lastSync, setLastSync] = useState<Date | null>(null);
 
-  /* ── Edit : charge le post ET bascule en mode traducteur ── */
+  // ── Toggle tri par date ──────────────────────────────────────
+  const [dateSort, setDateSort] = useState(false);
+
+  const toggleDateSort = () => {
+    setDateSort(prev => {
+      if (!prev) { setSortKey('nom_du_jeu'); } // reset sort manuel
+      return !prev;
+    });
+  };
+
+  /* ── Edit ── */
   const handleEdit = useCallback((post: any) => {
     loadPostForEditing(post);
     onModeChange('translator');
     showToast('Post chargé — passage en mode Traducteur', 'info');
   }, [loadPostForEditing, onModeChange, showToast]);
 
-  /* ── Fetch (lit le cache Supabase via l'API) ─────────────────── */
+  /* ── Fetch ── */
   const fetchJeux = useCallback(async () => {
     setLoading(true); setError(null);
     try {
@@ -133,14 +126,12 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     } catch (e: any) {
       setError(e.message || 'Erreur réseau');
       showToast('❌ Impossible de charger la bibliothèque', 'error');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, [showToast]);
 
   useEffect(() => { fetchJeux(); }, [fetchJeux]);
 
-  /* ── Matching jeu ↔ published_post ─────────────────────────────── */
+  /* ── Matching jeu ↔ post ── */
   const postByGameLink = useMemo(() => {
     const map = new Map<string, typeof publishedPosts[0]>();
     for (const p of publishedPosts) {
@@ -157,15 +148,15 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
   const findPost = useCallback((j: JeuF95) => {
     const byId = postByGameLink.get(String(j.site_id));
     if (byId) return byId;
-    for (const [k, v] of postByGameLink)
-      if (k.includes(String(j.site_id))) return v;
+    for (const [k, v] of postByGameLink) if (k.includes(String(j.site_id))) return v;
     return null;
   }, [postByGameLink]);
 
-  /* ── Enrichissement + filtrage ──────────────────────────────────── */
+  /* ── Enrichissement ── */
   const jeuxEnriched = useMemo<JeuF95[]>(
     () => jeux.map(j => ({ ...j, _sync: getSyncStatus(j) })), [jeux]
   );
+
   const syncCounts = useMemo(() => {
     const c = { ok: 0, outdated: 0, unknown: 0 };
     jeuxEnriched.forEach(j => c[j._sync!]++);
@@ -177,48 +168,73 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
   const types = useMemo(() => [...new Set(jeux.map(j => j.type).filter(Boolean))].sort(), [jeux]);
   const tradTypes = useMemo(() => [...new Set(jeux.map(j => j.type_de_traduction).filter(Boolean))].sort(), [jeux]);
 
+  /* ── Filtrage + tri ── */
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return jeuxEnriched
-      .filter(j => {
-        if (q && !j.nom_du_jeu.toLowerCase().includes(q) && !(j.traducteur || '').toLowerCase().includes(q)) return false;
-        if (filterStatut && j.statut !== filterStatut) return false;
-        if (filterTrad && j.traducteur !== filterTrad) return false;
-        if (filterType && j.type !== filterType) return false;
-        if (filterTradType && j.type_de_traduction !== filterTradType) return false;
-        if (filterSync && j._sync !== filterSync) return false;
-        return true;
-      })
-      .sort((a, b) => {
-        const va = ((a as any)[sortKey] || '').toString().toLowerCase();
-        const vb = ((b as any)[sortKey] || '').toString().toLowerCase();
-        return va < vb ? -sortDir : va > vb ? sortDir : 0;
+    const list = jeuxEnriched.filter(j => {
+      if (q && !j.nom_du_jeu.toLowerCase().includes(q) && !(j.traducteur || '').toLowerCase().includes(q)) return false;
+      if (filterStatut && j.statut !== filterStatut) return false;
+      if (filterTrad && j.traducteur !== filterTrad) return false;
+      if (filterType && j.type !== filterType) return false;
+      if (filterTradType && j.type_de_traduction !== filterTradType) return false;
+      if (filterSync && j._sync !== filterSync) return false;
+      return true;
+    });
+
+    if (dateSort) {
+      // Tri par date_maj DESC, puis par type_maj (AJOUT avant MAJ à égalité)
+      return list.sort((a, b) => {
+        const da = a.date_maj || '';
+        const db = b.date_maj || '';
+        if (db !== da) return db.localeCompare(da); // plus récent en premier
+        // À égalité de date : AJOUT DE JEU avant MISE À JOUR
+        const ta = (a.type_maj || '').includes('AJOUT') ? 0 : 1;
+        const tb = (b.type_maj || '').includes('AJOUT') ? 0 : 1;
+        return ta - tb;
       });
-  }, [jeuxEnriched, search, filterStatut, filterTrad, filterType, filterTradType, filterSync, sortKey, sortDir]);
+    }
+
+    return list.sort((a, b) => {
+      const va = ((a as any)[sortKey] || '').toString().toLowerCase();
+      const vb = ((b as any)[sortKey] || '').toString().toLowerCase();
+      return va < vb ? -sortDir : va > vb ? sortDir : 0;
+    });
+  }, [jeuxEnriched, search, filterStatut, filterTrad, filterType, filterTradType, filterSync, sortKey, sortDir, dateSort]);
 
   const resetFilters = () => {
     setSearch(''); setFilterStatut(''); setFilterTrad('');
     setFilterType(''); setFilterTradType(''); setFilterSync('');
   };
+
   const toggleSort = (key: string) => {
+    setDateSort(false); // désactive le mode date si on clique sur une colonne
     if (sortKey === key) setSortDir(d => d === 1 ? -1 : 1);
     else { setSortKey(key); setSortDir(1); }
   };
 
-  // Style select/input adapté au thème clair et sombre
   const sel: React.CSSProperties = {
     height: 30, padding: '0 8px', borderRadius: 6,
     border: '1px solid var(--border)',
-    background: 'var(--bg)',          // ← était rgba(255,255,255,0.04), cassait le thème clair
-    color: 'var(--text)', fontSize: 12, cursor: 'pointer',
+    background: 'var(--bg)', color: 'var(--text)',
+    fontSize: 12, cursor: 'pointer',
   };
 
   /* ══════════ RENDER ══════════ */
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)' }}>
+    <div style={{
+      flex: 1,
+      minHeight: 0,          // ← AJOUT CRITIQUE
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+      background: 'var(--bg)',
+    }}>
 
       {/* ── Onglets ── */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', padding: '0 16px', flexShrink: 0 }}>
+      <div style={{
+        display: 'flex', borderBottom: '1px solid var(--border)',
+        padding: '0 16px', flexShrink: 0
+      }}> {/* flexShrink:0 = ne se réduit jamais */}
         {([['library', '📚 Bibliothèque'], ['stats', '📊 Statistiques']] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} style={{
             padding: '10px 18px', border: 'none',
@@ -233,17 +249,17 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
       {/* ══════════ BIBLIOTHÈQUE ══════════ */}
       {tab === 'library' && (
         <>
-          {/* ── Toolbar ── */}
+          {/* Toolbar */}
           <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', flexShrink: 0 }}>
 
             {/* Filtres sync */}
             <div style={{ display: 'flex', gap: 4 }}>
               {([
-                ['', 'Tous', 'var(--muted)', 'var(--border)'] as const,
-                ['ok', '✓ À jour', SYNC_META.ok.text, SYNC_META.ok.border] as const,
-                ['outdated', '⚠ Non à jour', SYNC_META.outdated.text, SYNC_META.outdated.border] as const,
-                ['unknown', '? Inconnu', SYNC_META.unknown.text, SYNC_META.unknown.border] as const,
-              ]).map(([val, label, col, border]) => (
+                ['', 'Tous', 'var(--muted)', 'var(--border)'],
+                ['ok', '✓ À jour', SYNC_META.ok.text, SYNC_META.ok.border],
+                ['outdated', '⚠ Non à jour', SYNC_META.outdated.text, SYNC_META.outdated.border],
+                ['unknown', '? Inconnu', SYNC_META.unknown.text, SYNC_META.unknown.border],
+              ] as [string, string, string, string][]).map(([val, label, col, border]) => (
                 <button key={val} onClick={() => setFilterSync(val as any)} style={{
                   padding: '3px 10px', borderRadius: 20,
                   border: `1px solid ${filterSync === val ? border : 'var(--border)'}`,
@@ -263,6 +279,21 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
 
             <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
 
+            {/* ── Toggle tri par date ── */}
+            <button
+              onClick={toggleDateSort}
+              title={dateSort ? 'Tri par date actif — cliquer pour revenir A→Z' : 'Trier par date de MAJ (récent en premier)'}
+              style={{
+                padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                border: `1px solid ${dateSort ? '#f59e0b' : 'var(--border)'}`,
+                background: dateSort ? 'rgba(245,158,11,0.12)' : 'transparent',
+                color: dateSort ? '#fbbf24' : 'var(--muted)',
+                display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
+              }}
+            >
+              📅 {dateSort ? 'Date ↓' : 'Date'}
+            </button>
+
             <span style={{ fontWeight: 700, fontSize: 14 }}>📚</span>
             {jeux.length > 0 && (
               <span style={{ fontSize: 11, color: 'var(--muted)', background: 'rgba(128,128,128,0.1)', padding: '2px 8px', borderRadius: 10 }}>
@@ -270,7 +301,6 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
               </span>
             )}
 
-            {/* Recherche catalogue — distincte de la recherche AppHeader (publications Discord) */}
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Rechercher dans le catalogue (jeu, traducteur)…"
               style={{ ...sel, flex: 1, minWidth: 160, padding: '0 10px' }} />
@@ -316,11 +346,23 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
           {lastSync && (
             <div style={{ padding: '3px 16px', fontSize: 10, color: 'var(--muted)', borderBottom: '1px solid rgba(128,128,128,0.08)' }}>
               Cache local : {lastSync.toLocaleTimeString('fr-FR')} — mis à jour automatiquement toutes les 2h par le bot
+              {dateSort && (
+                <span style={{ marginLeft: 12, color: '#fbbf24' }}>
+                  📅 Tri actif : date de MAJ décroissante
+                </span>
+              )}
             </div>
           )}
 
-          {/* ── Contenu ── */}
-          <div className="styled-scrollbar" style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+          {/* Contenu */}
+          <div className="styled-scrollbar"
+            style={{
+              flex: 1,
+              minHeight: 0,      // ← AUSSI ICI pour la vue bibliothèque
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              padding: 16,
+            }}>
             {loading && (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200, color: 'var(--muted)', gap: 12 }}>
                 <span style={{ fontSize: 24 }}>⏳</span> Chargement de la bibliothèque…
@@ -340,29 +382,28 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
               </div>
             )}
 
-            {/* Vue grille */}
             {!loading && !error && view === 'grid' && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
-                {filtered.map(j => <GameCard key={j.id} jeu={j} post={findPost(j)} onEdit={handleEdit} />)}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 14 }}>
+                {filtered.map(j => <GameCard key={j.id} jeu={j} post={findPost(j)} onEdit={handleEdit} showDateBadge={dateSort} />)}
               </div>
             )}
 
-            {/* Vue liste */}
             {!loading && !error && view === 'list' && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
                     {([
-                      ['nom_du_jeu', 'Jeu'], ['version', 'Version jeu'], ['trad_ver', 'Version trad.'],
+                      ['nom_du_jeu', 'Jeu'], ['version', 'Ver. jeu'], ['trad_ver', 'Ver. trad.'],
                       ['_sync', 'Sync'], ['statut', 'Statut'], ['type_de_traduction', 'Type trad.'],
-                      ['traducteur', 'Traducteur'], ['date_maj', 'Date MAJ'], [null, 'Actions'],
+                      ['traducteur', 'Traducteur'], ['date_maj', 'Date MAJ'], ['type_maj', 'Type MAJ'], [null, 'Actions'],
                     ] as [string | null, string][]).map(([k, h]) => (
                       <th key={h} onClick={k ? () => toggleSort(k) : undefined} style={{
                         padding: '8px 10px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap',
                         cursor: k ? 'pointer' : 'default', userSelect: 'none', fontSize: 13,
-                        color: 'var(--text)',
+                        color: (k === sortKey && !dateSort) ? 'var(--accent)' : 'var(--text)',
                       }}>
-                        {h}{k && sortKey === k ? (sortDir > 0 ? ' ↑' : ' ↓') : ''}
+                        {h}{k && sortKey === k && !dateSort ? (sortDir > 0 ? ' ↑' : ' ↓') : ''}
+                        {k === 'date_maj' && dateSort ? ' ↓' : ''}
                       </th>
                     ))}
                   </tr>
@@ -376,19 +417,20 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
         </>
       )}
 
-      {/* ══════════ STATISTIQUES ══════════ */}
       {tab === 'stats' && <StatsView jeux={jeuxEnriched} />}
     </div>
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════
    GAME CARD
-══════════════════════════════════════════════════════════════════════ */
-function GameCard({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: any) => void }) {
+════════════════════════════════════════════════════════════════ */
+function GameCard({ jeu, post, onEdit, showDateBadge }:
+  { jeu: JeuF95; post: any; onEdit: (p: any) => void; showDateBadge: boolean }) {
   const sc = statusColor(jeu.statut);
   const sync = SYNC_META[jeu._sync!];
   const [imgErr, setImgErr] = useState(false);
+  const tmStyle = typeMajStyle(jeu.type_maj);
 
   return (
     <div
@@ -410,6 +452,12 @@ function GameCard({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: a
             ✓ Publié
           </div>
         )}
+        {/* Badge type_maj (visible en mode date uniquement) */}
+        {showDateBadge && jeu.type_maj && (
+          <div style={{ position: 'absolute', top: 6, left: 6, padding: '2px 7px', borderRadius: 10, background: tmStyle.bg, border: `1px solid ${tmStyle.color}55`, fontSize: 10, fontWeight: 700, color: tmStyle.color }}>
+            {tmStyle.icon} {jeu.type_maj}
+          </div>
+        )}
       </div>
 
       <div style={{ padding: '10px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -427,13 +475,13 @@ function GameCard({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: a
             </span>
           )}
         </div>
-        {jeu.traducteur && (
-          <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-            👤 <span style={{ color: 'var(--text)' }}>{jeu.traducteur}</span>
+        {jeu.traducteur && <div style={{ fontSize: 11, color: 'var(--muted)' }}>👤 <span style={{ color: 'var(--text)' }}>{jeu.traducteur}</span></div>}
+        {jeu.type_de_traduction && <div style={{ fontSize: 10, color: tradTypeColor(jeu.type_de_traduction) }}>⚙ {jeu.type_de_traduction}</div>}
+        {/* Date MAJ toujours visible, mise en avant quand dateSort actif */}
+        {jeu.date_maj && (
+          <div style={{ fontSize: 10, color: showDateBadge ? '#fbbf24' : 'var(--muted)' }}>
+            📅 {jeu.date_maj}
           </div>
-        )}
-        {jeu.type_de_traduction && (
-          <div style={{ fontSize: 10, color: tradTypeColor(jeu.type_de_traduction) }}>⚙ {jeu.type_de_traduction}</div>
         )}
       </div>
 
@@ -451,7 +499,7 @@ function GameCard({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: a
           </button>
         )}
         {post && (
-          <button onClick={() => onEdit(post)} title="Modifier le post — ouvre le mode Traducteur"
+          <button onClick={() => onEdit(post)} title="Modifier le post"
             style={{ height: 28, width: 28, borderRadius: 5, border: '1px solid rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.08)', color: '#4ade80', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             ✏️
           </button>
@@ -476,23 +524,21 @@ function VersionBadge({ game, trad, sync }: { game: string; trad: string; sync: 
   );
 }
 
-/* ══════════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════
    GAME ROW
-══════════════════════════════════════════════════════════════════════ */
+════════════════════════════════════════════════════════════════ */
 function GameRow({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: any) => void }) {
   const sc = statusColor(jeu.statut);
   const sync = SYNC_META[jeu._sync!];
   const tradCol = jeu._sync === 'ok' ? '#4ade80' : jeu._sync === 'outdated' ? '#f87171' : 'var(--muted)';
+  const tmStyle = typeMajStyle(jeu.type_maj);
   const td = (extra?: React.CSSProperties): React.CSSProperties => ({
     padding: '9px 10px', borderBottom: '1px solid var(--border)',
     verticalAlign: 'middle', fontSize: 14, color: 'var(--text)', ...extra,
   });
 
   return (
-    <tr
-      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(128,128,128,0.05)')}
-      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-    >
+    <tr onMouseEnter={e => (e.currentTarget.style.background = 'rgba(128,128,128,0.05)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
       <td style={td({ maxWidth: 220 })}>
         <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{jeu.nom_du_jeu}</div>
         {jeu.type && <div style={{ fontSize: 10, color: 'var(--muted)' }}>{jeu.type}</div>}
@@ -513,6 +559,13 @@ function GameRow({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: an
       <td style={td({ fontSize: 11 })}>{jeu.traducteur || '—'}</td>
       <td style={td({ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' })}>{jeu.date_maj || '—'}</td>
       <td style={td()}>
+        {jeu.type_maj ? (
+          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: tmStyle.bg, border: `1px solid ${tmStyle.color}55`, color: tmStyle.color, fontWeight: 600, whiteSpace: 'nowrap' }}>
+            {tmStyle.icon} {jeu.type_maj}
+          </span>
+        ) : '—'}
+      </td>
+      <td style={td()}>
         <div style={{ display: 'flex', gap: 4 }}>
           {jeu.nom_url && (
             <button onClick={() => tauriAPI.openUrl(jeu.nom_url)} title="Jeu"
@@ -531,172 +584,5 @@ function GameRow({ jeu, post, onEdit }: { jeu: JeuF95; post: any; onEdit: (p: an
         </div>
       </td>
     </tr>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════════════
-   STATS VIEW — sections repliables + hauteurs dynamiques
-══════════════════════════════════════════════════════════════════════ */
-function StatsView({ jeux }: { jeux: JeuF95[] }) {
-  const total = jeux.length;
-
-  const kpis = useMemo(() => {
-    const c = { ok: 0, outdated: 0, unknown: 0 };
-    jeux.forEach(j => c[j._sync!]++);
-    return c;
-  }, [jeux]);
-
-  const byStatut = useMemo(() => {
-    const m: Record<string, number> = {};
-    jeux.forEach(j => { const k = j.statut || 'Inconnu'; m[k] = (m[k] || 0) + 1; });
-    return Object.entries(m).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  }, [jeux]);
-
-  const byTradType = useMemo(() => {
-    const m: Record<string, number> = {};
-    jeux.forEach(j => { const k = j.type_de_traduction || 'Non précisé'; m[k] = (m[k] || 0) + 1; });
-    return Object.entries(m).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  }, [jeux]);
-
-  const bySite = useMemo(() => {
-    const m: Record<string, number> = {};
-    jeux.forEach(j => { const k = j.site || 'Autre'; m[k] = (m[k] || 0) + 1; });
-    return Object.entries(m).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  }, [jeux]);
-
-  const byTraducteur = useMemo(() => {
-    const m: Record<string, number> = {};
-    jeux.forEach(j => { if (j.traducteur) m[j.traducteur] = (m[j.traducteur] || 0) + 1; });
-    return Object.entries(m).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10);
-  }, [jeux]);
-
-  const syncByTrad = useMemo(() => {
-    const m: Record<string, { name: string; ok: number; outdated: number; unknown: number }> = {};
-    jeux.forEach(j => {
-      if (!j.traducteur) return;
-      if (!m[j.traducteur]) m[j.traducteur] = { name: j.traducteur, ok: 0, outdated: 0, unknown: 0 };
-      m[j.traducteur][j._sync!]++;
-    });
-    return Object.values(m).sort((a, b) => (b.ok + b.outdated + b.unknown) - (a.ok + a.outdated + a.unknown));
-  }, [jeux]);
-
-  const pct = (n: number) => (total ? Math.round(n / total * 100) : 0);
-  const tt = { contentStyle: { background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: 12 } };
-
-  // Hauteurs dynamiques — chaque entrée ~30px, min garanti
-  const siteH = Math.max(120, bySite.length * 30);
-  const tradH = Math.max(220, byTraducteur.length * 32);
-  const syncH = Math.max(200, syncByTrad.length * 32);
-
-  return (
-    <div className="styled-scrollbar" style={{ flex: 1, overflow: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-      {/* KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 12 }}>
-        {[
-          { label: 'Total', value: total, color: 'var(--accent)', icon: '📚', sub: null },
-          { label: 'À jour', value: kpis.ok, color: '#22c55e', icon: '✅', sub: `${pct(kpis.ok)}%` },
-          { label: 'Non à jour', value: kpis.outdated, color: '#ef4444', icon: '⚠️', sub: `${pct(kpis.outdated)}%` },
-          { label: 'Inconnu', value: kpis.unknown, color: '#6b7280', icon: '❓', sub: `${pct(kpis.unknown)}%` },
-        ].map(k => (
-          <div key={k.label} style={{ background: 'var(--panel)', borderRadius: 12, padding: 16, border: `1px solid ${k.color}44`, textAlign: 'center' }}>
-            <div style={{ fontSize: 22 }}>{k.icon}</div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: k.color }}>{k.value}</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{k.label}</div>
-            {k.sub && <div style={{ fontSize: 11, color: k.color, marginTop: 2 }}>{k.sub}</div>}
-          </div>
-        ))}
-      </div>
-
-      {/* Barre sync */}
-      <CollapsibleChart title="📊 Progression sync globale">
-        <div style={{ display: 'flex', height: 18, borderRadius: 9, overflow: 'hidden', gap: 1 }}>
-          {kpis.ok > 0 && <div style={{ flex: kpis.ok, background: '#22c55e' }} />}
-          {kpis.outdated > 0 && <div style={{ flex: kpis.outdated, background: '#ef4444' }} />}
-          {kpis.unknown > 0 && <div style={{ flex: kpis.unknown, background: 'var(--border)' }} />}
-        </div>
-        <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 11 }}>
-          {([['#22c55e', 'À jour', kpis.ok], ['#ef4444', 'Non à jour', kpis.outdated], ['#6b7280', 'Inconnu', kpis.unknown]] as [string, string, number][]).map(([c, l, n]) => (
-            <span key={l} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: c, display: 'inline-block' }} />
-              <span style={{ color: 'var(--muted)' }}>{l}: <strong style={{ color: c }}>{n}</strong></span>
-            </span>
-          ))}
-        </div>
-      </CollapsibleChart>
-
-      {/* Pie charts */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <CollapsibleChart title="📁 Par statut">
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={byStatut} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75}>
-                {byStatut.map((_, i) => <Cell key={i} fill={CHART_PALETTE[i % CHART_PALETTE.length]} />)}
-              </Pie>
-              <Tooltip {...tt} />
-              <Legend iconSize={10} wrapperStyle={{ fontSize: 11, color: 'var(--muted)' }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </CollapsibleChart>
-
-        <CollapsibleChart title="⚙ Par type de traduction">
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={byTradType} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75}>
-                {byTradType.map((_, i) => <Cell key={i} fill={CHART_PALETTE[i % CHART_PALETTE.length]} />)}
-              </Pie>
-              <Tooltip {...tt} />
-              <Legend iconSize={10} wrapperStyle={{ fontSize: 11, color: 'var(--muted)' }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </CollapsibleChart>
-      </div>
-
-      {/* Bar charts — hauteur dynamique */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <CollapsibleChart title={`🌐 Par site (${bySite.length})`}>
-          <ResponsiveContainer width="100%" height={siteH}>
-            <BarChart data={bySite} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis type="number" tick={{ fill: 'var(--muted)', fontSize: 11 }} />
-              <YAxis type="category" dataKey="name" width={100} tick={{ fill: 'var(--text)', fontSize: 11 }} />
-              <Tooltip {...tt} />
-              <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                {bySite.map((_, i) => <Cell key={i} fill={CHART_PALETTE[i % CHART_PALETTE.length]} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </CollapsibleChart>
-
-        <CollapsibleChart title={`👤 Par traducteur — top ${byTraducteur.length}`}>
-          <ResponsiveContainer width="100%" height={tradH}>
-            <BarChart data={byTraducteur} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis type="number" tick={{ fill: 'var(--muted)', fontSize: 11 }} />
-              <YAxis type="category" dataKey="name" width={100} tick={{ fill: 'var(--text)', fontSize: 11 }} />
-              <Tooltip {...tt} />
-              <Bar dataKey="value" fill="var(--accent)" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </CollapsibleChart>
-      </div>
-
-      {/* Sync par traducteur — hauteur dynamique */}
-      <CollapsibleChart title={`🔄 Sync par traducteur (${syncByTrad.length})`}>
-        <ResponsiveContainer width="100%" height={syncH}>
-          <BarChart data={syncByTrad} layout="vertical">
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis type="number" tick={{ fill: 'var(--muted)', fontSize: 11 }} />
-            <YAxis type="category" dataKey="name" width={100} tick={{ fill: 'var(--text)', fontSize: 11 }} />
-            <Tooltip {...tt} />
-            <Legend iconSize={10} wrapperStyle={{ fontSize: 11, color: 'var(--muted)' }} />
-            <Bar dataKey="ok" name="À jour" stackId="a" fill="#22c55e" />
-            <Bar dataKey="outdated" name="Non à jour" stackId="a" fill="#ef4444" />
-            <Bar dataKey="unknown" name="Inconnu" stackId="a" fill="#6b7280" radius={[0, 4, 4, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </CollapsibleChart>
-
-    </div>
   );
 }
