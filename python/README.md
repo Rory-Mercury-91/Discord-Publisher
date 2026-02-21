@@ -1,16 +1,46 @@
-﻿# ðŸš€ Guide de Maintenance : Bot Discord & API (Oracle Cloud)
+﻿# 🚀 Guide de Maintenance : Bot Discord & API (Oracle Cloud)
 
-Ce guide regroupe toutes les informations pour maintenir, mettre Ã  jour et dÃ©panner tes bots Discord hÃ©bergÃ©s sur ton instance Ubuntu Oracle Cloud.
+Ce guide regroupe toutes les informations pour maintenir, mettre à jour et dépanner tes bots Discord hébergés sur ton instance Ubuntu Oracle Cloud.
 
 ---
 
-## ðŸ“‚ Scripts PowerShell (Outils d'Administration)
+## 📂 Structure du Projet sur le Serveur
 
-Des scripts PowerShell sont disponibles dans le dossier **`outils_serveur/`** pour te faciliter la gestion du serveur sans taper de commandes SSH manuellement.
+- **Répertoire :** `/home/ubuntu/mon_projet/`
+- **Environnement virtuel Python :** `/home/ubuntu/mon_projet/venv/`
+- **Scripts Python :** `/home/ubuntu/mon_projet/scripts/`
+- **Fichiers sensibles (ignorés par Git) :** `_ignored/` — contient `.env`, clés SSH, etc.
+- **Logs :** `logs/bot.log` (rotation 5 Mo, 3 backups) — accessible via l'app ou `/api/logs`
 
-### ðŸŽ¯ Lancer le Menu Principal
+Le fichier `.env` est chargé depuis `_ignored/.env` en priorité, sinon depuis la racine `python/`.
 
-Lance le menu interactif qui donne accÃ¨s Ã  toutes les fonctions :
+### 🐍 Modules Python (`scripts/`)
+
+| Fichier | Rôle |
+|---------|------|
+| `main_bots.py` | **Point d'entrée** — orchestre le démarrage de tous les bots et du serveur web |
+| `bot_frelon.py` | **Bot Frelon** — rappels de publication F95fr sur création/MAJ de thread |
+| `publisher_bot.py` | **Bot Publisher** — instanciation du bot + démarrage des tâches planifiées |
+| `bot_lifecycle.py` | Gestion retry/backoff exponentiel des bots Discord |
+| `config.py` | Configuration centrale (variables d'environnement, instance unique `config`) |
+| `content_parser.py` | Parsing et normalisation du contenu texte des posts Discord (regex pures) |
+| `discord_api.py` | Wrappers REST bas niveau vers l'API Discord (GET, POST, PATCH, DELETE) |
+| `forum_manager.py` | Logique métier : création, mise à jour, suppression et re-routage de posts |
+| `http_handlers.py` | Handlers HTTP aiohttp + `make_app()` — point d'entrée REST |
+| `announcements.py` | Envoi des annonces Discord (nouvelle publication, MAJ, suppression) |
+| `api_key_auth.py` | Validation et cache des clés API individuelles (Supabase + TTL mémoire) |
+| `supabase_client.py` | Client Supabase + toutes les opérations CRUD |
+| `scheduled_tasks.py` | Tâches planifiées (contrôle versions, nettoyage messages, sync jeux) |
+| `slash_commands.py` | Commandes slash Discord (`/generer-cle`, `/check_versions`, `/cleanup_empty_messages`, `/check_help`) |
+| `version_checker.py` | Contrôle des versions F95 via l'API checker.php + système anti-doublon |
+
+---
+
+## 📌 Scripts PowerShell (Outils d'Administration)
+
+Des scripts PowerShell sont disponibles dans le dossier **`outils_serveur/`** pour gérer le serveur sans SSH manuel.
+
+### 🎯 Lancer le Menu Principal
 
 ```powershell
 .\outils_serveur\0_SSH_Menu.ps1
@@ -18,95 +48,60 @@ Lance le menu interactif qui donne accÃ¨s Ã  toutes les fonctions :
 
 **Options disponibles :**
 - **[1]** Terminal SSH normal
-- **[2]** Voir les logs en temps rÃ©el
+- **[2]** Voir les logs en temps réel
 - **[3]** Statut du service discord-bots
-- **[4]** RedÃ©marrer le service
+- **[4]** Redémarrer le service
 - **[5]** Tester l'API Publisher
-- **[6]** VÃ©rifier le pare-feu (iptables)
+- **[6]** Vérifier le pare-feu (iptables)
 - **[7]** Corriger le pare-feu (port 8080)
-- **[8]** Nettoyer les rÃ¨gles iptables dupliquÃ©es- **[12]** Bloquer une IP malveillante
+- **[8]** Nettoyer les règles iptables dupliquées
+- **[12]** Bloquer une IP malveillante
 - **[13]** Lister les IP bloquées
-- **[14]** Débloquer une IP- **[15]** Analyser les logs (compter les IP)
-- **[16]** Bloquer plusieurs IP d'un coup### ðŸ”— CrÃ©er un Raccourci Bureau (RecommandÃ©)
+- **[14]** Débloquer une IP
+- **[15]** Analyser les logs (compter les IP)
+- **[16]** Bloquer plusieurs IP d'un coup
 
-Pour accÃ©der rapidement au menu, crÃ©e un raccourci sur le bureau :
+### 🔗 Créer un Raccourci Bureau (Recommandé)
 
-1. **Clic droit sur le Bureau** â†’ Nouveau â†’ Raccourci
+1. **Clic droit sur le Bureau** → Nouveau → Raccourci
 2. **Cible :**
    ```
    powershell.exe -ExecutionPolicy Bypass -File "D:\Projet GitHub\Discord Publisher\outils_serveur\0_SSH_Menu.ps1"
    ```
-3. **Nom :** `âš™ï¸ Gestion Serveur Ubuntu`
-4. **IcÃ´ne :** Personnalise si tu veux (PropriÃ©tÃ©s â†’ Changer d'icÃ´ne)
-
-Double-clic sur ce raccourci pour ouvrir le menu instantanÃ©ment ! ðŸŽ¯
+3. **Nom :** `⚙️ Gestion Serveur Ubuntu`
 
 ---
 
-## ðŸ”Œ Connexion SSH Manuelle (Optionnel)
-
-Si tu prÃ©fÃ¨res te connecter manuellement sans les scripts :
+## 📌 Connexion SSH Manuelle (Optionnel)
 
 ```powershell
 ssh -i "D:\Projet GitHub\Discord Publisher\python\_ignored\ssh-key-2026-02-07.key" ubuntu@138.2.182.125
 ```
 
-**Raccourci** (si ta clÃ© SSH est configurÃ©e dans `~/.ssh/config`) :
-```powershell
-ssh ubuntu@138.2.182.125
-```
+---
 
-**Note :** Les scripts PowerShell font Ã§a automatiquement et bien plus encore !
+## 🛠️ Procédure de Mise à Jour du Code
+
+### 1. 📤 Transférer les Fichiers avec WinSCP
+
+**WinSCP** est l'outil recommandé : [https://winscp.net/](https://winscp.net/)
+
+**Configuration :**
+- **Protocole :** SFTP | **Hôte :** `138.2.182.125` | **Port :** `22` | **Utilisateur :** `ubuntu`
+- **Clé privée :** Avancé → SSH → Authentification → sélectionne ta clé `.ppk`
+
+**Fichiers à transférer :**
+- Scripts Python → `/home/ubuntu/mon_projet/scripts/`
+- `.env` mis à jour → `/home/ubuntu/mon_projet/_ignored/`
+- `requirements.txt` → `/home/ubuntu/mon_projet/`
+
+⚠️ **IMPORTANT :** Ne jamais écraser le dossier `venv/` sur le serveur !
 
 ---
 
-## ðŸ“ Structure du Projet sur le Serveur
+### 2. 🐍 Installer les Nouvelles Dépendances (Si besoin)
 
-- **RÃ©pertoire :** `/home/ubuntu/mon_projet/`
-- **Environnement virtuel Python :** `/home/ubuntu/mon_projet/venv/`
-- **Scripts Python :** `scripts/main_bots.py`, `scripts/publisher_api.py`, `scripts/bot_frelon.py`
-- **Fichiers sensibles (ignorÃ©s par Git) :** `_ignored/` â€” contient `.env`, clÃ©s SSH, etc.
-- **Logs :** `logs/bot.log` (rotation 5 Mo, 3 backups) â€” accessible via l'app (Voir les logs) ou `/api/logs`
-
-Le fichier `.env` est chargÃ© depuis `_ignored/.env` en prioritÃ©, sinon depuis la racine `python/`.
-
----
-
-## ðŸ› ï¸ ProcÃ©dure de Mise Ã  Jour du Code
-
-### 1. ðŸ“¤ TransfÃ©rer les Fichiers avec WinSCP
-
-**WinSCP** est l'outil recommandÃ© pour transfÃ©rer tes fichiers modifiÃ©s sur le serveur.
-
-#### Installation de WinSCP
-1. TÃ©lÃ©charge **WinSCP** : [https://winscp.net/](https://winscp.net/)
-2. Installe-le sur ton PC Windows
-
-#### Configuration de la Connexion
-1. **Ouvre WinSCP**
-2. **Protocole :** SFTP
-3. **HÃ´te :** `138.2.182.125`
-4. **Port :** `22`
-5. **Utilisateur :** `ubuntu`
-6. **ClÃ© privÃ©e :** Clique sur "AvancÃ©" â†’ SSH â†’ Authentification â†’ Parcourir
-   - SÃ©lectionne ta clÃ© `.ppk` (si tu n'en as pas, convertis ton fichier `.key` avec PuTTYgen)
-7. **Enregistre** la session pour ne pas tout refaire Ã  chaque fois !
-
-#### TransfÃ©rer les Fichiers ModifiÃ©s
-1. **Ã€ gauche :** Ton PC (navigue vers `D:\Projet GitHub\Discord Publisher\`)
-2. **Ã€ droite :** Le serveur (navigue vers `/home/ubuntu/mon_projet/`)
-3. **Glisse-dÃ©pose** les fichiers modifiÃ©s :
-   - Scripts Python â†’ `/home/ubuntu/mon_projet/scripts/`
-   - `.env` mis Ã  jour â†’ `/home/ubuntu/mon_projet/_ignored/`
-   - `requirements.txt` â†’ `/home/ubuntu/mon_projet/`
-
-âš ï¸ **IMPORTANT :** Ne jamais Ã©craser le dossier `venv/` sur le serveur !
-
----
-
-### 2. ðŸ Installer les Nouvelles DÃ©pendances (Si besoin)
-
-Si tu as modifiÃ© `requirements.txt`, connecte-toi au serveur et installe les nouvelles dÃ©pendances :
+Si tu as modifié `requirements.txt` :
 
 ```bash
 cd ~/mon_projet
@@ -114,19 +109,11 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Tu peux faire Ã§a en lanÃ§ant le script **`SSH_Terminal.ps1`** depuis le menu !
-
 ---
 
-### 3. ðŸ”„ RedÃ©marrer le Service
+### 3. 🔄 Redémarrer le Service
 
-AprÃ¨s avoir transfÃ©rÃ© les fichiers, redÃ©marre le service pour appliquer les changements :
-
-**Via le Menu PowerShell :**
-```powershell
-.\outils_serveur\0_SSH_Menu.ps1
-â†’ Choisis [4] RedÃ©marrer le service
-```
+**Via le Menu PowerShell :** option **[4]**
 
 **En SSH manuel :**
 ```bash
@@ -135,70 +122,111 @@ sudo systemctl restart discord-bots
 
 ---
 
-### 4. âœ… VÃ©rifier que Tout Fonctionne
+### 4. ✅ Vérifier que Tout Fonctionne
 
-**Via le Menu PowerShell :**
-```powershell
-.\outils_serveur\0_SSH_Menu.ps1
-â†’ Choisis [2] Voir les logs en temps rÃ©el
+**Via le Menu PowerShell :** option **[2]** Voir les logs en temps réel
+
+Les logs doivent montrer le démarrage des deux bots + le serveur REST :
 ```
-
-Les logs doivent montrer que les bots se connectent et dÃ©marrent correctement.
+[orchestrator] TOUS LES BOTS SONT OPERATIONNELS
+[orchestrator]   Bot Frelon   : ...
+[orchestrator]   PublisherBot : ...
+[orchestrator]   API REST     : http://0.0.0.0:8080
+```
 
 ---
 
-## âš™ï¸ DÃ©marrage Automatique (systemd)
+## ⚙️ Démarrage Automatique (systemd)
 
-Le service `discord-bots` est configurÃ© pour dÃ©marrer automatiquement au boot du serveur et redÃ©marrer en cas de crash.
-
-### Commandes Utiles
+Le service `discord-bots` démarre automatiquement au boot et redémarre en cas de crash.
 
 | Action | Commande SSH |
 |--------|-------------|
-| DÃ©marrer les bots | `sudo systemctl start discord-bots` |
-| ArrÃªter les bots | `sudo systemctl stop discord-bots` |
-| RedÃ©marrer les bots | `sudo systemctl restart discord-bots` |
+| Démarrer les bots | `sudo systemctl start discord-bots` |
+| Arrêter les bots | `sudo systemctl stop discord-bots` |
+| Redémarrer les bots | `sudo systemctl restart discord-bots` |
 | Voir le statut | `sudo systemctl status discord-bots` |
 | Voir les logs en direct | `sudo journalctl -u discord-bots -f` |
 
-ðŸ’¡ **Astuce :** Utilise plutÃ´t le menu PowerShell pour faire tout Ã§a en un clic !
-
 ---
 
-## ðŸŒ Configuration RÃ©seau & API
+## 🌐 Configuration Réseau & API
 
-### URL de l'API
+**URL de l'API :** `http://138.2.182.125:8080`
 
-L'adresse actuelle de ton API : **`http://138.2.182.125:8080`**
+### Routes disponibles
 
-- **Protocole :** HTTP (pas de HTTPS pour le moment)
-- **Port :** 8080 (configurÃ© dans `main_bots.py`)
+| Méthode | Route | Description |
+|---------|-------|-------------|
+| GET | `/` ou `/api/status` | Health check + état rate limit Discord |
+| GET | `/api/publisher/health` | Alias health check |
+| POST | `/api/configure` | Mise à jour config en mémoire |
+| POST | `/api/forum-post` | Créer un post dans le forum |
+| POST | `/api/forum-post/update` | Mettre à jour un post (avec re-routage auto) |
+| POST | `/api/forum-post/delete` | Supprimer un post + annonce |
+| GET | `/api/history` | Historique des posts (Supabase) |
+| GET | `/api/jeux` | Liste des jeux (cache Supabase → fallback API f95fr) |
+| POST | `/api/account/delete` | Suppression de compte utilisateur |
 
 ### Rappel des Ports Oracle
 
-Si tu dois ouvrir un nouveau port ou si la connexion Ã©choue :
-
-1. **Console Oracle Cloud :** RÃ©seau â†’ VCN â†’ Security Lists â†’ Ingress Rules (ajouter le port TCP)
-2. **Pare-feu Linux (iptables) :** Utilise le script **`SSH_FixFirewall.ps1`** depuis le menu !
+Si tu dois ouvrir un nouveau port :
+1. **Console Oracle Cloud :** Réseau → VCN → Security Lists → Ingress Rules
+2. **Pare-feu Linux :** Menu PowerShell → [7] Corriger le pare-feu
 
 ---
+
+## 🔑 Système de Clés API Individuelles
+
+Chaque traducteur possède sa propre clé API générée via la commande slash `/generer-cle`.
+
+**Fonctionnement :**
+- La clé brute est générée en `tr_<32 hex chars>` et envoyée en MP Discord
+- Seul le hash SHA-256 est stocké dans Supabase (table `api_keys`)
+- Un cache mémoire TTL (5 min par défaut) évite les allers-retours Supabase
+- L'ancienne clé est automatiquement révoquée à chaque renouvellement
+
+**Clé legacy :** L'ancienne clé partagée (`PUBLISHER_API_KEY` dans `.env`) est encore supportée mais dépréciée — les utilisateurs reçoivent un avertissement pour migrer.
+
+---
+
+## 🤖 Commandes Slash Discord
+
+| Commande | Description | Accès |
+|----------|-------------|-------|
+| `/generer-cle` | Génère ou renouvelle la clé API personnelle | Rôle Traducteur |
+| `/check_versions` | Lance manuellement le contrôle des versions F95 | Rôle Traducteur |
+| `/cleanup_empty_messages` | Supprime les messages vides dans les threads | Rôle Traducteur |
+| `/check_help` | Affiche l'aide des commandes disponibles | Rôle Traducteur |
+
+---
+
+## 📅 Tâches Planifiées Automatiques
+
+| Tâche | Fréquence | Heure (Europe/Paris) |
+|-------|-----------|----------------------|
+| Contrôle versions F95 | Quotidien | Configurable via `VERSION_CHECK_HOUR:VERSION_CHECK_MINUTE` |
+| Nettoyage messages vides | Quotidien | Configurable via `CLEANUP_EMPTY_MESSAGES_HOUR:CLEANUP_EMPTY_MESSAGES_MINUTE` |
+| Synchronisation jeux f95fr | Toutes les 2h | À `:30` (ex: 00:30, 02:30, 04:30…) |
+
+---
+
 ## 🛡️ Sécurité : Blocage d'IP Malveillantes
 
 ### Détecter les Attaques
 
-Surveille tes logs pour repérer des tentatives d'intrusion :
-- **Path traversal :** `GET /../../../.env`
-- **Scan de ports** répétés
-- **Tentatives d'accès** à des fichiers sensibles (`.env`, `.aws/credentials`, etc.)
-
-### Bloquer une IP
-
-**Via le Menu PowerShell :**
-```powershell
-.\outils_serveur\0_SSH_Menu.ps1 → [12] Bloquer une IP malveillante
+Les logs incluent désormais l'UUID utilisateur pour distinguer trafic légitime et attaques :
+```
+[REQUEST] 86.246.87.222 | abc-123-uuid | abc12345... | GET /health   ← Utilisateur légitime
+[REQUEST] 204.76.203.210 | NULL | NOKEY | GET /../.env               ← Attaquant
 ```
 
-Le script te demandera l'IP à bloquer et confirmera l'action. L'IP sera bloquée immédiatement et le blocage persistera après un reboot du serveur.
+### Bloquer / Gérer les IP
+
+**Via le Menu PowerShell :**
+- `[12]` Bloquer une IP | `[13]` Lister les IP bloquées | `[14]` Débloquer une IP
+- `[15]` Analyser les logs (Top 20 IP, tentatives CONNECT, path traversal)
+- `[16]` Bloquer plusieurs IP d'un coup
 
 **En SSH manuel :**
 ```bash
@@ -206,162 +234,65 @@ sudo iptables -I INPUT 1 -s 204.76.203.210 -j DROP
 sudo netfilter-persistent save
 ```
 
-### Lister les IP Bloquées
-
-**Via le Menu PowerShell :**
-```powershell
-.\outils_serveur\0_SSH_Menu.ps1 → [13] Lister les IP bloquées
-```
-
-### Débloquer une IP
-
-Si tu as bloqué une IP par erreur :
-
-**Via le Menu PowerShell :**
-```powershell
-.\outils_serveur\0_SSH_Menu.ps1 → [14] Débloquer une IP
-```
-
-**En SSH manuel :**
-```bash
-sudo iptables -D INPUT -s 204.76.203.210 -j DROP
-sudo netfilter-persistent save
-```
-
-### Analyser les Logs (Identifier les IP Suspectes)
-
-**Via le Menu PowerShell :**
-```powershell
-.\outils_serveur\0_SSH_Menu.ps1 → [15] Analyser les logs
-```
-
-Ce script affiche :
-- **Top 20 des IP** les plus fréquentes dans les logs
-- **Tentatives CONNECT** (abus de proxy)
-- **Path traversal** (tentatives `../` d'accès aux fichiers)
-- **Utilisateurs identifiés** : Les logs incluent maintenant l'UUID de l'utilisateur connecté pour tracer les requêtes légitimes
-
-#### 🆕 Système de Traçabilité des Utilisateurs
-
-Votre application envoie automatiquement un header `X-User-ID` avec l'UUID de l'utilisateur connecté. Cela permet de distinguer facilement :
-- ✅ **Vos utilisateurs** (identifiés par UUID → pseudo)
-- ⚠️ **IP suspectes** (pas d'UUID = `NULL`)
-
-**Format des logs :**
-```
-[REQUEST] IP | UUID | METHOD PATH
-
-Exemples :
-[REQUEST] 86.246.87.222 | abc-123-uuid | GET /health  ← Utilisateur légitime
-[REQUEST] 204.76.203.210 | NULL | GET /../.env        ← Attaquant
-```
-
-📖 **Documentation complète :** Voir [TRACABILITE_UTILISATEURS.md](../docs_perso/TRACABILITE_UTILISATEURS.md)
-
-**Regex pour extraire les IP** (si tu veux le faire manuellement) :
+**Regex pour extraire les IP manuellement :**
 ```regex
 \b(?:\d{1,3}\.){3}\d{1,3}\b
 ```
 
-Exemple PowerShell local pour analyser un fichier :
-```powershell
-Select-String -Path "log.txt" -Pattern "\b(?:\d{1,3}\.){3}\d{1,3}\b" -AllMatches | 
-  ForEach-Object { $_.Matches.Value } | 
-  Group-Object | 
-  Sort-Object Count -Descending
-```
-
-### Bloquer Plusieurs IP d'Un Coup
-
-**Via le Menu PowerShell :**
-```powershell
-.\outils_serveur\0_SSH_Menu.ps1 → [16] Bloquer plusieurs IP
-```
-
-Entre les IP une par ligne, appuie sur ENTRÉE deux fois pour valider. Le script bloquera toutes les IP confirmées en une seule opération.
-
-### ⚠️ Bonnes Pratiques
-
-- **Vérifie avant de bloquer :** Certaines IP peuvent être des scanners légitimes (ex: Google, Bing)
-- **Note les IP bloquées :** Garde une trace des IP malveillantes pour référence
-- **Ne bloque pas d'IP "importantes" :** Évite de bloquer des plages d'IP de CDN ou services cloud connus
-
----
-## ðŸ“‹ Diagnostic et DÃ©pannage
-
-### ðŸ” Consulter les Logs
-
-**MÃ©thode rapide (Menu PowerShell) :**
-```powershell
-.\outils_serveur\0_SSH_Menu.ps1 â†’ [2] Voir les logs en temps rÃ©el
-```
-
-**En SSH manuel :**
-```bash
-sudo journalctl -u discord-bots -f
-```
-
-Les logs affichent l'heure, le niveau (INFO, WARNING, ERROR) et le message. `CTRL + C` pour quitter.
-
 ---
 
-### ðŸ§ª Tester l'API
+## 🔋 Diagnostic et Dépannage
 
-**Via le Menu PowerShell :**
-```powershell
-.\outils_serveur\0_SSH_Menu.ps1 â†’ [5] Tester l'API Publisher
-```
-
-Le script teste automatiquement :
-1. L'API depuis le serveur (localhost)
-2. Si le port 8080 Ã©coute
-3. L'API depuis Windows (externe)
-
----
-
-### ðŸš¨ Erreurs Courantes
+### 🚨 Erreurs Courantes
 
 | Erreur | Cause | Solution |
 |--------|-------|----------|
-| **ModuleNotFoundError** | BibliothÃ¨que Python manquante | `pip install -r requirements.txt` puis redÃ©marre le service |
-| **401 Unauthorized** | ClÃ© API incorrecte | VÃ©rifie que `PUBLISHER_API_KEY` dans `.env` = clÃ© dans l'app Tauri |
-| **Connection Timeout** | Port bloquÃ© | Menu â†’ [6] VÃ©rifier le pare-feu, puis [7] Corriger si besoin |
-| **Connection reset** | RÃ¨gle iptables dans le mauvais ordre | Menu â†’ [8] Nettoyer les rÃ¨gles iptables |
+| `ModuleNotFoundError` | Bibliothèque Python manquante | `pip install -r requirements.txt` puis redémarre |
+| `401 Unauthorized` | Clé API incorrecte | Vérifier que la clé dans l'app correspond à celle en Supabase |
+| `Connection Timeout` | Port bloqué | Menu → [6] Vérifier le pare-feu, puis [7] Corriger |
+| `Connection reset` | Règle iptables dans le mauvais ordre | Menu → [8] Nettoyer les règles iptables |
+| `Session is closed` | Session HTTP Discord fermée | Redémarrage automatique avec backoff — surveiller les logs |
+| Bot Frelon absent au démarrage | `FRELON_DISCORD_TOKEN` manquant | Vérifier le `.env` dans `_ignored/` |
+| Publisher Bot non démarré | `PUBLISHER_DISCORD_TOKEN` absent | Configurer via `/api/configure` ou `.env` (délai max 180s) |
 
 ---
 
-## âš ï¸ Points de Vigilance
+## ⚠️ Points de Vigilance
 
-- **Fichier `.env` :** Doit Ãªtre dans `_ignored/.env` (recommandÃ©) ou `python/.env`
-  - Contient : `PORT=8080`, Supabase (URL + Service Role Key), tokens Discord
-- **iptables :** AprÃ¨s un reboot, vÃ©rifie les rÃ¨gles avec le script [6] du menu
+- **Fichier `.env` :** Doit être dans `_ignored/.env` (recommandé) ou `python/.env`
+  - Variables clés : `PORT`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, tokens Discord, `TRANSLATOR_ROLE_ID`, `PUBLISHER_FORUM_TRAD_ID`, `PUBLISHER_ANNOUNCE_CHANNEL_ID`, `PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID`
+- **iptables :** Après un reboot, vérifier les règles avec le script [6] du menu
 - **Espace disque :** Si les logs prennent trop de place : `sudo journalctl --vacuum-time=7d`
+- **Ne jamais écraser `venv/`** lors des transferts WinSCP
 
 ---
 
-## ðŸ’¡ Workflow RecommandÃ© pour une Mise Ã  Jour
+## 💡 Workflow Recommandé pour une Mise à Jour
 
 1. **Modifie le code** localement dans Cursor
-2. **Ouvre WinSCP** et glisse-dÃ©pose les fichiers modifiÃ©s sur le serveur
+2. **Ouvre WinSCP** et glisse-dépose les fichiers modifiés dans `/home/ubuntu/mon_projet/scripts/`
 3. **Lance le menu PowerShell** : `.\outils_serveur\0_SSH_Menu.ps1`
-4. **Choisis [4]** RedÃ©marrer le service
-5. **Choisis [2]** Voir les logs pour vÃ©rifier que tout dÃ©marre correctement
+4. **Choisis [4]** Redémarrer le service
+5. **Choisis [2]** Voir les logs pour vérifier le démarrage
 6. **Teste l'API** depuis l'application Tauri
 
-âœ… C'est tout ! Pas besoin de commandes SSH complexes. ðŸŽ‰
+✅ C'est tout ! 🎉
 
 ---
 
-## ðŸ“ž RÃ©sumÃ© Ultra-Rapide
+## 📞 Résumé Ultra-Rapide
 
 | Besoin | Action |
 |--------|--------|
-| **GÃ©rer le serveur** | Lance `.\outils_serveur\0_SSH_Menu.ps1` |
-| **TransfÃ©rer les fichiers** | WinSCP : glisse-dÃ©pose vers `/home/ubuntu/mon_projet/scripts/` |
-| **RedÃ©marrer les bots** | Menu â†’ [4] |
-| **Voir les logs** | Menu â†’ [2] |
-| **Tester l'API** | Menu â†’ [5] |
-| **ProblÃ¨me de connexion** | Menu â†’ [6] puis [7] ou [8] || **Bloquer une IP malveillante** | Menu â†' [12] |
-| **Voir les IP bloquÃ©es** | Menu â†' [13] || **Analyser les logs (IP suspectes)** | Menu â†' [15] |
-| **Bloquer plusieurs IP** | Menu â†' [16] |**Tu Ã©teins ton PC ?** Aucun souci : les bots tournent sur le serveur Oracle Cloud, pas sur ton PC ! ðŸš€
+| **Gérer le serveur** | Lance `.\outils_serveur\0_SSH_Menu.ps1` |
+| **Transférer les fichiers** | WinSCP → `/home/ubuntu/mon_projet/scripts/` |
+| **Redémarrer les bots** | Menu → [4] |
+| **Voir les logs** | Menu → [2] |
+| **Tester l'API** | Menu → [5] |
+| **Problème de connexion** | Menu → [6] puis [7] ou [8] |
+| **Bloquer une IP malveillante** | Menu → [12] |
+| **Voir les IP bloquées** | Menu → [13] |
+| **Analyser les logs (IP suspectes)** | Menu → [15] |
+| **Bloquer plusieurs IP** | Menu → [16] |
 
+**Tu éteins ton PC ?** Aucun souci : les bots tournent sur le serveur Oracle Cloud, pas sur ton PC ! 🚀

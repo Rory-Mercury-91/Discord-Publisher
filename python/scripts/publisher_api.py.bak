@@ -2228,7 +2228,7 @@ async def logging_middleware(request, handler):
 # ── Ajouter dans publisher_api.py ──────────────────────────────────────────
 
 F95FR_API_URL = "https://f95fr.duckdns.org/api/jeux"
-F95FR_API_KEY = os.getenv("F95FR_API_KEY", "NL7A1A7p9hPwY9Qf6dgV")
+F95FR_API_KEY = os.getenv("F95FR_API_KEY", "")
 
 def _fetch_all_jeux_sync() -> list:
     """
