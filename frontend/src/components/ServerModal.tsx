@@ -89,12 +89,14 @@ export default function ServerModal({ onClose }: ServerModalProps) {
     }
     setLoading(p => ({ ...p, op_start: true }));
     try {
-      // Import dynamique Tauri Shell — compatible v1 et v2
-      // withGlobalTauri: true → tout est dispo sur window.__TAURI__
       const Command = (window as any).__TAURI__?.shell?.Command;
-      if (!Command) throw new Error('Tauri Shell API non disponible (withGlobalTauri ?)');
+      if (!Command) throw new Error('Tauri Shell API non disponible — vérifiez withGlobalTauri dans tauri.conf.json');
+
+      // Normaliser le chemin (antislash → slash pour OpenSSH Windows)
+      const normalizedKeyPath = sshKeyPath.trim().replace(/\\/g, '/');
+
       const cmd = Command.create('ssh', [
-        '-i', sshKeyPath.trim(),
+        '-i', normalizedKeyPath,
         '-p', '4242',
         '-o', 'StrictHostKeyChecking=no',
         '-o', 'ConnectTimeout=10',
@@ -112,11 +114,13 @@ export default function ServerModal({ onClose }: ServerModalProps) {
         },
       }));
     } catch (e: any) {
+      // ✅ CORRECTIF : e.message peut être undefined si l'erreur n'est pas un Error standard
+      const errMsg = e?.message || String(e) || 'Erreur inconnue';
       setResults(p => ({
         ...p,
         operations: {
           ts: Date.now(), action: 'ssh → systemctl start discord-bots',
-          output: `❌ Erreur SSH : ${e.message}\n\nVérifiez le chemin de la clé SSH dans la configuration.`,
+          output: `❌ Erreur SSH : ${errMsg}\n\nPistes :\n• Vérifiez le chemin de la clé SSH\n• Vérifiez que ssh est autorisé dans tauri.conf.json (shell > scope)\n• Le port 4242 doit être accessible`,
           ok: false,
         },
       }));
@@ -124,6 +128,36 @@ export default function ServerModal({ onClose }: ServerModalProps) {
       setLoading(p => ({ ...p, op_start: false }));
     }
   }, [isTauri, sshKeyPath]);
+
+  const browseForSshKey = useCallback(async () => {
+    try {
+      // Tauri v1 : window.__TAURI__.dialog.open
+      // Tauri v2 : window.__TAURI__.dialog?.open || window.__TAURI_PLUGIN_DIALOG__?.open
+      const dialogOpen =
+        (window as any).__TAURI__?.dialog?.open ??
+        (window as any).__TAURI_PLUGIN_DIALOG__?.open;
+
+      if (!dialogOpen) {
+        alert('API Dialog Tauri non disponible. Saisissez le chemin manuellement.');
+        return;
+      }
+      const selected = await dialogOpen({
+        title: 'Sélectionner la clé SSH privée',
+        filters: [
+          { name: 'Clé SSH', extensions: ['key', 'pem', 'ppk'] },
+          { name: 'Tous les fichiers', extensions: ['*'] },
+        ],
+        multiple: false,
+        directory: false,
+      });
+      if (selected && typeof selected === 'string') {
+        setSshKeyPath(selected);
+        if (sshKeyInputRef.current) sshKeyInputRef.current.value = selected;
+      }
+    } catch (e: any) {
+      console.warn('browseForSshKey:', e?.message || String(e));
+    }
+  }, []);
 
   // Une seule zone de résultat par onglet
   const [results, setResults] = useState<Record<Tab, ActionResult | null>>({
@@ -395,16 +429,20 @@ export default function ServerModal({ onClose }: ServerModalProps) {
               {showSshConfig && isTauri && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 12, background: 'rgba(99,102,241,0.06)', borderRadius: 8, border: '1px solid rgba(99,102,241,0.2)' }}>
                   <label style={{ fontSize: 12, color: 'var(--muted)' }}>
-                    📁 Chemin absolu vers la clé SSH privée (utilisée pour démarrer le service)
+                    📁 Chemin absolu vers la clé SSH privée
                   </label>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input
                       ref={sshKeyInputRef}
                       type="text"
                       defaultValue={sshKeyPath}
-                      placeholder="D:\Projet GitHub\...\ssh-key-2026-02-07.key"
+                      placeholder="D:/Projet GitHub/.../ssh-key.key"
                       style={{ ...inp, flex: 1, fontFamily: 'monospace', fontSize: 12 }}
                     />
+                    {/* ✅ NOUVEAU : bouton Parcourir */}
+                    <button style={btn('default')} onClick={browseForSshKey} title="Parcourir">
+                      📂 Parcourir
+                    </button>
                     <button style={btn('success')} onClick={() => {
                       const v = sshKeyInputRef.current?.value?.trim() || '';
                       setSshKeyPath(v);
@@ -414,7 +452,8 @@ export default function ServerModal({ onClose }: ServerModalProps) {
                     </button>
                   </div>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    Stockée localement, jamais transmise au serveur. Utilisée uniquement pour SSH depuis cette machine.
+                    Stockée localement, jamais transmise au serveur.{' '}
+                    {sshKeyPath && <span style={{ color: '#10b981' }}>✅ Chemin actuel : {sshKeyPath}</span>}
                   </span>
                 </div>
               )}

@@ -67,6 +67,9 @@
       "windows": {
         "installMode": "passive"
       }
+    },
+    "shell": {
+      "open": false
     }
   }
 }

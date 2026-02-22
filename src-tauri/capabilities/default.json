@@ -21,7 +21,16 @@
     "updater:allow-check",
     "updater:allow-download",
     "updater:allow-install",
-    "shell:allow-execute",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "ssh",
+          "cmd": "ssh",
+          "args": true
+        }
+      ]
+    },
     "shell:allow-spawn",
     "dialog:default",
     "dialog:allow-open"
