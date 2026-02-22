@@ -662,6 +662,199 @@ async def account_delete(request):
     logger.info("[api] Compte supprime : %s", user_id)
     return _with_cors(request, web.json_response({"ok": True, "details": result["details"]}))
 
+async def server_action(request):
+    """Gestion du serveur Ubuntu — master admin uniquement."""
+    import re
+    import subprocess as _sp
+
+    is_valid, discord_user_id, discord_name, is_legacy = await _auth_request(request, "/api/server/action")
+    if not is_valid or is_legacy or not discord_user_id:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Accès refusé"}, status=403))
+
+    # Vérification is_master_admin via Supabase
+    sb = _get_supabase()
+    if sb:
+        try:
+            res = sb.table("profiles").select("is_master_admin") \
+                .eq("discord_id", discord_user_id).limit(1).execute()
+            if not res.data or not res.data[0].get("is_master_admin"):
+                logger.warning("[api] server_action refusé — discord_id=%s non master_admin", discord_user_id)
+                return _with_cors(request, web.json_response({"ok": False, "error": "Droits insuffisants"}, status=403))
+        except Exception as e:
+            logger.error("[api] Vérification master_admin : %s", e)
+            return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+    try:
+        body = await request.json()
+    except Exception:
+        return _with_cors(request, web.json_response({"ok": False, "error": "JSON invalide"}, status=400))
+
+    action = (body.get("action") or "").strip()
+    params = body.get("params") or {}
+
+    def run(*cmd) -> str:
+        try:
+            r = _sp.run(list(cmd), capture_output=True, text=True, timeout=30)
+            return (r.stdout + r.stderr).strip()
+        except _sp.TimeoutExpired:
+            return "⏰ Timeout (30s)"
+        except Exception as exc:
+            return f"❌ {exc}"
+
+    output = ""
+
+    if action == "service_status":
+        output = run("sudo", "systemctl", "status", "discord-bots", "--no-pager", "-l")
+
+    elif action == "service_restart":
+        out = run("sudo", "systemctl", "restart", "discord-bots")
+        output = out or "✅ Service redémarré avec succès"
+
+    elif action == "service_stop":
+        out = run("sudo", "systemctl", "stop", "discord-bots")
+        output = out or "✅ Service arrêté"
+
+    elif action == "firewall_status":
+        output = run("sudo", "iptables", "-L", "INPUT", "-n", "-v", "--line-numbers")
+
+    elif action == "firewall_reset":
+        # 1. Réinitialisation complète
+        flush_cmds = [
+            ("sudo", "iptables", "-P", "INPUT",   "ACCEPT"),
+            ("sudo", "iptables", "-P", "FORWARD", "ACCEPT"),
+            ("sudo", "iptables", "-P", "OUTPUT",  "ACCEPT"),
+            ("sudo", "iptables", "-F"),
+            ("sudo", "iptables", "-X"),
+        ]
+        # 2. Restauration des règles ACCEPT de base
+        #    Même logique que 10_SSH_FixFirewall.ps1 :
+        #    -I INPUT 1 (insertion en tête) pour SSH/4242 — priorité absolue
+        #    -A (append) pour le reste — ordre identique au script PowerShell
+        restore_cmds = [
+            # SSH port actuel  (-I = insertion en tête, priorité absolue)
+            ("sudo", "iptables", "-I", "INPUT", "1", "-p", "tcp", "--dport", "22",   "-j", "ACCEPT"),
+            # SSH port alternatif / bots  (-I = insertion en tête)
+            ("sudo", "iptables", "-I", "INPUT", "1", "-p", "tcp", "--dport", "4242", "-j", "ACCEPT"),
+            # API REST  (-A = append, comme le .ps1)
+            ("sudo", "iptables", "-A", "INPUT", "-p", "tcp", "--dport", "8080", "-j", "ACCEPT"),
+            # ICMP Path MTU Discovery (type 3 code 4) — Oracle
+            ("sudo", "iptables", "-A", "INPUT", "-p", "icmp", "--icmp-type", "3/4",  "-j", "ACCEPT"),
+            # ICMP réseau interne OCI (10.0.0.0/16)
+            ("sudo", "iptables", "-A", "INPUT", "-s", "10.0.0.0/16", "-p", "icmp", "--icmp-type", "3", "-j", "ACCEPT"),
+            # Loopback
+            ("sudo", "iptables", "-A", "INPUT", "-i", "lo", "-j", "ACCEPT"),
+            # Connexions établies / liées
+            ("sudo", "iptables", "-A", "INPUT", "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"),
+        ]
+        # 3. Sauvegarde + rechargement Fail2ban
+        post_cmds = [
+            ("sudo", "netfilter-persistent", "save"),
+            ("sudo", "fail2ban-client", "reload"),
+        ]
+
+        parts = []
+        for cmd in flush_cmds:
+            r = run(*cmd)
+            parts.append(f"$ {' '.join(cmd)}\n{r if r else '(ok)'}")
+
+        parts.append("\n── Restauration des règles ACCEPT de base ──")
+        for cmd in restore_cmds:
+            r = run(*cmd)
+            parts.append(f"$ {' '.join(cmd)}\n{r if r else '(ok)'}")
+
+        parts.append("\n── Sauvegarde + rechargement Fail2ban ──")
+        for cmd in post_cmds:
+            r = run(*cmd)
+            parts.append(f"$ {' '.join(cmd)}\n{r if r else '(ok)'}")
+
+        output = "\n".join(parts)
+
+    elif action == "ip_block":
+        ips = [i.strip() for i in params.get("ips", []) if i.strip()]
+        if not ips:
+            return _with_cors(request, web.json_response({"ok": False, "error": "Aucune IP fournie"}))
+        lines = []
+        for ip in ips:
+            r = run("sudo", "iptables", "-I", "INPUT", "1", "-s", ip, "-j", "DROP")
+            lines.append(f"  DROP {ip} : {r or 'ok'}")
+        run("sudo", "netfilter-persistent", "save")
+        output = "Blocage appliqué :\n" + "\n".join(lines) + "\n\n✅ Règles sauvegardées (netfilter-persistent)"
+
+    elif action == "ip_unblock":
+        ips = [i.strip() for i in params.get("ips", []) if i.strip()]
+        if not ips:
+            return _with_cors(request, web.json_response({"ok": False, "error": "Aucune IP fournie"}))
+        lines = []
+        for ip in ips:
+            r = run("sudo", "iptables", "-D", "INPUT", "-s", ip, "-j", "DROP")
+            lines.append(f"  Unblock {ip} : {r or 'ok'}")
+        run("sudo", "netfilter-persistent", "save")
+        output = "Déblocage appliqué :\n" + "\n".join(lines) + "\n\n✅ Règles sauvegardées"
+
+    elif action == "ip_list_blocked":
+        ipt = run("sudo", "iptables", "-L", "INPUT", "-n", "-v", "--line-numbers")
+        drops = [l for l in ipt.splitlines() if "DROP" in l and "icmp-port-unreachable" not in l]
+
+        f2b_raw = run("sudo", "fail2ban-client", "status")
+        jail_m = re.search(r"Jail list:\s*(.+)", f2b_raw)
+        f2b_section = ""
+        if jail_m:
+            jails = [j.strip() for j in jail_m.group(1).replace(",", " ").split() if j.strip()]
+            f2b_lines = []
+            for jail in jails:
+                st = run("sudo", "fail2ban-client", "status", jail)
+                banned_m = re.search(r"Banned IP list:\s*(.+)", st)
+                count_m  = re.search(r"Currently banned:\s*(\d+)", st)
+                count  = count_m.group(1) if count_m else "?"
+                # ← Toutes les IPs, sans limite [:10]
+                banned = (banned_m.group(1).strip() if banned_m else "").split()
+                f2b_lines.append(f"  [{jail}] {count} banni(e)s")
+                for b in banned:
+                    f2b_lines.append(f"    - {b}")
+            f2b_section = "\n".join(f2b_lines)
+
+        output = (
+            f"=== IPTABLES DROP ({len(drops)}) ===\n"
+            + ("\n".join(drops) if drops else "  (aucun blocage manuel)")
+            + f"\n\n=== FAIL2BAN ===\n"
+            + (f2b_section or "  (aucune prison active)")
+        )
+
+    elif action == "fail2ban_status":
+        raw = run("sudo", "fail2ban-client", "status")
+        jail_m = re.search(r"Jail list:\s*(.+)", raw)
+        parts = [raw]
+        if jail_m:
+            jails = [j.strip() for j in jail_m.group(1).replace(",", " ").split() if j.strip()]
+            for jail in jails:
+                st = run("sudo", "fail2ban-client", "status", jail)
+                parts.append(f"\n{'─'*40}\n[{jail}]\n{st}")
+        output = "\n".join(parts)
+
+    elif action == "fail2ban_unban":
+        ip   = (params.get("ip")   or "").strip()
+        jail = (params.get("jail") or "").strip()
+        if not ip:
+            return _with_cors(request, web.json_response({"ok": False, "error": "IP requise"}))
+        if jail:
+            output = run("sudo", "fail2ban-client", "set", jail, "unbanip", ip)
+            output = output or f"✅ {ip} débannie de [{jail}]"
+        else:
+            raw = run("sudo", "fail2ban-client", "status")
+            jail_m = re.search(r"Jail list:\s*(.+)", raw)
+            lines = []
+            if jail_m:
+                jails = [j.strip() for j in jail_m.group(1).replace(",", " ").split() if j.strip()]
+                for j in jails:
+                    r = run("sudo", "fail2ban-client", "set", j, "unbanip", ip)
+                    lines.append(f"  [{j}] : {r or 'ok'}")
+            output = f"Tentative unban {ip} dans toutes les prisons :\n" + ("\n".join(lines) or "Aucune prison trouvée")
+
+    else:
+        return _with_cors(request, web.json_response({"ok": False, "error": f"Action inconnue : {action}"}, status=400))
+
+    logger.info("[api] server_action '%s' par %s", action, discord_name or discord_user_id)
+    return _with_cors(request, web.json_response({"ok": True, "output": output, "error": None}))
 
 # ==================== APP ====================
 
@@ -670,7 +863,7 @@ def make_app() -> web.Application:
     app = web.Application(middlewares=[logging_middleware])
 
     routes = [
-        ("OPTIONS", "/{tail:.*}",            options_handler),
+        ("OPTIONS", "/{tail:.*}",             options_handler),
         ("GET",     "/",                      health),
         ("GET",     "/api/status",            health),
         ("POST",    "/api/configure",         configure),
@@ -682,6 +875,7 @@ def make_app() -> web.Application:
         ("GET",     "/api/jeux",              get_jeux),
         ("POST",    "/api/account/delete",    account_delete),
         ("GET",     "/api/logs",              get_logs),
+        ("POST",    "/api/server/action",     server_action),
         # Catch-all en dernier
         ("*",       "/{tail:.*}",             handle_404),
     ]

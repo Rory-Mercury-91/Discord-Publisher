@@ -12,6 +12,7 @@ import InstructionsManagerModal from './components/InstructionsManagerModal';
 import LibraryView from './components/LibraryView';
 import LogsModal from './components/LogsModal';
 import Preview from './components/Preview';
+import ServerModal from './components/ServerModal';
 import StatsModal from './components/StatsModal';
 import TagsModal from './components/TagsModal';
 import TemplatesModal from './components/TemplatesModal';
@@ -56,6 +57,7 @@ function AppContentInner() {
   const [openShortcutsHelp, setOpenShortcutsHelp] = useState(false);
   const [openDiscordPreview, setOpenDiscordPreview] = useState(false);
   const [showLogsModal, setShowLogsModal] = useState(false);
+  const [showServerModal, setShowServerModal] = useState(false);
 
   // ── Mode (traducteur / utilisateur) ──────────────────────────────────────
   const [mode, setMode] = useState<AppMode>('translator');
@@ -147,7 +149,13 @@ function AppContentInner() {
       {/* ── Modales ───────────────────────────────────────────────────────── */}
       {openTemplates && <TemplatesModal onClose={() => setOpenTemplates(false)} />}
       {openTags && <TagsModal onClose={() => setOpenTags(false)} />}
-      {openConfig && <ConfigModal onClose={() => setOpenConfig(false)} onOpenLogs={() => setShowLogsModal(true)} />}
+      {openConfig && (
+        <ConfigModal
+          onClose={() => setOpenConfig(false)}
+          onOpenLogs={() => setShowLogsModal(true)}
+          onOpenServer={() => setShowServerModal(true)}  // ← ajouter
+        />
+      )}
       {openInstructions && <InstructionsManagerModal onClose={() => setOpenInstructions(false)} />}
       {openHistory && <HistoryModal onClose={() => setOpenHistory(false)} />}
       {openStats && <StatsModal onClose={() => setOpenStats(false)} />}
@@ -156,6 +164,7 @@ function AppContentInner() {
         <DiscordPreviewModal preview={preview || ''} onClose={() => setOpenDiscordPreview(false)} onCopy={handleCopyPreview} mainImagePath={mainImagePath} />
       )}
       {showLogsModal && <LogsModal onClose={() => setShowLogsModal(false)} />}
+      {showServerModal && <ServerModal onClose={() => setShowServerModal(false)} />}
 
       <ConfirmModal
         isOpen={showLogoutConfirm}

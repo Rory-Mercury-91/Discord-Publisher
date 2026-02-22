@@ -642,7 +642,19 @@ export default function ContentEditor() {
                 message: 'Voulez-vous vraiment vider tous les champs ? Cette action est irréversible.',
                 confirmText: 'Vider', cancelText: 'Annuler', type: 'danger'
               });
-              if (ok) { resetAllFields(); selectTranslator(profile?.id || ''); showToast('Formulaire vidé', 'success'); }
+              if (ok) {
+                resetAllFields();
+                selectTranslator(profile?.id || '');
+
+                // ✅ FIX : Pour les utilisateurs simples (sélecteur caché), selectTranslator
+                // est un no-op (même ID déjà sélectionné) → translatorTagId ne change pas
+                // → le useEffect ne se déclenche pas → le tag traducteur reste vide après reset.
+                // On force la ré-injection ici directement.
+                translatorInjectedRef.current = false;
+                if (translatorTagId) setPostTags(translatorTagId);
+
+                showToast('Formulaire vidé', 'success');
+              }
             }}
             style={{
               background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
