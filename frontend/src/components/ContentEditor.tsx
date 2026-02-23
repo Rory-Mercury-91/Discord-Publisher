@@ -64,14 +64,11 @@ export default function ContentEditor() {
     allVarsConfig,
     inputs,
     setInput,
-    preview,
     postTitle,
-    setPostTitle,
     postTags,
     setPostTags,
     publishPost,
     publishInProgress,
-    lastPublishResult,
     savedTags,
     savedInstructions,
     templates,
@@ -142,7 +139,6 @@ export default function ContentEditor() {
   const canPublish = currentTemplate?.type === 'my' &&
     rateLimitCooldown === null &&
     hasRequiredTags;
-  const isEditMode = editingPostId !== null;
   const rateLimitRemaining = rateLimitCooldown ? Math.ceil((rateLimitCooldown - Date.now()) / 1000) : 0;
   const publishTooltipText = (() => {
     if (publishInProgress) return 'Publication en cours…';

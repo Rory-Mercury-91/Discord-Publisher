@@ -28,6 +28,11 @@
           "name": "ssh",
           "cmd": "ssh",
           "args": true
+        },
+        {
+          "name": "cmd",
+          "cmd": "cmd",
+          "args": true
         }
       ]
     },

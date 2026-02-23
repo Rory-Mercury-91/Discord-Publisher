@@ -11,6 +11,7 @@ const DEFAULT_BASE = 'http://138.2.182.125:8080';
 
 interface LogsModalProps {
   onClose: () => void;
+  inlineMode?: boolean;
 }
 
 function getBaseUrl(apiUrl: string | undefined): string {
@@ -233,7 +234,7 @@ function Toggle({
 }
 
 // ── Composant principal ──────────────────────────────────────────────────────
-export default function LogsModal({ onClose }: LogsModalProps) {
+export default function LogsModal({ onClose, inlineMode = false }: LogsModalProps) {
   const { apiUrl } = useApp();
   const { profile } = useAuth();
 
@@ -380,213 +381,229 @@ export default function LogsModal({ onClose }: LogsModalProps) {
     </span>
   );
 
-  const modalContent = (
-    <div style={{
-      position: 'fixed', inset: 0,
-      background: 'rgba(0,0,0,0.85)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      zIndex: 99999, backdropFilter: 'blur(4px)',
-    }}>
+  const modalInner = (
+    <div
+      style={{
+        background: 'var(--panel)',
+        borderRadius: 12,
+        // Taille fixe en mode inline (côte à côte), fluide en mode solo
+        width: inlineMode ? 860 : '95%',
+        maxWidth: inlineMode ? 860 : 1000,
+        height: inlineMode ? '88vh' : undefined,
+        maxHeight: '88vh',
+        display: 'flex',
+        flexDirection: 'column',
+        border: '1px solid var(--border)',
+        boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+        position: 'relative',
+        flexShrink: 0,
+      }}
+      onClick={e => e.stopPropagation()}
+    >
+      {/* ── Header ── */}
+      <div style={{
+        padding: '16px 20px', borderBottom: '1px solid var(--border)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
+      }}>
+        <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>📋 Logs du serveur</h2>
+        <button
+          type="button" onClick={onClose}
+          style={{
+            background: 'none', border: 'none', color: 'var(--text)',
+            fontSize: 28, cursor: 'pointer', lineHeight: 1, padding: 0,
+            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+          title="Fermer (Echap)"
+        >&times;</button>
+      </div>
+
+      {/* ── Filtres ── */}
+      <div style={{
+        padding: '12px 20px', borderBottom: '1px solid var(--border)',
+        display: 'flex', flexDirection: 'column', gap: 12, flexShrink: 0,
+      }}>
+        {/* Ligne 1 : sources utilisateur + export */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {sectionLabel('Suivi')}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            {USER_SOURCES.map(s => (
+              <Toggle
+                key={s.id} active={activeCategories.has(s.id)}
+                onToggle={() => toggleCategory(s.id)} label={s.label}
+                title={
+                  s.id === 'publisher' ? 'Logs du bot Publisher (publications, MAJ, suppressions)' :
+                    s.id === 'api' ? 'Logs des requetes REST entrantes (/api/forum-post, /api/history...)' :
+                      s.id === 'scheduler' ? 'Logs des taches planifiees (version check, cleanup, sync jeux)' :
+                        'Logs du controle des versions F95 (differences detectees, mises a jour)'
+                }
+              />
+            ))}
+          </div>
+          <div style={{ marginLeft: 'auto' }}>
+            <button
+              type="button" onClick={() => exportLogsAsTxt(displayedLogs)}
+              disabled={!displayedLogs}
+              style={{
+                padding: '7px 14px', borderRadius: 8,
+                border: '1px solid var(--border)', background: 'transparent',
+                color: displayedLogs ? 'var(--text)' : 'var(--muted)',
+                cursor: displayedLogs ? 'pointer' : 'not-allowed',
+                fontSize: 13, fontWeight: 500, opacity: displayedLogs ? 1 : 0.5,
+              }}
+              title="Telecharger les logs filtres"
+            >📥 Exporter</button>
+          </div>
+        </div>
+
+        {/* Ligne 2 : sources admin */}
+        {isAdmin && (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            {sectionLabel('Bots')}
+            {ADMIN_SOURCES.map(s => (
+              <Toggle
+                key={s.id} active={activeCategories.has(s.id)} size="sm"
+                onToggle={() => toggleCategory(s.id)} label={s.label}
+                title={
+                  s.id === 'frelon' ? 'Logs du bot Frelon (rappels F95fr)' :
+                    'Logs de l\'orchestrateur (demarrage, supervision des bots)'
+                }
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Ligne 3 : filtres techniques admin */}
+        {isAdmin && (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            {sectionLabel('Technique')}
+            {ADMIN_FILTERS.map(f => (
+              <Toggle
+                key={f.id} active={activeCategories.has(f.id)} size="sm"
+                onToggle={() => toggleCategory(f.id)} label={f.label}
+                title={
+                  f.id === 'security' ? 'Tentatives d\'authentification echouees' :
+                    f.id === 'publisher-requests' ? 'Requetes OPTIONS/GET internes (CORS, health...)' :
+                      f.id === 'discord-api' ? 'Appels REST vers l\'API Discord (rate limit inclus)' :
+                        f.id === 'supabase-api' ? 'Requetes vers Supabase (lectures/ecritures BDD)' :
+                          f.id === 'auth' ? 'Details validation cles API (succes inclus)' :
+                            'Requetes HTTP/HTTPS brutes (aiohttp, debug)'
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Zone logs ── */}
       <div
+        ref={logsContainerRef} onScroll={handleScroll}
         style={{
-          background: 'var(--panel)', borderRadius: 12,
-          width: '95%', maxWidth: 1000, maxHeight: '90vh',
-          display: 'flex', flexDirection: 'column',
-          border: '1px solid var(--border)',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
-          position: 'relative',
+          position: 'relative', flex: 1, overflow: 'auto', padding: 16,
+          fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+          fontSize: 12, lineHeight: 1.6,
+          background: 'rgba(0,0,0,0.4)', color: 'var(--text)',
         }}
-        onClick={e => e.stopPropagation()}
       >
-        {/* ── Header ── */}
-        <div style={{
-          padding: '16px 20px', borderBottom: '1px solid var(--border)',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
-        }}>
-          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>📋 Logs du serveur</h2>
+        {error ? (
+          <div style={{ color: '#ef4444', padding: 10 }}>❌ {error}</div>
+        ) : loading ? (
+          <div style={{ color: 'var(--muted)', padding: 10 }}>⏳ Chargement des logs...</div>
+        ) : displayedLogs ? (
+          displayedLogs.split('\n').map((line, idx) => (
+            <div key={idx}>{line ? colorizeLogLine(line) : '\u00A0'}</div>
+          ))
+        ) : (
+          <div style={{ color: 'var(--muted)', padding: 10 }}>
+            Aucun log visible. Activez au moins une source ci-dessus.
+          </div>
+        )}
+
+        {showScrollButton && !loading && displayedLogs && (
+          <button
+            type="button" onClick={scrollToBottom}
+            style={{
+              position: 'sticky', bottom: 20, left: '100%', marginLeft: -64,
+              width: 48, height: 48, borderRadius: '50%',
+              border: '2px solid var(--accent)', background: 'var(--panel)',
+              color: 'var(--accent)', cursor: 'pointer', fontSize: 22,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.5)', transition: 'all 0.2s ease', zIndex: 10,
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.transform = 'scale(1.1)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'var(--panel)'; e.currentTarget.style.color = 'var(--accent)'; e.currentTarget.style.transform = 'scale(1)'; }}
+            title="Retour en bas"
+          >↓</button>
+        )}
+      </div>
+
+      {/* ── Footer ── */}
+      <div style={{
+        padding: '12px 20px', borderTop: '1px solid var(--border)',
+        flexShrink: 0, display: 'grid',
+        gridTemplateColumns: '1fr auto', gridTemplateRows: 'auto auto',
+        gap: 10, fontSize: 12, color: 'var(--muted)', alignItems: 'center',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span>Auto-refresh : {Math.round(refreshMs / 1000)}s • fichier courant complet</span>
+          <span
+            style={{ textDecoration: 'underline dotted', cursor: 'help' }}
+            title="Seul le fichier de logs courant (max 5 Mo) est affiche. Pour l'historique complet, contactez le developpeur."
+          >ℹ️</span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
+          <Toggle
+            active={autoRefreshEnabled}
+            onToggle={() => setAutoRefreshEnabled(v => !v)}
+            label="Auto-refresh"
+            title="Active/desactive l'actualisation automatique"
+          />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            Delai (s)
+            <input
+              type="number" min={5} max={600} step={5}
+              value={refreshSecondsInput}
+              onChange={e => setRefreshSecondsInput(e.target.value)}
+              onBlur={e => applyRefreshSeconds(e.target.value)}
+              disabled={!autoRefreshEnabled}
+              style={{
+                width: 64, padding: '4px 6px', borderRadius: 6,
+                border: '1px solid var(--border)', background: 'transparent', color: 'inherit',
+              }}
+            />
+          </label>
+          <button
+            type="button" onClick={fetchLogs}
+            style={{ padding: '6px 12px', fontWeight: 600, borderRadius: 8 }}
+          >🔄 Rafraichir</button>
+        </div>
+
+        <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center' }}>
           <button
             type="button" onClick={onClose}
-            style={{
-              background: 'none', border: 'none', color: 'var(--text)',
-              fontSize: 28, cursor: 'pointer', lineHeight: 1, padding: 0,
-              width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-            title="Fermer (Echap)"
-          >&times;</button>
-        </div>
-
-        {/* ── Filtres ── */}
-        <div style={{
-          padding: '12px 20px', borderBottom: '1px solid var(--border)',
-          display: 'flex', flexDirection: 'column', gap: 12, flexShrink: 0,
-        }}>
-
-          {/* Ligne 1 : sources utilisateur + export */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            {sectionLabel('Suivi')}
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              {USER_SOURCES.map(s => (
-                <Toggle
-                  key={s.id} active={activeCategories.has(s.id)}
-                  onToggle={() => toggleCategory(s.id)} label={s.label}
-                  title={
-                    s.id === 'publisher' ? 'Logs du bot Publisher (publications, MAJ, suppressions)' :
-                      s.id === 'api' ? 'Logs des requetes REST entrantes (/api/forum-post, /api/history...)' :
-                        s.id === 'scheduler' ? 'Logs des taches planifiees (version check, cleanup, sync jeux)' :
-                          'Logs du controle des versions F95 (differences detectees, mises a jour)'
-                  }
-                />
-              ))}
-            </div>
-            <div style={{ marginLeft: 'auto' }}>
-              <button
-                type="button" onClick={() => exportLogsAsTxt(displayedLogs)}
-                disabled={!displayedLogs}
-                style={{
-                  padding: '7px 14px', borderRadius: 8,
-                  border: '1px solid var(--border)', background: 'transparent',
-                  color: displayedLogs ? 'var(--text)' : 'var(--muted)',
-                  cursor: displayedLogs ? 'pointer' : 'not-allowed',
-                  fontSize: 13, fontWeight: 500, opacity: displayedLogs ? 1 : 0.5,
-                }}
-                title="Telecharger les logs filtres"
-              >📥 Exporter</button>
-            </div>
-          </div>
-
-          {/* Ligne 2 : sources admin (masquees pour non-admins) */}
-          {isAdmin && (
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              {sectionLabel('Bots')}
-              {ADMIN_SOURCES.map(s => (
-                <Toggle
-                  key={s.id} active={activeCategories.has(s.id)} size="sm"
-                  onToggle={() => toggleCategory(s.id)} label={s.label}
-                  title={
-                    s.id === 'frelon' ? 'Logs du bot Frelon (rappels F95fr)' :
-                      'Logs de l\'orchestrateur (demarrage, supervision des bots)'
-                  }
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Ligne 3 : filtres techniques admin */}
-          {isAdmin && (
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              {sectionLabel('Technique')}
-              {ADMIN_FILTERS.map(f => (
-                <Toggle
-                  key={f.id} active={activeCategories.has(f.id)} size="sm"
-                  onToggle={() => toggleCategory(f.id)} label={f.label}
-                  title={
-                    f.id === 'security' ? 'Tentatives d\'authentification echouees' :
-                      f.id === 'publisher-requests' ? 'Requetes OPTIONS/GET internes (CORS, health...)' :
-                        f.id === 'discord-api' ? 'Appels REST vers l\'API Discord (rate limit inclus)' :
-                          f.id === 'supabase-api' ? 'Requetes vers Supabase (lectures/ecritures BDD)' :
-                            f.id === 'auth' ? 'Details validation cles API (succes inclus)' :
-                              'Requetes HTTP/HTTPS brutes (aiohttp, debug)'
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ── Zone logs ── */}
-        <div
-          ref={logsContainerRef} onScroll={handleScroll}
-          style={{
-            position: 'relative', flex: 1, overflow: 'auto', padding: 16,
-            fontFamily: 'Consolas, Monaco, "Courier New", monospace',
-            fontSize: 12, lineHeight: 1.6,
-            background: 'rgba(0,0,0,0.4)', color: 'var(--text)',
-          }}
-        >
-          {error ? (
-            <div style={{ color: '#ef4444', padding: 10 }}>❌ {error}</div>
-          ) : loading ? (
-            <div style={{ color: 'var(--muted)', padding: 10 }}>⏳ Chargement des logs...</div>
-          ) : displayedLogs ? (
-            displayedLogs.split('\n').map((line, idx) => (
-              <div key={idx}>{line ? colorizeLogLine(line) : '\u00A0'}</div>
-            ))
-          ) : (
-            <div style={{ color: 'var(--muted)', padding: 10 }}>
-              Aucun log visible. Activez au moins une source ci-dessus.
-            </div>
-          )}
-
-          {showScrollButton && !loading && displayedLogs && (
-            <button
-              type="button" onClick={scrollToBottom}
-              style={{
-                position: 'sticky', bottom: 20, left: '100%', marginLeft: -64,
-                width: 48, height: 48, borderRadius: '50%',
-                border: '2px solid var(--accent)', background: 'var(--panel)',
-                color: 'var(--accent)', cursor: 'pointer', fontSize: 22,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.5)', transition: 'all 0.2s ease', zIndex: 10,
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.transform = 'scale(1.1)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'var(--panel)'; e.currentTarget.style.color = 'var(--accent)'; e.currentTarget.style.transform = 'scale(1)'; }}
-              title="Retour en bas"
-            >↓</button>
-          )}
-        </div>
-
-        {/* ── Footer ── */}
-        <div style={{
-          padding: '12px 20px', borderTop: '1px solid var(--border)',
-          flexShrink: 0, display: 'grid',
-          gridTemplateColumns: '1fr auto', gridTemplateRows: 'auto auto',
-          gap: 10, fontSize: 12, color: 'var(--muted)', alignItems: 'center',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span>Auto-refresh : {Math.round(refreshMs / 1000)}s • fichier courant complet</span>
-            <span
-              style={{ textDecoration: 'underline dotted', cursor: 'help' }}
-              title="Seul le fichier de logs courant (max 5 Mo) est affiche. Pour l'historique complet, contactez le developpeur."
-            >ℹ️</span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
-            <Toggle
-              active={autoRefreshEnabled}
-              onToggle={() => setAutoRefreshEnabled(v => !v)}
-              label="Auto-refresh"
-              title="Active/desactive l'actualisation automatique"
-            />
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              Delai (s)
-              <input
-                type="number" min={5} max={600} step={5}
-                value={refreshSecondsInput}
-                onChange={e => setRefreshSecondsInput(e.target.value)}
-                onBlur={e => applyRefreshSeconds(e.target.value)}
-                disabled={!autoRefreshEnabled}
-                style={{
-                  width: 64, padding: '4px 6px', borderRadius: 6,
-                  border: '1px solid var(--border)', background: 'transparent', color: 'inherit',
-                }}
-              />
-            </label>
-            <button
-              type="button" onClick={fetchLogs}
-              style={{ padding: '6px 12px', fontWeight: 600, borderRadius: 8 }}
-            >🔄 Rafraichir</button>
-          </div>
-
-          <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center' }}>
-            <button
-              type="button" onClick={onClose}
-              style={{ padding: '8px 22px', fontWeight: 700, borderRadius: 10 }}
-            >↩️ Fermer</button>
-          </div>
+            style={{ padding: '8px 22px', fontWeight: 700, borderRadius: 10 }}
+          >↩️ Fermer</button>
         </div>
       </div>
     </div>
   );
 
-  return createPortal(modalContent, document.body);
+  // Wrapper conditionnel : backdrop uniquement en mode solo
+  const modalContent = inlineMode
+    ? modalInner
+    : (
+      <div style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(0,0,0,0.85)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 99999, backdropFilter: 'blur(4px)',
+      }}>
+        {modalInner}
+      </div>
+    );
+
+  // Portal uniquement en mode solo
+  return inlineMode
+    ? modalContent
+    : createPortal(modalContent, document.body);
 }

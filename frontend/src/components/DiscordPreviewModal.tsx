@@ -105,7 +105,7 @@ export default function DiscordPreviewModal({ preview, onClose, onCopy, mainImag
 
       // Créer des fragments avec les placeholders stylés
       const fragment = document.createDocumentFragment();
-      parts.forEach((part, idx) => {
+      parts.forEach((part) => {
         if (part.match(/^\[[A-Za-z_][A-Za-z0-9_]*\]$/)) {
           // C'est un placeholder, créer un span stylé
           const span = document.createElement('span');

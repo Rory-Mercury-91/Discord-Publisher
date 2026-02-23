@@ -99,11 +99,6 @@ export default function TagSelectorModal({
 
   if (!isOpen) return null;
 
-  // ── Indicateur de contexte ──────────────────────────────────────────────────
-  const translatorName = isControlled
-    ? undefined // le nom est géré dans ContentEditor
-    : (profile?.id === activeTranslatorId ? 'Moi' : undefined);
-
   const modalStyle: React.CSSProperties = {
     position: 'fixed',
     top: position ? `${position.top}px` : '50%',

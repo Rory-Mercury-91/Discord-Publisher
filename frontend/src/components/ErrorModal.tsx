@@ -23,7 +23,6 @@ export default function ErrorModal({ error, onClose, onRetry }: ErrorModalProps)
   const getSuggestions = (): string[] => {
     const suggestions: string[] = [];
     const status = error.httpStatus;
-    const code = error.code;
 
     // Suggestions basées sur le code HTTP
     if (status === 401 || status === 403) {

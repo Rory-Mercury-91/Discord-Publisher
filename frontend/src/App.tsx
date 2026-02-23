@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import rootPkg from '../../package.json';
 import AppHeader, { AppMode } from './components/AppHeader';
 import AuthModal from './components/AuthModal';
 import ConfigModal from './components/ConfigModal';
@@ -20,19 +19,13 @@ import { ToastProvider, useToast } from './components/ToastProvider';
 import UpdateNotification from './components/UpdateNotification';
 import { AppProvider, useApp } from './state/appContext';
 import { AuthProvider, useAuth } from './state/authContext';
-const APP_VERSION = rootPkg.version;
 
 function AppContentInner() {
   const { profile, signOut } = useAuth();
   const {
-    resetAllFields, apiStatus, setApiStatus,
+    setApiStatus,
     preview, setPreviewOverride,
     uploadedImages,
-    setInput,
-    setPostTitle, setPostTags,
-    translationType, setTranslationType,
-    isIntegrated, setIsIntegrated,
-    setLinkConfigs,
     templates, currentTemplateIdx, setCurrentTemplateIdx
   } = useApp();
 
@@ -119,6 +112,7 @@ function AppContentInner() {
         onOpenConfig={() => setOpenConfig(true)}
         onOpenHelp={() => setOpenShortcutsHelp(true)}
         onOpenLogs={() => setShowLogsModal(true)}
+        onOpenServer={() => { setShowServerModal(true); setShowLogsModal(true); }}
         onLogout={() => setShowLogoutConfirm(true)}
       />
 
@@ -150,11 +144,7 @@ function AppContentInner() {
       {openTemplates && <TemplatesModal onClose={() => setOpenTemplates(false)} />}
       {openTags && <TagsModal onClose={() => setOpenTags(false)} />}
       {openConfig && (
-        <ConfigModal
-          onClose={() => setOpenConfig(false)}
-          onOpenLogs={() => setShowLogsModal(true)}
-          onOpenServer={() => setShowServerModal(true)}  // ← ajouter
-        />
+        <ConfigModal onClose={() => setOpenConfig(false)} />
       )}
       {openInstructions && <InstructionsManagerModal onClose={() => setOpenInstructions(false)} />}
       {openHistory && <HistoryModal onClose={() => setOpenHistory(false)} />}
@@ -163,8 +153,20 @@ function AppContentInner() {
       {openDiscordPreview && (
         <DiscordPreviewModal preview={preview || ''} onClose={() => setOpenDiscordPreview(false)} onCopy={handleCopyPreview} mainImagePath={mainImagePath} />
       )}
-      {showLogsModal && <LogsModal onClose={() => setShowLogsModal(false)} />}
-      {showServerModal && <ServerModal onClose={() => setShowServerModal(false)} />}
+      {showServerModal && showLogsModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 16, padding: 16, zIndex: 99998, backdropFilter: 'blur(4px)',
+          overflowX: 'auto',
+        }}>
+          <ServerModal onClose={() => setShowServerModal(false)} inlineMode />
+          <LogsModal onClose={() => setShowLogsModal(false)} inlineMode />
+        </div>
+      )}
+      {showLogsModal && !showServerModal && (
+        <LogsModal onClose={() => setShowLogsModal(false)} />
+      )}
 
       <ConfirmModal
         isOpen={showLogoutConfirm}

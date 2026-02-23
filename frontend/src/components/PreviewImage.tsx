@@ -1,4 +1,3 @@
-import React from 'react';
 import { useImageLoader } from '../hooks/useImageLoader';
 
 interface PreviewImageProps {
@@ -10,7 +9,7 @@ export default function PreviewImage({ imagePath }: PreviewImageProps) {
 
   if (isLoading) {
     return (
-      <div style={{marginTop:12, textAlign:'center', color:'var(--muted)', fontSize:12}}>
+      <div style={{ marginTop: 12, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
         ⏳ Chargement de l'image...
       </div>
     );
@@ -18,7 +17,7 @@ export default function PreviewImage({ imagePath }: PreviewImageProps) {
 
   if (error) {
     return (
-      <div style={{marginTop:12, textAlign:'center', color:'var(--error)', fontSize:12}}>
+      <div style={{ marginTop: 12, textAlign: 'center', color: 'var(--error)', fontSize: 12 }}>
         ❌ Erreur de chargement: {error}
       </div>
     );
@@ -29,15 +28,15 @@ export default function PreviewImage({ imagePath }: PreviewImageProps) {
   }
 
   return (
-    <img 
+    <img
       src={imageUrl}
       style={{
-        width:'100%',
-        maxWidth:'400px',
-        height:'auto',
-        borderRadius:4,
-        display:'block',
-        cursor:'pointer'
+        width: '100%',
+        maxWidth: '400px',
+        height: 'auto',
+        borderRadius: 4,
+        display: 'block',
+        cursor: 'pointer'
       }}
       alt="Image principale"
       onClick={() => {

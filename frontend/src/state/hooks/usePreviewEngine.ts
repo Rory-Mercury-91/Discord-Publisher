@@ -65,7 +65,6 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
 
     // 1. GESTION DU MOD COMPATIBLE
     const isModded = (inputs as any)['is_modded_game'] === true || (inputs as any)['is_modded_game'] === 'true';
-    const modLink = cleanGameLink((inputs['Mod_link'] || '').trim());
 
     // Dans "Infos du Mod", afficher juste "Oui" ou "Non"
     const moddedText = isModded ? 'Oui' : 'Non';

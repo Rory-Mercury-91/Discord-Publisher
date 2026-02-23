@@ -574,7 +574,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const sb = getSupabase();
     if (sb) {
       const row = postToRow(p);
-      const res = await sb.from('published_posts').upsert(row, { onConflict: 'id' });
+      await sb.from('published_posts').upsert(row, { onConflict: 'id' });
     }
   };
 
@@ -787,7 +787,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const translatorLabel = selectedTagObjects.filter(t => t.tagType === 'translator').map(t => t.name).join(', ');
     const stateLabel = selectedTagObjects.filter(t => t.tagType !== 'translator').map(t => t.name).join(', ');
 
-    const storedApiUrl = localStorage.getItem('apiUrl');
     const baseUrlRaw = localStorage.getItem('apiBase') || defaultApiBase;
     const baseUrl = baseUrlRaw.replace(/\/+$/, '');
 
@@ -1395,21 +1394,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     setInputs(prev => ({ ...prev, [name]: finalValue }));
-  }
-
-  /** Extrait l'ID numérique d'une URL F95/Lewd (pour API ou affichage court). */
-  function extractIdFromUrl(url: string, source: 'F95' | 'Lewd'): string {
-    if (!url || !url.trim()) return '';
-    const trimmed = url.trim();
-    if (source === 'F95') {
-      const m = trimmed.match(/f95zone\.to\/threads\/(?:[^/]*\.)?(\d+)/);
-      return m ? m[1] : trimmed;
-    }
-    if (source === 'Lewd') {
-      const m = trimmed.match(/lewdcorner\.com\/threads\/(?:[^/]*\.)?(\d+)/);
-      return m ? m[1] : trimmed;
-    }
-    return trimmed;
   }
 
   function buildFinalLink(config: LinkConfig): string {

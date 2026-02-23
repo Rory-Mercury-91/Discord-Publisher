@@ -850,6 +850,45 @@ async def server_action(request):
                     lines.append(f"  [{j}] : {r or 'ok'}")
             output = f"Tentative unban {ip} dans toutes les prisons :\n" + ("\n".join(lines) or "Aucune prison trouvée")
 
+    elif action == "logs_purge":
+        mode = params.get("mode", "both")          # "bot" | "journal" | "both"
+        vacuum_time = params.get("vacuum_time", "7d")  # "1d" | "7d" | "30d" | "all"
+        parts = []
+
+        if mode in ("bot", "both"):
+            r = run("sudo", "truncate", "-s", "0", str(LOG_FILE))
+            parts.append(f"Bot.log vidé : {r or '✅ OK'}")
+
+        if mode in ("journal", "both"):
+            if vacuum_time == "all":
+                r1 = run("sudo", "journalctl", "--rotate")
+                r2 = run("sudo", "journalctl", "--vacuum-time=1s")
+                parts.append(f"Journalctl --rotate : {r1 or 'ok'}")
+                parts.append(f"Journalctl --vacuum-time=1s : {r2 or '✅ OK'}")
+            else:
+                r = run("sudo", "journalctl", f"--vacuum-time={vacuum_time}")
+                parts.append(f"Journalctl vacuum ({vacuum_time}) : {r or '✅ OK'}")
+
+        output = "\n".join(parts) if parts else "Aucune action effectuée"
+
+    elif action == "api_test":
+        port_raw  = run("sudo", "ss", "-tunlp")
+        port_hits = [l for l in port_raw.splitlines() if "8080" in l]
+        
+        # Curl avec timeout augmenté + fallback wget
+        health = run("curl", "-s", "--max-time", "10",
+                    "http://127.0.0.1:8080/api/publisher/health")
+        if not health:
+            health = run("wget", "-qO-", "--timeout=10",
+                        "http://127.0.0.1:8080/api/publisher/health")
+        
+        output = (
+            f"=== Port 8080 (ss -tunlp) ===\n"
+            + ("\n".join(port_hits) if port_hits else "  ❌ Port 8080 non trouvé")
+            + f"\n\n=== Health check (localhost) ===\n"
+            + (health or "❌ Pas de réponse (service arrêté ?)")
+        )
+
     else:
         return _with_cors(request, web.json_response({"ok": False, "error": f"Action inconnue : {action}"}, status=400))
 

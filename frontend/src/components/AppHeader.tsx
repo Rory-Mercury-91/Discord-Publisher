@@ -26,6 +26,7 @@ export interface AppHeaderProps {
   onOpenConfig: () => void;
   onOpenHelp: () => void;
   onOpenLogs: () => void;
+  onOpenServer: () => void;
   onLogout: () => void;
 }
 
@@ -33,7 +34,7 @@ export default function AppHeader({
   mode, onModeChange, theme, onToggleTheme,
   onOpenTemplates, onOpenTags, onOpenInstructions,
   onOpenHistory, onOpenStats, onOpenConfig, onOpenHelp,
-  onOpenLogs, onLogout,
+  onOpenLogs, onOpenServer, onLogout,
 }: AppHeaderProps) {
   const { profile } = useAuth();
   const { publishedPosts, savedTags, loadPostForEditing } = useApp();
@@ -359,7 +360,7 @@ export default function AppHeader({
 
         {/* Identité + statut API */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <ApiStatusBadge onOpenLogs={onOpenLogs} />
+          <ApiStatusBadge onOpenLogs={onOpenLogs} onOpenServer={onOpenServer} />
 
           <div style={vSep} />
 

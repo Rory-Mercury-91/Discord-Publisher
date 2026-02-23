@@ -51,11 +51,9 @@ const fullWidthStyle: React.CSSProperties = { gridColumn: '1 / -1' };
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface ConfigModalProps {
   onClose?: () => void;
-  onOpenLogs?: () => void;
-  onOpenServer?: () => void;  // ← ajouter
 }
 
-export default function ConfigModal({ onClose, onOpenLogs, onOpenServer }: ConfigModalProps) {
+export default function ConfigModal({ onClose }: ConfigModalProps) {
   const { showToast } = useToast();
   const { profile, user, refreshProfile } = useAuth();
   const {
@@ -619,26 +617,6 @@ export default function ConfigModal({ onClose, onOpenLogs, onOpenServer }: Confi
                     <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>Propagée via Supabase</span>
                   </div>
                 </section>
-                {/* Bouton Gestion serveur */}
-                {profile?.is_master_admin && (
-                  <section style={{ ...sectionStyle, border: '1px solid rgba(239,68,68,0.2)' }}>
-                    <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🖥️ Gestion du serveur</h4>
-                    <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
-                      Gérer le service, le pare-feu et les IP directement depuis l'UI.
-                    </p>
-                    <button
-                      onClick={() => { onOpenServer?.(); onClose?.(); }}
-                      style={{
-                        padding: '12px 16px', background: 'rgba(239,68,68,0.1)',
-                        border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444',
-                        borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 700,
-                        display: 'flex', alignItems: 'center', gap: 8,
-                      }}
-                    >
-                      🖥️ Ouvrir la gestion du serveur
-                    </button>
-                  </section>
-                )}
                 {/* Sauvegarde & restauration */}
                 <section style={{ ...sectionStyle, background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.18)' }}>
                   <h4 style={{ margin: 0, fontSize: '0.95rem' }}>💾 Sauvegarde et restauration</h4>

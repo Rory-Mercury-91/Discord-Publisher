@@ -18,7 +18,7 @@ interface PreviewProps {
 
 export default function Preview({
   preview,
-  setPreviewContent,
+  setPreviewContent: _setPreviewContent,
   onCopy,
   onOpenDiscordPreview,
   templateName,
