@@ -410,11 +410,21 @@ async fn get_local_history_archive(
 }
 
 #[tauri::command]
-async fn open_url(url: String) -> Result<(), String> {
-    std::process::Command::new("cmd")
-        .args(["/C", "start", &url])
-        .spawn()
-        .map_err(|e| format!("URL : {}", e))?;
+fn open_url(url: String) -> Result<(), String> {
+    // Méthode silencieuse sur Windows (pas de fenêtre CMD)
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &url])
+            .spawn();
+    }
+
+    // Sur les autres OS (Linux/Mac) on garde le comportement normal
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = tauri::shell::open(&url, None);
+    }
+
     Ok(())
 }
 

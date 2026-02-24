@@ -23,7 +23,7 @@ async def scrape_f95_synopsis(session, url: str) -> Optional[str]:
         url: URL complète du thread F95Zone
     
     Returns:
-        Synopsis en anglais ou None si introuvable
+        Synopsis en anglais (nettoyé) ou None si introuvable
     """
     if not url or not url.strip():
         logger.warning("[scraper] URL vide fournie")
@@ -69,40 +69,113 @@ async def scrape_f95_synopsis(session, url: str) -> Optional[str]:
         soup = BeautifulSoup(html, "html.parser")
         
         # ── STRATÉGIE 1 : Chercher .bbWrapper dans le premier post ──
-        # F95Zone structure: premier post = OP avec le synopsis
         first_post = soup.select_one("article.message--post")
         
         if first_post:
             bb_wrapper = first_post.select_one(".bbWrapper")
             
             if bb_wrapper:
-                # Nettoyer le contenu
-                synopsis = bb_wrapper.get_text(separator="\n", strip=True)
-                
-                # Supprimer les sections inutiles (spoilers, code, etc.)
+                # Supprimer les sections inutiles (spoilers, code, quotes)
                 for unwanted in bb_wrapper.select(".bbCodeSpoiler, .bbCodeCode, .bbCodeQuote"):
                     unwanted.decompose()
                 
-                synopsis = bb_wrapper.get_text(separator="\n", strip=True)
+                # Récupérer le HTML complet pour appliquer le nettoyage
+                content_html = str(bb_wrapper)
                 
-                # Validation minimale
-                if synopsis and len(synopsis) > 20:
-                    logger.info("[scraper] ✅ Synopsis trouvé (%d chars) pour %s", len(synopsis), url)
+                # ══════════════════════════════════════════════════════════
+                # NETTOYAGE INTELLIGENT (même logique que le UserScript)
+                # ══════════════════════════════════════════════════════════
+                
+                # 1. Chercher le début (après "Overview:" ou "Synopsis:")
+                start_pattern = r'(?:Overview|Synopsis)\s*:?\s*(?:<[^>]+>)*\s*'
+                start_match = re.search(start_pattern, content_html, re.IGNORECASE)
+                
+                if start_match:
+                    # Extraire la partie après "Overview:"
+                    content_html = content_html[start_match.end():]
+                
+                # 2. Chercher la fin (avant les sections techniques)
+                end_pattern = r'(?:Thread Updated|Installation|Changelog|<b>Update|Developer Notes|DOWNLOAD|Genre\s*:|Language\s*:|Version\s*:|OS\s*:|Censored\s*:|Release Date\s*:|Developer\s*:)'
+                end_match = re.search(end_pattern, content_html, re.IGNORECASE)
+                
+                if end_match:
+                    # Tronquer avant les sections techniques
+                    content_html = content_html[:end_match.start()]
+                
+                # 3. Nettoyer les balises HTML
+                # Remplacer <br> par des sauts de ligne
+                content_html = re.sub(r'<br\s*/?>', '\n', content_html, flags=re.IGNORECASE)
+                content_html = re.sub(r'</p>|</div>', '\n', content_html, flags=re.IGNORECASE)
+                
+                # Supprimer toutes les balises HTML restantes
+                content_html = re.sub(r'<[^>]+>', '', content_html)
+                
+                # 4. Nettoyer les entités HTML
+                content_html = content_html.replace('&nbsp;', ' ')
+                content_html = content_html.replace('&amp;', '&')
+                content_html = content_html.replace('&lt;', '<')
+                content_html = content_html.replace('&gt;', '>')
+                content_html = content_html.replace('&quot;', '"')
+                
+                # 5. Nettoyer les lignes vides et espaces
+                lines = content_html.split('\n')
+                cleaned_lines = []
+                
+                for line in lines:
+                    line = line.strip()
+                    # Ignorer les lignes vides ou trop courtes
+                    if line and len(line) > 2:
+                        # Ignorer les lignes qui ressemblent à des métadonnées
+                        if not re.match(r'^(You must be registered|Thread Updated|Installation|Developer|Version|OS|Language|Censored|Genre|Release Date)', line, re.IGNORECASE):
+                            cleaned_lines.append(line)
+                
+                # Joindre avec double saut de ligne pour la lisibilité
+                synopsis = '\n\n'.join(cleaned_lines)
+                
+                # 6. Nettoyage final
+                synopsis = synopsis.strip()
+                synopsis = re.sub(r'\n{3,}', '\n\n', synopsis)  # Max 2 sauts de ligne consécutifs
+                
+                # Validation
+                if synopsis and len(synopsis) > 50:
+                    logger.info("[scraper] ✅ Synopsis nettoyé (%d chars) pour %s", len(synopsis), url)
                     return synopsis
                 else:
-                    logger.warning("[scraper] Synopsis trop court (%d chars) pour %s", len(synopsis) if synopsis else 0, url)
+                    logger.warning("[scraper] Synopsis trop court après nettoyage (%d chars) pour %s", 
+                                 len(synopsis) if synopsis else 0, url)
         
-        # ── STRATÉGIE 2 : Fallback sur .message-body (sans filtre post) ──
+        # ── STRATÉGIE 2 : Fallback sur .message-body ──
         message_body = soup.select_one(".message-body .bbWrapper")
         
         if message_body:
-            synopsis = message_body.get_text(separator="\n", strip=True)
+            # Appliquer le même nettoyage
+            for unwanted in message_body.select(".bbCodeSpoiler, .bbCodeCode, .bbCodeQuote"):
+                unwanted.decompose()
             
-            if synopsis and len(synopsis) > 20:
-                logger.info("[scraper] ✅ Synopsis trouvé (fallback) pour %s", url)
+            content_html = str(message_body)
+            
+            # Même logique de nettoyage
+            start_match = re.search(r'(?:Overview|Synopsis)\s*:?\s*(?:<[^>]+>)*\s*', content_html, re.IGNORECASE)
+            if start_match:
+                content_html = content_html[start_match.end():]
+            
+            end_match = re.search(r'(?:Thread Updated|Installation|Changelog|<b>Update|Developer Notes|DOWNLOAD)', content_html, re.IGNORECASE)
+            if end_match:
+                content_html = content_html[:end_match.start()]
+            
+            content_html = re.sub(r'<br\s*/?>', '\n', content_html, flags=re.IGNORECASE)
+            content_html = re.sub(r'</p>|</div>', '\n', content_html, flags=re.IGNORECASE)
+            content_html = re.sub(r'<[^>]+>', '', content_html)
+            content_html = content_html.replace('&nbsp;', ' ')
+            
+            lines = [l.strip() for l in content_html.split('\n') if l.strip() and len(l.strip()) > 2]
+            synopsis = '\n\n'.join(lines).strip()
+            
+            if synopsis and len(synopsis) > 50:
+                logger.info("[scraper] ✅ Synopsis trouvé (fallback, %d chars) pour %s", len(synopsis), url)
                 return synopsis
         
-        # ── STRATÉGIE 3 : Chercher dans meta description ──
+        # ── STRATÉGIE 3 : Meta description (dernier recours) ──
         meta_desc = soup.select_one("meta[property='og:description']")
         if meta_desc and meta_desc.get("content"):
             content = meta_desc["content"].strip()
@@ -110,12 +183,8 @@ async def scrape_f95_synopsis(session, url: str) -> Optional[str]:
                 logger.info("[scraper] ✅ Synopsis trouvé (meta) pour %s", url)
                 return content
         
-        # ── Aucune stratégie n'a fonctionné ──
+        # Aucune stratégie n'a fonctionné
         logger.warning("[scraper] ❌ Aucun synopsis trouvé pour %s", url)
-        
-        # Debug: afficher la structure HTML (première partie)
-        logger.debug("[scraper] Structure HTML (500 premiers chars):\n%s", html[:500])
-        
         return None
     
     except Exception as e:

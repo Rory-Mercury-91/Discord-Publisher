@@ -4,7 +4,7 @@ import {
   Cell, Legend, Pie, PieChart,
   ResponsiveContainer, Tooltip,
 } from 'recharts';
-import type { JeuF95 } from './LibraryView';
+import type { GameF95 } from './LibraryView'; // ← CORRIGÉ
 
 /* ─────────────────────────────────────────────────────────
    CONSTANTES
@@ -19,10 +19,9 @@ const TT: any = {
 };
 
 /* ─────────────────────────────────────────────────────────
-   SOUS-COMPOSANTS
+   SOUS-COMPOSANTS (inchangés)
 ───────────────────────────────────────────────────────── */
 
-/** Légende Recharts sans noir par défaut */
 function ChartLegend({ payload }: any) {
   if (!payload?.length) return null;
   return (
@@ -37,7 +36,6 @@ function ChartLegend({ payload }: any) {
   );
 }
 
-/** Carte KPI */
 function KpiCard({ icon, label, value, color, sub }:
   { icon: string; label: string; value: number; color: string; sub?: string }) {
   return (
@@ -53,7 +51,6 @@ function KpiCard({ icon, label, value, color, sub }:
   );
 }
 
-/** Camembert avec titre */
 function PieCard({ title, data, colorFn }:
   { title: string; data: { name: string; value: number }[]; colorFn: (i: number) => string }) {
   return (
@@ -78,7 +75,7 @@ function PieCard({ title, data, colorFn }:
 /* ─────────────────────────────────────────────────────────
    COMPOSANT PRINCIPAL
 ───────────────────────────────────────────────────────── */
-export default function StatsView({ jeux }: { jeux: JeuF95[] }) {
+export default function StatsView({ jeux }: { jeux: GameF95[] }) {
 
   /* ── Filtre traducteur ── */
   const traducteurs = useMemo(() =>
@@ -87,22 +84,26 @@ export default function StatsView({ jeux }: { jeux: JeuF95[] }) {
 
   const [selectedTrad, setSelectedTrad] = useState('');
 
-  /* ── Données filtrées (KPIs + camemberts) ── */
+  /* ── Données filtrées ── */
   const filtered = useMemo(() =>
     selectedTrad ? jeux.filter(j => j.traducteur === selectedTrad) : jeux
     , [jeux, selectedTrad]);
 
   const total = filtered.length;
 
+  /* ── KPIs synchro (typé correctement) ── */
   const kpis = useMemo(() => {
-    const c = { ok: 0, outdated: 0, unknown: 0 };
-    filtered.forEach(j => c[j._sync!]++);
+    const c: Record<'ok' | 'outdated' | 'unknown', number> = { ok: 0, outdated: 0, unknown: 0 };
+    filtered.forEach(j => {
+      const status = j._sync ?? 'unknown';           // ← sécurisé
+      c[status]++;
+    });
     return c;
   }, [filtered]);
 
   const pct = (n: number) => total ? `${Math.round(n / total * 100)}%` : '—';
 
-  /* Camemberts — calculés sur la sélection */
+  /* Camemberts */
   const byTradType = useMemo(() => {
     const m: Record<string, number> = {};
     filtered.forEach(j => { const k = j.type_de_traduction || 'Non précisé'; m[k] = (m[k] || 0) + 1; });
@@ -121,7 +122,7 @@ export default function StatsView({ jeux }: { jeux: JeuF95[] }) {
     return Object.entries(m).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [filtered]);
 
-  /* ── Tableau traducteurs — TOUJOURS sur jeux complet, jamais filtré ── */
+  /* Tableau traducteurs (global) */
   const tradTable = useMemo(() => {
     const totalAll = jeux.length;
     const m: Record<string, number> = {};
@@ -145,7 +146,7 @@ export default function StatsView({ jeux }: { jeux: JeuF95[] }) {
       }}
     >
 
-      {/* ── Filtre traducteur ── */}
+      {/* Filtre traducteur */}
       <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
           👤 Traducteur
@@ -173,17 +174,14 @@ export default function StatsView({ jeux }: { jeux: JeuF95[] }) {
         )}
       </div>
 
-      {/* ── KPIs ── */}
-      <div style={{
-        flexShrink: 0, display: 'grid',
-        gridTemplateColumns: 'repeat(3,1fr)', gap: 12
-      }}>
+      {/* KPIs */}
+      <div style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
         <KpiCard icon="📚" label="Total jeux" value={total} color="var(--accent)" />
         <KpiCard icon="✅" label="À jour" value={kpis.ok} color="#22c55e" sub={pct(kpis.ok)} />
         <KpiCard icon="⚠️" label="Non à jour" value={kpis.outdated} color="#ef4444" sub={pct(kpis.outdated)} />
       </div>
 
-      {/* ── Barre de progression sync ── */}
+      {/* Barre de progression sync */}
       <div style={{
         flexShrink: 0, background: 'var(--panel)', borderRadius: 12,
         border: '1px solid var(--border)', padding: '14px 16px'
@@ -210,14 +208,14 @@ export default function StatsView({ jeux }: { jeux: JeuF95[] }) {
         </div>
       </div>
 
-      {/* ── Camemberts ── */}
+      {/* Camemberts */}
       <div style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
         <PieCard title="⚙ Type de traduction" data={byTradType} colorFn={pal} />
         <PieCard title="📁 Par statut" data={byStatut} colorFn={pal} />
         <PieCard title="🌐 Par site" data={bySite} colorFn={pal} />
       </div>
 
-      {/* ── Tableau traducteurs (toujours global) ── */}
+      {/* Tableau traducteurs */}
       <div style={{
         flexShrink: 0, background: 'var(--panel)', borderRadius: 12,
         border: '1px solid var(--border)', overflow: 'hidden'
@@ -260,9 +258,7 @@ export default function StatsView({ jeux }: { jeux: JeuF95[] }) {
                 >
                   <td style={td({ color: 'var(--muted)', width: 36 })}>{i + 1}</td>
                   <td style={td({ fontWeight: selectedTrad === row.name ? 700 : 400 })}>
-                    {selectedTrad === row.name && (
-                      <span style={{ color: 'var(--accent)', marginRight: 6 }}>▶</span>
-                    )}
+                    {selectedTrad === row.name && <span style={{ color: 'var(--accent)', marginRight: 6 }}>▶</span>}
                     {row.name}
                   </td>
                   <td style={td({ textAlign: 'right', fontWeight: 600, color: 'var(--text)' })}>

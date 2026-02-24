@@ -190,7 +190,10 @@ async def scrape_enrich(request):
             await response.write((json.dumps(data, ensure_ascii=False) + '\n').encode('utf-8'))
             await response.drain()
         except Exception as e:
-            logger.warning("[api] Erreur envoi SSE : %s", e)
+            # ✅ CORRECTION : Ignorer silencieusement les erreurs de transport fermé
+            # (le client a fermé la connexion, c'est normal)
+            if "closing transport" not in str(e).lower():
+                logger.warning("[api] Erreur envoi SSE : %s", e)
     
     try:
         # ═══ ÉTAPE 1 : Récupération depuis f95_jeux (source de vérité) ═══
@@ -344,19 +347,19 @@ async def scrape_enrich(request):
                     })
                     continue
                 
-# ── SAUVEGARDE dans games (UPSERT par f95_url) ──
+                # ── SAUVEGARDE dans games (UPSERT par f95_url) ──
                 try:
                     now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
                     
-                    # Correction ici : on exécute et on vérifie proprement le résultat
+                    # ✅ CORRECTION : Utiliser .limit(1).execute() au lieu de .maybe_single()
                     res = sb.table("games") \
                         .select("id") \
                         .eq("f95_url", f95_url) \
-                        .maybe_single() \
+                        .limit(1) \
                         .execute()
                     
-                    # On vérifie si res existe et si res.data n'est pas None
-                    is_existing = res.data is not None if hasattr(res, 'data') else False
+                    # Vérifier si un enregistrement existe
+                    is_existing = res.data and len(res.data) > 0
                     
                     if is_existing:
                         # Update
