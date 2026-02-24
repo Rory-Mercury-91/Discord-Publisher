@@ -16,87 +16,84 @@ logger = logging.getLogger("translator")
 GOOGLE_TRANSLATE_API = "https://translate.googleapis.com/translate_a/single"
 
 
-async def translate_text(
-    session: aiohttp.ClientSession,
-    text: str,
-    source_lang: str = "en",
-    target_lang: str = "fr"
-) -> Optional[str]:
+async def translate_text(session, text: str, source_lang: str = "en", target_lang: str = "fr") -> Optional[str]:
     """
-    Traduit un texte via Google Translate API non-officielle.
+    Traduit un texte via l'API Google Translate non-officielle.
     
     Args:
-        session: Session aiohttp
-        text: Texte à traduire (max ~5000 caractères)
+        session: aiohttp.ClientSession
+        text: Texte à traduire
         source_lang: Langue source (défaut: "en")
         target_lang: Langue cible (défaut: "fr")
     
     Returns:
         Texte traduit ou None en cas d'erreur
-    
-    Exemple de réponse API:
-        [[["texte traduit", "texte source", null, null, 3], ...]]
     """
     if not text or not text.strip():
         logger.warning("[translator] Texte vide fourni")
         return None
     
-    # Limite de caractères pour éviter les erreurs
-    text_clean = text.strip()[:5000]
+    text = text.strip()
     
-    params = {
-        "client": "gtx",         # Client gratuit (pas de clé API)
-        "sl": source_lang,       # Source language
-        "tl": target_lang,       # Target language
-        "dt": "t",               # Return translated text
-        "q": text_clean          # Query (texte à traduire)
-    }
+    # Limiter la longueur (Google Translate a une limite)
+    if len(text) > 5000:
+        logger.warning("[translator] Texte trop long (%d chars), troncature à 5000", len(text))
+        text = text[:5000]
     
     try:
-        logger.info(
-            "[translator] Traduction %s → %s (%d caractères)",
-            source_lang, target_lang, len(text_clean)
-        )
+        # URL de l'API Google Translate non-officielle
+        base_url = "https://translate.googleapis.com/translate_a/single"
         
-        async with session.get(
-            GOOGLE_TRANSLATE_API,
-            params=params,
-            timeout=aiohttp.ClientTimeout(total=30)
-        ) as resp:
-            if resp.status != 200:
-                logger.error(
-                    "[translator] API HTTP %d : %s",
-                    resp.status, await resp.text()
-                )
+        params = {
+            "client": "gtx",
+            "sl": source_lang,
+            "tl": target_lang,
+            "dt": "t",
+            "q": text
+        }
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        
+        logger.info("[translator] Traduction %s → %s (%d chars)", source_lang, target_lang, len(text))
+        
+        async with session.get(base_url, params=params, headers=headers, timeout=30) as response:
+            if response.status != 200:
+                logger.warning("[translator] HTTP %d", response.status)
                 return None
             
-            data = await resp.json()
+            data = await response.json()
             
-            # Format de réponse : [[["texte traduit", "texte source", ...], ...]]
-            if not isinstance(data, list) or not data:
-                logger.error("[translator] Format de réponse invalide : %s", data)
+            # La réponse est une structure complexe: [[["texte_traduit", "texte_source", null, null, 3], ...], ...]
+            if not data or not isinstance(data, list) or len(data) == 0:
+                logger.warning("[translator] Réponse vide ou invalide")
                 return None
             
             # Extraire les segments traduits
-            translated_segments = []
+            translated_parts = []
+            
             for segment in data[0]:
                 if isinstance(segment, list) and len(segment) > 0:
-                    translated_segments.append(str(segment[0]))
+                    translated_text = segment[0]
+                    if translated_text and isinstance(translated_text, str):
+                        translated_parts.append(translated_text)
             
-            if not translated_segments:
-                logger.warning("[translator] Aucun segment traduit trouvé")
+            if not translated_parts:
+                logger.warning("[translator] Aucune traduction extraite")
                 return None
             
-            result = "".join(translated_segments).strip()
-            logger.info("[translator] ✅ Traduction réussie (%d → %d caractères)",
-                       len(text_clean), len(result))
-            return result
+            result = "".join(translated_parts).strip()
+            
+            if result and len(result) > 10:
+                logger.info("[translator] ✅ Traduction réussie (%d chars)", len(result))
+                return result
+            else:
+                logger.warning("[translator] Traduction trop courte (%d chars)", len(result) if result else 0)
+                return None
     
-    except aiohttp.ClientError as e:
-        logger.error("[translator] Erreur réseau : %s", e)
-        return None
     except Exception as e:
-        logger.error("[translator] Erreur inattendue : %s", e, exc_info=True)
+        logger.error("[translator] Exception: %s", e, exc_info=True)
         return None
 
 

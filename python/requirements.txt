@@ -4,3 +4,4 @@ aiohttp>=3.8
 supabase>=2.0.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
+brotli>=1.1.0

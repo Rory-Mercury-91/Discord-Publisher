@@ -134,12 +134,11 @@ async def scrape_enrich(request):
     """
     Endpoint d'enrichissement automatique des synopsis.
     
-    Workflow:
-        1. Récupère tous les jeux sans synopsis_fr depuis Supabase
+    Workflow CORRIGÉ:
+        1. Récupère TOUS les jeux depuis f95_jeux (source de vérité)
         2. Pour chaque jeu:
-           - Scrape synopsis_en depuis F95Zone
-           - Traduit EN → FR via Google Translate
-           - Sauvegarde dans Supabase
+           a. Vérifie si synopsis existe déjà (games OU published_posts)
+           b. Si absent: scrape + traduit + sauvegarde dans games
         3. Envoie des updates JSON en streaming (SSE)
     
     Format de réponse (NDJSON):
@@ -194,122 +193,210 @@ async def scrape_enrich(request):
             logger.warning("[api] Erreur envoi SSE : %s", e)
     
     try:
-        # ═══ RÉCUPÉRATION DES JEUX SANS SYNOPSIS_FR ═══
-        await send_json({"log": "📥 Récupération des jeux depuis Supabase..."})
+        # ═══ ÉTAPE 1 : Récupération depuis f95_jeux (source de vérité) ═══
+        await send_json({"log": "📥 Récupération des jeux depuis f95_jeux..."})
         
-        # Table hypothétique : games (à adapter selon votre schéma)
-        # Si la table n'existe pas, créez-la via migration Supabase
-        games_res = sb.table("games") \
-            .select("id, name, f95_url, synopsis_en") \
-            .is_("synopsis_fr", "null") \
-            .execute()
+        # Récupérer TOUS les jeux de f95_jeux avec pagination
+        all_jeux = []
+        offset = 0
+        PAGE_SIZE = 1000
         
-        games = games_res.data or []
-        total = len(games)
+        while True:
+            res = sb.table("f95_jeux") \
+                .select("id, nom_du_jeu, nom_url, site_id") \
+                .range(offset, offset + PAGE_SIZE - 1) \
+                .execute()
+            
+            batch = res.data or []
+            all_jeux.extend(batch)
+            
+            if len(batch) < PAGE_SIZE:
+                break
+            offset += PAGE_SIZE
         
-        if total == 0:
-            await send_json({"log": "ℹ️ Aucun jeu à enrichir (tous ont déjà un synopsis_fr)"})
+        if not all_jeux:
+            await send_json({"log": "⚠️ Aucun jeu trouvé dans f95_jeux"})
             await send_json({"status": "completed"})
             await response.write_eof()
             return response
         
         await send_json({
-            "log": f"🎮 {total} jeu(x) à enrichir",
+            "log": f"📊 {len(all_jeux)} jeux récupérés depuis f95_jeux",
+            "progress": {"current": 0, "total": len(all_jeux)}
+        })
+        
+        # ═══ ÉTAPE 2 : Charger les synopsis existants ═══
+        await send_json({"log": "🔍 Vérification des synopsis existants..."})
+        
+        # A) Synopsis depuis games (par f95_url)
+        games_res = sb.table("games") \
+            .select("f95_url, synopsis_fr") \
+            .not_.is_("synopsis_fr", "null") \
+            .execute()
+        
+        existing_games = {}
+        for g in (games_res.data or []):
+            url = (g.get("f95_url") or "").strip()
+            if url:
+                existing_games[url.lower()] = g.get("synopsis_fr")
+        
+        # B) Synopsis depuis published_posts (saved_inputs.Overview)
+        posts_res = sb.table("published_posts") \
+            .select("saved_inputs") \
+            .not_.is_("saved_inputs", "null") \
+            .execute()
+        
+        existing_posts_synopsis = {}
+        for p in (posts_res.data or []):
+            inputs = p.get("saved_inputs") or {}
+            if isinstance(inputs, str):
+                try:
+                    inputs = json.loads(inputs)
+                except:
+                    inputs = {}
+            
+            game_link = (inputs.get("Game_link") or "").strip().lower()
+            overview = (inputs.get("Overview") or "").strip()
+            
+            if game_link and overview:
+                existing_posts_synopsis[game_link] = overview
+        
+        await send_json({
+            "log": f"✅ {len(existing_games)} synopsis trouvés dans games, "
+                   f"{len(existing_posts_synopsis)} dans published_posts"
+        })
+        
+        # ═══ ÉTAPE 3 : Filtrage des jeux à enrichir ═══
+        to_enrich = []
+        
+        for jeu in all_jeux:
+            nom = jeu.get("nom_du_jeu", "Sans nom")
+            url = (jeu.get("nom_url") or "").strip()
+            
+            # Validation URL F95Zone
+            if not url or "f95zone.to" not in url.lower():
+                continue
+            
+            url_lower = url.lower()
+            
+            # Priorité 1 : published_posts (synopsis manuel)
+            if url_lower in existing_posts_synopsis:
+                continue
+            
+            # Priorité 2 : games (synopsis déjà enrichi)
+            if url_lower in existing_games:
+                continue
+            
+            # À enrichir
+            to_enrich.append(jeu)
+        
+        total = len(to_enrich)
+        
+        if total == 0:
+            await send_json({
+                "log": f"ℹ️ Aucun jeu à enrichir ({len(all_jeux)} jeux vérifiés, tous ont déjà un synopsis)"
+            })
+            await send_json({"status": "completed"})
+            await response.write_eof()
+            return response
+        
+        await send_json({
+            "log": f"🎮 {total} jeu(x) sans synopsis à enrichir",
             "progress": {"current": 0, "total": total}
         })
         
-        # ═══ TRAITEMENT SÉQUENTIEL ═══
+        # ═══ ÉTAPE 4 : Enrichissement séquentiel ═══
+        enriched = 0
+        
         async with aiohttp.ClientSession() as session:
-            for idx, game in enumerate(games, 1):
-                game_id = game.get("id")
-                game_name = game.get("name", "Sans nom")
-                f95_url = game.get("f95_url", "").strip()
-                synopsis_en_cached = game.get("synopsis_en", "").strip()
+            for idx, jeu in enumerate(to_enrich, 1):
+                jeu_id = jeu.get("id")
+                nom = jeu.get("nom_du_jeu", "Sans nom")
+                f95_url = jeu.get("nom_url", "").strip()
                 
                 await send_json({
                     "progress": {"current": idx, "total": total}
                 })
                 
-                # ── Validation URL ──
-                if not f95_url:
-                    await send_json({
-                        "log": f"⏭️ [{idx}/{total}] {game_name} — Pas d'URL F95"
-                    })
-                    continue
+                # ── SCRAPING ──
+                await send_json({
+                    "log": f"🕷️ [{idx}/{total}] {nom} — Scraping synopsis..."
+                })
                 
-                if "f95zone.to" not in f95_url.lower():
-                    await send_json({
-                        "log": f"⏭️ [{idx}/{total}] {game_name} — URL non-F95Zone"
-                    })
-                    continue
-                
-                # ── ÉTAPE 1 : Scraping synopsis EN ──
-                synopsis_en = synopsis_en_cached
+                synopsis_en = await scrape_f95_synopsis(session, f95_url)
                 
                 if not synopsis_en:
                     await send_json({
-                        "log": f"🕷️ [{idx}/{total}] {game_name} — Scraping synopsis..."
+                        "log": f"⏭️ [{idx}/{total}] {nom} — Synopsis introuvable"
                     })
-                    
-                    synopsis_en = await scrape_f95_synopsis(session, f95_url)
-                    
-                    if not synopsis_en:
-                        await send_json({
-                            "log": f"❌ [{idx}/{total}] {game_name} — Scraping échoué"
-                        })
-                        continue
-                    
-                    # Sauvegarde synopsis_en
-                    try:
-                        sb.table("games").update({
-                            "synopsis_en": synopsis_en,
-                            "updated_at": datetime.datetime.now(ZoneInfo("UTC")).isoformat()
-                        }).eq("id", game_id).execute()
-                    except Exception as e:
-                        logger.warning(
-                            "[api] Erreur sauvegarde synopsis_en (%s) : %s",
-                            game_name, e
-                        )
+                    continue
                 
-                # ── ÉTAPE 2 : Traduction EN → FR ──
+                # ── TRADUCTION ──
                 await send_json({
-                    "log": f"🌐 [{idx}/{total}] {game_name} — Traduction EN → FR..."
+                    "log": f"🌐 [{idx}/{total}] {nom} — Traduction EN → FR..."
                 })
                 
                 synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
                 
                 if not synopsis_fr:
                     await send_json({
-                        "log": f"❌ [{idx}/{total}] {game_name} — Traduction échouée"
+                        "log": f"❌ [{idx}/{total}] {nom} — Traduction échouée"
                     })
                     continue
                 
-                # ── ÉTAPE 3 : Sauvegarde synopsis_fr ──
+# ── SAUVEGARDE dans games (UPSERT par f95_url) ──
                 try:
-                    sb.table("games").update({
-                        "synopsis_fr": synopsis_fr,
-                        "updated_at": datetime.datetime.now(ZoneInfo("UTC")).isoformat()
-                    }).eq("id", game_id).execute()
+                    now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
                     
+                    # Correction ici : on exécute et on vérifie proprement le résultat
+                    res = sb.table("games") \
+                        .select("id") \
+                        .eq("f95_url", f95_url) \
+                        .maybe_single() \
+                        .execute()
+                    
+                    # On vérifie si res existe et si res.data n'est pas None
+                    is_existing = res.data is not None if hasattr(res, 'data') else False
+                    
+                    if is_existing:
+                        # Update
+                        sb.table("games").update({
+                            "synopsis_en": synopsis_en,
+                            "synopsis_fr": synopsis_fr,
+                            "updated_at": now
+                        }).eq("f95_url", f95_url).execute()
+                    else:
+                        # Insert
+                        sb.table("games").insert({
+                            "name": nom,
+                            "f95_url": f95_url,
+                            "synopsis_en": synopsis_en,
+                            "synopsis_fr": synopsis_fr,
+                            "created_at": now,
+                            "updated_at": now
+                        }).execute()
+                    
+                    enriched += 1
                     await send_json({
-                        "log": f"✅ [{idx}/{total}] {game_name} — Enrichi avec succès"
-                    })
-                except Exception as e:
-                    logger.error(
-                        "[api] Erreur sauvegarde synopsis_fr (%s) : %s",
-                        game_name, e
-                    )
-                    await send_json({
-                        "log": f"❌ [{idx}/{total}] {game_name} — Erreur sauvegarde : {e}"
+                        "log": f"✅ [{idx}/{total}] {nom} — Enrichi avec succès"
                     })
                 
-                # Délai entre jeux (politesse F95Zone)
+                except Exception as e:
+                    logger.error(
+                        "[api] Erreur sauvegarde games (%s) : %s",
+                        nom, e
+                    )
+                    await send_json({
+                        "log": f"❌ [{idx}/{total}] {nom} — Erreur sauvegarde : {e}"
+                    })
+                
+                # Délai entre jeux (politesse F95Zone + Google Translate)
                 if idx < total:
-                    await asyncio.sleep(1.5)
+                    await asyncio.sleep(2.0)
         
         # ═══ TERMINÉ ═══
         await send_json({
-            "log": f"🎉 Enrichissement terminé : {total} jeu(x) traité(s)",
+            "log": f"🎉 Enrichissement terminé : {enriched}/{total} jeux enrichis avec succès",
             "status": "completed"
         })
     

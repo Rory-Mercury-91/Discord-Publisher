@@ -14,88 +14,112 @@ from bs4 import BeautifulSoup
 logger = logging.getLogger("scraper")
 
 
-async def scrape_f95_synopsis(
-    session: aiohttp.ClientSession,
-    f95_url: str
-) -> Optional[str]:
+async def scrape_f95_synopsis(session, url: str) -> Optional[str]:
     """
-    Scrape le synopsis (description) depuis une page F95Zone.
+    Scrape le synopsis d'un jeu depuis F95Zone.
     
     Args:
-        session: Session aiohttp
-        f95_url: URL du thread F95Zone (ex: https://f95zone.to/threads/xxxxx.123456/)
+        session: aiohttp.ClientSession
+        url: URL complète du thread F95Zone
     
     Returns:
-        Texte du synopsis nettoyé (max 2000 caractères) ou None
-    
-    Sélecteur CSS : .articleBody-main .bbWrapper (premier bloc = description)
+        Synopsis en anglais ou None si introuvable
     """
-    if not f95_url or not f95_url.strip():
+    if not url or not url.strip():
         logger.warning("[scraper] URL vide fournie")
         return None
     
-    url_clean = f95_url.strip()
+    url = url.strip()
     
-    # Validation : uniquement F95Zone
-    if "f95zone.to" not in url_clean.lower():
-        logger.warning("[scraper] URL non-F95Zone : %s", url_clean)
+    # Vérifier que c'est bien une URL F95Zone
+    if "f95zone.to" not in url.lower():
+        logger.warning("[scraper] URL non-F95Zone: %s", url)
         return None
     
     try:
-        logger.info("[scraper] Scraping synopsis : %s", url_clean[:60])
-        
+        # Headers pour imiter un navigateur réel (éviter les blocages)
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Cache-Control": "max-age=0"
         }
         
-        async with session.get(
-            url_clean,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=30)
-        ) as resp:
-            if resp.status != 200:
-                logger.error("[scraper] HTTP %d : %s", resp.status, url_clean)
+        logger.info("[scraper] Fetching: %s", url)
+        
+        async with session.get(url, headers=headers, timeout=30) as response:
+            if response.status != 200:
+                logger.warning("[scraper] HTTP %d pour %s", response.status, url)
                 return None
             
-            html = await resp.text()
-            soup = BeautifulSoup(html, "lxml")
+            html = await response.text()
             
-            # Sélecteur : premier .bbWrapper dans .articleBody-main
-            bb_wrapper = soup.select_one(".articleBody-main .bbWrapper")
-            
-            if not bb_wrapper:
-                logger.warning("[scraper] .bbWrapper introuvable : %s", url_clean)
+            if not html or len(html) < 100:
+                logger.warning("[scraper] HTML vide ou trop court pour %s", url)
                 return None
+        
+        # Parser avec BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        
+        # ── STRATÉGIE 1 : Chercher .bbWrapper dans le premier post ──
+        # F95Zone structure: premier post = OP avec le synopsis
+        first_post = soup.select_one("article.message--post")
+        
+        if first_post:
+            bb_wrapper = first_post.select_one(".bbWrapper")
             
-            # Extraction texte brut
-            synopsis_raw = bb_wrapper.get_text(separator=" ", strip=True)
+            if bb_wrapper:
+                # Nettoyer le contenu
+                synopsis = bb_wrapper.get_text(separator="\n", strip=True)
+                
+                # Supprimer les sections inutiles (spoilers, code, etc.)
+                for unwanted in bb_wrapper.select(".bbCodeSpoiler, .bbCodeCode, .bbCodeQuote"):
+                    unwanted.decompose()
+                
+                synopsis = bb_wrapper.get_text(separator="\n", strip=True)
+                
+                # Validation minimale
+                if synopsis and len(synopsis) > 20:
+                    logger.info("[scraper] ✅ Synopsis trouvé (%d chars) pour %s", len(synopsis), url)
+                    return synopsis
+                else:
+                    logger.warning("[scraper] Synopsis trop court (%d chars) pour %s", len(synopsis) if synopsis else 0, url)
+        
+        # ── STRATÉGIE 2 : Fallback sur .message-body (sans filtre post) ──
+        message_body = soup.select_one(".message-body .bbWrapper")
+        
+        if message_body:
+            synopsis = message_body.get_text(separator="\n", strip=True)
             
-            # Nettoyage
-            synopsis_clean = re.sub(r'\s+', ' ', synopsis_raw).strip()
-            
-            # Limite de caractères (évite les synopsis trop longs)
-            synopsis_final = synopsis_clean[:2000]
-            
-            if not synopsis_final:
-                logger.warning("[scraper] Synopsis vide après extraction : %s", url_clean)
-                return None
-            
-            logger.info(
-                "[scraper] ✅ Synopsis extrait (%d caractères) : %s",
-                len(synopsis_final), url_clean[:60]
-            )
-            return synopsis_final
-    
-    except aiohttp.ClientError as e:
-        logger.error("[scraper] Erreur réseau : %s → %s", url_clean, e)
+            if synopsis and len(synopsis) > 20:
+                logger.info("[scraper] ✅ Synopsis trouvé (fallback) pour %s", url)
+                return synopsis
+        
+        # ── STRATÉGIE 3 : Chercher dans meta description ──
+        meta_desc = soup.select_one("meta[property='og:description']")
+        if meta_desc and meta_desc.get("content"):
+            content = meta_desc["content"].strip()
+            if len(content) > 50:
+                logger.info("[scraper] ✅ Synopsis trouvé (meta) pour %s", url)
+                return content
+        
+        # ── Aucune stratégie n'a fonctionné ──
+        logger.warning("[scraper] ❌ Aucun synopsis trouvé pour %s", url)
+        
+        # Debug: afficher la structure HTML (première partie)
+        logger.debug("[scraper] Structure HTML (500 premiers chars):\n%s", html[:500])
+        
         return None
+    
     except Exception as e:
-        logger.error(
-            "[scraper] Erreur inattendue : %s → %s",
-            url_clean, e, exc_info=True
-        )
+        logger.error("[scraper] Exception lors du scraping de %s: %s", url, e, exc_info=True)
         return None
 
 
