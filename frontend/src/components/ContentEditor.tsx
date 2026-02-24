@@ -537,18 +537,45 @@ export default function ContentEditor() {
   const handlePasteImport = async () => {
     try {
       const text = await navigator.clipboard.readText();
+      if (!text) {
+        showToast('Presse-papier vide', 'error');
+        return;
+      }
+
       const data = JSON.parse(text);
+      const logs: string[] = []; // Pour le logging final
 
-      // ✅ Champs simples (inputs)
-      if (data.name) setInput('Game_name', data.name);
-      if (data.version) setInput('Game_version', data.version);
+      // 1. Nettoyage et sécurisation du Nom
+      if (data.name && typeof data.name === 'string') {
+        const cleanName = data.name.trim();
+        setInput('Game_name', cleanName);
+        logs.push(`✅ Nom: "${cleanName}" -> [Game_name]`);
+      }
 
-      // ✅ IMPORTANT : ton UI "Lien du jeu" utilise linkConfigs + setLinkConfig
+      // 2. Nettoyage et sécurisation de la Version
+      if (data.version && typeof data.version === 'string') {
+        const cleanVersion = data.version.trim();
+        setInput('Game_version', cleanVersion);
+        logs.push(`✅ Version: "${cleanVersion}" -> [Game_version]`);
+      }
+
+      // 3. 🆕 SYNOPSIS (Overview)
+      if (data.synopsis && typeof data.synopsis === 'string' && data.synopsis.trim()) {
+        const cleanSynopsis = data.synopsis.trim();
+        setInput('Overview', cleanSynopsis);
+        logs.push(`✅ Synopsis: (${cleanSynopsis.length} chars) -> [Overview]`);
+
+        // Scroll automatique vers le textarea synopsis
+        setTimeout(() => {
+          overviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      }
+
+      // 4. Gestion des Liens et ID
       const rawLink = typeof data.link === 'string' ? data.link.trim() : '';
-      const rawId =
-        typeof data.id === 'string' || typeof data.id === 'number'
-          ? String(data.id).trim()
-          : '';
+      const rawId = (typeof data.id === 'string' || typeof data.id === 'number')
+        ? String(data.id).trim()
+        : '';
 
       const detectSource = (link: string): 'F95' | 'Lewd' | 'Autre' => {
         const l = link.toLowerCase();
@@ -558,28 +585,42 @@ export default function ContentEditor() {
       };
 
       const extractThreadId = (link: string): string => {
-        // Ex: https://f95zone.to/threads/xxxxx.232384/ ou .../xxxxx.8012/post-11944222
         const m = link.match(/threads\/(?:[^/]*\.)?(\d+)/i);
         return m?.[1] ?? '';
       };
 
-      const sourceToUse: 'F95' | 'Lewd' | 'Autre' = rawLink ? detectSource(rawLink) : 'F95';
+      const sourceToUse = rawLink ? detectSource(rawLink) : 'F95';
       const idFromLink = rawLink ? extractThreadId(rawLink) : '';
-      const idToUse = rawId || idFromLink || (rawLink && /^\d+$/.test(rawLink.trim()) ? rawLink.trim() : '');
+      const idToUse = rawId || idFromLink || (rawLink && /^\d+$/.test(rawLink) ? rawLink : '');
 
-      // Préférer l’URL complète (rawLink) pour F95/Lewd afin de conserver #post-XXXXX ; sinon ID ou Autre
       if (rawLink && (sourceToUse === 'F95' || sourceToUse === 'Lewd')) {
         setLinkConfig('Game_link', sourceToUse, rawLink);
+        logs.push(`✅ Lien: ${sourceToUse} URL détectée -> [Game_link]`);
       } else if (idToUse) {
-        if (sourceToUse === 'Autre') setLinkConfig('Game_link', 'F95', idToUse);
-        else setLinkConfig('Game_link', sourceToUse, idToUse);
+        const finalSource = sourceToUse === 'Autre' ? 'F95' : sourceToUse;
+        setLinkConfig('Game_link', finalSource, idToUse);
+        logs.push(`✅ ID: "${idToUse}" (${finalSource}) -> [Game_link]`);
       } else if (rawLink) {
         setLinkConfig('Game_link', 'Autre', rawLink);
+        logs.push(`✅ Lien: Source inconnue -> [Game_link]`);
       }
 
-      showToast('Données importées !', 'success');
+      // 5. 🆕 IMAGE (Validation stricte f95zone)
+      if (data.image && typeof data.image === 'string' && data.image.includes('f95zone.to')) {
+        addImageFromUrl(data.image);
+        logs.push(`✅ Image: URL détectée -> [addImageFromUrl]`);
+        showToast('Image ajoutée depuis F95Zone', 'success');
+      }
+
+      // Affichage des logs dans la console pour debug
+      console.group('📥 Import Scraper Rapide');
+      logs.forEach(l => console.log(l));
+      console.groupEnd();
+
+      showToast('Données importées avec succès !', 'success');
     } catch (err) {
-      showToast('❌ Erreur : Presse-papier invalide', 'error');
+      showToast('❌ Format JSON invalide', 'error');
+      console.error('Détails erreur import:', err);
     }
   };
 

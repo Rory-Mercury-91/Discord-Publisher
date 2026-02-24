@@ -12,11 +12,12 @@ import { useApp } from '../state/appContext';
 import type { Profile } from '../state/authContext';
 import { useAuth } from '../state/authContext';
 import ConfirmModal from './ConfirmModal';
+import EnrichmentTab from './EnrichmentTab';
 import { useToast } from './ToastProvider';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type WindowState = 'normal' | 'maximized' | 'fullscreen' | 'minimized';
-type Tab = 'preferences' | 'account' | 'admin';
+type Tab = 'preferences' | 'account' | 'admin' | 'enrichment';
 type ProfilePublic = Pick<Profile, 'id' | 'pseudo' | 'discord_id'>;
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -432,6 +433,7 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
     { id: 'preferences', label: 'Préférences', icon: '⚙️' },
     { id: 'account', label: 'Mon compte', icon: '👤' },
     { id: 'admin', label: 'Administration', icon: '🛡️' },
+    { id: 'enrichment', label: 'Enrichissement', icon: '🤖' },
   ];
 
   // ─── Rendu ────────────────────────────────────────────────────────────────
@@ -673,7 +675,10 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
               </div>
             )
           )}
-
+          {/* ══ ENRISSISSEMENT ════════════════════════════════════════════════ */}
+          {activeTab === 'enrichment' && adminUnlocked && (
+            <EnrichmentTab />
+          )}
         </div>
 
         {/* Footer */}

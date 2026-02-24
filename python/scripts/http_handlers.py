@@ -18,6 +18,8 @@ import aiohttp
 from aiohttp import web
 
 from config import config
+from translator import translate_text
+from scraper import scrape_f95_synopsis
 from api_key_auth import _auth_request, LEGACY_KEY_WARNING
 from supabase_client import (
     _get_supabase, _fetch_post_by_thread_id_sync,
@@ -127,6 +129,201 @@ async def logging_middleware(request, handler):
 
 
 # ==================== HANDLERS ====================
+
+async def scrape_enrich(request):
+    """
+    Endpoint d'enrichissement automatique des synopsis.
+    
+    Workflow:
+        1. Récupère tous les jeux sans synopsis_fr depuis Supabase
+        2. Pour chaque jeu:
+           - Scrape synopsis_en depuis F95Zone
+           - Traduit EN → FR via Google Translate
+           - Sauvegarde dans Supabase
+        3. Envoie des updates JSON en streaming (SSE)
+    
+    Format de réponse (NDJSON):
+        {"progress": {"current": 5, "total": 100}}
+        {"log": "✅ The Legend of the Goblins enrichi"}
+        {"status": "completed"}
+        {"error": "Message d'erreur"}
+    """
+    # ═══ AUTHENTIFICATION ═══
+    is_valid, discord_user_id, discord_name, is_legacy = await _auth_request(
+        request, "/api/scrape/enrich"
+    )
+    if not is_valid:
+        return web.json_response(
+            {"ok": False, "error": "Invalid API key"},
+            status=401
+        )
+    
+    logger.info(
+        "[api] /scrape/enrich lancé par %s (id=%s)",
+        discord_name or "unknown", discord_user_id or "N/A"
+    )
+    
+    # ═══ VÉRIFICATION SUPABASE ═══
+    sb = _get_supabase()
+    if not sb:
+        return web.json_response(
+            {"ok": False, "error": "Supabase non configuré"},
+            status=500
+        )
+    
+    # ═══ STREAMING SETUP ═══
+    response = web.StreamResponse()
+    response.headers['Content-Type'] = 'application/x-ndjson'
+    response.headers['Cache-Control'] = 'no-cache'
+    response.headers['X-Accel-Buffering'] = 'no'
+    
+    # CORS
+    origin = request.headers.get("Origin", "")
+    if origin:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+    
+    await response.prepare(request)
+    
+    async def send_json(data: dict):
+        """Helper pour envoyer du JSON ligne par ligne (NDJSON)."""
+        try:
+            await response.write((json.dumps(data, ensure_ascii=False) + '\n').encode('utf-8'))
+            await response.drain()
+        except Exception as e:
+            logger.warning("[api] Erreur envoi SSE : %s", e)
+    
+    try:
+        # ═══ RÉCUPÉRATION DES JEUX SANS SYNOPSIS_FR ═══
+        await send_json({"log": "📥 Récupération des jeux depuis Supabase..."})
+        
+        # Table hypothétique : games (à adapter selon votre schéma)
+        # Si la table n'existe pas, créez-la via migration Supabase
+        games_res = sb.table("games") \
+            .select("id, name, f95_url, synopsis_en") \
+            .is_("synopsis_fr", "null") \
+            .execute()
+        
+        games = games_res.data or []
+        total = len(games)
+        
+        if total == 0:
+            await send_json({"log": "ℹ️ Aucun jeu à enrichir (tous ont déjà un synopsis_fr)"})
+            await send_json({"status": "completed"})
+            await response.write_eof()
+            return response
+        
+        await send_json({
+            "log": f"🎮 {total} jeu(x) à enrichir",
+            "progress": {"current": 0, "total": total}
+        })
+        
+        # ═══ TRAITEMENT SÉQUENTIEL ═══
+        async with aiohttp.ClientSession() as session:
+            for idx, game in enumerate(games, 1):
+                game_id = game.get("id")
+                game_name = game.get("name", "Sans nom")
+                f95_url = game.get("f95_url", "").strip()
+                synopsis_en_cached = game.get("synopsis_en", "").strip()
+                
+                await send_json({
+                    "progress": {"current": idx, "total": total}
+                })
+                
+                # ── Validation URL ──
+                if not f95_url:
+                    await send_json({
+                        "log": f"⏭️ [{idx}/{total}] {game_name} — Pas d'URL F95"
+                    })
+                    continue
+                
+                if "f95zone.to" not in f95_url.lower():
+                    await send_json({
+                        "log": f"⏭️ [{idx}/{total}] {game_name} — URL non-F95Zone"
+                    })
+                    continue
+                
+                # ── ÉTAPE 1 : Scraping synopsis EN ──
+                synopsis_en = synopsis_en_cached
+                
+                if not synopsis_en:
+                    await send_json({
+                        "log": f"🕷️ [{idx}/{total}] {game_name} — Scraping synopsis..."
+                    })
+                    
+                    synopsis_en = await scrape_f95_synopsis(session, f95_url)
+                    
+                    if not synopsis_en:
+                        await send_json({
+                            "log": f"❌ [{idx}/{total}] {game_name} — Scraping échoué"
+                        })
+                        continue
+                    
+                    # Sauvegarde synopsis_en
+                    try:
+                        sb.table("games").update({
+                            "synopsis_en": synopsis_en,
+                            "updated_at": datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+                        }).eq("id", game_id).execute()
+                    except Exception as e:
+                        logger.warning(
+                            "[api] Erreur sauvegarde synopsis_en (%s) : %s",
+                            game_name, e
+                        )
+                
+                # ── ÉTAPE 2 : Traduction EN → FR ──
+                await send_json({
+                    "log": f"🌐 [{idx}/{total}] {game_name} — Traduction EN → FR..."
+                })
+                
+                synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
+                
+                if not synopsis_fr:
+                    await send_json({
+                        "log": f"❌ [{idx}/{total}] {game_name} — Traduction échouée"
+                    })
+                    continue
+                
+                # ── ÉTAPE 3 : Sauvegarde synopsis_fr ──
+                try:
+                    sb.table("games").update({
+                        "synopsis_fr": synopsis_fr,
+                        "updated_at": datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+                    }).eq("id", game_id).execute()
+                    
+                    await send_json({
+                        "log": f"✅ [{idx}/{total}] {game_name} — Enrichi avec succès"
+                    })
+                except Exception as e:
+                    logger.error(
+                        "[api] Erreur sauvegarde synopsis_fr (%s) : %s",
+                        game_name, e
+                    )
+                    await send_json({
+                        "log": f"❌ [{idx}/{total}] {game_name} — Erreur sauvegarde : {e}"
+                    })
+                
+                # Délai entre jeux (politesse F95Zone)
+                if idx < total:
+                    await asyncio.sleep(1.5)
+        
+        # ═══ TERMINÉ ═══
+        await send_json({
+            "log": f"🎉 Enrichissement terminé : {total} jeu(x) traité(s)",
+            "status": "completed"
+        })
+    
+    except Exception as e:
+        logger.error("[api] Erreur enrichissement : %s", e, exc_info=True)
+        await send_json({
+            "error": str(e),
+            "status": "error"
+        })
+    
+    finally:
+        await response.write_eof()
+    
+    return response
 
 async def get_logs(request):
     """Retourne le fichier de logs complet (protégé par clé API)."""
@@ -915,6 +1112,7 @@ def make_app() -> web.Application:
         ("POST",    "/api/account/delete",    account_delete),
         ("GET",     "/api/logs",              get_logs),
         ("POST",    "/api/server/action",     server_action),
+        ("POST",    "/api/scrape/enrich",     scrape_enrich),
         # Catch-all en dernier
         ("*",       "/{tail:.*}",             handle_404),
     ]

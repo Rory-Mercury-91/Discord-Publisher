@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Discord Publisher Data Extractor
+// @name         Discord Publisher Data Extractor (Enriched)
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Récupère uniquement Nom, Développeur, Version, Lien et ID sur F95/LC
+// @version      2.4
+// @description  Nettoyage précis du Nom (sans labels) et du Synopsis
 // @author       Rory Mercury 91
 // @match        https://f95zone.to/threads/*
 // @match        https://lewdcorner.com/threads/*
@@ -14,66 +14,89 @@
 
   function extractData() {
     const url = window.location.href;
-    const isF95 = window.location.hostname.includes('f95zone');
 
-    // 1. Extraction de l'ID (slug.ID ou threads/ID/ ou threads/ID#post-XXXXX)
-    const idMatchSlug = url.match(/\.(\d+)(?:\/|#|$)/);
-    const idMatchNumeric = url.match(/\/threads\/(\d+)(?:\/|#|$)/);
-    const id = (idMatchSlug && idMatchSlug[1]) || (idMatchNumeric && idMatchNumeric[1]) || "N/A";
+    // 1. ID
+    const idMatch = url.match(/\.(\d+)(?:\/|#|$)/) || url.match(/\/threads\/(\d+)/);
+    const id = idMatch ? idMatch[1] : "N/A";
 
-    // 2. Récupération du titre brut
+    // 2. NOM & VERSION (Nettoyage des labels <span>)
     const titleElement = document.querySelector('.p-title-value');
-    let rawTitle = titleElement ?
-      Array.from(titleElement.childNodes)
-        .filter(n => n.nodeType === Node.TEXT_NODE)
-        .map(n => n.textContent.trim()).join(' ')
-      : document.title;
+    let name = "N/A", version = "N/A";
 
-    // 3. Parsing du Nom, Version et Développeur (Regex optimisée)
-    // Format standard: Nom du Jeu [Version] [Développeur]
-    const structuredMatch = rawTitle.match(/(.*?)\s*\[([^\]]+)\]\s*\[([^\]]+)\]\s*$/);
+    if (titleElement) {
+      // On ignore les spans (labels) et on ne prend que les nœuds de texte direct
+      const nodes = Array.from(titleElement.childNodes);
+      const textParts = nodes
+        .filter(node => node.nodeType === Node.TEXT_NODE)
+        .map(node => node.textContent.trim())
+        .filter(text => text.length > 0);
 
-    let name = rawTitle;
-    let version = "N/A";
-    let developer = "N/A";
+      let fullTitleText = textParts.join(' ');
 
-    if (structuredMatch) {
-      name = structuredMatch[1].trim();
-      version = structuredMatch[2].trim();
-      developer = structuredMatch[3].trim();
-    } else {
-      // Fallback si format différent
-      const brackets = [...rawTitle.matchAll(/\[([^\]]+)\]/g)];
-      if (brackets.length >= 1) version = brackets[0][1];
-      if (brackets.length >= 2) developer = brackets[brackets.length - 1][1];
-      name = rawTitle.replace(/\[[^\]]+\]/g, '').trim();
+      const versionMatch = fullTitleText.match(/(.*?)\s*\[([^\]]+)\]/);
+      if (versionMatch) {
+        name = versionMatch[1].trim();
+        version = versionMatch[2].trim();
+      } else {
+        name = fullTitleText.trim();
+      }
     }
 
-    // Nettoyage final du nom (virer les préfixes comme Ren'Py -)
-    name = name.replace(/^(Ren'Py|Unity|RPGM|Unreal Engine|HTML|Flash)\s+-\s+/i, '');
+    const bbWrapper = document.querySelector('.message-threadStarterPost .bbWrapper');
 
-    return {
-      id: id,
-      name: name,
-      version: version,
-      developer: developer,
-      link: url.split('?')[0] // Lien propre sans paramètres
-    };
+    // 3. IMAGE
+    let image = "";
+    if (bbWrapper) {
+      const img = bbWrapper.querySelector('img.bbImage');
+      image = img ? (img.getAttribute('data-src') || img.src) : "";
+    }
+
+    // 4. SYNOPSIS (Nettoyage complet)
+    let synopsis = "";
+    if (bbWrapper) {
+      let content = bbWrapper.innerHTML;
+      const startRegex = /(?:Overview|Synopsis)\s*:?\s*(?:<\/?[^>]+>)*\s*/i;
+      const startIndex = content.search(startRegex);
+
+      if (startIndex !== -1) {
+        let part = content.substring(startIndex);
+        const matchStart = part.match(startRegex);
+        let afterStart = part.substring(matchStart[0].length);
+
+        // Arrêt avant les spoilers ou les sections techniques
+        const endRegex = /(?:Thread Updated|Installation|Changelog|<b>Update|<div class="bbCodeSpoiler|Synopsis\s*:)/i;
+        const endIndex = afterStart.search(endRegex);
+
+        if (endIndex !== -1) {
+          afterStart = afterStart.substring(0, endIndex);
+        }
+
+        synopsis = afterStart
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>|<\/div>/gi, '\n')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&nbsp;/g, ' ')
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0)
+          .join('\n\n')
+          .replace(/^[:\s\n]+/, '') // Nettoyage début
+          .replace(/[:\s\n]+$/, ''); // Nettoyage fin
+      }
+    }
+
+    return { id, name, version, link: url.split('?')[0], synopsis, image };
   }
 
-  // Ajout d'un petit bouton discret en bas à gauche
+  // UI
   const btn = document.createElement('button');
-  btn.innerHTML = '📋 Copier données';
-  btn.style =
-    "position:fixed;bottom:10px;left:10px;z-index:9999;padding:8px;background:#6366f1;color:white;border:none;border-radius:5px;cursor:pointer;font-weight:bold;font-size:12px;";
-
+  btn.innerHTML = '📋 Copier données jeu';
+  btn.style = "position:fixed;bottom:10px;left:10px;z-index:9999;padding:10px 16px;background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-size:13px;box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);";
   btn.onclick = () => {
     const data = extractData();
     GM_setClipboard(JSON.stringify(data, null, 2));
     btn.innerHTML = '✅ Copié !';
-    console.log("Extracted:", data);
-    setTimeout(() => btn.innerHTML = '📋 Copier données', 2000);
+    setTimeout(() => btn.innerHTML = '📋 Copier données jeu', 2000);
   };
-
   document.body.appendChild(btn);
 })();
