@@ -7,8 +7,8 @@ import { getSupabase } from '../lib/supabase';
 import { PublishedPost, useApp } from '../state/appContext';
 import type { Profile } from '../state/authContext';
 import { useAuth } from '../state/authContext';
-import ConfirmModal from './ConfirmModal';
-import DeleteConfirmModal from './DeleteConfirmModal';
+import ConfirmModal from './Modals/ConfirmModal';
+import DeleteConfirmModal from './Modals/DeleteConfirmModal';
 import Toggle from './Toggle';
 import { useToast } from './ToastProvider';
 

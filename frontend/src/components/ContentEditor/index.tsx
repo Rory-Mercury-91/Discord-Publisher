@@ -5,7 +5,7 @@ import { getSupabase } from '../../lib/supabase';
 import { useApp } from '../../state/appContext';
 import { useAuth } from '../../state/authContext';
 import { useTranslatorSelector } from '../../state/hooks/useTranslatorSelector';
-import ConfirmModal from '../ConfirmModal';
+import ConfirmModal from '../Modals/ConfirmModal';
 import TagSelectorModal from '../TagSelectorModal';
 import { useToast } from '../ToastProvider';
 

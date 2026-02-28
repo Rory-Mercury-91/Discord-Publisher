@@ -3,7 +3,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
 import { useApp } from '../state/appContext';
-import ConfirmModal from './ConfirmModal';
+import ConfirmModal from './Modals/ConfirmModal';
 import MarkdownHelpModal from './MarkdownHelpModal';
 import { useToast } from './ToastProvider';
 

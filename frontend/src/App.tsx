@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import AppHeader, { AppMode } from './components/AppHeader';
 import AuthModal from './components/AuthModal';
 import SettingsModal from './components/Settings';
-import ConfirmModal from './components/ConfirmModal';
+import ConfirmModal from './components/Modals/ConfirmModal';
 import ContentEditor from './components/ContentEditor';
 import DiscordPreviewModal from './components/DiscordPreviewModal';
 import HelpCenterModal from './components/HelpCenter';

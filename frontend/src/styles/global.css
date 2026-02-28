@@ -214,6 +214,99 @@ textarea.form-textarea {
   padding: 16px 32px;
 }
 
+/* Modales Confirm / Delete — au-dessus des autres (z-index) */
+.modal.modal--top {
+  z-index: 100000;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal .panel.modal-panel--confirm {
+  max-width: 550px;
+  width: 90%;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  animation: modalSlideIn 0.2s ease-out;
+}
+
+.modal .panel.modal-panel--delete {
+  max-width: 600px;
+  width: 90%;
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  animation: modalSlideIn 0.2s ease-out;
+}
+
+.modal-confirm__title {
+  margin: 0 0 12px 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.modal-confirm__title--danger { color: #ff6b6b; }
+.modal-confirm__title--warning { color: #ffa502; }
+.modal-confirm__title--info { color: var(--accent); }
+
+.modal-confirm__message {
+  margin: 0 0 24px 0;
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 15px;
+  white-space: pre-line;
+}
+
+.modal-confirm__body {
+  margin: 0 0 20px 0;
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 15px;
+}
+
+.modal-confirm__body p { margin: 0 0 12px 0; }
+.modal-confirm__body ul { margin: 0 0 12px 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
+.modal-confirm__body--warning { margin: 12px 0 8px 0; color: #ff6b6b; font-weight: 500; }
+.modal-confirm__body--muted { color: var(--muted); font-size: 13px; }
+
+.modal-confirm__actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+/* Boutons des modales confirm/delete : taille standard (form-btn--danger est réduit ailleurs) */
+.modal-confirm__actions .form-btn--danger,
+.modal-confirm__actions .form-btn--warning {
+  height: 40px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
+.modal-confirm__reason-wrap { margin-bottom: 20px; }
+.modal-confirm__reason-count { margin-top: 4px; font-size: 11px; color: var(--muted); text-align: right; }
+
+/* Bouton warning (confirmations type avertissement) */
+.form-btn--warning {
+  background: #ffa502;
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(255, 165, 2, 0.25);
+}
+
+.form-btn--warning:hover { opacity: 0.9; }
+
 /* ========== Modale Configuration (Settings) ========== */
 .modal-panel--config {
   width: 92%;

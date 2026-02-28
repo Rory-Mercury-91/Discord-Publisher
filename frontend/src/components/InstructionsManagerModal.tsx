@@ -5,7 +5,7 @@ import { useModalScrollLock } from '../hooks/useModalScrollLock';
 import { getSupabase } from '../lib/supabase';
 import { useApp } from '../state/appContext';
 import { useAuth } from '../state/authContext';
-import ConfirmModal from './ConfirmModal';
+import ConfirmModal from './Modals/ConfirmModal';
 import { useToast } from './ToastProvider';
 
 const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';

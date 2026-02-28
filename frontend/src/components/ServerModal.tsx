@@ -7,7 +7,7 @@ import { apiFetch } from '../lib/api-helpers';
 import { getSupabase } from '../lib/supabase';
 import { useApp } from '../state/appContext';
 import { useAuth } from '../state/authContext';
-import ConfirmModal from './ConfirmModal';
+import ConfirmModal from './Modals/ConfirmModal';
 
 type Tab = 'status' | 'security' | 'operations' | 'ip_analysis';
 

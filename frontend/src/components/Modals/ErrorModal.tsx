@@ -1,5 +1,5 @@
-import { useEscapeKey } from '../hooks/useEscapeKey';
-import { useModalScrollLock } from '../hooks/useModalScrollLock';
+import { useEscapeKey } from '../../hooks/useEscapeKey';
+import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 
 interface ErrorDetails {
   code?: string | number;
