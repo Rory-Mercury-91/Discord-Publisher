@@ -1,45 +1,9 @@
 // frontend\src\components\SettingsComponents\MyAccountSettings.tsx
 import { useEffect, useState } from 'react';
-import { useConfirm } from '../../hooks/useConfirm';
-import { getSupabase } from '../../lib/supabase';
-import { useAuth } from '../../state/authContext';
-import { useToast } from '../ToastProvider';
-
-const sectionStyle: React.CSSProperties = {
-  border: '1px solid var(--border)',
-  borderRadius: 14,
-  padding: 20,
-  background: 'rgba(255,255,255,0.02)',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 16,
-  boxSizing: 'border-box',
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '12px 14px',
-  borderRadius: 10,
-  border: '1px solid var(--border)',
-  background: 'rgba(255,255,255,0.05)',
-  color: 'var(--text)',
-  fontSize: 14,
-  boxSizing: 'border-box',
-};
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: 14,
-  color: 'var(--muted)',
-  fontWeight: 500,
-};
-
-const gridStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap: 16,
-  alignItems: 'start',
-};
+import { useConfirm } from '../../../hooks/useConfirm';
+import { getSupabase } from '../../../lib/supabase';
+import { useAuth } from '../../../state/authContext';
+import { useToast } from '../../ToastProvider';
 
 interface MyAccountSettingsProps {
   onClose?: () => void;
@@ -258,21 +222,20 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
   };
 
   return (
-    <div style={gridStyle}>
-      {/* Qui peut modifier mes posts — pleine largeur, 5 utilisateurs par ligne */}
+    <div className="settings-grid">
       {profile?.id && (
-        <section style={{ ...sectionStyle, gridColumn: '1 / -1', display: 'flex', flexDirection: 'column' }}>
-          <h4 style={{ margin: 0, fontSize: '0.95rem', flexShrink: 0 }}>👥 Qui peut modifier mes posts</h4>
-          <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, marginBottom: 12, lineHeight: 1.5, flexShrink: 0 }}>
+        <section className="settings-section settings-grid--full">
+          <h4 className="settings-section__title">👥 Qui peut modifier mes posts</h4>
+          <p className="settings-section__intro" style={{ marginBottom: 12 }}>
             Cliquez sur un utilisateur pour autoriser ou révoquer son droit d&apos;édition. &nbsp;
             <span style={{ color: '#9ca3af' }}>⚪ Gris</span> = Non autorisé &nbsp;•&nbsp;
             <span style={{ color: '#10b981' }}>🟢 Vert</span> = Autorisé
           </p>
 
           {editorsLoading ? (
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>Chargement…</div>
+            <div className="settings-section__loading">Chargement…</div>
           ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <div className="settings-editor-badges">
               {allProfiles
                 .filter(p => p.id !== profile.id)
                 .map(p => {
@@ -282,28 +245,7 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
                       key={p.id}
                       type="button"
                       onClick={() => toggleEditor(p.id, allowed)}
-                      style={{
-                        padding: '10px 14px',
-                        borderRadius: 10,
-                        border: 'none',
-                        cursor: 'pointer',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        textAlign: 'center',
-                        transition: 'all 0.2s',
-                        flex: '0 0 calc(20% - 7px)',
-                        minWidth: 120,
-                        background: allowed ? 'rgba(16,185,129,0.15)' : 'rgba(156,163,175,0.15)',
-                        color: allowed ? '#10b981' : '#9ca3af',
-                      }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.boxShadow = allowed
-                          ? '0 0 0 2px rgba(16,185,129,0.3)'
-                          : '0 0 0 2px rgba(156,163,175,0.3)';
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.boxShadow = 'none';
-                      }}
+                      className={`settings-editor-badge ${allowed ? 'settings-editor-badge--allowed' : ''}`}
                     >
                       {allowed ? '🔓 ' : '🔒 '}{p.pseudo || '—'}
                     </button>
@@ -311,7 +253,7 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
                 })}
 
               {allProfiles.filter(p => p.id !== profile.id).length === 0 && (
-                <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>
+                <div className="settings-section__empty">
                   Aucun autre utilisateur en base.
                 </div>
               )}
@@ -320,112 +262,82 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
         </section>
       )}
 
-      {/* Sécurité du compte — pleine largeur, 2 colonnes : gauche = nouveau + confirmer, droite = ancien + bouton */}
-      <section style={{ ...sectionStyle, gridColumn: '1 / -1' }}>
-        <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🔐 Sécurité du compte</h4>
-        <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, marginBottom: 16 }}>Modifier votre mot de passe de connexion.</p>
+      <section className="settings-section settings-grid--full">
+        <h4 className="settings-section__title">🔐 Sécurité du compte</h4>
+        <p className="settings-section__intro" style={{ marginBottom: 16 }}>Modifier votre mot de passe de connexion.</p>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 560 }}>
-          {/* Ligne 1 : gauche = nouveau + confirmer, droite = ancien */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <label style={labelStyle}>Nouveau mot de passe</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  placeholder="••••••••"
-                  style={inputStyle}
-                />
-                <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>Minimum 6 caractères</p>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <label style={labelStyle}>Confirmer le nouveau mot de passe</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  style={inputStyle}
-                />
-              </div>
+        <div className="settings-form-actions">
+          <div className="settings-password-grid">
+            <div className="form-field">
+              <label className="form-label">Nouveau mot de passe</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="••••••••"
+                className="form-input"
+              />
+              <p className="settings-section__intro" style={{ marginTop: 4, marginBottom: 0, fontSize: 11 }}>Minimum 6 caractères</p>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <label style={labelStyle}>Ancien mot de passe</label>
+            <div className="form-field">
+              <label className="form-label">Confirmer le nouveau</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+                className="form-input"
+              />
+            </div>
+            <div className="form-field">
+              <label className="form-label">Ancien mot de passe</label>
               <input
                 type="password"
                 value={oldPassword}
                 onChange={e => setOldPassword(e.target.value)}
                 placeholder="••••••••"
-                style={inputStyle}
+                className="form-input"
               />
             </div>
           </div>
-          {/* Bouton pleine largeur, aligné avec la colonne de gauche */}
-          <button
-            type="button"
-            onClick={handleChangePassword}
-            disabled={isChangingPassword}
-            style={{
-              width: '100%',
-              padding: '12px 16px',
-              background: 'var(--accent)',
-              border: 'none',
-              color: '#fff',
-              borderRadius: 10,
-              cursor: isChangingPassword ? 'not-allowed' : 'pointer',
-              fontSize: 14,
-              fontWeight: 700,
-              opacity: isChangingPassword ? 0.6 : 1,
-            }}
-          >
-            {isChangingPassword ? '🔄 Changement…' : '🔐 Changer le mot de passe'}
-          </button>
+          <div className="settings-form-actions__row">
+            <button
+              type="button"
+              onClick={handleChangePassword}
+              disabled={isChangingPassword}
+              className="form-btn form-btn--primary"
+            >
+              {isChangingPassword ? '🔄 Changement…' : '🔐 Changer le mot de passe'}
+            </button>
+          </div>
         </div>
 
         {/* Zone de danger — pleine largeur */}
-        <div style={{ marginTop: 24, padding: 16, background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 12, width: '100%', boxSizing: 'border-box' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#ef4444' }}>☠️ Zone de danger</span>
-            <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>Action irréversible</span>
+        <div className="settings-section--danger">
+          <div className="settings-section--danger__heading">
+            <span className="settings-section--danger__title">☠️ Zone de danger</span>
+            <span className="settings-section--danger__sub">Action irréversible</span>
           </div>
-          <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
+          <p className="settings-section--danger__body">
             Supprime votre profil, instructions, templates et autorisations. Vos publications Discord restent visibles.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'row', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 200px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={{ ...labelStyle, color: '#ef4444' }}>Mot de passe de confirmation</label>
+          <div className="settings-section--danger__actions">
+            <div className="settings-section--danger__field">
+              <label className="form-label form-label--danger">Mot de passe de confirmation</label>
               <input
                 type="password"
                 value={deletePassword}
                 onChange={e => setDeletePassword(e.target.value)}
                 placeholder="••••••••"
-                style={{ ...inputStyle, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.05)' }}
+                className="form-input form-input--danger"
               />
             </div>
             <button
               type="button"
               onClick={handleDeleteAccount}
               disabled={isDeletingAccount || !deletePassword}
-              style={{
-                flex: '1 1 200px',
-                minWidth: 0,
-                padding: '12px 16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                background: isDeletingAccount || !deletePassword ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.18)',
-                border: '1px solid rgba(239,68,68,0.4)',
-                color: isDeletingAccount || !deletePassword ? 'rgba(239,68,68,0.35)' : '#ef4444',
-                borderRadius: 8,
-                cursor: isDeletingAccount || !deletePassword ? 'not-allowed' : 'pointer',
-                fontSize: 13,
-                fontWeight: 700,
-                transition: 'all 0.2s',
-              }}
+              className="settings-btn--danger"
             >
               {isDeletingAccount ? '⏳ Suppression…' : '🗑️ Supprimer définitivement mon compte'}
             </button>

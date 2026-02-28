@@ -358,9 +358,7 @@ export default function StatsModal({ onClose }: StatsModalProps) {
           display: 'flex',
           justifyContent: 'flex-end'
         }}>
-          <button onClick={onClose} className="btn">
-            ↩️ Fermer
-          </button>
+          <button type="button" onClick={onClose} className="form-btn form-btn--ghost">↩️ Fermer</button>
         </div>
       </div>
     </div>

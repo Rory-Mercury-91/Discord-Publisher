@@ -103,6 +103,50 @@
   margin-bottom: 0;
 }
 
+/* Paragraphe secondaire (sous une liste, texte muted) */
+.help-section__muted {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+
+/* Code dans le contenu d'aide */
+.help-section code {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+/* Badges colorés en ligne (ex. statut synchro) */
+.help-badge--success { color: #22c55e; }
+.help-badge--danger { color: #ef4444; }
+.help-badge--muted { color: #78716c; }
+
+/* Grille d'étapes numérotées (ex. TagsHelp) */
+.help-steps {
+  display: grid;
+  gap: 16px;
+}
+.help-steps__title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+.help-steps__body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* Astuce sur une seule ligne (padding réduit) */
+.help-section--tip.help-section--compact {
+  padding: 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
 /* Raccourcis : catégorie + liste de lignes */
 .help-shortcuts-category__title {
   margin: 0 0 12px 0;

@@ -5,7 +5,7 @@ export default function ShortcutsHelp() {
     {
       category: 'Navigation générale',
       items: [
-        { keys: 'Ctrl + H', description: 'Ouvrir l'historique des publications' },
+        { keys: 'Ctrl + H', description: "Ouvrir l'historique des publications" },
         { keys: 'Ctrl + T', description: 'Basculer entre thème clair et sombre' },
         { keys: 'Échap', description: 'Fermer la modale active (Configuration, Aide, etc.)' },
       ]

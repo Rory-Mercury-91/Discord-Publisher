@@ -605,10 +605,7 @@ export default function LogsModal({ onClose, inlineMode = false }: LogsModalProp
         </div>
 
         <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center' }}>
-          <button
-            type="button" onClick={onClose}
-            style={{ padding: '8px 22px', fontWeight: 700, borderRadius: 10 }}
-          >↩️ Fermer</button>
+          <button type="button" onClick={onClose} className="form-btn form-btn--ghost">↩️ Fermer</button>
         </div>
       </div>
     </div>

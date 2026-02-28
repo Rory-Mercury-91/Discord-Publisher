@@ -239,12 +239,7 @@ export default function TagSelectorModal({
 
         {/* Footer */}
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
-          <button onClick={onClose} style={{
-            padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)',
-            background: 'transparent', color: 'var(--text)', cursor: 'pointer'
-          }}>
-            ↩️ Fermer
-          </button>
+          <button type="button" onClick={onClose} className="form-btn form-btn--ghost">↩️ Fermer</button>
         </div>
       </div>
     </>

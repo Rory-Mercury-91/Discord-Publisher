@@ -376,9 +376,7 @@ export default function InstructionsManagerModal({ onClose }: { onClose?: () => 
           justifyContent: 'flex-end',
           marginTop: 16
         }}>
-          <button onClick={onClose} style={{ padding: '8px 20px', fontWeight: 600 }}>
-            ↩️ Fermer
-          </button>
+          <button type="button" onClick={onClose} className="form-btn form-btn--ghost">↩️ Fermer</button>
         </div>
       </div>
 

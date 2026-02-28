@@ -319,21 +319,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
                 }
               }}
             />
-            <button
-              onClick={onClose}
-              style={{
-                padding: '8px 16px',
-                background: 'transparent',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                color: 'var(--text)',
-                cursor: 'pointer',
-                fontSize: 13,
-                fontWeight: 600
-              }}
-            >
-              ↩️ Fermer
-            </button>
+            <button type="button" onClick={onClose} className="form-btn form-btn--ghost">↩️ Fermer</button>
           </div>
         </div>
 

@@ -1,22 +1,8 @@
-// frontend\src\components\SettingsComponents\AdminSettings.tsx
+// frontend/src/components/Settings/components/AdminSettings.tsx
 import { useEffect, useRef, useState } from 'react';
-import { useConfirm } from '../../hooks/useConfirm';
-import { getSupabase } from '../../lib/supabase';
-import { useApp } from '../../state/appContext';
-import { useAuth } from '../../state/authContext';
-import { useToast } from '../ToastProvider';
-
-const sectionStyle: React.CSSProperties = {
-  border: '1px solid var(--border)', borderRadius: 14, padding: 20,
-  background: 'rgba(255,255,255,0.02)', display: 'flex', flexDirection: 'column',
-  gap: 16, boxSizing: 'border-box',
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '12px 14px', borderRadius: 10,
-  border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)',
-  color: 'var(--text)', fontSize: 14, boxSizing: 'border-box',
-};
+import { getSupabase } from '../../../lib/supabase';
+import { useApp } from '../../../state/appContext';
+import { useToast } from '../../ToastProvider';
 
 const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
 
@@ -32,11 +18,9 @@ interface AdminSettingsProps {
   onClose?: () => void;
 }
 
-export default function AdminSettings({ onClose }: AdminSettingsProps) {
+export default function AdminSettings({ onClose: _onClose }: AdminSettingsProps) {
   const { showToast } = useToast();
-  const { profile } = useAuth();
-  const { importFullConfig, clearAllAppData, setApiBaseFromSupabase, listFormUrl } = useApp();
-  const { confirm } = useConfirm();
+  const { setApiBaseFromSupabase, listFormUrl } = useApp();
 
   const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('apiUrl') || localStorage.getItem('apiBase') || 'http://138.2.182.125:8080');
   const [listFormUrlLocal, setListFormUrlLocal] = useState('');
@@ -46,8 +30,6 @@ export default function AdminSettings({ onClose }: AdminSettingsProps) {
   const [adminCodeLoading, setAdminCodeLoading] = useState(false);
   const [checkingStored, setCheckingStored] = useState(false);
   const hasCheckedStoredRef = useRef(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ─── Vérification code mémorisé ─────────────────────────────────────────
   useEffect(() => {
@@ -231,79 +213,6 @@ export default function AdminSettings({ onClose }: AdminSettingsProps) {
     };
   }, [adminUnlocked, setApiBaseFromSupabase]);
 
-  // ─── Export / Import / Nettoyage ────────────────────────────────────────
-  const handleExportConfig = () => {
-    try {
-      const blob = new Blob(
-        [
-          JSON.stringify(
-            {
-              apiUrl,
-              apiBase: apiUrl,
-              templates: [], // sera rempli par le parent si besoin
-              exportDate: new Date().toISOString(),
-              version: '1.0',
-            },
-            null,
-            2
-          ),
-        ],
-        { type: 'application/json' }
-      );
-
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `backup_discord_generator_${Date.now()}.json`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      showToast('Sauvegarde téléchargée', 'success');
-    } catch {
-      showToast("Erreur lors de l'export", 'error');
-    }
-  };
-
-  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    const ok = await confirm({
-      title: '⚠️ Importer une sauvegarde',
-      message: 'Importer va écraser vos données actuelles (templates, tags, instructions, historique). Continuer ?',
-      confirmText: 'Importer',
-      cancelText: 'Annuler',
-      type: 'danger',
-    });
-    if (!ok) return;
-
-    try {
-      const data = JSON.parse(await file.text());
-      importFullConfig(data);
-      setApiUrl(localStorage.getItem('apiUrl') || 'http://138.2.182.125:8080');
-      showToast('Sauvegarde importée avec succès !', 'success');
-    } catch {
-      showToast("Erreur lors de l'import (fichier invalide ?)", 'error');
-    }
-  };
-
-  const handleCleanupAllData = async () => {
-    const ok = await confirm({
-      title: 'Nettoyage complet des données',
-      message: 'Supprimer toutes les données (publications, tags, config, autorisations) sur Supabase. Irréversible. Continuer ?',
-      confirmText: 'Tout supprimer',
-      type: 'danger',
-    });
-    if (!ok) return;
-
-    const { ok: success, error } = await clearAllAppData(profile?.id);
-    if (success) {
-      showToast('Données nettoyées', 'success');
-      onClose?.();
-    } else {
-      showToast('Erreur : ' + (error ?? 'inconnue'), 'error');
-    }
-  };
-
   const handleLockAdmin = () => {
     localStorage.removeItem(STORAGE_KEY_MASTER_ADMIN);
     setAdminUnlocked(false);
@@ -314,172 +223,74 @@ export default function AdminSettings({ onClose }: AdminSettingsProps) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="settings-config-fields" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {adminUnlocked ? (
         <>
           {/* Déconnexion du mode admin */}
-          <section style={{ ...sectionStyle, background: 'rgba(100,116,139,0.08)', border: '1px solid rgba(100,116,139,0.25)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <section className="settings-section settings-section--admin">
+            <div className="settings-section--admin__row">
               <div>
-                <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🛡️ Mode administrateur</h4>
-                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>Vous êtes connecté en tant qu’administrateur.</p>
+                <h4 className="settings-section--admin__title">🛡️ Mode administrateur</h4>
+                <p className="settings-section--admin__sub">Vous êtes connecté en tant qu’administrateur.</p>
               </div>
-              <button
-                type="button"
-                onClick={handleLockAdmin}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 8,
-                  border: '1px solid rgba(239,68,68,0.4)',
-                  background: 'rgba(239,68,68,0.1)',
-                  color: '#f87171',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
+              <button type="button" onClick={handleLockAdmin} className="settings-admin-unlock-btn">
                 Se déconnecter du mode admin
               </button>
             </div>
           </section>
 
           {/* Config globale : URL API + URL formulaire liste */}
-          <section style={sectionStyle}>
-            <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🌐 Configuration globale</h4>
-            <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 12px' }}>
+          <section className="settings-section">
+            <h4 className="settings-section__title">🌐 Configuration globale</h4>
+            <p className="settings-section__intro">
               URL de l&apos;API et URL du formulaire liste (script/tableur). Propagées via Supabase pour tous les utilisateurs.
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>URL de l&apos;API</label>
+            <div className="settings-config-fields">
+              <div className="settings-config-field">
+                <label>URL de l&apos;API</label>
                 <input
                   type="text"
                   value={apiUrl}
                   onChange={e => setApiUrl(e.target.value)}
                   placeholder="http://138.2.182.125:8080"
-                  style={{ ...inputStyle }}
+                  className="form-input"
                 />
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>URL du formulaire liste (script / tableur)</label>
+              <div className="settings-config-field">
+                <label>URL du formulaire liste (script / tableur)</label>
                 <input
                   type="url"
                   value={listFormUrlLocal}
                   onChange={e => setListFormUrlLocal(e.target.value)}
                   placeholder="https://script.google.com/... ou page du formulaire"
-                  style={{ ...inputStyle }}
+                  className="form-input"
                 />
               </div>
-              <button
-                type="button"
-                onClick={handleSaveConfig}
-                style={{
-                  alignSelf: 'flex-start',
-                  padding: '10px 18px',
-                  borderRadius: 10,
-                  border: '1px solid var(--accent)',
-                  background: 'rgba(99,102,241,0.2)',
-                  color: 'var(--accent)',
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  fontWeight: 600,
-                }}
-              >
-                Enregistrer la config
-              </button>
+              <div className="settings-config-actions">
+                <button type="button" onClick={handleSaveConfig} className="form-btn form-btn--primary">
+                  Enregistrer la config
+                </button>
+              </div>
             </div>
           </section>
 
-          {/* Sauvegarde & restauration */}
-          <section style={{ ...sectionStyle, background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.18)' }}>
-            <h4 style={{ margin: 0, fontSize: '0.95rem' }}>💾 Sauvegarde et restauration</h4>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/json,.json"
-              onChange={handleImportFile}
-              style={{ display: 'none' }}
-            />
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-              {[
-                {
-                  label: '📤 Exporter',
-                  desc: 'Télécharge un JSON complet',
-                  color: 'var(--accent)',
-                  bg: 'rgba(99,102,241,0.14)',
-                  border: 'rgba(99,102,241,0.35)',
-                  onClick: handleExportConfig,
-                },
-                {
-                  label: '📥 Restaurer',
-                  desc: 'Importe depuis un fichier',
-                  color: 'var(--success)',
-                  bg: 'rgba(16,185,129,0.10)',
-                  border: 'rgba(16,185,129,0.3)',
-                  onClick: () => fileInputRef.current?.click(),
-                },
-                {
-                  label: '🗑️ Tout supprimer',
-                  desc: 'Efface Supabase + local (irréversible)',
-                  color: '#ef4444',
-                  bg: 'rgba(239,68,68,0.10)',
-                  border: 'rgba(239,68,68,0.35)',
-                  onClick: handleCleanupAllData,
-                },
-              ].map(({ label, desc, color, bg, border, onClick }) => (
-                <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <button
-                    onClick={onClick}
-                    style={{
-                      padding: '13px 12px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      background: bg,
-                      border: `1px solid ${border}`,
-                      color,
-                      borderRadius: 10,
-                      cursor: 'pointer',
-                      fontSize: 13,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {label}
-                  </button>
-                  <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0, textAlign: 'center' }}>{desc}</p>
-                </div>
-              ))}
-            </div>
-          </section>
         </>
       ) : (
         /* Écran de verrouillage */
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 20,
-            padding: '40px 20px',
-            textAlign: 'center',
-          }}
-        >
-          <div style={{ fontSize: 48, lineHeight: 1 }}>🔒</div>
+        <div className="settings-section--restricted">
+          <div className="settings-section--restricted__icon">🔒</div>
           <div>
-            <h3 style={{ margin: '0 0 8px', fontSize: '1.1rem' }}>Accès restreint</h3>
-            <p style={{ fontSize: 14, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
+            <h3 className="settings-section--restricted__title">Accès restreint</h3>
+            <p className="settings-section--restricted__p">
               Cet espace est réservé aux administrateurs.<br />
               Saisissez le code Master Admin pour continuer.
             </p>
           </div>
 
           {checkingStored ? (
-            <p style={{ fontSize: 14, color: 'var(--muted)' }}>Vérification du code mémorisé…</p>
+            <p className="settings-section--restricted__p">Vérification du code mémorisé…</p>
           ) : (
-            <div style={{ width: '100%', maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="settings-section--restricted__form">
               <input
                 type="password"
                 value={adminCode}
@@ -489,25 +300,15 @@ export default function AdminSettings({ onClose }: AdminSettingsProps) {
                 }}
                 onKeyDown={e => e.key === 'Enter' && handleAdminUnlock()}
                 placeholder="Code Master Admin"
-                style={{ ...inputStyle, textAlign: 'center', letterSpacing: 4 }}
+                className="form-input form-input--center"
                 autoFocus
               />
-              {adminCodeError && <p style={{ fontSize: 12, color: '#ef4444', margin: 0 }}>{adminCodeError}</p>}
+              {adminCodeError && <p className="settings-section--restricted__error">{adminCodeError}</p>}
               <button
                 type="button"
                 onClick={handleAdminUnlock}
                 disabled={adminCodeLoading || !adminCode.trim()}
-                style={{
-                  padding: '12px 20px',
-                  background: 'var(--accent)',
-                  border: 'none',
-                  color: '#fff',
-                  borderRadius: 10,
-                  cursor: adminCodeLoading ? 'not-allowed' : 'pointer',
-                  fontWeight: 700,
-                  fontSize: 14,
-                  opacity: adminCodeLoading ? 0.7 : 1,
-                }}
+                className="form-btn form-btn--primary"
               >
                 {adminCodeLoading ? 'Vérification…' : 'Déverrouiller'}
               </button>

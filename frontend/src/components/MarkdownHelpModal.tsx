@@ -195,9 +195,7 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
               Documentation Discord
             </a>
           </span>
-          <button onClick={onClose} className="btn">
-            ↩️ Fermer
-          </button>
+          <button type="button" onClick={onClose} className="form-btn form-btn--ghost">↩️ Fermer</button>
         </div>
       </div>
     </div>

@@ -170,6 +170,7 @@ button{background:transparent; border:1px solid var(--border); color:inherit; pa
 .modal .panel{background:var(--panel); padding:12px; border-radius:8px; width:640px; max-width:95%}
 /* Centre d'aide : modale large (évite d'être limitée à 640px) */
 .modal .panel.modal-panel--large{width:98%; max-width:min(1400px,98vw)}
+.modal .panel.modal-panel--config{width:92%; max-width:960px}
 
 /* App-specific styles */
 .app h1{margin:0; font-size:18px}

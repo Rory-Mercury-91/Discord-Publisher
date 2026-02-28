@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import AppHeader, { AppMode } from './components/AppHeader';
 import AuthModal from './components/AuthModal';
-import ConfigModal from './components/ConfigModal';
+import SettingsModal from './components/Settings';
 import ConfirmModal from './components/ConfirmModal';
 import ContentEditor from './components/ContentEditor';
 import DiscordPreviewModal from './components/DiscordPreviewModal';
@@ -147,7 +147,7 @@ function AppContentInner() {
       {openTemplates && <TemplatesModal onClose={() => setOpenTemplates(false)} />}
       {openTags && <TagsModal onClose={() => setOpenTags(false)} />}
       {openConfig && (
-        <ConfigModal onClose={() => setOpenConfig(false)} />
+        <SettingsModal onClose={() => setOpenConfig(false)} />
       )}
       {openInstructions && <InstructionsManagerModal onClose={() => setOpenInstructions(false)} />}
       {openHistory && <HistoryModal onClose={() => setOpenHistory(false)} />}

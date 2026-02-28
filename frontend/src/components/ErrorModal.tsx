@@ -242,18 +242,7 @@ ${error.discordError ? JSON.stringify(error.discordError, null, 2) : 'N/A'}
               📋 Copier les détails
             </button>
 
-            <button
-              onClick={onClose}
-              style={{
-                flex: 1,
-                minWidth: 120,
-                background: 'transparent',
-                border: '1px solid var(--border)',
-                padding: '10px 16px'
-              }}
-            >
-              ↩️ Fermer
-            </button>
+            <button type="button" onClick={onClose} className="form-btn form-btn--ghost">↩️ Fermer</button>
           </div>
 
           {/* Help link */}

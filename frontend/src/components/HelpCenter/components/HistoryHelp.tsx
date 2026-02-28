@@ -27,7 +27,7 @@ export default function HistoryHelp() {
           <li><strong>Tri</strong> : par date (plus récent ou plus ancien en premier).</li>
           <li><strong>Réinitialiser les filtres</strong> : remet recherche, tri et filtre auteur à zéro.</li>
         </ul>
-        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>Résultats paginés (15 publications par page).</p>
+        <p className="help-section__muted">Résultats paginés (15 publications par page).</p>
       </section>
 
       <section className="help-section help-section--info">
@@ -38,13 +38,13 @@ export default function HistoryHelp() {
           <li>Vous êtes master admin,</li>
           <li>L'auteur vous a autorisé dans Configuration → Mon compte → « Qui peut modifier mes posts ».</li>
         </ul>
-        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>Cliquer sur Éditer charge le post dans l'éditeur de contenu en mode édition ; vous pouvez modifier puis republier pour mettre à jour le thread Discord.</p>
+        <p className="help-section__muted">Cliquer sur Éditer charge le post dans l'éditeur de contenu en mode édition ; vous pouvez modifier puis republier pour mettre à jour le thread Discord.</p>
       </section>
 
       <section className="help-section help-section--danger">
         <h4 className="help-section__title">🗑️ Supprimer définitivement</h4>
         <p>Le bouton <strong>Supprimer</strong> (🗑️) retire l'entrée de l'historique, la supprime de la base Supabase et, si un thread Discord est associé, supprime ce thread sur Discord. Une confirmation est demandée avant d'agir.</p>
-        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>Si le post n'a pas de thread Discord, seule l'entrée en base et dans l'historique est supprimée. Cette action est irréversible.</p>
+        <p className="help-section__muted">Si le post n'a pas de thread Discord, seule l'entrée en base et dans l'historique est supprimée. Cette action est irréversible.</p>
       </section>
 
     </div>

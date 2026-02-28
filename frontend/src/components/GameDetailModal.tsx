@@ -349,17 +349,9 @@ export default function GameDetailModal({ game, onClose }: GameDetailModalProps)
             </p>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 6,
-              border: '1px solid var(--border)',
-              background: 'transparent',
-              color: 'var(--text)',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: 600,
-            }}
+            className="form-btn form-btn--ghost"
           >
             ↩️ Fermer
           </button>

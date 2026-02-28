@@ -1,49 +1,9 @@
-// frontend\src\components\SettingsComponents\PreferenceSettings.tsx
+// frontend/src/components/Settings/components/PreferenceSettings.tsx
 import { useEffect, useState } from 'react';
-
-const sectionStyle: React.CSSProperties = {
-  border: '1px solid var(--border)',
-  borderRadius: 14,
-  padding: 20,
-  background: 'rgba(255,255,255,0.02)',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 16,
-  boxSizing: 'border-box',
-  minHeight: 0,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '12px 14px',
-  borderRadius: 10,
-  border: '1px solid var(--border)',
-  background: 'rgba(255,255,255,0.05)',
-  color: 'var(--text)',
-  fontSize: 14,
-  boxSizing: 'border-box',
-};
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: 14,
-  color: 'var(--muted)',
-  fontWeight: 500,
-};
-
-const gridStyle: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap: 16,
-  alignItems: 'stretch',
-};
-
-const fullWidthStyle: React.CSSProperties = { gridColumn: '1 / -1' };
 
 type WindowState = 'normal' | 'maximized' | 'fullscreen' | 'minimized';
 
 export default function PreferenceSettings() {
-  // États (identiques)
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('apiKey') || '');
   const [defaultTranslationLabel, setDefaultTranslationLabel] = useState(() => localStorage.getItem('default_translation_label') || 'Traduction');
   const [defaultModLabel, setDefaultModLabel] = useState(() => localStorage.getItem('default_mod_label') || 'Mod');
@@ -66,7 +26,6 @@ export default function PreferenceSettings() {
     window.dispatchEvent(new CustomEvent('libraryDisplayModeChanged', { detail: displayMode }));
   }, [displayMode]);
 
-  // ─── Gestion de l'état de la fenêtre Tauri ───────────────────────────────
   const applyWindowStateLive = async (next: WindowState) => {
     try {
       if (!window.__TAURI__) return;
@@ -109,40 +68,31 @@ export default function PreferenceSettings() {
     localStorage.setItem('windowState', state);
   };
 
-  const sectionTitleStyle: React.CSSProperties = {
-    margin: 0,
-    marginBottom: 4,
-    fontSize: '1rem',
-    fontWeight: 600,
-    color: 'var(--text)',
-  };
-
   return (
-    <div style={gridStyle}>
-      {/* Clé API */}
-      <section style={sectionStyle}>
-        <h4 style={sectionTitleStyle}>🔑 Clé API</h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <label style={labelStyle}>Clé d'accès à l'API</label>
+    <div className="settings-grid">
+      <section className="settings-section">
+        <h4 className="settings-section__title">🔑 Clé API</h4>
+        <div className="form-field">
+          <label className="form-label">Clé d'accès à l'API</label>
           <input
             type="password"
             value={apiKey}
             onChange={e => setApiKey(e.target.value)}
             placeholder="Votre clé secrète"
-            style={inputStyle}
+            className="form-input"
           />
         </div>
       </section>
 
-      {/* Fenêtre */}
-      <section style={sectionStyle}>
-        <h4 style={sectionTitleStyle}>🪟 Affichage de la fenêtre</h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <label style={labelStyle}>Mode d'affichage au démarrage</label>
+      <section className="settings-section">
+        <h4 className="settings-section__title">🪟 Affichage de la fenêtre</h4>
+        <div className="form-field">
+          <label className="form-label">Mode d'affichage au démarrage</label>
           <select
             value={windowState}
             onChange={e => handleWindowStateChange(e.target.value as WindowState)}
-            style={{ ...inputStyle, cursor: 'pointer' }}
+            className="form-input"
+            style={{ cursor: 'pointer' }}
           >
             <option value="normal">🔲 Normal</option>
             <option value="maximized">⬛ Maximisé</option>
@@ -152,11 +102,10 @@ export default function PreferenceSettings() {
         </div>
       </section>
 
-      {/* Labels par défaut */}
-      <section style={{ ...sectionStyle, ...fullWidthStyle }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
+      <section className="settings-section settings-grid--full">
+        <div className="settings-log-header" style={{ marginBottom: 4 }}>
           <div>
-            <h4 style={sectionTitleStyle}>🏷️ Labels par défaut</h4>
+            <h4 className="settings-section__title">🏷️ Labels par défaut</h4>
             <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
               Valeurs préservées lors de la réinitialisation du formulaire.
             </p>
@@ -167,65 +116,48 @@ export default function PreferenceSettings() {
               setDefaultTranslationLabel('Traduction');
               setDefaultModLabel('Mod');
             }}
-            style={{
-              padding: '8px 14px',
-              borderRadius: 8,
-              border: '1px solid var(--border)',
-              background: 'rgba(255,255,255,0.05)',
-              color: 'var(--text)',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
+            className="form-btn form-btn--ghost form-btn--sm"
           >
             Restaurer
           </button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <label style={labelStyle}>Label de traduction</label>
+        <div className="settings-grid">
+          <div className="form-field">
+            <label className="form-label">Label de traduction</label>
             <input
               type="text"
               value={defaultTranslationLabel}
               onChange={e => setDefaultTranslationLabel(e.target.value)}
               placeholder="Traduction"
-              style={inputStyle}
+              className="form-input"
             />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <label style={labelStyle}>Label de mod</label>
+          <div className="form-field">
+            <label className="form-label">Label de mod</label>
             <input
               type="text"
               value={defaultModLabel}
               onChange={e => setDefaultModLabel(e.target.value)}
               placeholder="Mod"
-              style={inputStyle}
+              className="form-input"
             />
           </div>
         </div>
       </section>
 
-      {/* Mode d'affichage Bibliothèque */}
-      <section style={{ ...sectionStyle, ...fullWidthStyle }}>
-        <h4 style={sectionTitleStyle}>📚 Préférences de la Bibliothèque</h4>
+      <section className="settings-section settings-grid--full">
+        <h4 className="settings-section__title">📚 Préférences de la Bibliothèque</h4>
         <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, marginBottom: 16, lineHeight: 1.5 }}>
           Choisissez comment afficher les jeux dans la bibliothèque :
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          {/* Compact — gauche */}
-          <label style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 14,
-            padding: 16,
-            borderRadius: 10,
-            background: displayMode === 'compact' ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.03)',
-            border: `1px solid ${displayMode === 'compact' ? 'rgba(99,102,241,0.35)' : 'var(--border)'}`,
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            minHeight: 0,
-          }}>
+        <div className="settings-grid">
+          <label
+            className="settings-radio-card"
+            style={{
+              background: displayMode === 'compact' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255,255,255,0.03)',
+              borderColor: displayMode === 'compact' ? 'rgba(59, 130, 246, 0.35)' : 'var(--border)',
+            }}
+          >
             <input
               type="radio"
               checked={displayMode === 'compact'}
@@ -233,40 +165,24 @@ export default function PreferenceSettings() {
               style={{ marginTop: 3, accentColor: 'var(--accent)', cursor: 'pointer' }}
             />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontWeight: 600,
-                fontSize: 14,
-                color: displayMode === 'compact' ? 'var(--accent)' : 'var(--text)',
-                marginBottom: 6,
-              }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: displayMode === 'compact' ? 'var(--accent)' : 'var(--text)', marginBottom: 6 }}>
                 📋 Information directe
               </div>
               <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>
                 Affichage compact avec toutes les informations et liens visibles directement sur la carte.
-                Idéal pour un accès rapide.
                 <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
-                  • Versions visibles<br />
-                  • Traducteur + type de traduction<br />
-                  • Date de mise à jour<br />
-                  • Liens directs (jeu + traduction)
+                  • Versions visibles<br />• Traducteur + type de traduction<br />• Date de mise à jour<br />• Liens directs (jeu + traduction)
                 </div>
               </div>
             </div>
           </label>
-
-          {/* Enriched — droite */}
-          <label style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 14,
-            padding: 16,
-            borderRadius: 10,
-            background: displayMode === 'enriched' ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.03)',
-            border: `1px solid ${displayMode === 'enriched' ? 'rgba(99,102,241,0.35)' : 'var(--border)'}`,
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            minHeight: 0,
-          }}>
+          <label
+            className="settings-radio-card"
+            style={{
+              background: displayMode === 'enriched' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255,255,255,0.03)',
+              borderColor: displayMode === 'enriched' ? 'rgba(59, 130, 246, 0.35)' : 'var(--border)',
+            }}
+          >
             <input
               type="radio"
               checked={displayMode === 'enriched'}
@@ -274,22 +190,13 @@ export default function PreferenceSettings() {
               style={{ marginTop: 3, accentColor: 'var(--accent)', cursor: 'pointer' }}
             />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontWeight: 600,
-                fontSize: 14,
-                color: displayMode === 'enriched' ? 'var(--accent)' : 'var(--text)',
-                marginBottom: 6,
-              }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: displayMode === 'enriched' ? 'var(--accent)' : 'var(--text)', marginBottom: 6 }}>
                 ✨ Information enrichie
               </div>
               <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>
                 Affichage épuré avec un bouton « Plus d'informations » qui ouvre une modale détaillée.
-                Idéal pour une vue d'ensemble claire.
                 <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
-                  • Synopsis (FR/EN)<br />
-                  • Tags colorés<br />
-                  • Toutes les informations du jeu<br />
-                  • Liens + invitation Discord
+                  • Synopsis (FR/EN)<br />• Tags colorés<br />• Toutes les informations du jeu<br />• Liens + invitation Discord
                 </div>
               </div>
             </div>

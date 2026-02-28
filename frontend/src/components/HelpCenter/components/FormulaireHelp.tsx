@@ -34,7 +34,7 @@ export default function FormulaireHelp() {
           <li><strong>Titre du post</strong> : généré automatiquement à partir des champs « Nom du jeu » et « Version du jeu ». Champ en lecture seule.</li>
           <li><strong>Tags</strong> : cliquer sur « ➕ Ajouter » pour associer des étiquettes Discord à la publication (voir section Tags).</li>
           <li><strong>Variables du template</strong> : nom du jeu, version du jeu, version traduite, lien du jeu (F95/Lewd/Autre), synopsis (Overview), instructions d'installation, image principale, liens mod/traduction additionnels si le template les inclut.</li>
-          <li><strong>Synopsis</strong> : décrire le jeu (résumé). Remplacera la variable <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[Overview]</code> dans le template par votre résumé.</li>
+          <li><strong>Synopsis</strong> : décrire le jeu (résumé). Remplacera la variable <code>[Overview]</code> dans le template par votre résumé.</li>
           <li><strong>Instructions d'installation</strong> : saisir du texte ou choisir une instruction enregistrée (voir section Instructions).</li>
           <li><strong>Image</strong> : ajouter une image à votre publication à l'aide d'un lien URL (généralement : clic droit sur l'image → « Copier le lien de l'image ») puis en cliquant sur « Ajouter ».</li>
           <li><strong>Aperçu</strong> : la colonne de droite affiche le rendu du message tel qu'il est écrit avant publication ; en cliquant sur « Aperçu Discord », vous verrez le rendu final.</li>
@@ -45,7 +45,7 @@ export default function FormulaireHelp() {
       <section className="help-section help-section--success">
         <h4 className="help-section__title">📥 Importer Data</h4>
         <p>
-          Si vous utilisez le script Tampermonkey <code style={{ fontFamily: 'monospace', fontSize: 12 }}>DiscordPublisherDataExtractor.js</code>, vous pouvez coller un JSON depuis le presse-papier : l'app remplit automatiquement le nom du jeu, la version et le lien du jeu. Cherchez le bouton d'import <strong>📥 Importer Data</strong> en bas à gauche du formulaire.
+          Si vous utilisez le script Tampermonkey <code>DiscordPublisherDataExtractor.js</code>, vous pouvez coller un JSON depuis le presse-papier : l'app remplit automatiquement le nom du jeu, la version et le lien du jeu. Cherchez le bouton d'import <strong>📥 Importer Data</strong> en bas à gauche du formulaire.
         </p>
         <div style={{ marginTop: 12 }}>
           <button

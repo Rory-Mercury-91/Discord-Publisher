@@ -1169,11 +1169,7 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
           padding: '14px 24px', borderTop: '1px solid var(--border)',
           flexShrink: 0, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10,
         }}>
-          <button onClick={onClose} style={{
-            padding: '10px 28px', borderRadius: 10,
-            border: '1px solid var(--border)', background: 'transparent',
-            color: 'var(--text)', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-          }}>↩️ Fermer</button>
+          <button type="button" onClick={onClose} className="form-btn form-btn--ghost">↩️ Fermer</button>
           <button onClick={handleSave} disabled={saving} style={{
             padding: '10px 32px', borderRadius: 10, border: 'none',
             background: saving ? 'rgba(99,102,241,0.4)' : 'var(--accent)',

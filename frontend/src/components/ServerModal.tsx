@@ -733,7 +733,7 @@ export default function ServerModal({ onClose, inlineMode = false }: ServerModal
       {/* Footer */}
       <div style={{ padding: '12px 24px', borderTop: '1px solid var(--border)', flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
         {!inlineMode && (
-          <button onClick={onClose} style={{ padding: '9px 24px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>↩️ Fermer</button>
+          <button type="button" onClick={onClose} className="form-btn form-btn--ghost">↩️ Fermer</button>
         )}
       </div>
     </div>

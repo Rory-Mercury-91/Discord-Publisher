@@ -104,10 +104,7 @@ export default function ApiStatusBadge({ onOpenLogs, onOpenServer }: ApiStatusBa
           <button onClick={checkStatus} style={{ marginTop: 8, width: '100%', padding: '6px 12px', fontSize: 12 }}>
             🔄 Actualiser
           </button>
-          <button onClick={() => setShowDetails(false)} style={{
-            marginTop: 6, width: '100%', padding: '6px 12px', fontSize: 12,
-            background: 'transparent', border: '1px solid var(--border)',
-          }}>↩️ Fermer</button>
+          <button type="button" onClick={() => setShowDetails(false)} className="form-btn form-btn--ghost">↩️ Fermer</button>
         </div>
       )}
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }`}</style>

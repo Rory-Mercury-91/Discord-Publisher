@@ -87,7 +87,7 @@ export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
         </div>
 
         <div className="modal-footer">
-          <button type="button" onClick={onClose} className="form-btn form-btn--primary">
+          <button type="button" onClick={onClose} className="form-btn form-btn--ghost">
             ↩️ Fermer
           </button>
         </div>

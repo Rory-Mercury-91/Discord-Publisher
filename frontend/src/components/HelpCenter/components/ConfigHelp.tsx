@@ -53,7 +53,7 @@ export default function ConfigHelp() {
               <li><strong>💾 Sauvegarde et restauration</strong> : Exportez tout en JSON ou restaurez depuis un fichier.</li>
               <li><strong>🗑️ Tout supprimer</strong> : nettoyage complet et irréversible des données sur Supabase + local.</li>
             </ul>
-            <p style={{ fontSize: 12, color: 'var(--muted)', margin: '12px 0 0 0' }}>
+            <p className="help-section__muted">
               Le code Master Admin est requis pour accéder à cet onglet. Une fois validé, il reste actif pendant la session.
             </p>
           </section>
