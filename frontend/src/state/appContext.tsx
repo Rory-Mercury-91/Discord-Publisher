@@ -87,7 +87,7 @@ type AppContextValue = {
   importFullConfig: (config: any) => void;
 
   savedInstructions: Record<string, string>;
-  saveInstruction: (name: string, text: string) => void;
+  saveInstruction: (name: string, text: string, ownerId?: string) => void;
   deleteInstruction: (name: string) => void;
   instructionOwners: Record<string, string>;
 
@@ -144,6 +144,8 @@ type AppContextValue = {
   loadPostForDuplication: (post: PublishedPost) => void;
 
   setApiBaseFromSupabase: (url: string | null) => void;
+  /** URL du formulaire liste (tableur), configurée par l'admin dans app_config. */
+  listFormUrl: string;
   apiStatus: string;
   setApiStatus: React.Dispatch<React.SetStateAction<string>>;
   discordConfig: any;
@@ -429,31 +431,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try { const raw = localStorage.getItem('postTags'); return raw || ''; } catch (e) { return ''; }
   });
 
-  // Correspondance ID Discord du tag "Type de traduction" → type de traduction du formulaire
-  const TRANSLATION_TYPE_BY_TAG_DISCORD_ID: Record<string, string> = {
-    '1467532357530816522': 'Manuelle',
-    '1467532481963229276': 'Semi-automatique',
-    '1467532186700747021': 'Automatique'
-  };
-
-  useEffect(() => {
-    const selectedIds = (postTags || '').split(',').map(s => s.trim()).filter(Boolean);
-    const selectedTagObjects = savedTags.filter(t =>
-      selectedIds.some(id => (t.id || t.name) === id || String(t.discordTagId ?? '') === id)
-    );
-    for (const tag of selectedTagObjects) {
-      const discordId = tag.discordTagId != null ? String(tag.discordTagId) : '';
-      const mappedType = TRANSLATION_TYPE_BY_TAG_DISCORD_ID[discordId];
-      if (mappedType != null) {
-        setTranslationType(mappedType);
-        return;
-      }
-    }
-  }, [postTags, savedTags]);
 
   // API Configuration - URL is now hardcoded for local API
   // Définir l’URL de base en consultant d’abord localStorage, puis .env, et enfin un fallback Koyeb
   const [apiBaseFromSupabase, setApiBaseFromSupabase] = useState<string | null>(null);
+  const [listFormUrl, setListFormUrl] = useState<string>('');
 
   const defaultApiBaseRaw =
     apiBaseFromSupabase ??
@@ -658,7 +640,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         if (ownerId) {
           await sb.from('allowed_editors').delete().eq('owner_id', ownerId);
-          await sb.from('saved_instructions').delete().eq('owner_id', ownerId);
+          await sb.from('saved_instructions').delete().eq('owner_type', 'profile').eq('owner_id', ownerId);
           await sb.from('saved_templates').delete().eq('owner_id', ownerId);
         }
       }
@@ -701,6 +683,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       discord_url: p.discordUrl ?? '',
       forum_id: Number(p.forumId) || 0,
       author_discord_id: p.authorDiscordId ?? null,
+      author_external_translator_id: p.authorExternalTranslatorId ?? null,
       saved_inputs: p.savedInputs ?? null,
       saved_link_configs: p.savedLinkConfigs ?? null,
       saved_additional_translation_links: Array.isArray(p.savedAdditionalTranslationLinks) ? p.savedAdditionalTranslationLinks : (p.savedAdditionalTranslationLinks ?? null),
@@ -741,13 +724,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       savedLinkConfigs: savedLinkConfigs ?? undefined,
       savedAdditionalTranslationLinks: Array.isArray(savedAdditionalTranslationLinks) ? savedAdditionalTranslationLinks : undefined,
       savedAdditionalModLinks: Array.isArray(savedAdditionalModLinks) ? savedAdditionalModLinks : undefined,
-      authorDiscordId: r.author_discord_id != null ? String(r.author_discord_id) : undefined,
+      authorDiscordId: r.author_discord_id != null && r.author_discord_id !== '' ? String(r.author_discord_id) : undefined,
+      authorExternalTranslatorId: r.author_external_translator_id != null && r.author_external_translator_id !== '' ? String(r.author_external_translator_id) : undefined,
       archived: Boolean(r.is_archived),
       templateId: r.template_id != null ? String(r.template_id) : undefined
     };
   }
 
-  // Récupérer l'historique : d'abord Supabase, puis API en backup
+  // Récupérer l'historique depuis Supabase (tous les posts, y compris traducteurs externes)
   async function fetchHistoryFromAPI() {
     const sb = getSupabase();
     if (!sb) return;
@@ -757,7 +741,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .select('*')
         .order('updated_at', { ascending: false })
         .limit(1000);
-      if (!error && Array.isArray(rows) && rows.length > 0) {
+      if (!error && Array.isArray(rows)) {
         setPublishedPosts(rows.map(rowToPost));
       }
     } catch (e) {
@@ -931,7 +915,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           messageId: editingPostData.messageId,
           discordUrl: editingPostData.discordUrl || '',
           forumId: editingPostData.forumId ?? 0,
-          templateId: templateId ?? editingPostData.templateId ?? undefined
+          templateId: templateId ?? editingPostData.templateId ?? undefined,
+          authorDiscordId: editingPostData.authorDiscordId,
+          authorExternalTranslatorId: editingPostData.authorExternalTranslatorId
         };
         formData.append('history_payload', JSON.stringify(postToRow(mergedForHistory)));
       } else {
@@ -1038,10 +1024,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             messageId: String(messageId),
             discordUrl: threadUrl || editingPostData.discordUrl,
             forumId: typeof forumId === 'number' ? forumId : parseInt(String(forumId)) || 0,
-            authorDiscordId: editingPostData.authorDiscordId
+            authorDiscordId: editingPostData.authorDiscordId,
+            authorExternalTranslatorId: editingPostData.authorExternalTranslatorId
           };
           await updatePublishedPost(editingPostId, updatedPost);
-          tauriAPI.saveLocalHistoryPost(postToRow(updatedPost), updatedPost.authorDiscordId);
+          tauriAPI.saveLocalHistoryPost(postToRow(updatedPost), updatedPost.authorDiscordId ?? updatedPost.authorExternalTranslatorId ?? undefined);
           setEditingPostId(null);
           setEditingPostData(null);
         } else {
@@ -1103,20 +1090,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('savedTags', JSON.stringify(savedTags));
   }, [savedTags]);
 
-  // Charger la config globale (URL API) depuis Supabase au montage
+  // Charger la config globale (URL API + URL formulaire liste) depuis Supabase au montage
   useEffect(() => {
     const sb = getSupabase();
     if (!sb) return;
     sb.from('app_config')
-      .select('value')
-      .eq('key', 'api_base_url')
-      .maybeSingle()
-      .then((res: { data?: { value: string } | null; error?: unknown }) => {
-        if (res.error || !res.data?.value?.trim()) return;
-        const url = res.data.value.trim().replace(/\/+$/, '');
-        setApiBaseFromSupabase(url);
-        localStorage.setItem('apiBase', url);
-        localStorage.setItem('apiUrl', url);
+      .select('key, value')
+      .in('key', ['api_base_url', 'list_form_url'])
+      .then((res: { data?: Array<{ key: string; value: string }> | null; error?: unknown }) => {
+        if (res.error || !res.data?.length) return;
+        for (const row of res.data) {
+          if (row.key === 'api_base_url' && row.value?.trim()) {
+            const url = row.value.trim().replace(/\/+$/, '');
+            setApiBaseFromSupabase(url);
+            localStorage.setItem('apiBase', url);
+            localStorage.setItem('apiUrl', url);
+          } else if (row.key === 'list_form_url') {
+            setListFormUrl((row.value ?? '').trim());
+          }
+        }
       });
   }, []);
 
@@ -1126,7 +1118,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const sb = getSupabase();
     if (!sb) return;
     sb.from('tags')
-      .select('id, name, tag_type, author_discord_id, discord_tag_id, profile_id, external_translator_id, label_key') // ← colonnes ajoutées
+      .select('id, name, tag_type, author_discord_id, discord_tag_id, profile_id, external_translator_id, label_key, list_form_name')
       .order('created_at', { ascending: true })
       .then((res) => {
         if (res.error || !res.data?.length) return;
@@ -1137,18 +1129,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             tag_type: string;
             author_discord_id: string | null;
             discord_tag_id: string | null;
-            profile_id: string | null;           // ← ajouté
-            external_translator_id: string | null; // ← ajouté
-            label_key: string | null;             // ← ajouté
+            profile_id: string | null;
+            external_translator_id: string | null;
+            label_key: string | null;
+            list_form_name: string | null;
           }>).map((r) => ({
             id: r.id,
             name: r.name,
             tagType: (r.tag_type as TagType) || 'other',
             authorDiscordId: r.author_discord_id ?? undefined,
             discordTagId: r.discord_tag_id ?? undefined,
-            profileId: r.profile_id ?? undefined,               // ← ajouté
-            externalTranslatorId: r.external_translator_id ?? undefined, // ← ajouté
-            labelKey: r.label_key ?? undefined,                  // ← ajouté
+            profileId: r.profile_id ?? undefined,
+            externalTranslatorId: r.external_translator_id ?? undefined,
+            labelKey: r.label_key ?? undefined,
+            listFormName: r.list_form_name ?? undefined,
           }))
         );
       });
@@ -1162,8 +1156,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await sb.auth.getSession();
       const userId = session?.user?.id;
 
-      // Instructions : saved_instructions (RLS = propre + autorisations allowed_editors)
-      const resInstr = await sb.from('saved_instructions').select('owner_id, value');
+      // Instructions : saved_instructions (owner_type + owner_id : profil ou traducteur externe)
+      const resInstr = await sb.from('saved_instructions').select('owner_type, owner_id, value');
       if (!resInstr.error && resInstr.data?.length) {
         let localInstructions: Record<string, string> = {};
         let localOwners: Record<string, string> = {};
@@ -1175,7 +1169,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         } catch (_e) { /* ignorer */ }
 
         const { merged, owners } = mergeInstructionsFromSupabase(
-          resInstr.data as Array<{ owner_id: string; value: Record<string, string> | string }>,
+          resInstr.data as import('./hooks/useInstructionsState').SavedInstructionRow[],
           localInstructions,
           localOwners
         );
@@ -1236,10 +1230,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // Refetch et fusion : comme plusieurs lignes (par owner) sont fusionnées, on recharge tout (RLS filtre côté serveur).
           getSupabase()
             ?.from('saved_instructions')
-            .select('owner_id, value')
+            .select('owner_type, owner_id, value')
             .then((res) => {
               if (res.error || !res.data?.length) return;
-              // Lire les instructions locales depuis localStorage pour fusion
               let localInstructions: Record<string, string> = {};
               let localOwners: Record<string, string> = {};
               try {
@@ -1249,9 +1242,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
                 if (rawOwners) localOwners = JSON.parse(rawOwners);
               } catch (_e) { /* ignorer */ }
 
-              // Fusion intelligente : garder les locales sans owner, supprimer les révoquées, ajouter les Supabase
               const { merged, owners } = mergeInstructionsFromSupabase(
-                res.data as Array<{ owner_id: string; value: Record<string, string> | string }>,
+                res.data as import('./hooks/useInstructionsState').SavedInstructionRow[],
                 localInstructions,
                 localOwners
               );
@@ -1299,6 +1291,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             setApiBaseFromSupabase(url);
             localStorage.setItem('apiBase', url);
             localStorage.setItem('apiUrl', url);
+          } else if (r?.key === 'list_form_url') {
+            setListFormUrl((r?.value ?? '').trim());
           }
         }
       )
@@ -1316,7 +1310,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        // Échec WebSocket (firewall, réseau, etc.) : l'app fonctionne quand même (historique chargé en REST).
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[Realtime] Connexion en direct indisponible, les mises à jour se feront au rechargement.');
+        }
+      });
 
     return () => {
       sb.removeChannel(channel);
@@ -1528,7 +1527,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!sb) return;
     const { data, error } = await sb
       .from('tags')
-      .select('id, name, tag_type, author_discord_id, discord_tag_id, profile_id, external_translator_id, label_key')
+      .select('id, name, tag_type, author_discord_id, discord_tag_id, profile_id, external_translator_id, label_key, list_form_name')
       .order('created_at', { ascending: true });
     if (error || !data?.length) return;
     setSavedTags(
@@ -1541,6 +1540,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         profile_id: string | null;
         external_translator_id: string | null;
         label_key: string | null;
+        list_form_name: string | null;
       }>).map(r => ({
         id: r.id,
         name: r.name,
@@ -1550,6 +1550,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         profileId: r.profile_id ?? undefined,
         externalTranslatorId: r.external_translator_id ?? undefined,
         labelKey: r.label_key ?? undefined,
+        listFormName: r.list_form_name ?? undefined,
       }))
     );
   }
@@ -1634,7 +1635,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setInput('Mod_link', '');
     setInput('use_additional_links', 'false');
     setPostTitle('');
-    setPostTags('');
     setTranslationType('Automatique');
     setIsIntegrated(false);
     setLinkConfigs({
@@ -1725,6 +1725,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     rateLimitCooldown,
 
     setApiBaseFromSupabase,
+    listFormUrl,
 
     // Edit mode
     editingPostId,

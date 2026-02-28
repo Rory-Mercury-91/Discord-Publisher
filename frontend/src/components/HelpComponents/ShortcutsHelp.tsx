@@ -21,7 +21,6 @@ export default function ShortcutsHelp() {
     {
       category: 'Bibliothèque',
       items: [
-        { keys: 'Ctrl + F', description: 'Mettre le focus sur la barre de recherche' },
         { keys: 'Ctrl + R', description: 'Rafraîchir la bibliothèque (bouton ↻)' },
       ]
     }

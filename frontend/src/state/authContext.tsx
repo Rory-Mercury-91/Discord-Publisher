@@ -7,6 +7,7 @@ export type Profile = {
   pseudo: string;
   discord_id: string;
   is_master_admin?: boolean;
+  list_manager?: boolean;
   created_at?: string;
   updated_at?: string;
 };

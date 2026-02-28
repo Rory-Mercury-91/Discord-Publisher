@@ -55,8 +55,10 @@ export default function TagSelectorModal({
 
   const availableTags = useMemo(
     () => myTags.filter(t => {
-      // Exclure les tags traducteurs (auto-injectés) et déjà sélectionnés
+      // Exclure les tags traducteurs (auto-injectés), les tags sites (dérivés des liens)
+      // et les tags déjà sélectionnés
       if (t.tagType === 'translator') return false;
+      if (t.tagType === 'sites') return false;
       const tagId = t.id || t.name;
       return !selectedTagIds.includes(tagId);
     }),
@@ -120,7 +122,7 @@ export default function TagSelectorModal({
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1999 }} />
+      <div style={{ position: 'fixed', inset: 0, background: 'var(--modal-backdrop)', backdropFilter: 'var(--modal-backdrop-blur)', zIndex: 1999 }} />
 
       <div className="panel" onClick={e => e.stopPropagation()} style={modalStyle}>
 
@@ -130,10 +132,6 @@ export default function TagSelectorModal({
           padding: '14px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0
         }}>
           <h3 style={{ margin: 0, fontSize: 15 }}>🏷️ Sélectionner un tag</h3>
-          <button onClick={onClose} style={{
-            background: 'transparent', border: 'none', color: 'var(--text)',
-            fontSize: 24, cursor: 'pointer', padding: '0 8px', lineHeight: 1
-          }}>×</button>
         </div>
 
         {/* Bannière d'info tags secondaires */}
@@ -144,7 +142,12 @@ export default function TagSelectorModal({
           }}>
             <div style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
               <span>🔒</span>
-              <span>Tags secondaires du traducteur sélectionné — le tag Traducteur est déjà injecté automatiquement.</span>
+              <span>
+                Tags secondaires du traducteur sélectionné.
+                Le tag « Traducteur » et le tag de Site sont déduits automatiquement
+                (non modifiables ici). Le Type de traduction peut être ajusté ici
+                ou via les boutons du formulaire.
+              </span>
             </div>
           </div>
         )}
@@ -157,16 +160,14 @@ export default function TagSelectorModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
             <span>⚠️</span>
             <span>
-              <strong>Limite :</strong> max <strong>5 tags</strong>.{' '}
-              <strong>Obligatoires :</strong> un Site + un Type de traduction.
-              {selectedTagIds.length > 0 && (
-                <span style={{
-                  marginLeft: 8, fontWeight: 600,
-                  color: selectedTagIds.length >= 5 ? '#ff4444' : '#4a9eff'
-                }}>
-                  ({selectedTagIds.length}/5)
-                </span>
-              )}
+              <strong>Tags sélectionnés :</strong>{' '}
+              <span style={{
+                fontWeight: 600,
+                color: selectedTagIds.length >= 5 ? '#ff4444' : '#4a9eff'
+              }}>
+                {selectedTagIds.length}/5
+              </span>{' '}
+              (maximum <strong>5</strong> tags au total).
             </span>
           </div>
         </div>
@@ -175,15 +176,12 @@ export default function TagSelectorModal({
         <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           <input
             type="text"
+            className="app-input"
             placeholder="🔍 Rechercher un tag…"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             autoFocus
-            style={{
-              width: '100%', padding: '8px 12px', borderRadius: 6,
-              border: '1px solid var(--border)', background: 'var(--panel)',
-              color: 'var(--text)', fontSize: 14, boxSizing: 'border-box',
-            }}
+            style={{ width: '100%', boxSizing: 'border-box' }}
           />
         </div>
 

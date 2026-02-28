@@ -259,12 +259,12 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
 
   return (
     <div style={gridStyle}>
-      {/* Qui peut modifier mes posts */}
+      {/* Qui peut modifier mes posts — pleine largeur, 5 utilisateurs par ligne */}
       {profile?.id && (
-        <section style={{ ...sectionStyle, alignSelf: 'stretch', display: 'flex', flexDirection: 'column' }}>
+        <section style={{ ...sectionStyle, gridColumn: '1 / -1', display: 'flex', flexDirection: 'column' }}>
           <h4 style={{ margin: 0, fontSize: '0.95rem', flexShrink: 0 }}>👥 Qui peut modifier mes posts</h4>
-          <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5, flexShrink: 0 }}>
-            Cliquez sur un utilisateur pour autoriser ou révoquer son droit d'édition.<br />
+          <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, marginBottom: 12, lineHeight: 1.5, flexShrink: 0 }}>
+            Cliquez sur un utilisateur pour autoriser ou révoquer son droit d&apos;édition. &nbsp;
             <span style={{ color: '#9ca3af' }}>⚪ Gris</span> = Non autorisé &nbsp;•&nbsp;
             <span style={{ color: '#10b981' }}>🟢 Vert</span> = Autorisé
           </p>
@@ -272,7 +272,7 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
           {editorsLoading ? (
             <div style={{ fontSize: 13, color: 'var(--muted)' }}>Chargement…</div>
           ) : (
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {allProfiles
                 .filter(p => p.id !== profile.id)
                 .map(p => {
@@ -283,7 +283,7 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
                       type="button"
                       onClick={() => toggleEditor(p.id, allowed)}
                       style={{
-                        padding: '11px 14px',
+                        padding: '10px 14px',
                         borderRadius: 10,
                         border: 'none',
                         cursor: 'pointer',
@@ -291,7 +291,8 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
                         fontWeight: 600,
                         textAlign: 'center',
                         transition: 'all 0.2s',
-                        flexShrink: 0,
+                        flex: '0 0 calc(20% - 7px)',
+                        minWidth: 120,
                         background: allowed ? 'rgba(16,185,129,0.15)' : 'rgba(156,163,175,0.15)',
                         color: allowed ? '#10b981' : '#9ca3af',
                       }}
@@ -310,7 +311,7 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
                 })}
 
               {allProfiles.filter(p => p.id !== profile.id).length === 0 && (
-                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>
+                <div style={{ fontSize: 13, color: 'var(--muted)', fontStyle: 'italic' }}>
                   Aucun autre utilisateur en base.
                 </div>
               )}
@@ -319,35 +320,55 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
         </section>
       )}
 
-      {/* Sécurité du compte */}
-      <section style={{ ...sectionStyle, gridColumn: profile?.id ? undefined : '1 / -1' }}>
+      {/* Sécurité du compte — pleine largeur, 2 colonnes : gauche = nouveau + confirmer, droite = ancien + bouton */}
+      <section style={{ ...sectionStyle, gridColumn: '1 / -1' }}>
         <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🔐 Sécurité du compte</h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>Modifier votre mot de passe de connexion.</p>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, marginBottom: 16 }}>Modifier votre mot de passe de connexion.</p>
 
-          {[
-            { label: 'Ancien mot de passe', val: oldPassword, set: setOldPassword },
-            { label: 'Nouveau mot de passe', val: newPassword, set: setNewPassword, hint: 'Minimum 6 caractères' },
-            { label: 'Confirmer le nouveau mot de passe', val: confirmPassword, set: setConfirmPassword },
-          ].map(({ label, val, set, hint }) => (
-            <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <label style={labelStyle}>{label}</label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 560 }}>
+          {/* Ligne 1 : gauche = nouveau + confirmer, droite = ancien */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <label style={labelStyle}>Nouveau mot de passe</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  placeholder="••••••••"
+                  style={inputStyle}
+                />
+                <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>Minimum 6 caractères</p>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                <label style={labelStyle}>Confirmer le nouveau mot de passe</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <label style={labelStyle}>Ancien mot de passe</label>
               <input
                 type="password"
-                value={val}
-                onChange={e => set(e.target.value)}
+                value={oldPassword}
+                onChange={e => setOldPassword(e.target.value)}
                 placeholder="••••••••"
                 style={inputStyle}
               />
-              {hint && <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>{hint}</p>}
             </div>
-          ))}
-
+          </div>
+          {/* Bouton pleine largeur, aligné avec la colonne de gauche */}
           <button
             type="button"
             onClick={handleChangePassword}
             disabled={isChangingPassword}
             style={{
+              width: '100%',
               padding: '12px 16px',
               background: 'var(--accent)',
               border: 'none',
@@ -363,8 +384,8 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
           </button>
         </div>
 
-        {/* Zone de danger */}
-        <div style={{ padding: 16, background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* Zone de danger — pleine largeur */}
+        <div style={{ marginTop: 24, padding: 16, background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 10, display: 'flex', flexDirection: 'column', gap: 12, width: '100%', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: '#ef4444' }}>☠️ Zone de danger</span>
             <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>Action irréversible</span>
@@ -373,39 +394,42 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
             Supprime votre profil, instructions, templates et autorisations. Vos publications Discord restent visibles.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ ...labelStyle, color: '#ef4444' }}>Mot de passe de confirmation</label>
-            <input
-              type="password"
-              value={deletePassword}
-              onChange={e => setDeletePassword(e.target.value)}
-              placeholder="••••••••"
-              style={{ ...inputStyle, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.05)' }}
-            />
+          <div style={{ display: 'flex', flexDirection: 'row', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 200px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ ...labelStyle, color: '#ef4444' }}>Mot de passe de confirmation</label>
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={e => setDeletePassword(e.target.value)}
+                placeholder="••••••••"
+                style={{ ...inputStyle, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.05)' }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleDeleteAccount}
+              disabled={isDeletingAccount || !deletePassword}
+              style={{
+                flex: '1 1 200px',
+                minWidth: 0,
+                padding: '12px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                background: isDeletingAccount || !deletePassword ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.18)',
+                border: '1px solid rgba(239,68,68,0.4)',
+                color: isDeletingAccount || !deletePassword ? 'rgba(239,68,68,0.35)' : '#ef4444',
+                borderRadius: 8,
+                cursor: isDeletingAccount || !deletePassword ? 'not-allowed' : 'pointer',
+                fontSize: 13,
+                fontWeight: 700,
+                transition: 'all 0.2s',
+              }}
+            >
+              {isDeletingAccount ? '⏳ Suppression…' : '🗑️ Supprimer définitivement mon compte'}
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={handleDeleteAccount}
-            disabled={isDeletingAccount || !deletePassword}
-            style={{
-              padding: '12px 16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              background: isDeletingAccount || !deletePassword ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.18)',
-              border: '1px solid rgba(239,68,68,0.4)',
-              color: isDeletingAccount || !deletePassword ? 'rgba(239,68,68,0.35)' : '#ef4444',
-              borderRadius: 8,
-              cursor: isDeletingAccount || !deletePassword ? 'not-allowed' : 'pointer',
-              fontSize: 13,
-              fontWeight: 700,
-              transition: 'all 0.2s',
-            }}
-          >
-            {isDeletingAccount ? '⏳ Suppression…' : '🗑️ Supprimer définitivement mon compte'}
-          </button>
         </div>
       </section>
     </div>

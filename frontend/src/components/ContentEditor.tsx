@@ -1,65 +1,28 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import DiscordIcon from '../assets/discord-icon.svg';
-import { useConfirm } from '../hooks/useConfirm';
-import { useImageLoader } from '../hooks/useImageLoader';
+// frontend/src/components/ContentEditor.tsx
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { tauriAPI } from '../lib/tauri-api';
+import { useConfirm } from '../hooks/useConfirm';
+import { getSupabase } from '../lib/supabase';
 import { useApp } from '../state/appContext';
 import { useAuth } from '../state/authContext';
 import { useTranslatorSelector } from '../state/hooks/useTranslatorSelector';
 import ConfirmModal from './ConfirmModal';
 import TagSelectorModal from './TagSelectorModal';
+import Toggle from './Toggle';
 import { useToast } from './ToastProvider';
-function FormImageDisplay({ imagePath, onDelete }: { imagePath: string; onDelete: () => void }) {
-  const { imageUrl, isLoading, error } = useImageLoader(imagePath);
-  return (
-    <>
-      {isLoading ? (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.05)' }}>
-          <span style={{ fontSize: 14, color: 'var(--muted)' }}>⏳</span>
-        </div>
-      ) : error ? (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,0,0,0.1)' }}>
-          <span style={{ fontSize: 12, color: 'var(--error)' }}>❌ Erreur</span>
-        </div>
-      ) : (
-        <img
-          src={imageUrl}
-          alt=""
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: 'block'
-          }}
-        />
-      )}
-      <button
-        type="button"
-        onClick={onDelete}
-        title="Supprimer"
-        style={{
-          position: 'absolute',
-          bottom: 8,
-          right: 8,
-          padding: '6px 14px',
-          borderRadius: 6,
-          border: 'none',
-          background: 'rgba(239, 68, 68, 0.65)',
-          color: '#fff',
-          fontSize: 12,
-          cursor: 'pointer'
-        }}
-      >
-        🗑️
-      </button>
-    </>
-  );
-}
+
+// Import des composants découpés
+import CustomVarsSection from './ContentEditorComponents/CustomVarsSection';
+import EditorHeader from './ContentEditorComponents/EditorHeader';
+import ImageSection from './ContentEditorComponents/ImageSection';
+import InstructionsSection from './ContentEditorComponents/InstructionsSection';
+import LinksSection from './ContentEditorComponents/LinksSection';
+import PublishFooter from './ContentEditorComponents/PublishFooter';
+import SynopsisSection from './ContentEditorComponents/SynopsisSection';
+import TagsSection from './ContentEditorComponents/TagsSection';
+import VersionsSection from './ContentEditorComponents/VersionsSection';
 
 export default function ContentEditor() {
-  // 1️⃣ D'ABORD : Extraire toutes les valeurs du context
   const {
     allVarsConfig,
     inputs,
@@ -71,18 +34,14 @@ export default function ContentEditor() {
     publishInProgress,
     savedTags,
     savedInstructions,
+    instructionOwners,
     templates,
     currentTemplateIdx,
     uploadedImages,
     addImageFromUrl,
     removeImage,
     editingPostId,
-    editingPostData,
     setEditingPostId,
-    translationType,
-    setTranslationType,
-    isIntegrated,
-    setIsIntegrated,
     setEditingPostData,
     rateLimitCooldown,
     resetAllFields,
@@ -93,10 +52,20 @@ export default function ContentEditor() {
     additionalModLinks,
     addAdditionalModLink,
     updateAdditionalModLink,
-    deleteAdditionalModLink
+    deleteAdditionalModLink,
+    linkConfigs,
+    setLinkConfig,
+    buildFinalLink,
+    translationType,
+    setTranslationType,
+    isIntegrated,
+    setIsIntegrated,
   } = useApp();
 
   const { profile } = useAuth();
+  const { showToast } = useToast();
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
+
   const {
     options: translatorOptions,
     selectedId: selectedTranslatorId,
@@ -105,91 +74,160 @@ export default function ContentEditor() {
     loaded: translatorLoaded,
     select: selectTranslator,
   } = useTranslatorSelector(profile?.id);
-  const { showToast } = useToast();
-  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
-  const { linkConfigs, setLinkConfig, buildFinalLink } = useApp();
 
-  // Tags : IDs sélectionnés et vérification des catégories obligatoires (avant canPublish)
-  const selectedTagIds = useMemo(() => {
-    return postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
-  }, [postTags]);
-  const selectedTagObjects = useMemo(() => {
-    return savedTags.filter(t =>
-      selectedTagIds.some(id => (t.id || t.name) === id || String(t.discordTagId ?? '') === id)
-    );
-  }, [savedTags, selectedTagIds]);
+  // États locaux
+  const [showTagSelector, setShowTagSelector] = useState(false);
+  const [tagSelectorPosition, setTagSelectorPosition] = useState<{ top: number; left: number; width: number } | undefined>();
+  const [instructionSearchQuery, setInstructionSearchQuery] = useState('');
+  const [showInstructionSuggestions, setShowInstructionSuggestions] = useState(false);
+  const [silentUpdateMode, setSilentUpdateMode] = useState(false);
+  const [imageUrlInput, setImageUrlInput] = useState<string>('');
+
+  const overviewRef = useRef<HTMLTextAreaElement>(null);
+  /** Données F95 importées (tags, status, type) pour les réutiliser dans l'export formulaire liste */
+  const lastImportedF95Ref = useRef<{ tags: string[]; status: string; type: string }>({ tags: [], status: '', type: '' });
+
+  // Restaurer lastImportedF95Ref depuis saved_inputs quand on charge un post pour édition
+  useEffect(() => {
+    const rawTags = inputs['_f95_tags'];
+    const status = inputs['_f95_status'] ?? '';
+    const type = inputs['_f95_type'] ?? '';
+    if (rawTags != null || status || type) {
+      let tags: string[] = [];
+      if (typeof rawTags === 'string' && rawTags) {
+        try {
+          const parsed = JSON.parse(rawTags);
+          tags = Array.isArray(parsed) ? parsed : [];
+        } catch { /* ignore */ }
+      }
+      lastImportedF95Ref.current = { tags, status, type };
+    }
+  }, [inputs['_f95_tags'], inputs['_f95_status'], inputs['_f95_type']]);
+
+  // Calculs
+  const currentTemplate = templates[currentTemplateIdx];
+
+  const selectedTagIds = useMemo(() =>
+    postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [],
+    [postTags]);
+
   const hasRequiredTags = useMemo(() => {
-    const hasSite = selectedTagObjects.some(t => t.tagType === 'sites');
-    const hasTranslationType = selectedTagObjects.some(t => t.tagType === 'translationType');
+    const hasSite = selectedTagIds.some(id =>
+      savedTags.some(t => ((t.id || t.name) === id || String(t.discordTagId ?? '') === id) && t.tagType === 'sites')
+    );
+    const hasTranslationType = selectedTagIds.some(id =>
+      savedTags.some(t => ((t.id || t.name) === id || String(t.discordTagId ?? '') === id) && t.tagType === 'translationType')
+    );
     return hasSite && hasTranslationType;
-  }, [selectedTagObjects]);
+  }, [selectedTagIds, savedTags]);
 
-  // Labels des catégories obligatoires manquantes (pour le message dynamique)
   const missingRequiredTagLabels = useMemo(() => {
-    const hasSite = selectedTagObjects.some(t => t.tagType === 'sites');
-    const hasTranslationType = selectedTagObjects.some(t => t.tagType === 'translationType');
     const labels: string[] = [];
+    const hasSite = selectedTagIds.some(id =>
+      savedTags.some(t => ((t.id || t.name) === id || String(t.discordTagId ?? '') === id) && t.tagType === 'sites')
+    );
+    const hasTranslationType = selectedTagIds.some(id =>
+      savedTags.some(t => ((t.id || t.name) === id || String(t.discordTagId ?? '') === id) && t.tagType === 'translationType')
+    );
     if (!hasSite) labels.push('Site');
     if (!hasTranslationType) labels.push('Type de traduction');
     return labels;
-  }, [selectedTagObjects]);
+  }, [selectedTagIds, savedTags]);
 
-  // 2️⃣ ENSUITE : Calculer les valeurs dérivées
-  const currentTemplate = templates[currentTemplateIdx]; // ✅ UNE SEULE FOIS
-  const canPublish = currentTemplate?.type === 'my' &&
-    rateLimitCooldown === null &&
-    hasRequiredTags;
-  const rateLimitRemaining = rateLimitCooldown ? Math.ceil((rateLimitCooldown - Date.now()) / 1000) : 0;
+  const canPublish = currentTemplate?.type === 'my' && rateLimitCooldown === null && hasRequiredTags;
+
   const publishTooltipText = (() => {
     if (publishInProgress) return 'Publication en cours…';
     if (currentTemplate?.type !== 'my') return 'Template en lecture seule';
-    if (rateLimitCooldown !== null) return `Rate limit : patientez ${rateLimitRemaining}s`;
+    if (rateLimitCooldown !== null) return `Rate limit : patientez ${Math.ceil((rateLimitCooldown - Date.now()) / 1000)}s`;
     if (missingRequiredTagLabels.length > 0) return `Tags obligatoires manquants : ${missingRequiredTagLabels.join(', ')}`;
     return '';
   })();
 
-  // 3️⃣ États locaux
-  const [showTagSelector, setShowTagSelector] = useState(false);
-  const [tagSelectorPosition, setTagSelectorPosition] = useState<{ top: number; left: number; width: number } | undefined>();
-  const tagButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [instructionSearchQuery, setInstructionSearchQuery] = useState<string>('');
-  const [showInstructionSuggestions, setShowInstructionSuggestions] = useState(false);
-  const [imageUrlInput, setImageUrlInput] = useState<string>('');
-  const [silentUpdateMode, setSilentUpdateMode] = useState(false);
-  const [showPublishTooltip, setShowPublishTooltip] = useState(false);
-  const overviewRef = useRef<HTMLTextAreaElement | null>(null);
-  // ── Injection initiale + changement de traducteur ──────────────────────────
+  const varsUsedInTemplate = useMemo(() => {
+    const content = currentTemplate?.content ?? '';
+    const matches = content.matchAll(/\[([^\]]+)\]/g);
+    const set = new Set<string>();
+    for (const m of matches) set.add((m[1] as string).trim());
+
+    // Cas spéciaux pour les lignes de liens multiples
+    if (content.includes('[TRANSLATION_LINKS_LINE]')) set.add('Translate_link');
+    if (content.includes('[MOD_LINKS_LINE]')) set.add('Mod_link');
+
+    return set;
+  }, [currentTemplate?.content]);
+
+  const visibleVars = useMemo(() => {
+    const hardcoded = ['Game_name', 'Game_version', 'Translate_version', 'Game_link', 'Translate_link', 'Mod_link', 'Overview', 'instruction', 'is_modded_game'];
+    return allVarsConfig.filter(v => !hardcoded.includes(v.name) && varsUsedInTemplate.has(v.name));
+  }, [allVarsConfig, varsUsedInTemplate]);
+
+  const filteredInstructions = useMemo(() => {
+    const prefix = (k: 'profile' | 'external') => (k === 'profile' ? 'p:' : 'e:');
+    const ownerKey = selectedTranslatorId && selectedTranslatorKind
+      ? prefix(selectedTranslatorKind) + selectedTranslatorId
+      : (profile?.id ? 'p:' + profile.id : null);
+    const normalizeStored = (stored: string | undefined): string => {
+      if (!stored) return profile?.id ? 'p:' + profile.id : '';
+      if (stored.startsWith('p:') || stored.startsWith('e:')) return stored;
+      return 'p:' + stored;
+    };
+    let names = Object.keys(savedInstructions);
+    if (ownerKey && instructionOwners) {
+      names = names.filter(name => normalizeStored(instructionOwners[name]) === ownerKey);
+    }
+    if (!instructionSearchQuery.trim()) return names;
+    const q = instructionSearchQuery.toLowerCase();
+    return names.filter(name => name.toLowerCase().includes(q));
+  }, [savedInstructions, instructionOwners, instructionSearchQuery, selectedTranslatorId, selectedTranslatorKind, profile?.id]);
+
+  // Tags du traducteur actif (mêmes règles que TagSelectorModal)
+  const activeTranslatorId = selectedTranslatorId;
+  const activeTranslatorKind = selectedTranslatorKind;
+  const myTags = useMemo(() => {
+    if (!activeTranslatorId) return [] as typeof savedTags;
+
+    const personal = savedTags.filter(t =>
+      activeTranslatorKind === 'profile'
+        ? (t as any).profileId === activeTranslatorId
+        : (t as any).externalTranslatorId === activeTranslatorId
+    );
+    if (personal.length > 0) return personal;
+
+    // Fallback : tous les tags non-translator
+    return savedTags.filter(t => t.tagType !== 'translator');
+  }, [savedTags, activeTranslatorId, activeTranslatorKind]);
+
+  // ==================== REFS ====================
+  const translatorInjectedRef = useRef(false);
+  const prevEditingPostIdRef = useRef<string | null | undefined>(undefined);
+  const prevTemplateIdxRef = useRef(currentTemplateIdx);
+
+  // ==================== USEEFFECTS ====================
+
+  // Injection du tag traducteur
   useEffect(() => {
-    // RETIRER isEditMode de cette condition
     if (!translatorLoaded || !translatorTagId) return;
 
     if (!translatorInjectedRef.current) {
-      // Premier chargement
       translatorInjectedRef.current = true;
-      const curr = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
-
-      // On filtre pour ne pas avoir de doublons de tags de type "translator"
-      const sec = curr.filter(id => {
-        const t = savedTags.find(tag => (tag.id || tag.name) === id || String(tag.discordTagId ?? '') === id);
-        return t?.tagType !== 'translator';
-      });
-
-      setPostTags([translatorTagId, ...sec].join(','));
-    } else {
-      // Changement manuel de traducteur via le select
-      // On récupère les tags actuels qui ne sont PAS des tags de traducteur
       const curr = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
       const others = curr.filter(id => {
         const t = savedTags.find(tag => (tag.id || tag.name) === id || String(tag.discordTagId ?? '') === id);
         return t?.tagType !== 'translator';
       });
-
-      // On injecte le nouveau tag du traducteur choisi
+      setPostTags([translatorTagId, ...others].join(','));
+    } else {
+      const curr = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const others = curr.filter(id => {
+        const t = savedTags.find(tag => (tag.id || tag.name) === id || String(tag.discordTagId ?? '') === id);
+        return t?.tagType !== 'translator';
+      });
       setPostTags([translatorTagId, ...others].join(','));
     }
-  }, [translatorTagId, translatorLoaded]); // Retrait de isEditMode de la barrière et de la dépendance
+  }, [translatorTagId, translatorLoaded, postTags, savedTags, setPostTags]);
 
-  // ── Re-injection à la sortie du mode édition ───────────────────────────────
+  // Re-injection à la sortie du mode édition
   useEffect(() => {
     if (prevEditingPostIdRef.current === undefined) {
       prevEditingPostIdRef.current = editingPostId;
@@ -199,567 +237,403 @@ export default function ContentEditor() {
     prevEditingPostIdRef.current = editingPostId;
 
     if (wasEditing && editingPostId === null) {
-      translatorInjectedRef.current = false; // Permettre une nouvelle injection initiale
+      translatorInjectedRef.current = false;
       if (translatorLoaded && translatorTagId) setPostTags(translatorTagId);
     }
-  }, [editingPostId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [editingPostId, translatorLoaded, translatorTagId, setPostTags]);
 
   useEffect(() => {
     if (!editingPostId) setSilentUpdateMode(false);
   }, [editingPostId]);
 
-  // 4️⃣ ENFIN : useEffect
+  // Synchronisation champ de recherche d'instructions <-> valeur de contexte
   useEffect(() => {
-    // Si les valeurs dans le contexte sont vides, on reset les barres de recherche locales
     if (!inputs['instruction']) setInstructionSearchQuery('');
   }, [inputs['instruction']]);
 
-  // 🔥 NOUVEAU : Restaurer le nom de l'instruction depuis selected_instruction_key
+  // Restaurer le nom de l'instruction depuis selected_instruction_key
   useEffect(() => {
     const selectedKey = inputs['selected_instruction_key'];
     if (selectedKey && savedInstructions[selectedKey]) {
-      // Vérifier que le contenu correspond (sécurité)
       if (inputs['instruction'] === savedInstructions[selectedKey]) {
         setInstructionSearchQuery(selectedKey);
       }
     }
-  }, [inputs['selected_instruction_key'], savedInstructions]);
+  }, [inputs['selected_instruction_key'], savedInstructions, inputs['instruction']]);
 
-  // Référence pour suivre les valeurs précédentes
-  const prevTemplateIdxRef = useRef(currentTemplateIdx);
-  const prevEditingPostIdRef = useRef<string | null | undefined>(undefined);
-  const translatorInjectedRef = useRef(false);
-  // ⚠️ IMPORTANT : Ne vider l'instruction que lors du changement de template
-  // ou lors de la SORTIE du mode édition (pas lors de l'ENTRÉE)
+  // Ne vider l'instruction que lors du changement de template
+  // ou lors de la sortie du mode édition (pas lors de l'entrée)
   useEffect(() => {
     const templateChanged = prevTemplateIdxRef.current !== currentTemplateIdx;
     const exitingEditMode = prevEditingPostIdRef.current !== null && editingPostId === null;
 
-    // Vider uniquement si :
-    // 1. Le template a changé, OU
-    // 2. On sort du mode édition (passage de non-null à null)
     if (templateChanged || exitingEditMode) {
       setInstructionSearchQuery('');
       setInput('instruction', '');
-      setInput('selected_instruction_key', ''); // 🔥 Vider aussi la clé de sélection
+      setInput('selected_instruction_key', '');
     }
 
-    // Mettre à jour les références
     prevTemplateIdxRef.current = currentTemplateIdx;
     prevEditingPostIdRef.current = editingPostId;
-  }, [currentTemplateIdx, editingPostId]);
+  }, [currentTemplateIdx, editingPostId, setInput]);
 
-  const currentTemplateId = templates[currentTemplateIdx]?.id || templates[currentTemplateIdx]?.name;
+  // ==================== BIDIRECTIONNALITÉ TYPE DE TRADUCTION ====================
+  const LABEL_KEY_BY_TRANSLATION_TYPE: Record<string, string> = {
+    'Manuelle': 'manual',
+    'Semi-automatique': 'semi_auto',
+    'Automatique': 'auto',
+  };
 
-  // Variables présentes dans le contenu du template : champs désactivés si la variable n’y figure pas
-  const varsUsedInTemplate = useMemo(() => {
-    const content = currentTemplate?.content ?? '';
-    const matches = content.matchAll(/\[([^\]]+)\]/g);
-    const set = new Set<string>();
-    for (const m of matches) set.add((m[1] as string).trim());
-    if (content.includes('[TRANSLATION_LINKS_LINE]')) set.add('Translate_link');
-    if (content.includes('[MOD_LINKS_LINE]')) set.add('Mod_link');
-    return set;
-  }, [currentTemplate?.content]);
+  const TRANSLATION_TYPE_BY_LABEL_KEY: Record<string, string> = {
+    manual: 'Manuelle',
+    semi_auto: 'Semi-automatique',
+    auto: 'Automatique',
+  };
 
-  // Variables déjà affichées en dur dans le formulaire (à exclure de visibleVars)
-  const hardcodedVarNames = [
-    'Game_name', 'Game_version', 'Game_link', 'Translate_version', 'Translate_link',
-    'Overview', 'is_modded_game', 'Mod_link', 'instruction'
-  ];
+  // Type de traduction (boutons) → tag translationType correspondant
+  useEffect(() => {
+    const labelKey = LABEL_KEY_BY_TRANSLATION_TYPE[translationType];
+    if (!labelKey) return;
 
-  const visibleVars = useMemo(() => {
-    const fromConfig = allVarsConfig.filter(v => {
-      if (hardcodedVarNames.includes(v.name)) return false;
-      if (!v.templates || v.templates.length === 0) return true;
-      return v.templates.includes(currentTemplateId);
+    const currentIds = postTags.split(',').map(s => s.trim()).filter(Boolean);
+
+    const translationTagsSource = (myTags.length > 0 ? myTags : savedTags)
+      .filter(t => t.tagType === 'translationType');
+
+    const targetTag = translationTagsSource.find(t => (t as any).labelKey === labelKey);
+    if (!targetTag) return;
+
+    const tagId = targetTag.id || targetTag.name;
+
+    const withoutTranslationType = currentIds.filter(id => {
+      const t = savedTags.find(st =>
+        (st.id || st.name) === id || String(st.discordTagId ?? '') === id
+      );
+      return t?.tagType !== 'translationType';
     });
 
-    // Réafficher les variables supprimées de allVarsConfig si elles ont une valeur (post rechargé ou dupliqué)
-    const source = editingPostData?.savedInputs ?? inputs;
-    const configNames = new Set(allVarsConfig.map(v => v.name));
-    const orphanNames = Object.keys(source).filter(
-      name => varsUsedInTemplate.has(name) && !configNames.has(name) && !hardcodedVarNames.includes(name) && (source[name] ?? '').toString().trim() !== ''
+    if (withoutTranslationType.length === currentIds.length - 1 && currentIds.includes(tagId)) {
+      return;
+    }
+
+    setPostTags([...withoutTranslationType, tagId].join(','));
+  // On ne dépend volontairement pas de postTags pour éviter des boucles
+  }, [translationType, myTags, savedTags, setPostTags]);
+
+  // ==================== DÉDUCTION AUTOMATIQUE DU TAG SITES ====================
+  const syncingSiteTagRef = useRef(false);
+  useEffect(() => {
+    if (syncingSiteTagRef.current) return;
+
+    const gameLink = buildFinalLink(linkConfigs.Game_link);
+    const translateLink = buildFinalLink(linkConfigs.Translate_link);
+
+    const checkLink = (link: string) => {
+      if (!link) return null;
+      const lower = link.toLowerCase();
+      if (lower.includes('f95zone.to')) return 'F95';
+      if (lower.includes('lewdcorner.com')) return 'LewdCorner';
+      return 'Autres Sites';
+    };
+
+    const detectedSiteTag = checkLink(gameLink) || checkLink(translateLink);
+    if (!detectedSiteTag) return;
+
+    // Tags "sites" pour le traducteur actif, ou fallback global
+    const siteTagsSource = (myTags.length > 0
+      ? myTags
+      : savedTags
+    ).filter(t => t.tagType === 'sites');
+
+    const siteTag = siteTagsSource.find(t =>
+      t.name.includes(detectedSiteTag) ||
+      t.name === `🔞 ${detectedSiteTag}` ||
+      t.name === `⛔ ${detectedSiteTag}` ||
+      t.name === `🔗 ${detectedSiteTag}`
     );
-    const orphanVars: Array<{ name: string; label: string; type?: 'text' | 'textarea'; placeholder?: string }> = orphanNames.map(name => ({
-      name,
-      label: name.replace(/_/g, ' '),
-      type: 'text'
-    }));
 
-    return [...fromConfig, ...orphanVars];
-  }, [allVarsConfig, currentTemplateId, editingPostData?.savedInputs, inputs, varsUsedInTemplate]);
+    if (!siteTag) return;
 
-  // Fonction pour ouvrir la modale de sélection des tags
+    const currentIds = postTags.split(',').map(s => s.trim()).filter(Boolean);
+    const tagId = siteTag.id || siteTag.name;
+
+    if (currentIds.includes(tagId)) return;
+
+    const withoutSites = currentIds.filter(id => {
+      const tag = savedTags.find(t => (t.id || t.name) === id || String(t.discordTagId ?? '') === id);
+      return tag?.tagType !== 'sites';
+    });
+
+    syncingSiteTagRef.current = true;
+    setPostTags([...withoutSites, tagId].join(','));
+    setTimeout(() => { syncingSiteTagRef.current = false; }, 100);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkConfigs.Game_link, linkConfigs.Translate_link, savedTags, postTags]);
+
+  // ==================== HANDLERS ====================
   const handleOpenTagSelector = () => {
-    // Trouver l'élément preview pour obtenir sa position exacte
     const previewElement = document.querySelector('[data-preview-container]') as HTMLElement;
-
     if (previewElement) {
-      const previewRect = previewElement.getBoundingClientRect();
-      // Positionner la modale juste au-dessus du preview, alignée à gauche du preview
+      const rect = previewElement.getBoundingClientRect();
       setTagSelectorPosition({
-        top: previewRect.top - 10, // Juste au-dessus du preview
-        left: previewRect.left + 16,
-        width: Math.min(previewRect.width - 32, 500)
+        top: rect.top - 10,
+        left: rect.left + 16,
+        width: Math.min(rect.width - 32, 500)
       });
     } else {
-      // Fallback : utiliser les valeurs par défaut basées sur le layout
-      const previewLeft = window.innerWidth * 0.65;
-      const previewWidth = window.innerWidth * 0.35;
-      setTagSelectorPosition({
-        top: 120,
-        left: previewLeft + 16,
-        width: Math.min(previewWidth - 32, 500)
-      });
+      setTagSelectorPosition({ top: 120, left: window.innerWidth * 0.65 + 16, width: 500 });
     }
     setShowTagSelector(true);
   };
 
-  // Fonction pour sélectionner un tag
   const handleSelectTag = (tagId: string) => {
-    const currentTags = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
-    if (!currentTags.includes(tagId)) {
-      setPostTags([...currentTags, tagId].join(','));
+    const current = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    // Récupérer le tag complet (pour connaître sa catégorie)
+    const tag = savedTags.find(t =>
+      (t.id || t.name) === tagId || String(t.discordTagId ?? '') === tagId
+    );
+
+    if (!tag) {
+      // Fallback : comportement simple (ajout si absent)
+      if (!current.includes(tagId)) {
+        setPostTags([...current, tagId].join(','));
+      }
+      return;
+    }
+
+    // Un seul tag "sites", "translationType" et "gameStatus" à la fois
+    let nextIds = current;
+    if (tag.tagType === 'translationType' || tag.tagType === 'sites' || tag.tagType === 'gameStatus') {
+      nextIds = current.filter(id => {
+        const t = savedTags.find(st =>
+          (st.id || st.name) === id || String(st.discordTagId ?? '') === id
+        );
+        return t?.tagType !== tag.tagType;
+      });
+    }
+
+    // Interdire de désélectionner un tag de type de traduction (toujours au moins un)
+    if (tag.tagType === 'translationType' && nextIds.includes(tagId)) {
+      return;
+    }
+
+    const willSelect = !nextIds.includes(tagId);
+    const finalIds = willSelect ? [...nextIds, tagId] : nextIds;
+    setPostTags(finalIds.join(','));
+
+    // Tags translationType → mettre à jour le toggle
+    if (tag.tagType === 'translationType') {
+      const key = (tag as any).labelKey as string | undefined;
+      const mappedType = key ? TRANSLATION_TYPE_BY_LABEL_KEY[key] : undefined;
+      if (mappedType && mappedType !== translationType) {
+        setTranslationType(mappedType);
+      }
     }
   };
 
-
-  const filteredInstructions = useMemo(() => {
-    if (!instructionSearchQuery.trim()) return Object.keys(savedInstructions);
-    const query = instructionSearchQuery.toLowerCase();
-    return Object.keys(savedInstructions).filter(name => name.toLowerCase().includes(query));
-  }, [savedInstructions, instructionSearchQuery]);
-
-  function LinkField({
-    label,
-    linkName,
-    placeholder,
-    disabled = false,
-    showLabel = true,
-    customLabelContent,
-    hideSourceSelect = true,
-    /** Met Label (col 1) et Lien (col 2) sur la même ligne. */
-    inlineFirstColumn,
-    /** Affiche uniquement l'input (pas de label ni prévisualisation au-dessus). */
-    inputOnly = false
-  }: {
-    label: string;
-    linkName: 'Game_link' | 'Translate_link' | 'Mod_link';
-    placeholder: string;
-    disabled?: boolean;
-    showLabel?: boolean;
-    customLabelContent?: React.ReactNode;
-    hideSourceSelect?: boolean;
-    inlineFirstColumn?: React.ReactNode;
-    inputOnly?: boolean;
-  }) {
-    const config = linkConfigs[linkName];
-
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      let val = e.target.value;
-
-      // Détection automatique du type : uniquement F95/Lewd si l'URL en fait partie
-      // Sinon (Proton, autre domaine, etc.) → Autre pour ne pas préfixer avec f95zone/lewdcorner
-      const lowerVal = val.toLowerCase();
-      let detectedSource: 'F95' | 'Lewd' | 'Autre' = config.source;
-
-      if (lowerVal.includes('f95zone.to')) {
-        detectedSource = 'F95';
-      } else if (lowerVal.includes('lewdcorner.com')) {
-        detectedSource = 'Lewd';
-      } else if (lowerVal.includes('http') || lowerVal.includes('://')) {
-        // URL d'un autre type (Proton, Drive, etc.) : forcer Autre
-        detectedSource = 'Autre';
-      }
-
-      // Pour F95/Lewd : on garde la valeur telle quelle (URL ou ID) ; setLinkConfig nettoiera l'URL côté context
-      if (detectedSource !== 'Autre' && /^\d+$/.test(val.trim())) {
-        val = val.trim();
-      }
-      setLinkConfig(linkName, detectedSource, val);
-    };
-
-    // Même logique que le preview : une seule source de vérité (buildFinalLink)
-    const finalUrl = buildFinalLink(config) || '...';
-    const displayValue = buildFinalLink(config);
-
-    const previewNode = finalUrl && !finalUrl.includes('...') ? (
-      <div
-        onClick={async () => {
-          const result = await tauriAPI.openUrl(finalUrl);
-          if (!result.ok) console.error('❌ Erreur ouverture URL:', result.error);
-        }}
-        style={{
-          fontSize: 11,
-          color: '#5865F2',
-          fontFamily: 'monospace',
-          padding: '2px 8px',
-          background: 'rgba(88, 101, 242, 0.1)',
-          borderRadius: 4,
-          maxWidth: '100%',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          cursor: 'pointer',
-          display: 'inline-block',
-          transition: 'all 0.2s'
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(88, 101, 242, 0.2)';
-          e.currentTarget.style.textDecoration = 'underline';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'rgba(88, 101, 242, 0.1)';
-          e.currentTarget.style.textDecoration = 'none';
-        }}
-        title="Cliquer pour ouvrir dans le navigateur externe"
-      >
-        🔗 {finalUrl}
-      </div>
-    ) : (
-      <div style={{
-        fontSize: 11,
-        color: '#5865F2',
-        fontFamily: 'monospace',
-        padding: '2px 8px',
-        background: 'rgba(88, 101, 242, 0.1)',
-        borderRadius: 4,
-        maxWidth: '100%',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap'
-      }}>
-        🔗 {finalUrl}
-      </div>
+  const handleRemoveTag = (tagId: string) => {
+    const tag = savedTags.find(t =>
+      (t.id || t.name) === tagId || String(t.discordTagId ?? '') === tagId
     );
 
-    const linkInput = (
-      <input
-        type="text"
-        value={displayValue}
-        onChange={handleInputChange}
-        placeholder={config.source === 'Autre' ? placeholder : 'Collez l\'ID ou l\'URL complète'}
-        disabled={disabled}
-        style={{
-          height: '40px',
-          boxSizing: 'border-box',
-          borderRadius: 6,
-          padding: '0 12px',
-          background: 'rgba(255,255,255,0.03)',
-          border: '1px solid var(--border)',
-          color: 'var(--text)',
-          opacity: disabled ? 0.5 : 1,
-          width: '100%'
-        }}
-      />
-    );
-
-    // Mode inputOnly : uniquement l'input (pour Lien du jeu + bouton 🔗 ou ligne Label|Lien|🔗|🗑️)
-    if (inputOnly) {
-      return (
-        <div style={{ minWidth: 0, width: '100%', height: 40, display: 'flex', alignItems: 'center' }}>
-          {linkInput}
-        </div>
-      );
+    // Interdire la suppression du Traducteur, du Site et du Type de traduction
+    if (tag?.tagType === 'translator' || tag?.tagType === 'sites' || tag?.tagType === 'translationType') {
+      return;
     }
 
-    // Mode inline : prévisualisation au-dessus, puis ligne Label | Lien
-    if (inlineFirstColumn != null) {
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', marginBottom: 0 }}>
-          <div style={{ minHeight: 28 }}>{previewNode}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'center' }}>
-            {inlineFirstColumn}
-            <div style={{ minWidth: 0 }}>{linkInput}</div>
-          </div>
-        </div>
-      );
-    }
+    const newTags = selectedTagIds.filter(t => t !== tagId);
+    setPostTags(newTags.join(','));
+  };
 
-    return (
-      <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', width: '100%' }}>
-        {/* LIGNE 1 : Label/Custom content et Prévisualisation du lien final */}
-        {(showLabel || customLabelContent) && (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr auto',
-            gap: 8,
-            alignItems: 'flex-start',
-            marginBottom: 8,
-            minHeight: 32,
-            width: '100%'
-          }}>
-            {customLabelContent ? customLabelContent : (
-              <>
-                <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
-                  {label}
-                </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-                  {previewNode}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Ligne 2 : Input (select source masqué si hideSourceSelect, logique F95/Lewd conservée) */}
-        <div style={{ display: 'grid', gridTemplateColumns: hideSourceSelect ? '1fr' : '100px 1fr', gap: 8, alignItems: 'start', width: '100%' }}>
-          {!hideSourceSelect && (
-            <select
-              value={config.source}
-              onChange={(e) => setLinkConfig(linkName, e.target.value as any, config.value)}
-              disabled={disabled}
-              style={{
-                height: '38px',
-                borderRadius: 6,
-                padding: '0 8px',
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid var(--border)',
-                color: 'var(--text)',
-                fontSize: 13,
-                cursor: disabled ? 'not-allowed' : 'pointer',
-                opacity: disabled ? 0.5 : 1
-              }}
-            >
-              <option value="F95">F95</option>
-              <option value="Lewd">Lewd</option>
-              <option value="Autre">Autre</option>
-            </select>
-          )}
-          {linkInput}
-        </div>
-      </div>
-    );
-  }
-
-  // Fonction pour importer les données du scraper (F95/LC)
   const handlePasteImport = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (!text) {
-        showToast('Presse-papier vide', 'error');
-        return;
-      }
+      if (!text) return showToast('Presse-papier vide', 'error');
 
       const data = JSON.parse(text);
-      const logs: string[] = []; // Pour le logging final
 
-      // 1. Nettoyage et sécurisation du Nom
-      if (data.name && typeof data.name === 'string') {
-        const cleanName = data.name.trim();
-        setInput('Game_name', cleanName);
-        logs.push(`✅ Nom: "${cleanName}" -> [Game_name]`);
+      if (data.name) setInput('Game_name', data.name.trim());
+      if (data.version) {
+        const v = data.version.trim();
+        const versionClean = (v.startsWith('[') && v.endsWith(']')) ? v.slice(1, -1) : v;
+        setInput('Game_version', versionClean);
+      }
+      if (data.synopsis) setInput('Overview', data.synopsis.trim());
+
+      if (data.link) {
+        const source = data.link.toLowerCase().includes('f95zone.to') ? 'F95' :
+          data.link.toLowerCase().includes('lewdcorner.com') ? 'Lewd' : 'Autre';
+        setLinkConfig('Game_link', source, data.link.trim());
       }
 
-      // 2. Nettoyage et sécurisation de la Version
-      if (data.version && typeof data.version === 'string') {
-        const cleanVersion = data.version.trim();
-        setInput('Game_version', cleanVersion);
-        logs.push(`✅ Version: "${cleanVersion}" -> [Game_version]`);
-      }
-
-      // 3. 🆕 SYNOPSIS (Overview)
-      if (data.synopsis && typeof data.synopsis === 'string' && data.synopsis.trim()) {
-        const cleanSynopsis = data.synopsis.trim();
-        setInput('Overview', cleanSynopsis);
-        logs.push(`✅ Synopsis: (${cleanSynopsis.length} chars) -> [Overview]`);
-
-        // Scroll automatique vers le textarea synopsis
-        setTimeout(() => {
-          overviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 100);
-      }
-
-      // 4. Gestion des Liens et ID
-      const rawLink = typeof data.link === 'string' ? data.link.trim() : '';
-      const rawId = (typeof data.id === 'string' || typeof data.id === 'number')
-        ? String(data.id).trim()
-        : '';
-
-      const detectSource = (link: string): 'F95' | 'Lewd' | 'Autre' => {
-        const l = link.toLowerCase();
-        if (l.includes('f95zone.to')) return 'F95';
-        if (l.includes('lewdcorner.com')) return 'Lewd';
-        return 'Autre';
-      };
-
-      const extractThreadId = (link: string): string => {
-        const m = link.match(/threads\/(?:[^/]*\.)?(\d+)/i);
-        return m?.[1] ?? '';
-      };
-
-      const sourceToUse = rawLink ? detectSource(rawLink) : 'F95';
-      const idFromLink = rawLink ? extractThreadId(rawLink) : '';
-      const idToUse = rawId || idFromLink || (rawLink && /^\d+$/.test(rawLink) ? rawLink : '');
-
-      if (rawLink && (sourceToUse === 'F95' || sourceToUse === 'Lewd')) {
-        setLinkConfig('Game_link', sourceToUse, rawLink);
-        logs.push(`✅ Lien: ${sourceToUse} URL détectée -> [Game_link]`);
-      } else if (idToUse) {
-        const finalSource = sourceToUse === 'Autre' ? 'F95' : sourceToUse;
-        setLinkConfig('Game_link', finalSource, idToUse);
-        logs.push(`✅ ID: "${idToUse}" (${finalSource}) -> [Game_link]`);
-      } else if (rawLink) {
-        setLinkConfig('Game_link', 'Autre', rawLink);
-        logs.push(`✅ Lien: Source inconnue -> [Game_link]`);
-      }
-
-      // 5. 🆕 IMAGE (Validation stricte f95zone)
-      if (data.image && typeof data.image === 'string' && data.image.includes('f95zone.to')) {
+      if (data.image && data.image.includes('f95zone.to')) {
         addImageFromUrl(data.image);
-        logs.push(`✅ Image: URL détectée -> [addImageFromUrl]`);
-        showToast('Image ajoutée depuis F95Zone', 'success');
       }
 
-      // Affichage des logs dans la console pour debug
-      console.group('📥 Import Scraper Rapide');
-      logs.forEach(l => console.log(l));
-      console.groupEnd();
+      if (data.tags != null || data.status != null || data.type != null) {
+        const tagsArr = Array.isArray(data.tags) ? data.tags : (typeof data.tags === 'string' && data.tags ? data.tags.split(/,\s*/) : []);
+        const statusStr = typeof data.status === 'string' ? data.status : '';
+        const typeStr = typeof data.type === 'string' ? data.type : '';
+        lastImportedF95Ref.current = { tags: tagsArr, status: statusStr, type: typeStr };
+        setInput('_f95_tags', JSON.stringify(tagsArr));
+        setInput('_f95_status', statusStr);
+        setInput('_f95_type', typeStr);
+      }
 
       showToast('Données importées avec succès !', 'success');
-    } catch (err) {
-      showToast('❌ Format JSON invalide', 'error');
-      console.error('Détails erreur import:', err);
+    } catch {
+      showToast('Format JSON invalide', 'error');
     }
   };
 
-  // Fonction pour synchroniser les versions
-  const syncVersion = () => {
-    const gameVer = inputs['Game_version'] || '';
-    setInput('Translate_version', gameVer);
+  const handleResetForm = () => {
+    resetAllFields();
+    translatorInjectedRef.current = false;
+    lastImportedF95Ref.current = { tags: [], status: '', type: '' };
+    setInput('_f95_tags', '');
+    setInput('_f95_status', '');
+    setInput('_f95_type', '');
+    // Ré-injecter le tag traducteur + le tag Type de traduction « Automatique »
+    const autoTag = myTags.find(t => t.tagType === 'translationType' && (t as any).labelKey === 'auto')
+      ?? savedTags.find(t => t.tagType === 'translationType' && (t as any).labelKey === 'auto');
+    const autoTagId = autoTag ? (autoTag.id || autoTag.name) : '';
+    const parts = translatorTagId ? [translatorTagId] : [];
+    if (autoTagId) parts.push(autoTagId);
+    setPostTags(parts.join(','));
+    showToast('Formulaire vidé', 'success');
   };
 
-  // Définir un lien principal à partir d'une URL brute (pour promotion d'un lien additionnel en premier)
-  // On passe l’URL complète pour que setLinkConfig nettoie et conserve le hash (#post-XXXXX).
-  const setTranslateLinkFromUrl = (url: string) => {
-    const u = url.trim();
-    const source: 'F95' | 'Lewd' | 'Autre' = u.toLowerCase().includes('f95zone.to') ? 'F95' : u.toLowerCase().includes('lewdcorner.com') ? 'Lewd' : 'Autre';
-    setLinkConfig('Translate_link', source, u);
+  const syncVersion = () => {
+    setInput('Translate_version', inputs['Game_version'] || '');
   };
-  const setModLinkFromUrl = (url: string) => {
-    const u = url.trim();
-    const source: 'F95' | 'Lewd' | 'Autre' = u.toLowerCase().includes('f95zone.to') ? 'F95' : u.toLowerCase().includes('lewdcorner.com') ? 'Lewd' : 'Autre';
-    setLinkConfig('Mod_link', source, u);
+
+  const handleAddImage = () => {
+    const url = imageUrlInput.trim();
+    if (!url) return;
+    addImageFromUrl(url);
+    setImageUrlInput('');
+  };
+
+  /** Export des données au format formulaire liste : id, domain, name, version, status, tags (string), type, ac, link (court), image (preview). */
+  const handleExportListManager = async () => {
+    const gameLink = buildFinalLink(linkConfigs.Game_link);
+    const translateLink = buildFinalLink(linkConfigs.Translate_link);
+    const lower = (gameLink || '').toLowerCase();
+    let domain = 'Autre';
+    if (lower.includes('f95zone.to')) domain = 'F95z';
+    else if (lower.includes('lewdcorner.com')) domain = 'LewdCorner';
+    const idMatch = gameLink?.match(/threads\/(?:[^/]*\.)?(\d+)/);
+    const id = idMatch ? parseInt(idMatch[1], 10) : 0;
+    const baseUrl = lower.includes('lewdcorner.com') ? 'https://lewdcorner.com' : 'https://f95zone.to';
+    const linkShort = id ? `${baseUrl}/threads/${id}` : gameLink || '';
+
+    const f95 = lastImportedF95Ref.current;
+    let statusVal = (f95.status || (inputs['_f95_status'] ?? '')).trim();
+    if (statusVal) statusVal = statusVal.toUpperCase();
+    let tagsVal = Array.isArray(f95.tags) ? f95.tags.join(', ') : '';
+    if (!tagsVal && typeof inputs['_f95_tags'] === 'string' && inputs['_f95_tags']) {
+      try {
+        const arr = JSON.parse(inputs['_f95_tags']);
+        tagsVal = Array.isArray(arr) ? arr.join(', ') : '';
+      } catch { /* ignore */ }
+    }
+    const typeVal = (f95.type || (inputs['_f95_type'] ?? '')).trim();
+
+    let versionVal = (inputs['Game_version'] ?? '').trim();
+    if (versionVal && !versionVal.startsWith('[')) versionVal = '[' + versionVal + ']';
+
+    let imageVal = uploadedImages.find(img => img.isMain)?.url ?? uploadedImages[0]?.url ?? '';
+    if (imageVal && imageVal.includes('attachments.f95zone.to')) imageVal = imageVal.replace('attachments.f95zone.to', 'preview.f95zone.to');
+    if (imageVal && imageVal.includes('attachments.lewdcorner.com')) imageVal = imageVal.replace('attachments.lewdcorner.com', 'preview.lewdcorner.com');
+
+    const translatorTag = savedTags.find(t =>
+      t.tagType === 'translator' && selectedTagIds.some(id => (t.id || t.name) === id || String(t.discordTagId ?? '') === id)
+    );
+    const translationTypeTag = savedTags.find(t =>
+      t.tagType === 'translationType' && selectedTagIds.some(id => (t.id || t.name) === id || String(t.discordTagId ?? '') === id)
+    );
+
+    const payload: Record<string, unknown> = {
+      id,
+      domain,
+      name: (inputs['Game_name'] ?? '').trim(),
+      version: versionVal,
+      status: statusVal,
+      tags: tagsVal,
+      type: typeVal,
+      ac: false,
+      link: linkShort,
+      image: imageVal,
+    };
+
+    // Traducteur : concordance formulaire du profil (valeur f95_jeux.traducteur) si définie, sinon nom du tag
+    let traducteurName: string | undefined;
+    if (profile?.id) {
+      const sb = getSupabase();
+      if (sb) {
+        const { data: row } = await sb.from('translator_forum_mappings').select('list_form_traducteur').eq('profile_id', profile.id).maybeSingle();
+        const listFormTraducteur = (row as { list_form_traducteur?: string | null } | null)?.list_form_traducteur;
+        if (listFormTraducteur?.trim()) traducteurName = listFormTraducteur.trim();
+      }
+    }
+    if (traducteurName === undefined && translatorTag?.name) traducteurName = (translatorTag.listFormName && translatorTag.listFormName.trim()) ? translatorTag.listFormName.trim() : translatorTag.name;
+    if (traducteurName) payload.traducteur = traducteurName;
+
+    // Type de traduction : tri automatique selon le type (🤖 Auto → Traduction Automatique, etc.)
+    if (translationTypeTag?.name) {
+      const labelKey = (translationTypeTag as { labelKey?: string }).labelKey;
+      if (labelKey === 'manual') payload.type_de_traduction = 'Traduction Humaine';
+      else if (labelKey === 'semi_auto') payload.type_de_traduction = 'Traduction Semi-Automatique';
+      else if (labelKey === 'auto') payload.type_de_traduction = 'Traduction Automatique';
+      else payload.type_de_traduction = (translationTypeTag.listFormName && translationTypeTag.listFormName.trim()) ? translationTypeTag.listFormName.trim() : translationTypeTag.name;
+    }
+    if (inputs['Translate_version']) payload.tversion = inputs['Translate_version'].trim();
+    if (translateLink) payload.tlink = translateLink;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(payload));
+      showToast('Données exportées dans le presse-papier. Collez-les dans « Insérer les données du jeu ».', 'success');
+    } catch {
+      showToast('Erreur lors de la copie', 'error');
+    }
+  };
+
+  const onPublish = async (silentUpdate = false) => {
+    const res = await (publishPost as any)(profile?.discord_id, { silentUpdate });
+    if (res?.ok) {
+      showToast(editingPostId ? 'Post mis à jour !' : 'Post publié avec succès !', 'success');
+      if (editingPostId) {
+        setEditingPostId(null);
+        setEditingPostData(null);
+      }
+    }
   };
 
   return (
-    <div style={{ padding: '16px 15px', position: 'relative', boxSizing: 'border-box', width: '100%', maxWidth: '100%' }}>
+    <div style={{ padding: '16px 15px', position: 'relative', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
 
-      {/* En-tête formulaire */}
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 10, flexWrap: 'nowrap', height: 32, minHeight: 32 }}>
-        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, lineHeight: '32px' }}>
-          📝 Contenu du post Discord
-          {editingPostId && (
-            <span style={{
-              fontSize: 12, fontWeight: 500, color: 'var(--accent)',
-              background: 'rgba(125,211,252,0.15)', padding: '4px 10px', borderRadius: 6
-            }}>
-              ✏️ Mode modification
-            </span>
-          )}
-        </h4>
+      <EditorHeader
+        editingPostId={editingPostId}
+        translatorOptions={translatorOptions}
+        selectedTranslatorId={selectedTranslatorId}
+        onTranslatorChange={selectTranslator}
+        onImportData={handlePasteImport}
+        onResetForm={handleResetForm}
+        onExitEditMode={() => { setEditingPostId(null); setEditingPostData(null); }}
+        confirm={confirm}
+        showExportListManager={profile?.list_manager}
+        onExportListManager={handleExportListManager}
+      />
 
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button
-            type="button"
-            onClick={handlePasteImport}
-            style={{
-              background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)',
-              color: '#818cf8', padding: '0 12px', borderRadius: 6, height: 32,
-              cursor: 'pointer', fontWeight: 600, fontSize: 12,
-              display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
-            }}
-          >📥 Importer Données</button>
-          <button
-            type="button"
-            onClick={async () => {
-              const ok = await confirm({
-                title: 'Vider le formulaire',
-                message: 'Voulez-vous vraiment vider tous les champs ? Cette action est irréversible.',
-                confirmText: 'Vider', cancelText: 'Annuler', type: 'danger'
-              });
-              if (ok) {
-                resetAllFields();
-                selectTranslator(profile?.id || '');
+      <div style={{ display: 'grid', gap: 16, width: '100%' }}>
 
-                // ✅ FIX : Pour les utilisateurs simples (sélecteur caché), selectTranslator
-                // est un no-op (même ID déjà sélectionné) → translatorTagId ne change pas
-                // → le useEffect ne se déclenche pas → le tag traducteur reste vide après reset.
-                // On force la ré-injection ici directement.
-                translatorInjectedRef.current = false;
-                if (translatorTagId) setPostTags(translatorTagId);
-
-                showToast('Formulaire vidé', 'success');
-              }
-            }}
-            style={{
-              background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
-              color: '#ef4444', padding: '0 12px', borderRadius: 6, height: 32,
-              cursor: 'pointer', fontWeight: 600, fontSize: 12,
-              display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
-            }}
-          >🗑️ Vider le formulaire</button>
-
-          {translatorOptions.length > 1 && (
-            <>
-              <div style={{ width: 1, height: 22, background: 'var(--border)', flexShrink: 0 }} />
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '0 10px', borderRadius: 8, height: 32,
-                background: 'rgba(88,101,242,0.05)', border: '1px solid rgba(88,101,242,0.2)',
-                flexShrink: 0,
-              }}>
-                <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                  👤 Publier pour :
-                </span>
-                <select
-                  value={selectedTranslatorId}
-                  onChange={e => selectTranslator(e.target.value)}
-                  style={{
-                    height: 24, padding: '0 8px', borderRadius: 6,
-                    border: '1px solid var(--border)', background: 'rgba(255,255,255,0.06)',
-                    color: 'var(--text)', fontSize: 12, cursor: 'pointer', minWidth: '140px'
-                  }}
-                >
-                  {translatorOptions.some(o => o.kind === 'profile') && (
-                    <optgroup label="👤 Utilisateurs inscrits">
-                      {translatorOptions.filter(o => o.kind === 'profile').map(o => (
-                        <option key={o.id} value={o.id}>
-                          {o.id === profile?.id ? `${o.name} (moi)` : o.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {translatorOptions.some(o => o.kind === 'external') && (
-                    <optgroup label="🔧 Traducteurs externes">
-                      {translatorOptions.filter(o => o.kind === 'external').map(o => (
-                        <option key={o.id} value={o.id}>{o.name}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-                <span
-                  title={translatorTagId ? 'Tag injecté' : 'Aucun tag configuré'}
-                  style={{
-                    fontSize: 11,
-                    color: translatorTagId ? '#4ade80' : '#f59e0b',
-                    background: translatorTagId ? 'rgba(74,222,128,0.25)' : 'rgba(245,158,11,0.1)',
-                    padding: '2px 7px', borderRadius: 4, whiteSpace: 'nowrap'
-                  }}
-                >
-                  {translatorTagId ? '✔' : '⚠️'}
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gap: 16, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-
-        {/* Layout: Ligne 1 (Titre + Tags) | Ligne 2 (Nom du jeu + Lien image) | Colonne droite (Image sur 2 lignes) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 200px', gridTemplateRows: 'auto auto', gap: 12, width: '100%', maxWidth: '100%' }}>
+        {/* === GRILLE PRINCIPALE : Titre + Tags + Image / Nom du jeu + Lien image === */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr 200px',
+          gridTemplateRows: 'auto auto',
+          gap: 12
+        }}>
 
           {/* LIGNE 1 - Col 1 : Titre du post */}
           <div>
@@ -781,122 +655,20 @@ export default function ContentEditor() {
             />
           </div>
 
-          {/* LIGNE 1 - Col 2 : Tags — bouton puis tags sur la même ligne */}
-          <div>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-              Tags
-            </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                ref={tagButtonRef}
-                type="button"
-                onClick={handleOpenTagSelector}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 6,
-                  border: '1px solid var(--border)',
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: 500,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  transition: 'all 0.2s',
-                  flexShrink: 0
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(74, 158, 255, 0.1)';
-                  e.currentTarget.style.borderColor = '#4a9eff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'var(--panel)';
-                  e.currentTarget.style.borderColor = 'var(--border)';
-                }}
-              >
-                ➕ Ajouter
-              </button>
-              {selectedTagIds.map((tagId) => {
-                const tag = savedTags.find(t => (t.id || t.name) === tagId || String(t.discordTagId ?? '') === tagId);
-                return (
-                  <div
-                    key={tagId}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '6px 14px',
-                      borderRadius: 999,
-                      background: 'rgba(99, 102, 241, 0.14)',
-                      border: '1px solid rgba(99, 102, 241, 0.35)',
-                      fontSize: 13,
-                      lineHeight: 1.2,
-                      fontWeight: 600,
-                      flexShrink: 0
-                    }}
-                  >
-                    <span style={{ color: 'var(--text)' }}>{tag?.name || tagId}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newTags = selectedTagIds.filter(t => t !== tagId);
-                        setPostTags(newTags.join(','));
-                      }}
-                      title="Retirer"
-                      style={{
-                        border: 'none',
-                        background: 'transparent',
-                        color: 'var(--muted)',
-                        cursor: 'pointer',
-                        padding: 0,
-                        lineHeight: 1,
-                        fontSize: 14,
-                        display: 'inline-flex',
-                        alignItems: 'center'
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          {/* LIGNE 1 - Col 2 : Tags */}
+          <TagsSection
+            selectedTagIds={selectedTagIds}
+            savedTags={savedTags}
+            onOpenTagSelector={handleOpenTagSelector}
+            onRemoveTag={handleRemoveTag}
+          />
 
-          {/* LIGNE 1-2 - Col 3 : Zone image (rowspan 2) - À DROITE — même taille avec ou sans image */}
-          <div style={{ gridColumn: 3, gridRow: '1 / 3', display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}>
-            <div style={{
-              width: '100%',
-              minHeight: '160px',
-              border: `2px ${uploadedImages.length > 0 ? 'solid' : 'dashed'} var(--border)`,
-              borderRadius: 6,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(255,255,255,0.02)',
-              color: 'var(--muted)',
-              padding: '12px',
-              gap: '8px',
-              overflow: 'hidden',
-              position: 'relative'
-            }}>
-              {uploadedImages.length > 0 ? (
-                <FormImageDisplay
-                  imagePath={uploadedImages[0].url || ''}
-                  onDelete={async () => {
-                    const ok = await confirm({ title: 'Supprimer', message: 'Supprimer cette image ?', type: 'danger' });
-                    if (ok) removeImage(0);
-                  }}
-                />
-              ) : (
-                <>
-                  <div style={{ fontSize: 32 }}>🖼️</div>
-                  <div style={{ fontSize: 11, textAlign: 'center' }}>Aucune image</div>
-                </>
-              )}
-            </div>
+          {/* LIGNE 1-2 - Col 3 : Image preview (prend 2 lignes) */}
+          <div style={{ gridColumn: 3, gridRow: '1 / 3' }}>
+            <ImageSection
+              uploadedImages={uploadedImages}
+              removeImage={removeImage}
+            />
           </div>
 
           {/* LIGNE 2 - Col 1 : Nom du jeu */}
@@ -906,7 +678,7 @@ export default function ContentEditor() {
             </label>
             <input
               value={inputs['Game_name'] || ''}
-              onChange={e => setInput('Game_name', e.target.value)}
+              onChange={(e) => setInput('Game_name', e.target.value)}
               disabled={!varsUsedInTemplate.has('Game_name')}
               style={{
                 width: '100%',
@@ -934,15 +706,9 @@ export default function ContentEditor() {
                 value={imageUrlInput}
                 onChange={(e) => setImageUrlInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const url = imageUrlInput.trim();
-                    if (url) {
-                      addImageFromUrl(url);
-                      setImageUrlInput('');
-                    }
-                  }
+                  if (e.key === 'Enter') handleAddImage();
                 }}
-                placeholder="URL de l'image (https://...)"
+                placeholder="https://..."
                 style={{
                   flex: 1,
                   height: '40px',
@@ -955,13 +721,7 @@ export default function ContentEditor() {
               />
               <button
                 type="button"
-                onClick={() => {
-                  const url = imageUrlInput.trim();
-                  if (url) {
-                    addImageFromUrl(url);
-                    setImageUrlInput('');
-                  }
-                }}
+                onClick={handleAddImage}
                 disabled={!imageUrlInput.trim()}
                 style={{
                   height: '40px',
@@ -982,80 +742,20 @@ export default function ContentEditor() {
           </div>
         </div>
 
-        {/* LIGNE 4 : Version du jeu et Version de la trad */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 12, alignItems: 'end' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-              Version du jeu
-            </label>
-            <input
-              value={inputs['Game_version'] || ''}
-              onChange={e => setInput('Game_version', e.target.value)}
-              disabled={!varsUsedInTemplate.has('Game_version')}
-              style={{
-                width: '100%',
-                height: '40px',
-                borderRadius: 6,
-                padding: '0 12px',
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid var(--border)',
-                color: 'var(--text)',
-                opacity: varsUsedInTemplate.has('Game_version') ? 1 : 0.6,
-                cursor: varsUsedInTemplate.has('Game_version') ? 'text' : 'not-allowed'
-              }}
-              placeholder="v1.0.4"
-            />
-          </div>
+        {/* Versions */}
+        <VersionsSection
+          gameVersion={inputs['Game_version'] || ''}
+          onGameVersionChange={(v) => setInput('Game_version', v)}
+          translateVersion={inputs['Translate_version'] || ''}
+          onTranslateVersionChange={(v) => setInput('Translate_version', v)}
+          canEditGameVersion={varsUsedInTemplate.has('Game_version')}
+          canEditTranslateVersion={varsUsedInTemplate.has('Translate_version')}
+          onSyncVersion={syncVersion}
+        />
 
-          <div style={{ paddingBottom: '4px' }}>
-            <button
-              type="button"
-              onClick={syncVersion}
-              title="Copier vers version traduction"
-              style={{
-                background: 'rgba(255,255,255,0.1)',
-                border: 'none',
-                color: 'white',
-                cursor: 'pointer',
-                width: '32px',
-                height: '32px',
-                borderRadius: '4px',
-                fontSize: '18px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              ⇆
-            </button>
-          </div>
-
-          <div>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-              Version de la trad
-            </label>
-            <input
-              value={inputs['Translate_version'] || ''}
-              onChange={e => setInput('Translate_version', e.target.value)}
-              disabled={!varsUsedInTemplate.has('Translate_version')}
-              style={{
-                width: '100%',
-                height: '40px',
-                borderRadius: 6,
-                padding: '0 12px',
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid var(--border)',
-                color: 'var(--text)',
-                opacity: varsUsedInTemplate.has('Translate_version') ? 1 : 0.6,
-                cursor: varsUsedInTemplate.has('Translate_version') ? 'text' : 'not-allowed'
-              }}
-              placeholder="v1.0"
-            />
-          </div>
-        </div> {/* FIN LIGNE 5 */}
-
-        {/* Grille 2 colonnes : Lien du jeu (input + 🔗) | Type de traduction — labels et lignes input alignés */}
+        {/* Grille 2 colonnes : Lien du jeu + Type de traduction */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'stretch' }}>
+          {/* Lien du jeu */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ minHeight: 32, display: 'flex', alignItems: 'center' }}>
               <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600, margin: 0 }}>
@@ -1063,23 +763,39 @@ export default function ContentEditor() {
               </label>
             </div>
             <div style={{ height: 40, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ flex: 1, minWidth: 0, height: 40, display: 'flex', alignItems: 'center' }}>
-                <LinkField
-                  label="Lien du jeu"
-                  linkName="Game_link"
-                  placeholder="https://..."
-                  disabled={!varsUsedInTemplate.has('Game_link')}
-                  inputOnly
-                />
-              </div>
+              <input
+                type="text"
+                value={buildFinalLink(linkConfigs.Game_link)}
+                onChange={(e) => {
+                  let val = e.target.value.trim();
+                  let detectedSource: 'F95' | 'Lewd' | 'Autre' = linkConfigs.Game_link.source;
+
+                  const lower = val.toLowerCase();
+                  if (lower.includes('f95zone.to')) detectedSource = 'F95';
+                  else if (lower.includes('lewdcorner.com')) detectedSource = 'Lewd';
+                  else if (lower.includes('http')) detectedSource = 'Autre';
+
+                  setLinkConfig('Game_link', detectedSource, val);
+                }}
+                placeholder="https://..."
+                disabled={!varsUsedInTemplate.has('Game_link')}
+                style={{
+                  flex: 1,
+                  height: '40px',
+                  borderRadius: 6,
+                  padding: '0 12px',
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  opacity: varsUsedInTemplate.has('Game_link') ? 1 : 0.6,
+                  cursor: varsUsedInTemplate.has('Game_link') ? 'text' : 'not-allowed'
+                }}
+              />
               <button
                 type="button"
-                onClick={async () => {
+                onClick={() => {
                   const url = buildFinalLink(linkConfigs.Game_link);
-                  if (url && !url.includes('...')) {
-                    const result = await tauriAPI.openUrl(url);
-                    if (!result.ok) console.error('❌ Erreur ouverture URL:', result.error);
-                  }
+                  if (url && !url.includes('...')) tauriAPI.openUrl(url);
                 }}
                 title="Ouvrir le lien"
                 style={{
@@ -1100,6 +816,8 @@ export default function ContentEditor() {
               </button>
             </div>
           </div>
+
+          {/* Type de traduction */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{
               minHeight: 32,
@@ -1111,25 +829,11 @@ export default function ContentEditor() {
               <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600, margin: 0 }}>
                 Type de traduction
               </label>
-              <label style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                cursor: 'pointer',
-                userSelect: 'none',
-                fontSize: 12,
-                color: 'var(--text)',
-                fontWeight: 600,
-                margin: 0
-              }}>
-                <input
-                  type="checkbox"
-                  checked={isIntegrated}
-                  onChange={e => setIsIntegrated(e.target.checked)}
-                  style={{ width: 16, height: 16, cursor: 'pointer' }}
-                />
-                <span>Traduction intégrée au jeu</span>
-              </label>
+              <Toggle
+                checked={isIntegrated}
+                onChange={setIsIntegrated}
+                label="Traduction intégrée au jeu"
+              />
             </div>
             <div style={{
               height: 40,
@@ -1169,635 +873,102 @@ export default function ContentEditor() {
           </div>
         </div>
 
-        {/* Grille 2 colonnes : Traductions (label, lien, additionnels) | Mod (checkbox, label, lien, additionnels) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
-          {/* Colonne 1 : Traductions */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>
-                Traductions
-              </label>
-              <button
-                type="button"
-                onClick={addAdditionalTranslationLink}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: 13,
-                  height: 32,
-                  border: '1px solid var(--border)',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  background: 'transparent',
-                  color: 'var(--text)',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
-                  e.currentTarget.style.borderColor = 'var(--accent)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.borderColor = 'var(--border)';
-                }}
-              >
-                ➕ Ajouter un lien additionnel
-              </button>
-            </div>
-            {/* En-têtes Label | Lien | 🔗 | 🗑️ — toutes les lignes affichées de la même manière */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>Label</label>
-              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>Lien</label>
-              <span style={{ width: 40 }} />
-              <span style={{ width: 40 }} />
-            </div>
-            {/* Ligne 0 : lien principal traduction (même style que les suivantes) */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center' }}>
-              <input
-                type="text"
-                value={inputs['main_translation_label'] ?? ''}
-                onChange={(e) => setInput('main_translation_label', e.target.value)}
-                placeholder="Traduction"
-                disabled={!varsUsedInTemplate.has('Translate_link')}
-                style={{
-                  height: '40px',
-                  borderRadius: 6,
-                  padding: '0 12px',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)',
-                  opacity: varsUsedInTemplate.has('Translate_link') ? 1 : 0.6
-                }}
-              />
-              <LinkField
-                label="Lien"
-                linkName="Translate_link"
-                placeholder="https://..."
-                disabled={!varsUsedInTemplate.has('Translate_link')}
-                inputOnly
-              />
-              <button
-                type="button"
-                onClick={async () => {
-                  const url = buildFinalLink(linkConfigs.Translate_link);
-                  if (url && !url.includes('...')) {
-                    const result = await tauriAPI.openUrl(url);
-                    if (!result.ok) console.error('❌ Erreur ouverture URL:', result.error);
-                  }
-                }}
-                title="Ouvrir le lien"
-                style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 6, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                🔗
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (additionalTranslationLinks.length > 0) {
-                    setInput('main_translation_label', additionalTranslationLinks[0].label);
-                    setTranslateLinkFromUrl(additionalTranslationLinks[0].link);
-                    deleteAdditionalTranslationLink(0);
-                  } else {
-                    setInput('main_translation_label', '');
-                    setLinkConfig('Translate_link', 'Autre', '');
-                  }
-                }}
-                disabled={additionalTranslationLinks.length === 0}
-                title="Supprimer ce lien"
-                style={{
-                  width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--error)', cursor: additionalTranslationLinks.length === 0 ? 'not-allowed' : 'pointer', opacity: additionalTranslationLinks.length === 0 ? 0.4 : 1,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16
-                }}
-              >
-                🗑️
-              </button>
-            </div>
-            {additionalTranslationLinks.map((link, index) => {
-              const totalRows = 1 + additionalTranslationLinks.length;
-              const isOnlyRow = totalRows === 1;
-              return (
-                <div key={index} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center' }}>
-                  <input
-                    type="text"
-                    value={link.label}
-                    onChange={(e) => updateAdditionalTranslationLink(index, { ...link, label: e.target.value })}
-                    placeholder="Saison 1"
-                    style={{ height: '40px', borderRadius: 6, padding: '0 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                  />
-                  <input
-                    type="text"
-                    value={link.link}
-                    onChange={(e) => updateAdditionalTranslationLink(index, { ...link, link: e.target.value })}
-                    placeholder="https://..."
-                    style={{ height: '40px', borderRadius: 6, padding: '0 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={async () => { if (link.link.trim()) { const r = await tauriAPI.openUrl(link.link.trim()); if (!r.ok) console.error('❌ Erreur ouverture URL:', r.error); } }}
-                    title="Ouvrir le lien"
-                    style={{ width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    🔗
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteAdditionalTranslationLink(index)}
-                    disabled={isOnlyRow}
-                    title="Supprimer ce lien"
-                    style={{
-                      width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--error)',
-                      cursor: isOnlyRow ? 'not-allowed' : 'pointer', opacity: isOnlyRow ? 0.4 : 1,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16
-                    }}
-                  >
-                    🗑️
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+        {/* Liens Traduction + Mod */}
+        <LinksSection
+          linkConfigs={linkConfigs}
+          setLinkConfig={setLinkConfig}
+          buildFinalLink={buildFinalLink}
+          additionalTranslationLinks={additionalTranslationLinks}
+          addAdditionalTranslationLink={addAdditionalTranslationLink}
+          updateAdditionalTranslationLink={updateAdditionalTranslationLink}
+          deleteAdditionalTranslationLink={deleteAdditionalTranslationLink}
+          additionalModLinks={additionalModLinks}
+          addAdditionalModLink={addAdditionalModLink}
+          updateAdditionalModLink={updateAdditionalModLink}
+          deleteAdditionalModLink={deleteAdditionalModLink}
+          varsUsedInTemplate={varsUsedInTemplate}
+          inputs={inputs}
+          setInput={setInput}
+        />
 
-          {/* Colonne 2 : Mod */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  cursor: varsUsedInTemplate.has('is_modded_game') ? 'pointer' : 'default',
-                  userSelect: 'none',
-                  fontSize: 13,
-                  color: 'var(--muted)',
-                  fontWeight: 600,
-                  opacity: varsUsedInTemplate.has('is_modded_game') ? 1 : 0.6
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={inputs['is_modded_game'] === 'true'}
-                  onChange={e => setInput('is_modded_game', e.target.checked ? 'true' : 'false')}
-                  disabled={!varsUsedInTemplate.has('is_modded_game')}
-                  style={{
-                    width: 16,
-                    height: 16,
-                    cursor: varsUsedInTemplate.has('is_modded_game') ? 'pointer' : 'not-allowed'
-                  }}
-                />
-                <span>Mod compatible</span>
-              </label>
-              <button
-                type="button"
-                onClick={addAdditionalModLink}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: 13,
-                  height: 32,
-                  border: '1px solid var(--border)',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  background: 'transparent',
-                  color: 'var(--text)',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
-                  e.currentTarget.style.borderColor = 'var(--accent)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.borderColor = 'var(--border)';
-                }}
-              >
-                ➕ Ajouter un lien additionnel
-              </button>
-            </div>
-            {/* En-têtes Label | Lien | 🔗 | 🗑️ — toutes les lignes affichées de la même manière */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>Label</label>
-              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>Lien</label>
-              <span style={{ width: 40 }} />
-              <span style={{ width: 40 }} />
-            </div>
-            {/* Ligne 0 : lien principal mod (même style que les suivantes). Affiché dans le template seulement si une URL est renseignée. */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center' }}>
-              <input
-                type="text"
-                value={inputs['main_mod_label'] ?? ''}
-                onChange={(e) => setInput('main_mod_label', e.target.value)}
-                placeholder="Mod"
-                disabled={!varsUsedInTemplate.has('Mod_link')}
-                style={{
-                  height: '40px',
-                  borderRadius: 6,
-                  padding: '0 12px',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)',
-                  opacity: varsUsedInTemplate.has('Mod_link') ? 1 : 0.6
-                }}
-              />
-              <LinkField
-                label="Lien"
-                linkName="Mod_link"
-                placeholder="ID du thread ou URL..."
-                disabled={!varsUsedInTemplate.has('Mod_link')}
-                inputOnly
-              />
-              <button
-                type="button"
-                onClick={async () => {
-                  const url = buildFinalLink(linkConfigs.Mod_link);
-                  if (url && !url.includes('...')) {
-                    const result = await tauriAPI.openUrl(url);
-                    if (!result.ok) console.error('❌ Erreur ouverture URL:', result.error);
-                  }
-                }}
-                title="Ouvrir le lien"
-                style={{ width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              >
-                🔗
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (additionalModLinks.length > 0) {
-                    setInput('main_mod_label', additionalModLinks[0].label);
-                    setModLinkFromUrl(additionalModLinks[0].link);
-                    deleteAdditionalModLink(0);
-                  } else {
-                    setInput('main_mod_label', '');
-                    setLinkConfig('Mod_link', 'Autre', '');
-                  }
-                }}
-                disabled={additionalModLinks.length === 0}
-                title="Supprimer ce lien"
-                style={{
-                  width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--error)', cursor: additionalModLinks.length === 0 ? 'not-allowed' : 'pointer', opacity: additionalModLinks.length === 0 ? 0.4 : 1,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16
-                }}
-              >
-                🗑️
-              </button>
-            </div>
-            {additionalModLinks.map((link, index) => {
-              const totalRows = 1 + additionalModLinks.length;
-              const isOnlyRow = totalRows === 1;
-              return (
-                <div key={index} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,2fr) minmax(0,3fr) auto auto', gap: 8, alignItems: 'center' }}>
-                  <input
-                    type="text"
-                    value={link.label}
-                    onChange={(e) => updateAdditionalModLink(index, { ...link, label: e.target.value })}
-                    placeholder="Label (ex: Walkthrough Mod)"
-                    style={{ height: '40px', borderRadius: 6, padding: '0 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                  />
-                  <input
-                    type="text"
-                    value={link.link}
-                    onChange={(e) => updateAdditionalModLink(index, { ...link, link: e.target.value })}
-                    placeholder="https://..."
-                    style={{ height: '40px', borderRadius: 6, padding: '0 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', color: 'var(--text)' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={async () => { if (link.link.trim()) { const r = await tauriAPI.openUrl(link.link.trim()); if (!r.ok) console.error('❌ Erreur ouverture URL:', r.error); } }}
-                    title="Ouvrir le lien"
-                    style={{ width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    🔗
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteAdditionalModLink(index)}
-                    disabled={isOnlyRow}
-                    title="Supprimer ce lien"
-                    style={{
-                      width: 40, height: 40, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--error)',
-                      cursor: isOnlyRow ? 'not-allowed' : 'pointer', opacity: isOnlyRow ? 0.4 : 1,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16
-                    }}
-                  >
-                    🗑️
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+        {/* Variables personnalisées */}
+        <CustomVarsSection
+          visibleVars={visibleVars}
+          inputs={inputs}
+          setInput={setInput}
+          varsUsedInTemplate={varsUsedInTemplate}
+        />
+
+        {/* Synopsis + Instructions */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <SynopsisSection
+            ref={overviewRef}
+            value={inputs['Overview'] || ''}
+            onChange={(v) => setInput('Overview', v)}
+            disabled={!varsUsedInTemplate.has('Overview')}
+          />
+
+          <InstructionsSection
+            value={inputs['instruction'] || ''}
+            onChange={(v) => setInput('instruction', v)}
+            searchQuery={instructionSearchQuery}
+            onSearchChange={setInstructionSearchQuery}
+            showSuggestions={showInstructionSuggestions}
+            onSuggestionsToggle={setShowInstructionSuggestions}
+            filteredInstructions={filteredInstructions}
+            onSelectInstruction={(name) => {
+              setInput('instruction', savedInstructions[name]);
+              setInput('selected_instruction_key', name);
+              setInstructionSearchQuery(name);
+              setTimeout(() => setShowInstructionSuggestions(false), 100);
+            }}
+            disabled={!varsUsedInTemplate.has('instruction')}
+            savedInstructions={savedInstructions}
+          />
         </div>
 
-        {/* LIGNE 8 : Variables Custom — type text = input, type textarea = textarea multiligne */}
-        {visibleVars.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {visibleVars.map((v) => {
-              const used = varsUsedInTemplate.has(v.name);
-              const isTextarea = v.type === 'textarea';
-              return (
-                <div key={v.name} style={isTextarea ? { gridColumn: '1 / -1' } : undefined}>
-                  <label style={{
-                    display: 'block',
-                    fontSize: 13,
-                    color: used ? 'var(--muted)' : 'var(--muted)',
-                    marginBottom: 6,
-                    fontWeight: 600,
-                    opacity: used ? 1 : 0.7
-                  }}>
-                    {v.label || v.name}
-                  </label>
-                  {isTextarea ? (
-                    <textarea
-                      value={inputs[v.name] || ''}
-                      onChange={e => setInput(v.name, e.target.value)}
-                      disabled={!used}
-                      placeholder={v.placeholder || ''}
-                      style={{
-                        width: '100%',
-                        minHeight: 100,
-                        borderRadius: 6,
-                        padding: 12,
-                        background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid var(--border)',
-                        color: 'var(--text)',
-                        fontFamily: 'inherit',
-                        fontSize: 14,
-                        lineHeight: 1.5,
-                        resize: 'vertical',
-                        opacity: used ? 1 : 0.6,
-                        cursor: used ? 'text' : 'not-allowed'
-                      }}
-                      className="styled-scrollbar"
-                    />
-                  ) : (
-                    <input
-                      value={inputs[v.name] || ''}
-                      onChange={e => setInput(v.name, e.target.value)}
-                      disabled={!used}
-                      style={{
-                        width: '100%',
-                        height: '40px',
-                        borderRadius: 6,
-                        padding: '0 12px',
-                        background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid var(--border)',
-                        color: 'var(--text)',
-                        opacity: used ? 1 : 0.6,
-                        cursor: used ? 'text' : 'not-allowed'
-                      }}
-                      placeholder={v.placeholder || ''}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* LIGNE 9 : Synopsis et Instructions */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'start' }}>
-          {/* Synopsis (gauche) - prend toute la hauteur */}
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '150px' }}>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-              Synopsis
-            </label>
-            <textarea
-              ref={overviewRef}
-              value={inputs['Overview'] || ''}
-              onChange={e => setInput('Overview', e.target.value)}
-              disabled={!varsUsedInTemplate.has('Overview')}
-              style={{
-                width: '100%',
-                flex: 1,
-                minHeight: 0,
-                borderRadius: 6,
-                padding: '12px',
-                fontFamily: 'inherit',
-                fontSize: 14,
-                lineHeight: 1.5,
-                resize: 'none',
-                overflowY: 'auto',
-                opacity: varsUsedInTemplate.has('Overview') ? 1 : 0.6,
-                cursor: varsUsedInTemplate.has('Overview') ? 'text' : 'not-allowed'
-              }}
-              className="styled-scrollbar"
-              placeholder="Décrivez le jeu..."
-            />
-          </div>
-
-          {/* Instructions (droite) - 2 lignes */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', minHeight: '150px' }}>
-            {/* Ligne 1 : Dropdown */}
-            <div style={{ position: 'relative' }}>
-              <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-                Instructions d'installation
-              </label>
-              <input
-                type="text"
-                placeholder="Rechercher une instruction..."
-                value={instructionSearchQuery}
-                onChange={e => {
-                  setInstructionSearchQuery(e.target.value);
-                  setShowInstructionSuggestions(true);
-                }}
-                onFocus={() => setShowInstructionSuggestions(true)}
-                disabled={!varsUsedInTemplate.has('instruction')}
-                style={{
-                  width: '100%',
-                  height: '40px',
-                  borderRadius: 6,
-                  padding: '0 12px',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)',
-                  opacity: varsUsedInTemplate.has('instruction') ? 1 : 0.6,
-                  cursor: varsUsedInTemplate.has('instruction') ? 'text' : 'not-allowed'
-                }}
-              />
-              {showInstructionSuggestions && filteredInstructions.length > 0 && (
-                <div
-                  className="suggestions-dropdown"
-                  style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    zIndex: 1001,
-                    maxHeight: '200px',
-                    overflowY: 'auto'
-                  }}
-                >
-                  {filteredInstructions.map((name, idx) => (
-                    <div
-                      key={idx}
-                      className="suggestion-item"
-                      onClick={() => {
-                        setInput('instruction', savedInstructions[name]);
-                        setInput('selected_instruction_key', name); // 🔥 Sauvegarder le nom pour restauration
-                        setInstructionSearchQuery(name);
-                        setShowInstructionSuggestions(false);
-                      }}
-                    >
-                      <div style={{ fontWeight: 600 }}>{name}</div>
-                      <div style={{ fontSize: 11, opacity: 0.7 }}>
-                        {savedInstructions[name].substring(0, 50)}...
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Ligne 2 : Textarea - prend la hauteur restante */}
-            <textarea
-              value={inputs['instruction'] || ''}
-              onChange={e => setInput('instruction', e.target.value)}
-              disabled={!varsUsedInTemplate.has('instruction')}
-              style={{
-                width: '100%',
-                flex: 1,
-                minHeight: 0,
-                borderRadius: 6,
-                padding: '12px',
-                fontFamily: 'monospace',
-                fontSize: 13,
-                lineHeight: 1.5,
-                resize: 'none',
-                overflowY: 'auto',
-                opacity: varsUsedInTemplate.has('instruction') ? 1 : 0.6,
-                cursor: varsUsedInTemplate.has('instruction') ? 'text' : 'not-allowed'
-              }}
-              className="styled-scrollbar"
-              placeholder="Tapez ou sélectionnez une instruction..."
-            />
-          </div>
-        </div>
-
-        {/* LIGNE 10 : Footer & Publication */}
-        <div style={{
-          marginTop: 8, display: 'flex', justifyContent: 'flex-end',
-          alignItems: 'center', gap: 12,
-          paddingTop: 12, borderTop: '1px solid var(--border)'
-        }}>
-          {rateLimitCooldown !== null && (
-            <div style={{ color: 'var(--error)', fontSize: 13, fontWeight: 700 }}>
-              ⏳ Rate limit : {rateLimitCooldown}s
-            </div>
-          )}
-
-          {editingPostId && (
-            <>
-              <button
-                type="button"
-                onClick={() => { setEditingPostId(null); setEditingPostData(null); showToast('Mode édition annulé', 'info'); }}
-                style={{
-                  background: 'transparent', border: '1px solid var(--border)',
-                  color: 'var(--muted)', padding: '10px 20px',
-                  borderRadius: 6, cursor: 'pointer', fontWeight: 600
-                }}
-              >❌ Annuler l'édition</button>
-              <label
-                style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--muted)', userSelect: 'none' }}
-                title="Ne pas envoyer de notification de mise à jour"
-              >
-                <input type="checkbox" checked={silentUpdateMode} onChange={e => setSilentUpdateMode(e.target.checked)} />
-                <span>📇 Mise à jour silencieuse</span>
-              </label>
-            </>
-          )}
-
-          <div
-            style={{ position: 'relative' }}
-            onMouseEnter={() => (!canPublish || publishInProgress) && setShowPublishTooltip(true)}
-            onMouseLeave={() => setShowPublishTooltip(false)}
-          >
-            {showPublishTooltip && publishTooltipText && (
-              <div style={{
-                position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%',
-                transform: 'translateX(-50%)',
-                background: 'var(--panel)', border: '1px solid var(--border)',
-                borderRadius: 8, padding: '8px 12px',
-                fontSize: 12, color: 'var(--text)', whiteSpace: 'nowrap',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.4)', zIndex: 100,
-                pointerEvents: 'none',
-              }}>
-                ⚠️ {publishTooltipText}
-              </div>
-            )}
-            <button
-              disabled={publishInProgress || !canPublish}
-              onClick={async () => {
-                const ok = await confirm({
-                  title: editingPostId ? 'Mettre à jour' : 'Publier',
-                  message: editingPostId ? 'Modifier ce post sur Discord ?' : 'Envoyer ce nouveau post sur Discord ?'
-                });
-                if (ok) {
-                  const res = await (publishPost as (authorDiscordId?: string, options?: { silentUpdate?: boolean }) => Promise<{ ok: boolean, data?: any, error?: string }>)(
-                    profile?.discord_id,
-                    { silentUpdate: editingPostId ? silentUpdateMode : false }
-                  );
-                  if (res && res.ok) {
-                    showToast('Terminé !', 'success');
-                    if (editingPostId) { setEditingPostId(null); setEditingPostData(null); }
-                  }
-                }
-              }}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-                padding: '12px 32px', fontSize: 15, fontWeight: 700,
-                background: (publishInProgress || !canPublish) ? 'rgba(148,163,184,0.4)' : (editingPostId ? '#f59e0b' : '#5865F2'),
-                color: 'white', minWidth: '220px',
-                cursor: (publishInProgress || !canPublish) ? 'not-allowed' : 'pointer',
-                border: 'none', borderRadius: 6,
-                transition: 'opacity 0.15s',
-              }}
-            >
-              {publishInProgress ? (
-                <span>⏳ Patientez...</span>
-              ) : editingPostId ? (
-                <><span style={{ fontSize: 18 }}>✏️</span><span>Mettre à jour le post</span></>
-              ) : (
-                <><img src={DiscordIcon} alt="Discord" style={{ width: 20, height: 20, filter: 'brightness(0) invert(1)' }} /><span>Publier sur Discord</span></>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Overlay global pour fermer les suggestions */}
+        {/* Overlay pour fermer les suggestions */}
         {showInstructionSuggestions && (
           <div
-            onClick={() => {
-              setShowInstructionSuggestions(false);
-            }}
+            onClick={() => setShowInstructionSuggestions(false)}
             style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999 }}
           />
         )}
 
-        {/* Modale de sélection des tags */}
-        <TagSelectorModal
-          isOpen={showTagSelector}
-          onClose={() => setShowTagSelector(false)}
-          onSelectTag={handleSelectTag}
-          selectedTagIds={selectedTagIds}
-          position={tagSelectorPosition}
-          controlledTranslatorId={selectedTranslatorId}
-          controlledTranslatorKind={selectedTranslatorKind}
-        />
-
-        <ConfirmModal
-          isOpen={confirmState.isOpen}
-          title={confirmState.title}
-          message={confirmState.message}
-          confirmText={confirmState.confirmText}
-          cancelText={confirmState.cancelText}
-          type={confirmState.type}
-          onConfirm={handleConfirm}
-          onCancel={handleCancel}
+        {/* Footer */}
+        <PublishFooter
+          canPublish={canPublish}
+          publishInProgress={publishInProgress}
+          editingPostId={editingPostId}
+          silentUpdateMode={silentUpdateMode}
+          setSilentUpdateMode={setSilentUpdateMode}
+          rateLimitCooldown={rateLimitCooldown}
+          publishTooltipText={publishTooltipText}
+          onPublish={onPublish}
+          confirm={confirm}
         />
       </div>
+
+      <TagSelectorModal
+        isOpen={showTagSelector}
+        onClose={() => setShowTagSelector(false)}
+        onSelectTag={handleSelectTag}
+        selectedTagIds={selectedTagIds}
+        position={tagSelectorPosition}
+        controlledTranslatorId={selectedTranslatorId}
+        controlledTranslatorKind={selectedTranslatorKind}
+      />
+
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmText={confirmState.confirmText}
+        cancelText={confirmState.cancelText}
+        type={confirmState.type}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
     </div>
   );
 }

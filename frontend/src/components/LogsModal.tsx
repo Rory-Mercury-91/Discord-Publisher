@@ -6,6 +6,7 @@ import { apiFetch } from '../lib/api-helpers';
 import { getSupabase } from '../lib/supabase';
 import { useApp } from '../state/appContext';
 import { useAuth } from '../state/authContext';
+import Toggle from './Toggle';
 
 const DEFAULT_BASE = 'http://138.2.182.125:8080';
 
@@ -72,18 +73,19 @@ function getLineCategory(line: string): LogCategory {
     return 'discord-api';
   }
 
-  // Tentatives exploitation / erreurs HTTP -> debug
+  // Requetes vers notre API (logs, publisher/health, etc.) -> publisher-requests
+  // (avant isSuspicious pour ne pas envoyer NOKEY|GET /api/publisher/health en debug)
+  if (/\[REQUEST\].*(?:OPTIONS|GET|POST)\s+\/api\/(?:logs|publisher\/[^\s]+)/i.test(line)) {
+    return 'publisher-requests';
+  }
+
+  // Tentatives exploitation / erreurs HTTP -> debug (sans inclure NOKEY sur /api/...)
   const isSuspicious =
     l.includes('[http_error]') ||
-    l.includes('nokey') ||
+    (l.includes('nokey') && !l.includes('/api/')) ||
     (l.includes('status=404') && !l.includes('/api/')) ||
     (l.includes('get /') && !l.includes('/api/'));
   if (isSuspicious) return 'debug';
-
-  // Requetes OPTIONS/GET internes Publisher -> publisher-requests
-  if (/\[REQUEST\].*(?:OPTIONS|GET)\s+\/api\/(?:logs|publisher\/[^\s]+)/i.test(line)) {
-    return 'publisher-requests';
-  }
 
   // ── Nouveaux loggers [nom] ───────────────────────────────────
 
@@ -179,7 +181,11 @@ function colorizeLogLine(line: string): ReactElement {
     }
   }
 
-  return <div style={{ color }}>{line}</div>;
+  return (
+    <div style={{ color, wordBreak: 'break-word', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>
+      {line}
+    </div>
+  );
 }
 
 function exportLogsAsTxt(content: string) {
@@ -190,47 +196,6 @@ function exportLogsAsTxt(content: string) {
   a.download = `logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
   a.click();
   URL.revokeObjectURL(url);
-}
-
-// ── Composant Toggle reutilisable ────────────────────────────────────────────
-function Toggle({
-  active, onToggle, label, title, size = 'md',
-}: {
-  active: boolean;
-  onToggle: () => void;
-  label: string;
-  title?: string;
-  size?: 'sm' | 'md';
-}) {
-  const w = size === 'sm' ? 36 : 40;
-  const h = size === 'sm' ? 20 : 22;
-  const d = size === 'sm' ? 14 : 16;
-  const on = size === 'sm' ? w - d - 3 : w - d - 3;
-
-  return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }} title={title}>
-      <div
-        onClick={onToggle}
-        style={{
-          position: 'relative', width: w, height: h,
-          borderRadius: h / 2,
-          background: active ? 'var(--accent)' : 'var(--border)',
-          transition: 'background 0.2s ease', cursor: 'pointer',
-        }}
-      >
-        <div style={{
-          position: 'absolute', top: 3,
-          left: active ? on : 3,
-          width: d, height: d, borderRadius: '50%',
-          background: '#fff', transition: 'left 0.2s ease',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-        }} />
-      </div>
-      <span style={{ fontSize: size === 'sm' ? 12 : 13, fontWeight: 500, color: active ? 'var(--text)' : 'var(--muted)' }}>
-        {label}
-      </span>
-    </label>
-  );
 }
 
 // ── Composant principal ──────────────────────────────────────────────────────
@@ -253,6 +218,8 @@ export default function LogsModal({ onClose, inlineMode = false }: LogsModalProp
   const [isInitialScroll, setIsInitialScroll] = useState(true);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const prevLogsRef = useRef<string>('');
+  /** True si l'utilisateur est (ou était) en bas : on garde l'auto-scroll tant qu'il ne remonte pas */
+  const userAtBottomRef = useRef(true);
 
   const isAdmin = profile?.is_master_admin === true;
 
@@ -260,14 +227,6 @@ export default function LogsModal({ onClose, inlineMode = false }: LogsModalProp
   useModalScrollLock();
 
   const displayedLogs = filterLogs(logs, activeCategories);
-
-  const toggleCategory = (id: string) => {
-    setActiveCategories(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
 
   const fetchLogs = useCallback(async () => {
     const base = getBaseUrl(apiUrl);
@@ -352,34 +311,33 @@ export default function LogsModal({ onClose, inlineMode = false }: LogsModalProp
     const container = logsContainerRef.current;
     if (!container || !displayedLogs) return;
     if (isInitialScroll) {
+      userAtBottomRef.current = true;
       setTimeout(() => { container.scrollTop = container.scrollHeight; setIsInitialScroll(false); }, 100);
       return;
     }
     const isUpdate = prevLogsRef.current !== '' && prevLogsRef.current !== displayedLogs;
     prevLogsRef.current = displayedLogs;
-    if (isUpdate) {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      if (scrollHeight - scrollTop - clientHeight < 50) {
-        setTimeout(() => { container.scrollTop = container.scrollHeight; }, 0);
-      }
+    if (isUpdate && userAtBottomRef.current) {
+      setTimeout(() => {
+        const el = logsContainerRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      }, 0);
     }
   }, [displayedLogs, isInitialScroll]);
 
   const handleScroll = () => {
     const c = logsContainerRef.current;
     if (!c) return;
-    setShowScrollButton(c.scrollHeight - c.scrollTop - c.clientHeight >= 50);
+    const distanceFromBottom = c.scrollHeight - c.scrollTop - c.clientHeight;
+    userAtBottomRef.current = distanceFromBottom < 50;
+    setShowScrollButton(distanceFromBottom >= 50);
   };
 
   const scrollToBottom = () => {
-    logsContainerRef.current?.scrollTo({ top: logsContainerRef.current.scrollHeight, behavior: 'smooth' });
+    userAtBottomRef.current = true;
+    const el = logsContainerRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   };
-
-  const sectionLabel = (text: string) => (
-    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
-      {text}
-    </span>
-  );
 
   const modalInner = (
     <div
@@ -406,133 +364,201 @@ export default function LogsModal({ onClose, inlineMode = false }: LogsModalProp
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
       }}>
         <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>📋 Logs du serveur</h2>
-        <button
-          type="button" onClick={onClose}
-          style={{
-            background: 'none', border: 'none', color: 'var(--text)',
-            fontSize: 28, cursor: 'pointer', lineHeight: 1, padding: 0,
-            width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-          title="Fermer (Echap)"
-        >&times;</button>
       </div>
 
       {/* ── Filtres ── */}
       <div style={{
         padding: '12px 20px', borderBottom: '1px solid var(--border)',
-        display: 'flex', flexDirection: 'column', gap: 12, flexShrink: 0,
+        display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', flexShrink: 0,
       }}>
-        {/* Ligne 1 : sources utilisateur + export */}
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          {sectionLabel('Suivi')}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            {USER_SOURCES.map(s => (
-              <Toggle
-                key={s.id} active={activeCategories.has(s.id)}
-                onToggle={() => toggleCategory(s.id)} label={s.label}
-                title={
-                  s.id === 'publisher' ? 'Logs du bot Publisher (publications, MAJ, suppressions)' :
-                    s.id === 'api' ? 'Logs des requetes REST entrantes (/api/forum-post, /api/history...)' :
-                      s.id === 'scheduler' ? 'Logs des taches planifiees (version check, cleanup, sync jeux)' :
-                        'Logs du controle des versions F95 (differences detectees, mises a jour)'
-                }
-              />
-            ))}
-          </div>
-          <div style={{ marginLeft: 'auto' }}>
-            <button
-              type="button" onClick={() => exportLogsAsTxt(displayedLogs)}
-              disabled={!displayedLogs}
-              style={{
-                padding: '7px 14px', borderRadius: 8,
-                border: '1px solid var(--border)', background: 'transparent',
-                color: displayedLogs ? 'var(--text)' : 'var(--muted)',
-                cursor: displayedLogs ? 'pointer' : 'not-allowed',
-                fontSize: 13, fontWeight: 500, opacity: displayedLogs ? 1 : 0.5,
-              }}
-              title="Telecharger les logs filtres"
-            >📥 Exporter</button>
-          </div>
+        {USER_SOURCES.map(s => (
+          <Toggle
+            key={s.id}
+            checked={activeCategories.has(s.id)}
+            onChange={(active) => {
+              setActiveCategories(prev => {
+                const next = new Set(prev);
+                if (active) next.add(s.id); else next.delete(s.id);
+                return next;
+              });
+            }}
+            label={s.label}
+            title={
+              s.id === 'publisher' ? 'Logs du bot Publisher (publications, MAJ, suppressions)' :
+                s.id === 'api' ? 'Logs des requetes REST entrantes (/api/forum-post, /api/history...)' :
+                  s.id === 'scheduler' ? 'Logs des taches planifiees (version check, cleanup, sync jeux)' :
+                    'Logs du controle des versions F95 (differences detectees, mises a jour)'
+            }
+          />
+        ))}
+        {isAdmin && ADMIN_SOURCES.map(s => (
+          <Toggle
+            key={s.id}
+            checked={activeCategories.has(s.id)}
+            onChange={(active) => {
+              setActiveCategories(prev => {
+                const next = new Set(prev);
+                if (active) next.add(s.id); else next.delete(s.id);
+                return next;
+              });
+            }}
+            label={s.label}
+            title={
+              s.id === 'frelon' ? 'Logs du bot Frelon (rappels F95fr)' :
+                'Logs de l\'orchestrateur (demarrage, supervision des bots)'
+            }
+          />
+        ))}
+        {isAdmin && ADMIN_FILTERS.map(f => (
+          <Toggle
+            key={f.id}
+            checked={activeCategories.has(f.id)}
+            onChange={(active) => {
+              setActiveCategories(prev => {
+                const next = new Set(prev);
+                if (active) next.add(f.id); else next.delete(f.id);
+                return next;
+              });
+            }}
+            label={f.label}
+            title={
+              f.id === 'security' ? 'Tentatives d\'authentification echouees' :
+                f.id === 'publisher-requests' ? 'Requetes OPTIONS/GET internes (CORS, health...)' :
+                  f.id === 'discord-api' ? 'Appels REST vers l\'API Discord (rate limit inclus)' :
+                    f.id === 'supabase-api' ? 'Requetes vers Supabase (lectures/ecritures BDD)' :
+                      f.id === 'auth' ? 'Details validation cles API (succes inclus)' :
+                        'Requetes HTTP/HTTPS brutes (aiohttp, debug)'
+            }
+          />
+        ))}
+        <div style={{ marginLeft: 'auto' }}>
+          <button
+            type="button" onClick={() => exportLogsAsTxt(displayedLogs)}
+            disabled={!displayedLogs}
+            style={{
+              padding: '7px 14px', borderRadius: 8,
+              border: '1px solid var(--border)', background: 'transparent',
+              color: displayedLogs ? 'var(--text)' : 'var(--muted)',
+              cursor: displayedLogs ? 'pointer' : 'not-allowed',
+              fontSize: 13, fontWeight: 500, opacity: displayedLogs ? 1 : 0.5,
+            }}
+            title="Telecharger les logs filtres"
+          >📥 Exporter</button>
         </div>
-
-        {/* Ligne 2 : sources admin */}
-        {isAdmin && (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            {sectionLabel('Bots')}
-            {ADMIN_SOURCES.map(s => (
-              <Toggle
-                key={s.id} active={activeCategories.has(s.id)} size="sm"
-                onToggle={() => toggleCategory(s.id)} label={s.label}
-                title={
-                  s.id === 'frelon' ? 'Logs du bot Frelon (rappels F95fr)' :
-                    'Logs de l\'orchestrateur (demarrage, supervision des bots)'
-                }
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Ligne 3 : filtres techniques admin */}
-        {isAdmin && (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            {sectionLabel('Technique')}
-            {ADMIN_FILTERS.map(f => (
-              <Toggle
-                key={f.id} active={activeCategories.has(f.id)} size="sm"
-                onToggle={() => toggleCategory(f.id)} label={f.label}
-                title={
-                  f.id === 'security' ? 'Tentatives d\'authentification echouees' :
-                    f.id === 'publisher-requests' ? 'Requetes OPTIONS/GET internes (CORS, health...)' :
-                      f.id === 'discord-api' ? 'Appels REST vers l\'API Discord (rate limit inclus)' :
-                        f.id === 'supabase-api' ? 'Requetes vers Supabase (lectures/ecritures BDD)' :
-                          f.id === 'auth' ? 'Details validation cles API (succes inclus)' :
-                            'Requetes HTTP/HTTPS brutes (aiohttp, debug)'
-                }
-              />
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* ── Zone logs ── */}
+      {/* ── Zone logs (retour à la ligne auto + numéros de ligne) ── */}
       <div
-        ref={logsContainerRef} onScroll={handleScroll}
+        ref={logsContainerRef}
+        onScroll={handleScroll}
         style={{
-          position: 'relative', flex: 1, overflow: 'auto', padding: 16,
+          position: 'relative',
+          flex: 1,
+          overflow: 'auto',
+          overflowWrap: 'anywhere',
           fontFamily: 'Consolas, Monaco, "Courier New", monospace',
-          fontSize: 12, lineHeight: 1.6,
-          background: 'rgba(0,0,0,0.4)', color: 'var(--text)',
+          fontSize: 12,
+          lineHeight: 1.6,
+          background: 'rgba(0,0,0,0.4)',
+          color: 'var(--text)',
+          padding: '16px 16px 16px 8px',
         }}
       >
         {error ? (
-          <div style={{ color: '#ef4444', padding: 10 }}>❌ {error}</div>
+          <div style={{ color: '#ef4444' }}>❌ {error}</div>
         ) : loading ? (
-          <div style={{ color: 'var(--muted)', padding: 10 }}>⏳ Chargement des logs...</div>
+          <div style={{ color: 'var(--muted)' }}>⏳ Chargement des logs...</div>
         ) : displayedLogs ? (
-          displayedLogs.split('\n').map((line, idx) => (
-            <div key={idx}>{line ? colorizeLogLine(line) : '\u00A0'}</div>
-          ))
+          <div style={{ minWidth: 0 }}>
+            {displayedLogs.split('\n').map((line, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: 'flex',
+                  minWidth: 0,
+                  lineHeight: 1.6,
+                }}
+              >
+                <div
+                  style={{
+                    flexShrink: 0,
+                    width: 52,
+                    paddingRight: 12,
+                    textAlign: 'right',
+                    color: 'var(--muted)',
+                    userSelect: 'none',
+                    alignSelf: 'flex-start',
+                  }}
+                >
+                  {idx + 1}
+                </div>
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    paddingLeft: 4,
+                    wordBreak: 'break-word',
+                    overflowWrap: 'anywhere',
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {line ? colorizeLogLine(line) : '\u00A0'}
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
-          <div style={{ color: 'var(--muted)', padding: 10 }}>
+          <div style={{ color: 'var(--muted)', padding: 16 }}>
             Aucun log visible. Activez au moins une source ci-dessus.
           </div>
         )}
 
         {showScrollButton && !loading && displayedLogs && (
           <button
-            type="button" onClick={scrollToBottom}
-            style={{
-              position: 'sticky', bottom: 20, left: '100%', marginLeft: -64,
-              width: 48, height: 48, borderRadius: '50%',
-              border: '2px solid var(--accent)', background: 'var(--panel)',
-              color: 'var(--accent)', cursor: 'pointer', fontSize: 22,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.5)', transition: 'all 0.2s ease', zIndex: 10,
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent)'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.transform = 'scale(1.1)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'var(--panel)'; e.currentTarget.style.color = 'var(--accent)'; e.currentTarget.style.transform = 'scale(1)'; }}
+            type="button"
+            onClick={scrollToBottom}
             title="Retour en bas"
-          >↓</button>
+            style={{
+              position: 'sticky',
+              bottom: 24,
+              right: 16,
+              left: 'auto',
+              marginLeft: 0,
+              width: 52,
+              height: 52,
+              borderRadius: '50%',
+              border: '2px solid rgba(99,102,241,0.5)',
+              background: 'linear-gradient(180deg, rgba(99,102,241,0.2) 0%, rgba(99,102,241,0.08) 100%)',
+              color: 'var(--accent)',
+              cursor: 'pointer',
+              fontSize: 24,
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(99,102,241,0.2)',
+              transition: 'all 0.25s ease',
+              zIndex: 10,
+            }}
+            onMouseEnter={(e) => {
+              const el = e.currentTarget;
+              el.style.background = 'var(--accent)';
+              el.style.color = '#fff';
+              el.style.borderColor = 'var(--accent)';
+              el.style.transform = 'scale(1.08)';
+              el.style.boxShadow = '0 6px 24px rgba(99,102,241,0.45), 0 0 0 1px rgba(99,102,241,0.3)';
+            }}
+            onMouseLeave={(e) => {
+              const el = e.currentTarget;
+              el.style.background = 'linear-gradient(180deg, rgba(99,102,241,0.2) 0%, rgba(99,102,241,0.08) 100%)';
+              el.style.color = 'var(--accent)';
+              el.style.borderColor = 'rgba(99,102,241,0.5)';
+              el.style.transform = 'scale(1)';
+              el.style.boxShadow = '0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(99,102,241,0.2)';
+            }}
+          >
+            ▼
+          </button>
         )}
       </div>
 
@@ -553,8 +579,8 @@ export default function LogsModal({ onClose, inlineMode = false }: LogsModalProp
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>
           <Toggle
-            active={autoRefreshEnabled}
-            onToggle={() => setAutoRefreshEnabled(v => !v)}
+            checked={autoRefreshEnabled}
+            onChange={setAutoRefreshEnabled}
             label="Auto-refresh"
             title="Active/desactive l'actualisation automatique"
           />
@@ -594,9 +620,9 @@ export default function LogsModal({ onClose, inlineMode = false }: LogsModalProp
     : (
       <div style={{
         position: 'fixed', inset: 0,
-        background: 'rgba(0,0,0,0.85)',
+        background: 'var(--modal-backdrop)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 99999, backdropFilter: 'blur(4px)',
+        zIndex: 99999, backdropFilter: 'var(--modal-backdrop-blur)',
       }}>
         {modalInner}
       </div>

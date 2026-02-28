@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
 
+import './HelpComponents/HelpCenter.css';
+
 // Import des composants d'aide individuels
 import ConfigHelp from './HelpComponents/ConfigHelp';
 import FormulaireHelp from './HelpComponents/FormulaireHelp';
@@ -48,7 +50,7 @@ export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
   ] as const;
 
   return (
-    <div className="modal" onClick={onClose}>
+    <div className="modal">
       <div
         className="panel"
         onClick={e => e.stopPropagation()}
@@ -70,31 +72,19 @@ export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
           borderBottom: '2px solid var(--border)'
         }}>
           <h3 style={{ margin: 0 }}>❓ Centre d'aide</h3>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text)',
-              fontSize: 24,
-              cursor: 'pointer',
-              padding: '0 8px',
-              lineHeight: 1
-            }}
-          >
-            ×
-          </button>
         </div>
 
-        {/* Contenu principal */}
+        {/* Contenu principal : grille avec hauteur contrainte pour que le scroll soit dans la zone contenu */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: '220px 1fr',
+          gridTemplateRows: '1fr',
           gap: 24,
           flex: 1,
           minHeight: 0,
           marginTop: 20,
-          padding: '0 8px'
+          padding: '0 8px',
+          overflow: 'hidden',
         }}>
           {/* Sidebar Navigation */}
           <div style={{
@@ -102,8 +92,10 @@ export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
             flexDirection: 'column',
             gap: 4,
             borderRight: '1px solid var(--border)',
-            paddingRight: 16
-          }}>
+            paddingRight: 16,
+            minHeight: 0,
+            overflowY: 'auto',
+          }} className="styled-scrollbar">
             {sections.map(section => (
               <button
                 key={section.id}
@@ -130,10 +122,13 @@ export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
             ))}
           </div>
 
-          {/* Zone de contenu */}
+          {/* Zone de contenu scrollable */}
           <div style={{
+            minHeight: 0,
             overflowY: 'auto',
-            paddingRight: 12
+            overflowX: 'hidden',
+            paddingRight: 12,
+            paddingBottom: 24,
           }} className="styled-scrollbar">
             {activeSection === 'formulaire' && <FormulaireHelp />}
             {activeSection === 'bibliotheque' && <LibraryHelp />}
@@ -147,18 +142,13 @@ export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer (dans le flux pour ne pas chevaucher le contenu) */}
         <div style={{
-          position: 'absolute',
-          left: 0,
-          bottom: 0,
-          width: '100%',
-          background: 'var(--panel)',
+          flexShrink: 0,
           borderTop: '1px solid var(--border)',
           display: 'flex',
           justifyContent: 'flex-end',
           padding: '16px 32px',
-          zIndex: 10
         }}>
           <button
             onClick={onClose}
@@ -176,7 +166,7 @@ export default function HelpCenterModal({ onClose }: HelpCenterModalProps) {
             onMouseOver={e => (e.currentTarget.style.opacity = '0.9')}
             onMouseOut={e => (e.currentTarget.style.opacity = '1')}
           >
-            ↩️ Fermer le centre d'aide
+            ↩️ Fermer
           </button>
         </div>
       </div>

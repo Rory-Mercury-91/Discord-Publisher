@@ -81,7 +81,6 @@ export default function MarkdownHelpModal({ onClose }: MarkdownHelpModalProps) {
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h3 style={{ margin: 0 }}>❓ Aide Markdown</h3>
-          <button onClick={onClose} className="btn" style={{ padding: '4px 8px', fontSize: 14 }}>✕</button>
         </div>
 
         <div style={{

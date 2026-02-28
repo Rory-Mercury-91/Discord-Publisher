@@ -1,4 +1,4 @@
-﻿"""
+"""
 Logique metier creation / mise a jour / suppression de posts Discord.
 Dependances : config, content_parser, supabase_client, discord_api
 Logger       : [publisher]
@@ -87,6 +87,98 @@ def _message_has_metadata_embed(msg_dict: dict) -> bool:
 
 
 # ==================== TAGS ====================
+
+# Liste des noms de tags fixes à créer sur un salon forum (ordre affiché).
+# Doit correspondre au PREDEFINED du frontend (TagsModal).
+FIXED_TAG_NAMES: List[str] = [
+    "🧠 Manuelle",
+    "🖨️ Semi-Automatique",
+    "🤖 Automatique",
+    "✅ Terminé",
+    "🔄 En cours",
+    "❌ Abandonné",
+    "🔞 F95",
+    "⛔ LewdCorner",
+    "🔗 Autres Sites",
+]
+
+
+async def sync_forum_fixed_tags(session, forum_id: str) -> Tuple[int, str, list]:
+    """
+    Crée ou met à jour les tags fixes sur un salon forum Discord.
+    Préserve les IDs existants pour les tags qui ont déjà le bon nom, et ajoute
+    les tags manquants. Préserve aussi les tags libres (noms non dans FIXED_TAG_NAMES).
+    Retourne (status_http, message_erreur, liste des tags après sync).
+    """
+    forum_id = str(forum_id).strip()
+    if not forum_id:
+        return 400, "forum_id requis", []
+    status, ch = await _discord_get(session, f"/channels/{forum_id}")
+    if status >= 300 or not isinstance(ch, dict):
+        return status, "Salon introuvable ou inaccessible", []
+    if ch.get("type") not in (15, 16):  # GUILD_FORUM, GUILD_MEDIA
+        return 400, "Le salon n'est pas un forum Discord", []
+    existing_raw = ch.get("available_tags") or []
+    existing_by_name: Dict[str, dict] = {}
+    free_tags: List[dict] = []
+    fixed_names_set = set(FIXED_TAG_NAMES)
+    for t in existing_raw:
+        name = (t.get("name") or "").strip()
+        if not name:
+            continue
+        if name in fixed_names_set:
+            existing_by_name[name] = {"id": str(t.get("id", "")), "name": name}
+        else:
+            ft = {"name": name}
+            if t.get("id"):
+                ft["id"] = str(t["id"])
+            for k in ("emoji_id", "emoji_name", "moderated"):
+                if t.get(k) is not None:
+                    ft[k] = t[k]
+            free_tags.append(ft)
+    new_tags: List[dict] = []
+    for name in FIXED_TAG_NAMES:
+        if name in existing_by_name:
+            new_tags.append(existing_by_name[name])
+        else:
+            new_tags.append({"name": name})
+    for t in free_tags:
+        new_tags.append(t)
+    if len(new_tags) > 20:
+        new_tags = new_tags[:20]
+    patch_status, patch_data = await _discord_patch_json(
+        session, f"/channels/{forum_id}", {"available_tags": new_tags}
+    )
+    if patch_status >= 400:
+        err = patch_data.get("message", str(patch_data)) if isinstance(patch_data, dict) else str(patch_data)
+        return patch_status, err or "Erreur Discord", []
+    raw = (patch_data or {}).get("available_tags") if isinstance(patch_data, dict) else []
+    tags = [{"id": str(t.get("id", "")), "name": (t.get("name") or "").strip()} for t in raw]
+    return 200, "", tags
+
+
+async def get_forum_available_tags(session, forum_id: str) -> Tuple[int, list]:
+    """
+    Récupère la liste des tags disponibles d'un salon forum Discord.
+    Retourne (status_http, liste de dict avec id, name, emoji_id?, emoji_name?).
+    """
+    forum_id = str(forum_id).strip()
+    if not forum_id:
+        return 400, []
+    status, ch = await _discord_get(session, f"/channels/{forum_id}")
+    if status >= 300:
+        return status, []
+    raw = ch.get("available_tags") or []
+    tags = []
+    for t in raw:
+        tags.append({
+            "id": str(t.get("id", "")),
+            "name": (t.get("name") or "").strip(),
+            "emoji_id": t.get("emoji_id"),
+            "emoji_name": t.get("emoji_name"),
+        })
+    return 200, tags
+
 
 async def _resolve_applied_tag_ids(session, forum_id, tags_raw) -> list:
     """Resout les noms/IDs de tags en IDs Discord."""

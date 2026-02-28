@@ -1,4 +1,4 @@
-﻿"""
+"""
 Client Supabase + toutes les operations CRUD (fonctions sync).
 Dependances : config
 Logger       : [supabase]
@@ -103,6 +103,70 @@ def _delete_from_supabase_sync(thread_id: str = None, post_id: str = None) -> bo
         return False
 
 
+def _transfer_post_ownership_sync(
+    source_author_discord_id: Optional[str] = None,
+    source_author_external_id: Optional[str] = None,
+    target_author_discord_id: Optional[str] = None,
+    target_author_external_id: Optional[str] = None,
+    post_id: Optional[str] = None,
+    post_ids: Optional[list] = None,
+) -> Dict:
+    """
+    Transfère la propriété d'un, plusieurs ou tous les posts.
+    Source : soit source_author_discord_id (profil), soit source_author_external_id (traducteur externe).
+    Cible : soit target_author_discord_id, soit target_author_external_id.
+    - Si post_ids (liste non vide) : met à jour uniquement ces posts (s'ils appartiennent à la source).
+    - Sinon si post_id fourni : met à jour uniquement ce post.
+    - Sinon : met à jour tous les posts de la source.
+    Pas de re-routage Discord : seul le propriétaire en base est modifié.
+    """
+    sb = _get_supabase()
+    if not sb:
+        return {"ok": False, "error": "Supabase non configure"}
+    src_discord = (source_author_discord_id or "").strip() or None
+    src_ext = (source_author_external_id or "").strip() or None
+    tgt_discord = (target_author_discord_id or "").strip() or None
+    tgt_ext = (target_author_external_id or "").strip() or None
+    if (not src_discord and not src_ext) or (not tgt_discord and not tgt_ext):
+        return {"ok": False, "error": "Source et cible requises (discord_id ou external_id)"}
+    if src_discord and tgt_discord and src_discord == tgt_discord:
+        return {"ok": False, "error": "Source et cible identiques"}
+    if src_ext and tgt_ext and src_ext == tgt_ext:
+        return {"ok": False, "error": "Source et cible identiques"}
+    if not src_discord and not src_ext:
+        return {"ok": False, "error": "Source invalide"}
+    if src_discord and src_ext:
+        return {"ok": False, "error": "Indiquez soit source discord soit source externe, pas les deux"}
+    ids_to_use = None
+    if post_ids and len(post_ids) > 0:
+        ids_to_use = [str(x).strip() for x in post_ids if x]
+    elif post_id and (post_id or "").strip():
+        ids_to_use = [(post_id or "").strip()]
+    try:
+        now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+        payload = {
+            "author_discord_id": tgt_discord,
+            "author_external_translator_id": tgt_ext,
+            "updated_at": now,
+        }
+        q = sb.table("published_posts").update(payload)
+        if ids_to_use:
+            q = q.in_("id", ids_to_use)
+        if src_discord:
+            q = q.eq("author_discord_id", src_discord)
+        else:
+            q = q.eq("author_external_translator_id", src_ext)
+        result = q.execute()
+        count = len(result.data) if result.data else 0
+        if ids_to_use and count == 0:
+            return {"ok": False, "error": "Post(s) introuvable(s) ou n'appartiennent pas à l'auteur source"}
+        logger.info("[supabase] Transfert propriete : %d post(s) -> cible discord=%s ext=%s", count, tgt_discord, tgt_ext)
+        return {"ok": True, "count": count}
+    except Exception as e:
+        logger.error("[supabase] Erreur transfert propriete : %s", e)
+        return {"ok": False, "error": str(e)}
+
+
 # ==================== HELPERS ROWS ====================
 
 def _parse_saved_inputs(row: Dict) -> Dict:
@@ -153,6 +217,7 @@ def _normalize_history_row(row: Dict) -> Dict:
         "translationType":                   "translation_type",
         "isIntegrated":                      "is_integrated",
         "authorDiscordId":                   "author_discord_id",
+        "authorExternalTranslatorId":         "author_external_translator_id",
         "savedInputs":                       "saved_inputs",
         "savedLinkConfigs":                  "saved_link_configs",
         "savedAdditionalTranslationLinks":   "saved_additional_translation_links",
@@ -315,13 +380,39 @@ def _insert_new_key_sync(discord_user_id: str, discord_name: str, key_hash: str)
 def _delete_account_data_sync(user_id: str) -> dict:
     """
     Supprime toutes les donnees personnelles d'un utilisateur.
-    Retourne un dict avec le detail des suppressions.
+    Avant suppression du profil : les published_posts de l'utilisateur sont réattribués
+    à un traducteur externe (nom = pseudo) pour conserver l'historique et permettre un retransfert.
     """
     sb = _get_supabase()
     if not sb:
         return {"ok": False, "error": "Client Supabase non initialise"}
 
     results = {}
+
+    # Passer les published_posts en traducteur externe (garder les posts, auteur = externe)
+    try:
+        prof = sb.table("profiles").select("discord_id, pseudo").eq("id", user_id).limit(1).execute()
+        if prof.data and len(prof.data) > 0:
+            row = prof.data[0]
+            discord_id = (row.get("discord_id") or "").strip()
+            pseudo = (row.get("pseudo") or "").strip() or f"Compte supprimé ({discord_id or user_id})"
+            if discord_id:
+                ext = sb.table("external_translators").insert({
+                    "name": pseudo[:255],
+                    "tag_id": None,
+                    "forum_channel_id": None,
+                }).execute()
+                if ext.data and len(ext.data) > 0:
+                    ext_id = ext.data[0].get("id")
+                    sb.table("published_posts").update({
+                        "author_discord_id": None,
+                        "author_external_translator_id": ext_id,
+                    }).eq("author_discord_id", discord_id).execute()
+                    logger.info("[supabase] Compte %s : posts réattribués au traducteur externe %s", user_id, ext_id)
+                    results["published_posts_migrated"] = "ok"
+    except Exception as e:
+        results["published_posts_migrated"] = f"erreur: {e}"
+        logger.warning("[supabase] delete_account migration posts -> externe : %s", e)
 
     # Autorisations editeur
     try:
@@ -334,7 +425,7 @@ def _delete_account_data_sync(user_id: str) -> dict:
 
     # Instructions sauvegardees
     try:
-        sb.table("saved_instructions").delete().eq("owner_id", user_id).execute()
+        sb.table("saved_instructions").delete().eq("owner_type", "profile").eq("owner_id", user_id).execute()
         results["saved_instructions"] = "ok"
     except Exception as e:
         results["saved_instructions"] = f"erreur: {e}"

@@ -107,11 +107,19 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
       content = content.split('[TRANSLATION_LINKS_LINE]').join(translationLinksLine);
     }
 
-    // 3. Remplacement des variables classiques
+    // 3. Synopsis : bloc entier optionnel
+    const overviewRaw = (inputs['Overview'] || '').trim();
+    if (!overviewRaw) {
+      // Si aucun synopsis renseigné, supprimer le bloc "**Synopsis du jeu :**\n> [Overview]"
+      content = content.replace(/\*\*Synopsis du jeu :\*\*\n> \[Overview\]\n?/g, '');
+    }
+
+    // 4. Remplacement des variables classiques
     allVarsConfig.forEach(varConfig => {
       const name = varConfig.name;
       if (name === 'is_modded_game') return;
       if (name === 'Mod_link' || name === 'Translate_link') return;
+      if (name === 'Overview') return;
 
       const val = (inputs[name] || '').trim();
       let finalVal = val;
@@ -120,25 +128,24 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
       if (name === 'Game_link' || name === 'Translate_link') {
         finalVal = cleanGameLink(val);
       }
-
-      if (name === 'Overview' && val) {
-        // Synopsis uniquement : préserver les retours à la ligne en blockquote "> "
-        const lines = val.split('\n');
-        finalVal = lines.length
-          ? lines.map((line, i) => (i === 0 ? line : '> ' + line)).join('\n')
-          : '';
-      }
-
       content = content.split('[' + name + ']').join(finalVal || '[' + name + ']');
     });
+    // Cas particulier Overview : conserver les retours à la ligne en blockquote "> "
+    if (overviewRaw) {
+      const overviewLines = overviewRaw.split('\n');
+      const overviewFinal = overviewLines.length
+        ? overviewLines.map((line, i) => (i === 0 ? line : '> ' + line)).join('\n')
+        : '';
+      content = content.split('[Overview]').join(overviewFinal || '[Overview]');
+    }
 
-    // 4. Remplacement de [Translation_Type]
+    // 5. Remplacement de [Translation_Type]
     const displayTranslationType = isIntegrated
       ? `${translationType} (Intégrée)`
       : translationType;
     content = content.split('[Translation_Type]').join(displayTranslationType);
 
-    // 5. Logique Smart Integrated (masquer lien traduction standard si intégré)
+    // 6. Logique Smart Integrated (masquer lien traduction standard si intégré)
     if (isIntegrated) {
       content = content.replace(/^.*\[Translate_link\].*$/gm, '');
       content = content.replace(/\n\n\n+/g, '\n\n');
@@ -156,7 +163,7 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     content = content.split('[instruction]').join(instructionBlock);
     content = content.split('[INVISIBLE_CHAR]').join('\u200B');
 
-    // 6. Réduire les retours à la ligne multiples (garder au moins une ligne vide entre sections pour le preview Discord)
+    // 7. Réduire les retours à la ligne multiples (garder au moins une ligne vide entre sections pour le preview Discord)
     content = content.replace(/\n\n\n+/g, '\n\n');
 
     // Ne pas ajouter le lien dans le preview - il sera ajouté uniquement lors de la publication

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Handlers HTTP aiohttp + make_app() — point d'entree REST.
 Dependances : config, api_key_auth, supabase_client, discord_api,
               forum_manager, announcements
@@ -25,13 +25,14 @@ from supabase_client import (
     _get_supabase, _fetch_post_by_thread_id_sync,
     _delete_from_supabase_sync, _normalize_history_row,
     _fetch_all_jeux_sync, _sync_jeux_to_supabase,
-    _delete_account_data_sync,
+    _delete_account_data_sync, _transfer_post_ownership_sync,
 )
 from discord_api import rate_limiter
 from forum_manager import (
     _create_forum_post, _reroute_post,
     _get_thread_parent_id, _build_metadata_embed,
     _resolve_applied_tag_ids, _delete_old_metadata_messages,
+    get_forum_available_tags, sync_forum_fixed_tags,
 )
 from announcements import _send_announcement, _send_deletion_announcement
 from discord_api import (
@@ -116,7 +117,9 @@ async def logging_middleware(request, handler):
     else:
         _ip_user_cache[client_ip] = user_id
 
-    logger.info("[REQUEST] %s | %s | %s | %s %s", client_ip, user_id, key_hint, method, path)
+    # Ne pas logger les requêtes OPTIONS (prévol CORS) pour réduire le bruit
+    if method != "OPTIONS":
+        logger.info("[REQUEST] %s | %s | %s | %s %s", client_ip, user_id, key_hint, method, path)
 
     response = await handler(request)
 
@@ -184,16 +187,22 @@ async def scrape_enrich(request):
     
     await response.prepare(request)
     
-    async def send_json(data: dict):
-        """Helper pour envoyer du JSON ligne par ligne (NDJSON)."""
+    # Indique que le client a fermé la connexion (bouton Arrêter) → on arrête la boucle
+    client_disconnected = [False]
+    
+    async def send_json(data: dict) -> bool:
+        """Envoie du JSON ligne par ligne (NDJSON). Retourne False si le client s'est déconnecté."""
         try:
             await response.write((json.dumps(data, ensure_ascii=False) + '\n').encode('utf-8'))
             await response.drain()
+            return True
         except Exception as e:
-            # ✅ CORRECTION : Ignorer silencieusement les erreurs de transport fermé
-            # (le client a fermé la connexion, c'est normal)
-            if "closing transport" not in str(e).lower():
-                logger.warning("[api] Erreur envoi SSE : %s", e)
+            err_lower = str(e).lower()
+            if "closing transport" in err_lower or "connection reset" in err_lower or "broken pipe" in err_lower:
+                client_disconnected[0] = True
+                return False
+            logger.warning("[api] Erreur envoi SSE : %s", e)
+            return False
     
     try:
         # ═══ ÉTAPE 1 : Récupération depuis f95_jeux (source de vérité) ═══
@@ -313,38 +322,35 @@ async def scrape_enrich(request):
         
         async with aiohttp.ClientSession() as session:
             for idx, jeu in enumerate(to_enrich, 1):
+                if client_disconnected[0]:
+                    break
                 jeu_id = jeu.get("id")
                 nom = jeu.get("nom_du_jeu", "Sans nom")
                 f95_url = jeu.get("nom_url", "").strip()
                 
-                await send_json({
-                    "progress": {"current": idx, "total": total}
-                })
+                if not await send_json({"progress": {"current": idx, "total": total}}):
+                    break
                 
                 # ── SCRAPING ──
-                await send_json({
-                    "log": f"🕷️ [{idx}/{total}] {nom} — Scraping synopsis..."
-                })
+                if not await send_json({"log": f"🕷️ [{idx}/{total}] {nom} — Scraping synopsis..."}):
+                    break
                 
                 synopsis_en = await scrape_f95_synopsis(session, f95_url)
                 
                 if not synopsis_en:
-                    await send_json({
-                        "log": f"⏭️ [{idx}/{total}] {nom} — Synopsis introuvable"
-                    })
+                    if not await send_json({"log": f"⏭️ [{idx}/{total}] {nom} — Synopsis introuvable"}):
+                        break
                     continue
                 
                 # ── TRADUCTION ──
-                await send_json({
-                    "log": f"🌐 [{idx}/{total}] {nom} — Traduction EN → FR..."
-                })
+                if not await send_json({"log": f"🌐 [{idx}/{total}] {nom} — Traduction EN → FR..."}):
+                    break
                 
                 synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
                 
                 if not synopsis_fr:
-                    await send_json({
-                        "log": f"❌ [{idx}/{total}] {nom} — Traduction échouée"
-                    })
+                    if not await send_json({"log": f"❌ [{idx}/{total}] {nom} — Traduction échouée"}):
+                        break
                     continue
                 
                 # ── SAUVEGARDE dans games (UPSERT par f95_url) ──
@@ -380,28 +386,27 @@ async def scrape_enrich(request):
                         }).execute()
                     
                     enriched += 1
-                    await send_json({
-                        "log": f"✅ [{idx}/{total}] {nom} — Enrichi avec succès"
-                    })
+                    if not await send_json({"log": f"✅ [{idx}/{total}] {nom} — Enrichi avec succès"}):
+                        break
                 
                 except Exception as e:
                     logger.error(
                         "[api] Erreur sauvegarde games (%s) : %s",
                         nom, e
                     )
-                    await send_json({
-                        "log": f"❌ [{idx}/{total}] {nom} — Erreur sauvegarde : {e}"
-                    })
+                    if not await send_json({"log": f"❌ [{idx}/{total}] {nom} — Erreur sauvegarde : {e}"}):
+                        break
                 
                 # Délai entre jeux (politesse F95Zone + Google Translate)
-                if idx < total:
+                if idx < total and not client_disconnected[0]:
                     await asyncio.sleep(2.0)
         
         # ═══ TERMINÉ ═══
-        await send_json({
-            "log": f"🎉 Enrichissement terminé : {enriched}/{total} jeux enrichis avec succès",
-            "status": "completed"
-        })
+        if not client_disconnected[0]:
+            await send_json({
+                "log": f"🎉 Enrichissement terminé : {enriched}/{total} jeux enrichis avec succès",
+                "status": "completed"
+            })
     
     except Exception as e:
         logger.error("[api] Erreur enrichissement : %s", e, exc_info=True)
@@ -421,8 +426,6 @@ async def get_logs(request):
     is_valid, _, _, _ = await _auth_request(request, "/api/logs")
     if not is_valid:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
-
-    logger.info("[get_logs] Lecture du fichier de logs demandée")
 
     content = ""
     unique_user_ids = set()
@@ -444,8 +447,6 @@ async def get_logs(request):
                             user_id = parts[1].strip()
                             if user_id != "NULL" and len(user_id) >= 32 and "-" in user_id:
                                 unique_user_ids.add(user_id)
-
-            logger.info(f"[get_logs] ✅ {line_count} lignes lues")
         except Exception as e:
             logger.warning(f"[get_logs] ❌ Erreur lecture logs: {e}")
             content = f"[Erreur lecture: {e}]"
@@ -871,6 +872,52 @@ async def get_history(request):
     return _with_cors(request, web.json_response(resp_data))
 
 
+async def get_forum_tags(request):
+    """
+    Retourne les tags disponibles d'un salon forum Discord (GET /api/forum-tags?forum_id=...).
+    Permet au frontend de pré-remplir la Gestion des tags secondaires depuis Discord.
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/forum-tags")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+    forum_id = (request.query.get("forum_id") or "").strip()
+    if not forum_id:
+        return _with_cors(request, web.json_response({"ok": False, "error": "forum_id requis"}, status=400))
+    async with aiohttp.ClientSession() as session:
+        status, tags = await get_forum_available_tags(session, forum_id)
+    if status >= 400:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "Salon introuvable ou inaccessible", "status": status},
+            status=502 if status >= 500 else 400,
+        ))
+    return _with_cors(request, web.json_response({"ok": True, "tags": tags, "count": len(tags)}))
+
+
+async def sync_forum_tags(request):
+    """
+    Crée les tags fixes sur un salon forum Discord (POST /api/forum-tags/sync).
+    Body: { "forum_id": "..." }. Préserve les tags libres existants et les IDs des tags fixes déjà présents.
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/forum-tags/sync")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+    try:
+        body = await request.json()
+    except Exception:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Body JSON invalide"}, status=400))
+    forum_id = (body.get("forum_id") or "").strip()
+    if not forum_id:
+        return _with_cors(request, web.json_response({"ok": False, "error": "forum_id requis"}, status=400))
+    async with aiohttp.ClientSession() as session:
+        status, err_msg, tags = await sync_forum_fixed_tags(session, forum_id)
+    if status >= 400:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": err_msg or "Erreur Discord", "status": status},
+            status=502 if status >= 500 else 400,
+        ))
+    return _with_cors(request, web.json_response({"ok": True, "tags": tags, "count": len(tags)}))
+
+
 async def get_jeux(request):
     """Sert les jeux depuis le cache Supabase (f95_jeux). Fallback sur l'API externe."""
     is_valid, _, _, _ = await _auth_request(request, "/api/jeux")
@@ -1182,6 +1229,60 @@ async def server_action(request):
     logger.info("[api] server_action '%s' par %s", action, discord_name or discord_user_id)
     return _with_cors(request, web.json_response({"ok": True, "output": output, "error": None}))
 
+
+async def transfer_ownership(request):
+    """
+    Transfère la propriété des posts. Admin : toute source → toute cible.
+    Utilisateur : uniquement ses propres posts (source = son discord_id) vers une cible.
+    Body: source_author_discord_id ou source_author_external_id, target_author_discord_id ou target_author_external_id, post_id? (optionnel), post_ids? (optionnel, liste).
+    Pas de re-routage Discord : seul le propriétaire en base est modifié (re-routage uniquement à la mise à jour).
+    """
+    is_valid, discord_user_id, _, is_legacy = await _auth_request(request, "/api/transfer-ownership")
+    if not is_valid or is_legacy or not discord_user_id:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Accès refusé"}, status=403))
+    sb = _get_supabase()
+    if not sb:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Supabase non configuré"}, status=500))
+    is_admin = False
+    try:
+        res = sb.table("profiles").select("is_master_admin").eq("discord_id", discord_user_id).limit(1).execute()
+        if res.data and len(res.data) > 0:
+            is_admin = bool(res.data[0].get("is_master_admin"))
+    except Exception as e:
+        logger.error("[api] Vérification master_admin (transfer): %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+    try:
+        body = await request.json()
+    except Exception:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Body JSON invalide"}, status=400))
+    src_discord = (body.get("source_author_discord_id") or "").strip() or None
+    src_ext = (body.get("source_author_external_id") or "").strip() or None
+    tgt_discord = (body.get("target_author_discord_id") or "").strip() or None
+    tgt_ext = (body.get("target_author_external_id") or "").strip() or None
+    post_id = (body.get("post_id") or "").strip() or None
+    post_ids = body.get("post_ids")
+    if isinstance(post_ids, list):
+        post_ids = [x for x in post_ids if x]
+    else:
+        post_ids = None
+    if (not src_discord and not src_ext) or (not tgt_discord and not tgt_ext):
+        return _with_cors(request, web.json_response({"ok": False, "error": "Source et cible requises (discord_id ou external_id)"}, status=400))
+    if not is_admin:
+        if src_ext:
+            return _with_cors(request, web.json_response({"ok": False, "error": "Seul un admin peut transférer depuis un traducteur externe"}, status=403))
+        if src_discord != discord_user_id:
+            return _with_cors(request, web.json_response({"ok": False, "error": "Vous ne pouvez transférer que vos propres publications"}, status=403))
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None, _transfer_post_ownership_sync, src_discord, src_ext, tgt_discord, tgt_ext, post_id, post_ids,
+    )
+    if not result.get("ok"):
+        status = 404 if result.get("error") == "Post introuvable ou n'appartient pas à l'auteur source" else 400
+        return _with_cors(request, web.json_response({"ok": False, "error": result.get("error", "Erreur")}, status=status))
+    logger.info("[api] Transfert propriété : %d post(s) par %s (admin=%s)", result.get("count", 0), discord_user_id, is_admin)
+    return _with_cors(request, web.json_response({"ok": True, "count": result.get("count", 0)}))
+
+
 # ==================== APP ====================
 
 def make_app() -> web.Application:
@@ -1198,10 +1299,13 @@ def make_app() -> web.Application:
         ("POST",    "/api/forum-post/delete", forum_post_delete),
         ("GET",     "/api/publisher/health",  health),
         ("GET",     "/api/history",           get_history),
+        ("GET",     "/api/forum-tags",         get_forum_tags),
+        ("POST",    "/api/forum-tags/sync",    sync_forum_tags),
         ("GET",     "/api/jeux",              get_jeux),
         ("POST",    "/api/account/delete",    account_delete),
         ("GET",     "/api/logs",              get_logs),
         ("POST",    "/api/server/action",     server_action),
+        ("POST",    "/api/transfer-ownership", transfer_ownership),
         ("POST",    "/api/scrape/enrich",     scrape_enrich),
         # Catch-all en dernier
         ("*",       "/{tail:.*}",             handle_404),

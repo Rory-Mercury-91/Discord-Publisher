@@ -122,18 +122,28 @@ export default function StatsView({ jeux }: { jeux: GameF95[] }) {
     return Object.entries(m).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [filtered]);
 
-  /* Tableau traducteurs (global) */
+  /* Tableau traducteurs (global, basé sur les traductions et non sur tout le catalogue) */
   const tradTable = useMemo(() => {
-    const totalAll = jeux.length;
     const m: Record<string, number> = {};
     jeux.forEach(j => { if (j.traducteur) m[j.traducteur] = (m[j.traducteur] || 0) + 1; });
-    return Object.entries(m)
-      .map(([name, count]) => ({
-        name,
-        count,
-        pct: totalAll ? Math.round(count / totalAll * 100) : 0,
-      }))
-      .sort((a, b) => b.count - a.count);
+    const totalTrad = Object.values(m).reduce((acc, v) => acc + v, 0);
+    const rows = Object.entries(m)
+      .map(([name, count]) => {
+        // Pourcentage global (sur l'ensemble des traductions)
+        const rawPct = totalTrad ? (count / totalTrad) * 100 : 0;
+        const pct = Math.round(rawPct * 10) / 10; // ex. 0.3, 12.7, 55.1
+        return { name, count, pct };
+      });
+    rows.sort((a, b) => b.count - a.count);
+    const maxCount = rows.length ? rows[0].count : 0;
+    // Largeur de barre en échelle "compressée" pour garder les petits traducteurs visibles.
+    return rows.map(row => {
+      if (!maxCount) return { ...row, barPct: 0 };
+      const ratio = row.count / maxCount; // 0..1
+      const eased = Math.pow(ratio, 0.5); // racine carrée : étire les petites valeurs
+      const barPct = Math.max(5, Math.round(eased * 100)); // minimum 5% pour être visible
+      return { ...row, barPct };
+    });
   }, [jeux]);
 
   /* ─── RENDER ─── */
@@ -238,7 +248,7 @@ export default function StatsView({ jeux }: { jeux: GameF95[] }) {
                 <th style={th({ textAlign: 'left' })}>#</th>
                 <th style={th({ textAlign: 'left' })}>Traducteur</th>
                 <th style={th({ textAlign: 'right' })}>Jeux</th>
-                <th style={th({ textAlign: 'right' })}>% du catalogue</th>
+                <th style={th({ textAlign: 'right' })}>% des traductions</th>
                 <th style={th({})}>Répartition</th>
               </tr>
             </thead>
@@ -278,7 +288,7 @@ export default function StatsView({ jeux }: { jeux: GameF95[] }) {
                       background: 'var(--border)', width: 120
                     }}>
                       <div style={{
-                        width: `${row.pct}%`, background: row.pct >= 20 ? '#6366f1' : '#22c55e',
+                        width: `${row.barPct}%`, background: row.pct >= 20 ? '#6366f1' : '#22c55e',
                         borderRadius: 4, transition: 'width .3s'
                       }} />
                     </div>

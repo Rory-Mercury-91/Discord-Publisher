@@ -408,9 +408,6 @@ export default function ServerModal({ onClose, inlineMode = false }: ServerModal
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>Oracle Cloud — 138.2.182.125 • Accès master admin</span>
           </div>
         </div>
-        {!inlineMode && (
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text)', fontSize: 26, cursor: 'pointer', lineHeight: 1, padding: 0 }}>&times;</button>
-        )}
       </div>
 
       {/* Tabs */}
@@ -743,7 +740,7 @@ export default function ServerModal({ onClose, inlineMode = false }: ServerModal
   );
 
   const content = inlineMode ? panel : (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, backdropFilter: 'blur(4px)' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--modal-backdrop)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, backdropFilter: 'var(--modal-backdrop-blur)' }}>
       {panel}
     </div>
   );

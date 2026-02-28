@@ -47,6 +47,8 @@ export type Tag = {
   profileId?: string;               // FK vers profiles.id
   externalTranslatorId?: string;    // FK vers external_translators.id
   labelKey?: string;                // ex: 'auto', 'f95', 'abandoned'…
+  /** Nom utilisé à l'export formulaire liste (tableur) ; si vide, le nom du tag est utilisé. */
+  listFormName?: string;
 };
 
 export type PublishedPost = {
@@ -73,6 +75,8 @@ export type PublishedPost = {
   savedAdditionalTranslationLinks?: AdditionalTranslationLink[];
   savedAdditionalModLinks?: AdditionalTranslationLink[];
   authorDiscordId?: string;
+  /** Si défini, le post est attribué à ce traducteur externe (ex. après suppression de compte). */
+  authorExternalTranslatorId?: string;
   archived?: boolean;
   templateId?: string;
 };
@@ -109,7 +113,7 @@ export type AppContextValue = {
   importFullConfig: (config: any) => void;
 
   savedInstructions: Record<string, string>;
-  saveInstruction: (name: string, text: string) => void;
+  saveInstruction: (name: string, text: string, ownerId?: string) => void;
   deleteInstruction: (name: string) => void;
 
   uploadedImages: Array<{ id: string, url?: string, name: string, isMain: boolean }>;

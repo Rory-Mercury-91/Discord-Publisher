@@ -9,6 +9,7 @@ import HelpCenterModal from './components/HelpCenterModal';
 import HistoryModal from './components/HistoryModal';
 import InstructionsManagerModal from './components/InstructionsManagerModal';
 import LibraryView from './components/LibraryView';
+import ListFormView from './components/ListFormView';
 import LogsModal from './components/LogsModal';
 import Preview from './components/Preview';
 import ServerModal from './components/ServerModal';
@@ -117,7 +118,9 @@ function AppContentInner() {
       />
 
       {/* ── Contenu principal ─────────────────────────────────────────────── */}
-      {mode === 'translator' ? (
+      {mode === 'listform' ? (
+        <ListFormView />
+      ) : mode === 'translator' ? (
         <main style={{ display: 'grid', gridTemplateRows: 'auto 1fr', flex: 1, minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '65% 35%', height: '100%', minHeight: 0, overflow: 'hidden', boxSizing: 'border-box' }}>
             <div className="styled-scrollbar" style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', borderRight: '1px solid var(--border)', boxSizing: 'border-box' }}>
@@ -155,9 +158,9 @@ function AppContentInner() {
       )}
       {showServerModal && showLogsModal && (
         <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
+          position: 'fixed', inset: 0, background: 'var(--modal-backdrop)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: 16, padding: 16, zIndex: 99998, backdropFilter: 'blur(4px)',
+          gap: 16, padding: 16, zIndex: 99998, backdropFilter: 'var(--modal-backdrop-blur)',
           overflowX: 'auto',
         }}>
           <ServerModal onClose={() => setShowServerModal(false)} inlineMode />

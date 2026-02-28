@@ -4,76 +4,67 @@ export default function TagsHelp() {
   return (
     <div style={{ display: 'grid', gap: 24 }}>
 
-      {/* Tags requis pour publier */}
-      <section style={{
-        background: 'rgba(34, 197, 94, 0.1)',
-        border: '1px solid rgba(34, 197, 94, 0.3)',
-        borderRadius: 8,
-        padding: 16
-      }}>
-        <h4 style={{ margin: '0 0 8px 0', fontSize: 16, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>✅</span>
-          <span>Tags requis pour publier</span>
+      <section>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: 'var(--accent)' }}>
+          🏷️ À quoi servent les tags ?
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          Pour pouvoir publier, vous devez sélectionner <strong>au moins un tag dans chacune de ces catégories</strong> :
+          Les tags sont des étiquettes affichées sur vos publications Discord (site, type de traduction, statut du jeu, etc.). Ils permettent d’identifier et de filtrer les traductions. Certains sont gérés automatiquement, d’autres sont optionnels et s’ajoutent depuis la modale.
+        </p>
+      </section>
+
+      {/* Tags gérés automatiquement */}
+      <section className="help-section help-section--success">
+        <h4 className="help-section__title">
+          <span>✅</span>
+          <span>Tags gérés automatiquement</span>
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Trois types de tags sont <strong>toujours présents</strong> et ne peuvent pas être retirés (pas de croix ✕ sur leur badge) :
         </p>
         <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: '8px 0 0 0', paddingLeft: 20 }}>
-          <li><strong>Site</strong> (ex. F95, Lewd)</li>
-          <li><strong>Type de traduction</strong> (Manuelle, Semi-automatique, Automatique)</li>
-          <li><strong>Traducteur</strong> (votre nom ou celui du traducteur)</li>
+          <li><strong>Traducteur</strong> — affiché pour information uniquement ; il n'est <strong>pas envoyé à Discord</strong> et ne compte pas dans la limite de 5 tags.</li>
+          <li><strong>Site</strong> — déduit du lien collé (F95, LewdCorner ou Autres sites), parmi les tags du traducteur actif. Vous ne le choisissez pas dans la modale.</li>
+          <li><strong>Type de traduction</strong> — un seul à la fois (Automatique, Semi-automatique, Manuelle). Par défaut « Automatique ». Modifiable via les boutons du formulaire ou la modale.</li>
         </ul>
-        <p style={{ fontSize: 12, color: 'var(--muted)', margin: '8px 0 0 0' }}>
-          Les tags <strong>Autres</strong> et <strong>Statut du jeu</strong> sont optionnels.
-        </p>
       </section>
 
-      {/* Limite de tags */}
-      <section style={{
-        background: 'rgba(255, 193, 7, 0.1)',
-        border: '1px solid rgba(255, 193, 7, 0.3)',
-        borderRadius: 8,
-        padding: 16
-      }}>
-        <h4 style={{ margin: '0 0 8px 0', fontSize: 16, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 8 }}>
+      {/* Tags optionnels et limite */}
+      <section className="help-section help-section--warning">
+        <h4 className="help-section__title">
           <span>⚠️</span>
-          <span>Limite de tags</span>
+          <span>Tags optionnels et limite</span>
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          Vous pouvez sélectionner <strong>maximum 5 tags</strong> par publication. Cette limite permet de maintenir une catégorisation claire et efficace de vos posts.
+          Dans la modale vous pouvez ajouter des tags <strong>Statut du jeu</strong> (un seul) et <strong>Autres</strong> (plusieurs). <strong>Discord</strong> limite les publications à <strong>5 tags au total</strong> (Site, Type de traduction, Statut du jeu, Autres — le tag Traducteur est uniquement visuel et n'est pas compté).
         </p>
       </section>
 
-      {/* Ajouter des tags dans le formulaire */}
-      <section style={{
-        background: 'rgba(139, 92, 246, 0.1)',
-        border: '1px solid rgba(139, 92, 246, 0.3)',
-        borderRadius: 8,
-        padding: 16
-      }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: '#8b5cf6' }}>
-          🏷️ Ajouter des tags dans le formulaire
+      {/* Utiliser les tags dans le formulaire */}
+      <section className="help-section help-section--info">
+        <h4 className="help-section__title help-section__title--large">
+          🏷️ Utiliser les tags dans le formulaire
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 16px 0' }}>
-          Dans l'éditeur de contenu, le champ <strong>Tags</strong> permet d'associer des étiquettes à votre publication. Voici comment les utiliser :
+          Le champ <strong>Tags</strong> affiche les badges (Traducteur, Site, Type de traduction + ceux que vous ajoutez). Comportement :
         </p>
 
         <div style={{ display: 'grid', gap: 16 }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>
-              1. Ouvrir le sélecteur
+              1. Tags automatiques
             </div>
             <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--muted)', margin: 0 }}>
-              Cliquez sur le bouton <strong>➕ Ajouter</strong> dans le champ Tags pour ouvrir la modale de sélection.
+              Traducteur, Site et Type de traduction sont ajoutés ou mis à jour automatiquement. Leurs badges n'ont <strong>pas de croix ✕</strong> : on ne peut pas les retirer, seulement changer le type de traduction (boutons ou modale) ou le site (en modifiant le lien).
             </p>
           </div>
 
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>
-              2. Choisir un tag
+              2. Ouvrir le sélecteur
             </div>
             <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--muted)', margin: 0 }}>
-              Dans la modale, cliquez sur un tag (générique ou traducteur) pour l'ajouter à la publication. Il apparaît alors sous forme de badge dans le formulaire.
+              Cliquez sur <strong>➕ Ajouter</strong> pour ouvrir la modale. Vous y voyez les tags secondaires du traducteur (Statut du jeu, Autres) et vous pouvez aussi changer le <strong>Type de traduction</strong>.
             </p>
           </div>
 
@@ -82,36 +73,12 @@ export default function TagsHelp() {
               3. Retirer un tag
             </div>
             <p style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--muted)', margin: 0 }}>
-              Cliquez sur le <strong>✕</strong> d'un badge pour le retirer de la publication. Vous pouvez rouvrir la modale pour en ajouter d'autres.
+              Seuls les tags <strong>optionnels</strong> (Statut du jeu, Autres) ont une croix <strong>✕</strong> sur leur badge. Cliquez dessus pour les retirer. Traducteur, Site et Type de traduction restent toujours présents.
             </p>
-            <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8, marginBottom: 0 }}>Exemple de badge :</p>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 14px',
-              borderRadius: 999,
-              background: 'rgba(99, 102, 241, 0.14)',
-              border: '1px solid rgba(99, 102, 241, 0.35)',
-              fontSize: 13,
-              lineHeight: 1.2,
-              fontWeight: 600,
-              marginTop: 6
-            }}>
-              <span style={{ color: 'var(--text)' }}>Rory Mercury 91</span>
-              <span style={{ color: 'var(--muted)', fontSize: 14 }}>✕</span>
-            </div>
           </div>
 
-          <div style={{
-            padding: 12,
-            background: 'rgba(74, 158, 255, 0.08)',
-            border: '1px solid rgba(74, 158, 255, 0.25)',
-            borderRadius: 6,
-            fontSize: 12,
-            color: 'var(--muted)'
-          }}>
-            💡 Fermeture : <strong>Échap</strong>, bouton Fermer ou clic en dehors de la modale.
+          <div className="help-section help-section--tip" style={{ padding: 12, margin: 0 }}>
+            💡 Fermeture : <strong>Échap</strong> ou bouton Fermer.
           </div>
         </div>
       </section>

@@ -54,3 +54,36 @@ export async function apiFetch(
     headers,
   });
 }
+
+/**
+ * Enregistre un clic sur un lien de traduction dans Supabase.
+ * Permet ensuite de connaître le nombre total de clics (téléchargements) par jeu.
+ */
+export async function trackTranslationClick(params: {
+  f95Url: string;
+  translationUrl?: string | null;
+  source?: string;
+}): Promise<void> {
+  const sb = getSupabase();
+  if (!sb) {
+    console.warn('[Stats] Supabase non configuré (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY) — clic non enregistré.');
+    return;
+  }
+  if (!params.f95Url) return;
+
+  try {
+    const { error } = await sb.from('translation_clicks').insert({
+      f95_url: params.f95Url,
+      translation_url: params.translationUrl ?? null,
+      source: params.source ?? 'unknown',
+    });
+    if (error) {
+      console.error('[Stats] Erreur Supabase lors de l\'enregistrement du clic :', error.message, error);
+      return;
+    }
+    console.info('[Stats] Clic traduction enregistré pour', params.f95Url);
+  } catch (err) {
+    console.warn('[Stats] Impossible d\'enregistrer le clic de traduction :', err);
+  }
+}
+

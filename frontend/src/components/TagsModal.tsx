@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
+import { apiFetch } from '../lib/api-helpers';
 import { getSupabase } from '../lib/supabase';
+import { useApp } from '../state/appContext';
 import { useToast } from './ToastProvider';
 
 // ─── Sections prédéfinies ─────────────────────────────────────────────────────
@@ -32,6 +34,22 @@ const SECTION_TITLES: Record<Section, string> = {
   sites: '🌐 Sites',
 };
 
+/**
+ * Noms possibles des tags Discord (normalisés en minuscules) pour mapper
+ * automatiquement vers nos slots (section + label_key). Tous les salons partagent la même logique.
+ */
+const DISCORD_TAG_ALIASES: { section: Section; key: string; aliases: string[] }[] = [
+  { section: 'gameStatus', key: 'completed', aliases: ['terminé', 'termine', 'completed', 'fini'] },
+  { section: 'gameStatus', key: 'ongoing', aliases: ['en cours', 'ongoing', 'en cours...', 'in progress'] },
+  { section: 'gameStatus', key: 'abandoned', aliases: ['abandonné', 'abandonne', 'abandoned'] },
+  { section: 'translationType', key: 'manual', aliases: ['manuelle', 'manual', 'manuel'] },
+  { section: 'translationType', key: 'semi_auto', aliases: ['semi-auto', 'semi automatique', 'semi-auto', 'semi auto'] },
+  { section: 'translationType', key: 'auto', aliases: ['automatique', 'automatic', 'auto'] },
+  { section: 'sites', key: 'f95', aliases: ['f95', 'f95zone'] },
+  { section: 'sites', key: 'lewdcorner', aliases: ['lewdcorner', 'lewd corner', 'lewd'] },
+  { section: 'sites', key: 'other_sites', aliases: ['autres sites', 'autres', 'other sites', 'others', 'autre'] },
+];
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Translator = { id: string; name: string; kind: 'profile' | 'external' };
 
@@ -40,6 +58,7 @@ type MappingRow = {
   profile_id: string;
   tag_id: string;
   forum_channel_id: string;
+  list_form_traducteur?: string | null;
 };
 
 type ExternalTranslator = {
@@ -47,6 +66,7 @@ type ExternalTranslator = {
   name: string;
   tag_id: string;
   forum_channel_id: string;
+  list_form_traducteur?: string | null;
 };
 
 type Slot = { id?: string; discordTagId: string };
@@ -128,8 +148,8 @@ function TagEditorModal({ isOpen, onClose, initialName = '', onSave, title }: Ta
   return (
     <div style={{
       position: 'fixed', inset: 0,
-      background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      zIndex: 1000, backdropFilter: 'blur(2px)',
+      background: 'var(--modal-backdrop)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      zIndex: 1000, backdropFilter: 'var(--modal-backdrop-blur)',
     }}>
       <div style={{
         background: 'var(--panel)', padding: 24, borderRadius: 14,
@@ -162,23 +182,25 @@ function TagEditorModal({ isOpen, onClose, initialName = '', onSave, title }: Ta
   );
 }
 
-// ─── Sous-composant MappingRowItem ────────────────────────────────────────────
+// ─── Sous-composant MappingRowItem (5 colonnes : Traducteur, Tag, Salon Discord, Concordance Formulaire, Action) ───
+type EditRow = { tag_id: string; forum_channel_id: string; list_form_traducteur: string };
 interface MappingRowProps {
   label: string;
   hasMapping: boolean;
-  edit: { tag_id: string; forum_channel_id: string };
+  edit: EditRow;
   tags: { id?: string; name: string }[];
-  onEditChange: (field: 'tag_id' | 'forum_channel_id', val: string) => void;
+  traducteurOptions: string[];
+  onEditChange: (field: 'tag_id' | 'forum_channel_id' | 'list_form_traducteur', val: string) => void;
   onSave: () => void;
   onDelete: () => void;
   isExternal?: boolean;
 }
 
-function MappingRowItem({ label, hasMapping, edit, tags, onEditChange, onSave, onDelete, isExternal }: MappingRowProps) {
+function MappingRowItem({ label, hasMapping, edit, tags, traducteurOptions, onEditChange, onSave, onDelete, isExternal }: MappingRowProps) {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '180px 1fr 1fr 90px 40px',
+      gridTemplateColumns: '180px 1fr 1fr 1fr 90px 40px',
       gap: 10, alignItems: 'center',
       padding: '8px 14px', borderRadius: 10,
       border: `1px solid ${hasMapping ? 'rgba(99,102,241,0.3)' : 'var(--border)'}`,
@@ -205,6 +227,18 @@ function MappingRowItem({ label, hasMapping, edit, tags, onEditChange, onSave, o
         placeholder="ID salon forum" style={rowInputStyle}
       />
 
+      <select
+        value={edit.list_form_traducteur ?? ''}
+        onChange={e => onEditChange('list_form_traducteur', e.target.value)}
+        style={rowInputStyle}
+        title="Valeur du champ traducteur à l'export (liste issue de f95_jeux.traducteur)"
+      >
+        <option value="">— Aucune concordance —</option>
+        {traducteurOptions.map(name => (
+          <option key={name} value={name}>{name}</option>
+        ))}
+      </select>
+
       <button type="button" onClick={onSave} style={{
         padding: '7px 0', borderRadius: 8, border: 'none',
         background: 'rgba(99,102,241,0.18)', color: 'var(--accent)',
@@ -228,6 +262,7 @@ function MappingRowItem({ label, hasMapping, edit, tags, onEditChange, onSave, o
 
 // ─── Composant principal ──────────────────────────────────────────────────────
 export default function TagsModal({ onClose }: { onClose?: () => void }) {
+  const { apiUrl } = useApp();
   const { showToast } = useToast();
   useEscapeKey(() => onClose?.(), true);
   useModalScrollLock();
@@ -242,15 +277,16 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
   const [mappings, setMappings] = useState<MappingRow[]>([]);
   const [loadingAll, setLoadingAll] = useState(true);
 
-  // ── Section 1 : translator tags
+  // ── Section 1 : tags traducteurs
   const [translatorTags, setTranslatorTags] = useState<{ id: string; name: string }[]>([]);
   const [loadingTranslatorTags, setLoadingTranslatorTags] = useState(true);
   const [showTagModal, setShowTagModal] = useState(false);
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
 
-  // ── Section 2 : routing
-  const [editMappings, setEditMappings] = useState<Record<string, { tag_id: string; forum_channel_id: string }>>({});
-  const [editExternals, setEditExternals] = useState<Record<string, { tag_id: string; forum_channel_id: string }>>({});
+  // ── Section 2 : routing (list_form_traducteur = valeur f95_jeux.traducteur pour l'export)
+  const [editMappings, setEditMappings] = useState<Record<string, { tag_id: string; forum_channel_id: string; list_form_traducteur: string }>>({});
+  const [editExternals, setEditExternals] = useState<Record<string, { tag_id: string; forum_channel_id: string; list_form_traducteur: string }>>({});
+  const [f95TraducteurOptions, setF95TraducteurOptions] = useState<string[]>([]);
   const [newExtName, setNewExtName] = useState('');
   const [addingExternal, setAddingExternal] = useState(false);
 
@@ -261,6 +297,9 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
   const [loadingCfg, setLoadingCfg] = useState(false);
   const [delIds, setDelIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [syncFromDiscordLoading, setSyncFromDiscordLoading] = useState(false);
+  /** true = overlay "Génération en cours" (création + récupération ID) */
+  const [generatingTagsLoading, setGeneratingTagsLoading] = useState(false);
 
   // ── Chargement initial
   useEffect(() => { void loadAll(); }, []);
@@ -276,8 +315,8 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
         { data: mapsData },
       ] = await Promise.all([
         sb.from('profiles').select('id, pseudo'),
-        sb.from('external_translators').select('id, name, tag_id, forum_channel_id').order('created_at', { ascending: true }),
-        sb.from('translator_forum_mappings').select('id, profile_id, tag_id, forum_channel_id'),
+        sb.from('external_translators').select('id, name, tag_id, forum_channel_id, list_form_traducteur').order('created_at', { ascending: true }),
+        sb.from('translator_forum_mappings').select('id, profile_id, tag_id, forum_channel_id, list_form_traducteur'),
       ]);
 
       const profiles = (profilesData ?? []) as { id: string; pseudo: string }[];
@@ -294,15 +333,32 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
       setExternals(exts);
       setMappings(maps);
 
-      const initMaps: Record<string, { tag_id: string; forum_channel_id: string }> = {};
-      maps.forEach(m => { initMaps[m.profile_id] = { tag_id: m.tag_id ?? '', forum_channel_id: m.forum_channel_id ?? '' }; });
+      const initMaps: Record<string, { tag_id: string; forum_channel_id: string; list_form_traducteur: string }> = {};
+      maps.forEach(m => { initMaps[m.profile_id] = { tag_id: m.tag_id ?? '', forum_channel_id: m.forum_channel_id ?? '', list_form_traducteur: m.list_form_traducteur ?? '' }; });
       setEditMappings(initMaps);
 
-      const initExts: Record<string, { tag_id: string; forum_channel_id: string }> = {};
-      exts.forEach(e => { initExts[e.id] = { tag_id: e.tag_id ?? '', forum_channel_id: e.forum_channel_id ?? '' }; });
+      const initExts: Record<string, { tag_id: string; forum_channel_id: string; list_form_traducteur: string }> = {};
+      exts.forEach(e => { initExts[e.id] = { tag_id: e.tag_id ?? '', forum_channel_id: e.forum_channel_id ?? '', list_form_traducteur: e.list_form_traducteur ?? '' }; });
       setEditExternals(initExts);
 
       if (list.length > 0) { setSelId(list[0].id); setSelKind(list[0].kind); }
+
+      // Récupérer tous les traducteurs distincts de f95_jeux (pagination pour tout charger)
+      const traducteurSet = new Set<string>();
+      const pageSize = 1000;
+      let offset = 0;
+      let hasMore = true;
+      while (hasMore) {
+        const { data: page } = await sb.from('f95_jeux').select('traducteur').range(offset, offset + pageSize - 1);
+        const rows = page ?? [];
+        rows.forEach((r: { traducteur?: string | null }) => {
+          const v = (r.traducteur ?? '').trim();
+          if (v) traducteurSet.add(v);
+        });
+        hasMore = rows.length === pageSize;
+        offset += pageSize;
+      }
+      setF95TraducteurOptions(Array.from(traducteurSet).sort());
     } catch {
       showToast('Erreur chargement des données', 'error');
     } finally {
@@ -368,13 +424,18 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
     if (!sb) return;
     const edit = editMappings[profileId];
     if (!edit) return;
+    const payload = {
+      tag_id: (edit.tag_id || '').trim() || null,
+      forum_channel_id: (edit.forum_channel_id || '').trim() || null,
+      list_form_traducteur: (edit.list_form_traducteur || '').trim() || null,
+    };
     try {
       const existing = mappings.find(m => m.profile_id === profileId);
       if (existing) {
-        const { error } = await sb.from('translator_forum_mappings').update(edit).eq('id', existing.id);
+        const { error } = await sb.from('translator_forum_mappings').update(payload).eq('id', existing.id);
         if (error) throw error;
       } else {
-        const { data, error } = await sb.from('translator_forum_mappings').insert({ ...edit, profile_id: profileId }).select().single();
+        const { data, error } = await sb.from('translator_forum_mappings').insert({ ...payload, profile_id: profileId }).select().single();
         if (error) throw error;
         setMappings(prev => [...prev, data as MappingRow]);
       }
@@ -406,11 +467,19 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
     const sb = getSupabase();
     if (!sb) return;
     try {
-      const { data, error } = await sb.from('external_translators').insert({ name, tag_id: '', forum_channel_id: '' }).select().single();
+      const { data, error } = await sb.from('external_translators').insert({
+        name,
+        tag_id: null,
+        forum_channel_id: null,
+        list_form_traducteur: null,
+      }).select().single();
       if (error) throw error;
       const newExt = data as ExternalTranslator;
       setExternals(prev => [...prev, newExt]);
-      setEditExternals(prev => ({ ...prev, [newExt.id]: { tag_id: '', forum_channel_id: '' } }));
+      setEditExternals(prev => ({ ...prev, [newExt.id]: { tag_id: '', forum_channel_id: '', list_form_traducteur: '' } }));
+      setTranslators(prev => [...prev, { id: newExt.id, name: newExt.name || '(sans nom)', kind: 'external' as const }]);
+      setSelId(newExt.id);
+      setSelKind('external');
       setNewExtName('');
       setAddingExternal(false);
       showToast('Traducteur externe ajouté', 'success');
@@ -424,10 +493,15 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
     if (!sb) return;
     const edit = editExternals[extId];
     if (!edit) return;
+    const payload = {
+      tag_id: (edit.tag_id || '').trim() || null,
+      forum_channel_id: (edit.forum_channel_id || '').trim() || null,
+      list_form_traducteur: (edit.list_form_traducteur || '').trim() || null,
+    };
     try {
-      const { error } = await sb.from('external_translators').update(edit).eq('id', extId);
+      const { error } = await sb.from('external_translators').update(payload).eq('id', extId);
       if (error) throw error;
-      setExternals(prev => prev.map(e => e.id === extId ? { ...e, ...edit } : e));
+      setExternals(prev => prev.map(e => e.id === extId ? { ...e, tag_id: payload.tag_id ?? '', forum_channel_id: payload.forum_channel_id ?? '', list_form_traducteur: payload.list_form_traducteur ?? undefined } : e));
       showToast('Routing sauvegardé', 'success');
     } catch (e: any) {
       showToast(`Erreur : ${e?.message || 'Inconnue'}`, 'error');
@@ -503,6 +577,141 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
     if (id) setDelIds(prev => [...prev, id]);
   };
 
+  /** Appelle l'API création des tags fixes. Retourne true si succès. */
+  async function createFixedTagsApi(): Promise<boolean> {
+    const forumChannelId = (selKind === 'profile' ? editMappings[selId!]?.forum_channel_id : editExternals[selId!]?.forum_channel_id)?.trim();
+    const raw = (localStorage.getItem('apiBase') || apiUrl || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
+    const baseUrl = raw.replace(/\/api\/forum-post\/?$/, '') || raw;
+    const apiKey = localStorage.getItem('apiKey') || '';
+    if (!forumChannelId || !baseUrl || !apiKey) return false;
+    const res = await apiFetch(`${baseUrl}/api/forum-tags/sync`, apiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ forum_id: forumChannelId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return !!(res.ok && data.ok);
+  }
+
+  /** Récupère les tags du salon via l'API et applique le mapping (prédéfinis + tags libres par nom). Retourne { ok, updatesCount, othersMatched }. */
+  async function fetchAndMapTags(): Promise<{ ok: boolean; updatesCount: number; othersMatched: number }> {
+    const forumChannelId = (selKind === 'profile' ? editMappings[selId!]?.forum_channel_id : editExternals[selId!]?.forum_channel_id)?.trim();
+    const raw = (localStorage.getItem('apiBase') || apiUrl || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
+    const baseUrl = raw.replace(/\/api\/forum-post\/?$/, '') || raw;
+    const apiKey = localStorage.getItem('apiKey') || '';
+    if (!forumChannelId || !baseUrl || !apiKey) return { ok: false, updatesCount: 0, othersMatched: 0 };
+    const res = await apiFetch(`${baseUrl}/api/forum-tags?forum_id=${encodeURIComponent(forumChannelId)}`, apiKey);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) return { ok: false, updatesCount: 0, othersMatched: 0 };
+    const tags: { id: string; name: string }[] = data.tags || [];
+    const updates: { section: Section; key: string; discordTagId: string }[] = [];
+    const matchedTagIds = new Set<string>();
+    for (const tag of tags) {
+      const nameNorm = (tag.name || '').toLowerCase().trim();
+      if (!nameNorm) continue;
+      for (const { section, key, aliases } of DISCORD_TAG_ALIASES) {
+        if (aliases.some(a => nameNorm === a || nameNorm.includes(a) || a.includes(nameNorm))) {
+          updates.push({ section, key, discordTagId: tag.id });
+          matchedTagIds.add(tag.id);
+          break;
+        }
+      }
+    }
+    setCfg(prev => {
+      const next = { ...prev };
+      for (const u of updates) {
+        next[u.section] = { ...next[u.section], [u.key]: { ...(next[u.section] as Record<string, Slot>)[u.key], discordTagId: u.discordTagId } };
+      }
+      for (const tag of tags) {
+        if (matchedTagIds.has(tag.id)) continue;
+        const nameNorm = (tag.name || '').trim().toLowerCase();
+        const idx = prev.others.findIndex(o => (o.name || '').trim().toLowerCase() === nameNorm);
+        if (idx >= 0) {
+          next.others = next.others.map((o, i) => i === idx ? { ...o, discordTagId: tag.id } : o);
+        }
+      }
+      return next;
+    });
+    const othersMatched = tags.filter(t => !matchedTagIds.has(t.id)).filter(t => cfg.others.some(o => (o.name || '').trim().toLowerCase() === (t.name || '').trim().toLowerCase())).length;
+    return { ok: true, updatesCount: updates.length, othersMatched };
+  }
+
+  /** Un seul bouton : crée les tags fixes sur Discord puis récupère les ID. Overlay pendant toute l'opération. */
+  async function handleGenerateTags() {
+    const forumChannelId = (selKind === 'profile' ? editMappings[selId!]?.forum_channel_id : editExternals[selId!]?.forum_channel_id)?.trim();
+    if (!forumChannelId) {
+      showToast('Configurez d\'abord un Salon Discord (ID) dans le Routing des Traducteurs.', 'error');
+      return;
+    }
+    const raw = (localStorage.getItem('apiBase') || apiUrl || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
+    const baseUrl = raw.replace(/\/api\/forum-post\/?$/, '') || raw;
+    if (!baseUrl) {
+      showToast('URL de l\'API non configurée', 'error');
+      return;
+    }
+    if (!localStorage.getItem('apiKey')) {
+      showToast('Clé API non configurée', 'error');
+      return;
+    }
+    setGeneratingTagsLoading(true);
+    try {
+      const createOk = await createFixedTagsApi();
+      if (!createOk) {
+        showToast('Erreur lors de la création des tags sur Discord.', 'error');
+        return;
+      }
+      const { ok, updatesCount, othersMatched } = await fetchAndMapTags();
+      if (ok) {
+        const total = updatesCount + othersMatched;
+        showToast(total > 0 ? `Tags générés et ${total} ID récupéré(s). Pensez à sauvegarder.` : 'Tags générés sur Discord. Récupérez les ID si besoin.', 'success');
+      } else {
+        showToast('Tags créés sur Discord mais récupération des ID a échoué. Utilisez « Récupérer les tags ».', 'warning');
+      }
+    } catch (e: any) {
+      showToast(e?.message || 'Erreur lors de la génération des tags', 'error');
+    } finally {
+      setGeneratingTagsLoading(false);
+    }
+  }
+
+  /** Récupère les tags du salon Discord et remplit les champs (prédéfinis + tags libres par nom). */
+  async function syncTagsFromDiscord() {
+    const forumChannelId = (selKind === 'profile' ? editMappings[selId!]?.forum_channel_id : editExternals[selId!]?.forum_channel_id)?.trim();
+    if (!forumChannelId) {
+      showToast('Configurez d\'abord un Salon Discord (ID) dans le Routing des Traducteurs pour ce traducteur.', 'error');
+      return;
+    }
+    const raw = (localStorage.getItem('apiBase') || apiUrl || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
+    const baseUrl = raw.replace(/\/api\/forum-post\/?$/, '') || raw;
+    if (!baseUrl) {
+      showToast('URL de l\'API non configurée', 'error');
+      return;
+    }
+    if (!localStorage.getItem('apiKey')) {
+      showToast('Clé API non configurée', 'error');
+      return;
+    }
+    setSyncFromDiscordLoading(true);
+    try {
+      const { ok, updatesCount, othersMatched } = await fetchAndMapTags();
+      if (ok) {
+        const total = updatesCount + othersMatched;
+        showToast(
+          total > 0
+            ? `${total} tag(s) Discord mappé(s) (dont ${othersMatched} tag(s) libre(s) par nom). Pensez à sauvegarder.`
+            : 'Aucun tag Discord ne correspond aux slots. Créez les tags sur Discord (ou « Générer les tags ») puis réessayez.',
+          total > 0 ? 'success' : 'info'
+        );
+      } else {
+        showToast('Erreur lors de la récupération des tags.', 'error');
+      }
+    } catch (e: any) {
+      showToast(e?.message || 'Erreur lors de la récupération des tags', 'error');
+    } finally {
+      setSyncFromDiscordLoading(false);
+    }
+  }
+
   async function handleSave() {
     const sb = getSupabase();
     if (!sb || loadingCfg || !selId) return;
@@ -571,10 +780,11 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
   return (
     <div style={{
       position: 'fixed', inset: 0,
-      background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      zIndex: 99999, backdropFilter: 'blur(3px)',
+      background: 'var(--modal-backdrop)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      zIndex: 99999, backdropFilter: 'var(--modal-backdrop-blur)',
     }}>
       <div style={{
+        position: 'relative',
         background: 'var(--panel)', width: '90%', maxWidth: 900, height: '88vh',
         borderRadius: 14, border: '1px solid var(--border)',
         boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
@@ -587,10 +797,6 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0,
         }}>
           <h2 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text)' }}>🏷️ Gestion des Tags</h2>
-          <button onClick={onClose} style={{
-            background: 'none', border: 'none', color: 'var(--text)',
-            fontSize: 28, cursor: 'pointer', lineHeight: 1, padding: 0,
-          }}>&times;</button>
         </div>
 
         {/* ── Body avec scroll */}
@@ -626,7 +832,7 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
                     {translatorTags.map(tag => (
                       <div key={tag.id} style={{
                         flex: '0 1 calc(33.333% - 10px)',
-                        display: 'flex', alignItems: 'center', gap: 8, padding: '9px 13px',
+                        display: 'flex', alignItems: 'center', gap: 8, padding: '10px 13px',
                         border: '1px solid var(--border)', borderRadius: 10,
                         background: 'rgba(255,255,255,0.03)',
                       }}>
@@ -634,7 +840,7 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
                         <button
                           onClick={() => { setEditingTagId(tag.id); setShowTagModal(true); }}
                           style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: '2px 4px', fontSize: 13 }}
-                          title="Modifier"
+                          title="Modifier le nom"
                         >✏️</button>
                         <button
                           onClick={() => handleDeleteTag(tag.id)}
@@ -667,8 +873,8 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
                     {/* En-têtes */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 1fr 90px 40px', gap: 10, padding: '6px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.04)' }}>
-                      {['Traducteur', 'Tag', 'Salon Discord (ID)', 'Action', ''].map(h => (
+                    <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 1fr 1fr 90px 40px', gap: 10, padding: '6px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.04)' }}>
+                      {['Traducteur', 'Tag', 'Salon Discord (ID)', 'Concordance Formulaire', 'Action', ''].map(h => (
                         <span key={h} style={colHdr}>{h}</span>
                       ))}
                     </div>
@@ -684,11 +890,12 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
                             key={p.id}
                             label={p.pseudo || '—'}
                             hasMapping={mappings.some(m => m.profile_id === p.id)}
-                            edit={editMappings[p.id] ?? { tag_id: '', forum_channel_id: '' }}
+                            edit={editMappings[p.id] ?? { tag_id: '', forum_channel_id: '', list_form_traducteur: '' }}
                             tags={translatorTags.map(t => ({ id: t.id, name: t.name }))}
+                            traducteurOptions={f95TraducteurOptions}
                             onEditChange={(field, val) => setEditMappings(prev => ({
                               ...prev,
-                              [p.id]: { ...(prev[p.id] ?? { tag_id: '', forum_channel_id: '' }), [field]: val }
+                              [p.id]: { ...(prev[p.id] ?? { tag_id: '', forum_channel_id: '', list_form_traducteur: '' }), [field]: val }
                             }))}
                             onSave={() => saveMapping(p.id)}
                             onDelete={() => deleteMapping(p.id)}
@@ -746,11 +953,12 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
                         key={ext.id}
                         label={ext.name}
                         hasMapping={!!(editExternals[ext.id]?.forum_channel_id?.trim())}
-                        edit={editExternals[ext.id] ?? { tag_id: '', forum_channel_id: '' }}
+                        edit={editExternals[ext.id] ?? { tag_id: '', forum_channel_id: '', list_form_traducteur: '' }}
                         tags={translatorTags.map(t => ({ id: t.id, name: t.name }))}
+                        traducteurOptions={f95TraducteurOptions}
                         onEditChange={(field, val) => setEditExternals(prev => ({
                           ...prev,
-                          [ext.id]: { ...(prev[ext.id] ?? { tag_id: '', forum_channel_id: '' }), [field]: val }
+                          [ext.id]: { ...(prev[ext.id] ?? { tag_id: '', forum_channel_id: '', list_form_traducteur: '' }), [field]: val }
                         }))}
                         onSave={() => saveExternal(ext.id)}
                         onDelete={() => deleteExternal(ext.id)}
@@ -833,7 +1041,7 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
                       <p style={{ color: 'var(--muted)', fontSize: 14 }}>Chargement…</p>
                     ) : (
                       <>
-                        {/* Titre */}
+                        {/* Titre + bouton sync Discord */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
                           <span style={{ fontSize: 18 }}>{selKind === 'external' ? '🔧' : '👤'}</span>
                           <div>
@@ -842,7 +1050,37 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
                               {selKind === 'external' ? 'Traducteur externe' : 'Utilisateur inscrit'} — Tags secondaires
                             </p>
                           </div>
-                          <div style={{ marginLeft: 'auto' }}>
+                          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                            {(selKind === 'profile' ? editMappings[selId]?.forum_channel_id : editExternals[selId]?.forum_channel_id)?.trim() && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={handleGenerateTags}
+                                  disabled={generatingTagsLoading}
+                                  style={{
+                                    padding: '6px 14px', borderRadius: 8, border: '1px solid var(--accent)',
+                                    background: 'rgba(99,102,241,0.12)', color: 'var(--accent)', fontWeight: 600, fontSize: 12,
+                                    cursor: generatingTagsLoading ? 'not-allowed' : 'pointer',
+                                  }}
+                                  title="Créer les tags fixes sur le salon Discord puis récupérer les ID automatiquement"
+                                >
+                                  {generatingTagsLoading ? '⏳…' : '📤 Générer les tags'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={syncTagsFromDiscord}
+                                  disabled={syncFromDiscordLoading || generatingTagsLoading}
+                                  style={{
+                                    padding: '6px 14px', borderRadius: 8, border: '1px solid var(--accent)',
+                                    background: 'rgba(99,102,241,0.12)', color: 'var(--accent)', fontWeight: 600, fontSize: 12,
+                                    cursor: syncFromDiscordLoading || generatingTagsLoading ? 'not-allowed' : 'pointer',
+                                  }}
+                                  title="Récupérer les ID Discord (prédéfinis + tags libres par correspondance de nom). Utile après avoir ajouté un tag libre sur Discord."
+                                >
+                                  {syncFromDiscordLoading ? '⏳ Sync…' : '🔄 Récupérer les ID (tags libres)'}
+                                </button>
+                              </>
+                            )}
                             <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: 'rgba(99,102,241,0.15)', color: 'var(--accent)', fontWeight: 600 }}>
                               {cfg.others.length
                                 + Object.values(cfg.translationType).filter(s => s.discordTagId).length
@@ -954,6 +1192,25 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
           onSave={handleCreateOrUpdateTag}
           title={editingTagId ? 'Modifier Tag Translator' : 'Créer Tag Translator'}
         />
+
+        {/* Overlay "en cours" pendant génération des tags (création + récupération ID) */}
+        {generatingTagsLoading && (
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 14,
+            zIndex: 10,
+          }}>
+            <div style={{ textAlign: 'center', color: 'var(--text)', fontSize: 16, fontWeight: 600 }}>
+              <div style={{ marginBottom: 12 }}>⏳ Génération des tags en cours…</div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 400 }}>Création sur Discord puis récupération des ID</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

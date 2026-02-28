@@ -1,5 +1,6 @@
-﻿"""
+"""
 Controle des versions F95 via l'API checker.php + systeme anti-doublon.
+Parcourt tous les salons forum du serveur (salon principal + mappings + traducteurs externes).
 Dependances : config, content_parser, supabase_client, discord_api, forum_manager
 Logger       : [f95]
 """
@@ -18,6 +19,7 @@ from forum_manager import (
     _extract_post_data,
     _update_post_version,
 )
+from supabase_client import _get_supabase
 
 logger = logging.getLogger("f95")
 
@@ -165,18 +167,43 @@ async def fetch_f95_versions_by_ids(
 
 # ==================== CONTROLE VERSIONS ====================
 
-async def run_version_check_once():
-    logger.info("[f95] Debut controle versions F95 (salon my)")
+def _collect_forum_ids() -> set:
+    """Retourne l'ensemble des IDs de salons forum a traiter (principal + mappings + externes)."""
+    forum_ids = set()
+    if config.FORUM_MY_ID:
+        forum_ids.add(str(config.FORUM_MY_ID))
+    sb = _get_supabase()
+    if sb:
+        try:
+            r1 = sb.table("translator_forum_mappings").select("forum_channel_id").execute()
+            for row in (r1.data or []):
+                val = str(row.get("forum_channel_id", "")).strip()
+                if val and val != "0":
+                    forum_ids.add(val)
+            r2 = sb.table("external_translators").select("forum_channel_id").execute()
+            for row in (r2.data or []):
+                val = str(row.get("forum_channel_id", "")).strip()
+                if val and val != "0":
+                    forum_ids.add(val)
+        except Exception as e:
+            logger.warning("[f95] Erreur recuperation salons Supabase : %s", e)
+    return forum_ids
 
+
+async def run_version_check_once():
     from publisher_bot import bot
 
     channel_notif = bot.get_channel(config.PUBLISHER_MAJ_NOTIFICATION_CHANNEL_ID)
     if not channel_notif:
         logger.error("[f95] Salon notifications MAJ introuvable")
         return
-    if not config.FORUM_MY_ID:
-        logger.warning("[f95] PUBLISHER_FORUM_TRAD_ID non configure")
+
+    forum_ids = _collect_forum_ids()
+    if not forum_ids:
+        logger.warning("[f95] Aucun salon forum configure (PUBLISHER_FORUM_TRAD_ID ou Supabase)")
         return
+
+    logger.info("[f95] Debut controle versions F95 (%d salon(s))", len(forum_ids))
 
     _clean_old_notifications()
 
@@ -186,19 +213,25 @@ async def run_version_check_once():
     }
 
     all_alerts: List[VersionAlert] = []
-    forum = bot.get_channel(config.FORUM_MY_ID)
-    if not forum:
-        logger.warning("[f95] Forum %d introuvable", config.FORUM_MY_ID)
-        return
+    thread_mapping: Dict[str, tuple] = {}
 
-    threads = await _collect_all_forum_threads(forum)
-    logger.info("[f95] %d threads a verifier (actifs + archives)", len(threads))
-
-    # ── Phase 1 : collecter les IDs F95 ──────────────────────────────────────
-    thread_mapping = {}
+    # ── Phase 1 : collecter les threads de tous les salons et mapper les IDs F95 ──
+    for forum_id_str in forum_ids:
+        forum_id = int(forum_id_str)
+        forum = bot.get_channel(forum_id)
+        if not forum:
+            logger.warning("[f95] Salon %d introuvable ou inaccessible", forum_id)
+            continue
+        threads = await _collect_all_forum_threads(forum)
+        logger.info("[f95] Salon %s (%d) : %d threads", forum.name, forum_id, len(threads))
+        for t in threads:
+            thread_mapping.setdefault("_threads_list", []).append((forum.name, t))
+    threads_with_forum = thread_mapping.pop("_threads_list", [])
+    thread_mapping.clear()
+    logger.info("[f95] %d threads au total a verifier (actifs + archives)", len(threads_with_forum))
 
     async with aiohttp.ClientSession(headers=headers) as session:
-        for thread in threads:
+        for _forum_name, thread in threads_with_forum:
             await asyncio.sleep(0.3)
 
             game_link, post_version = await _extract_post_data(thread)

@@ -1,32 +1,115 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useConfirm } from '../hooks/useConfirm';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
+import { getSupabase } from '../lib/supabase';
 import { useApp } from '../state/appContext';
+import { useAuth } from '../state/authContext';
 import ConfirmModal from './ConfirmModal';
 import { useToast } from './ToastProvider';
 
+const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
+
+const PREFIX_PROFILE = 'p:';
+const PREFIX_EXTERNAL = 'e:';
+
+type OwnerOption = { id: string; label: string; kind: 'profile' | 'external' };
+
+function ownerKey(kind: 'profile' | 'external', entityId: string) {
+  return kind === 'profile' ? PREFIX_PROFILE + entityId : PREFIX_EXTERNAL + entityId;
+}
+function normalizeOwnerStored(stored: string | undefined, myProfileId: string | undefined): string {
+  if (!stored) return myProfileId ? PREFIX_PROFILE + myProfileId : '';
+  if (stored.startsWith(PREFIX_PROFILE) || stored.startsWith(PREFIX_EXTERNAL)) return stored;
+  return PREFIX_PROFILE + stored;
+}
+
 export default function InstructionsManagerModal({ onClose }: { onClose?: () => void }) {
-  const { savedInstructions, saveInstruction, deleteInstruction } = useApp();
+  const { profile } = useAuth();
+  const { savedInstructions, instructionOwners, saveInstruction, deleteInstruction } = useApp();
   const { showToast } = useToast();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
 
   useEscapeKey(() => onClose?.(), true);
   useModalScrollLock();
 
-  const [form, setForm] = useState({ name: '', content: '' });
+  const [ownerOptions, setOwnerOptions] = useState<OwnerOption[]>([]);
+  const [filterByOwnerId, setFilterByOwnerId] = useState<string>(() => (profile?.id ? PREFIX_PROFILE + profile.id : ''));
+  const [form, setForm] = useState({ name: '', content: '', ownerId: '' });
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [addSectionOpen, setAddSectionOpen] = useState(false);
 
+  useEffect(() => {
+    if (!profile?.id) return;
+    setFilterByOwnerId(f => f || ownerKey('profile', profile.id));
+    const sb = getSupabase();
+    if (!sb) return;
+    const isMasterAdmin = !!localStorage.getItem(STORAGE_KEY_MASTER_ADMIN);
+    (async () => {
+      try {
+        if (isMasterAdmin) {
+          const [{ data: profilesData }, { data: externalsData }] = await Promise.all([
+            sb.from('profiles').select('id, pseudo'),
+            sb.from('external_translators').select('id, name')
+          ]);
+          const list: OwnerOption[] = [];
+          for (const p of (profilesData ?? []) as { id: string; pseudo?: string }[]) {
+            list.push({
+              id: ownerKey('profile', p.id),
+              label: p.id === profile.id ? `Moi (${p.pseudo || '(sans nom)'})` : (p.pseudo || '(sans nom)'),
+              kind: 'profile'
+            });
+          }
+          for (const e of (externalsData ?? []) as { id: string; name?: string }[]) {
+            list.push({
+              id: ownerKey('external', e.id),
+              label: `${e.name || '(sans nom)'} (traducteur externe)`,
+              kind: 'external'
+            });
+          }
+          setOwnerOptions(list);
+        } else {
+          const me: OwnerOption = {
+            id: ownerKey('profile', profile.id),
+            label: `Moi (${profile.pseudo || 'Moi'})`,
+            kind: 'profile'
+          };
+          const { data: editorRows } = await sb.from('allowed_editors').select('owner_id').eq('editor_id', profile.id);
+          const ownerIds = (editorRows ?? []).map((r: { owner_id: string }) => r.owner_id);
+          if (ownerIds.length === 0) {
+            setOwnerOptions([me]);
+            return;
+          }
+          const { data: owners } = await sb.from('profiles').select('id, pseudo').in('id', ownerIds);
+          const others = (owners ?? []).map((o: { id: string; pseudo?: string }) => ({
+            id: ownerKey('profile', o.id),
+            label: o.pseudo || '(sans nom)',
+            kind: 'profile' as const
+          }));
+          const byId = new Map<string, OwnerOption>([[me.id, me]]);
+          others.forEach(o => byId.set(o.id, o));
+          setOwnerOptions(Array.from(byId.values()));
+        }
+      } catch {
+        setOwnerOptions([{
+          id: ownerKey('profile', profile.id),
+          label: `Moi (${profile.pseudo || 'Moi'})`,
+          kind: 'profile'
+        }]);
+      }
+    })();
+  }, [profile?.id, profile?.pseudo]);
+
   function startEdit(key: string) {
     const content = savedInstructions[key];
-    setForm({ name: key, content });
+    const ownerId = normalizeOwnerStored(instructionOwners[key], profile?.id);
+    setForm({ name: key, content, ownerId });
     setEditingKey(key);
     setAddSectionOpen(true);
   }
 
   function cancelEdit() {
-    setForm({ name: '', content: '' });
+    setForm({ name: '', content: '', ownerId: profile?.id ? ownerKey('profile', profile.id) : '' });
     setEditingKey(null);
     setAddSectionOpen(false);
   }
@@ -35,7 +118,7 @@ export default function InstructionsManagerModal({ onClose }: { onClose?: () => 
     if (addSectionOpen) {
       cancelEdit();
     } else {
-      setForm({ name: '', content: '' });
+      setForm({ name: '', content: '', ownerId: filterByOwnerId || (profile?.id ? ownerKey('profile', profile.id) : '') });
       setEditingKey(null);
       setAddSectionOpen(true);
     }
@@ -64,8 +147,8 @@ export default function InstructionsManagerModal({ onClose }: { onClose?: () => 
       deleteInstruction(editingKey);
     }
 
-    saveInstruction(form.name.trim(), form.content.trim());
-    setForm({ name: '', content: '' });
+    saveInstruction(form.name.trim(), form.content.trim(), form.ownerId || (profile?.id ? ownerKey('profile', profile.id) : undefined));
+    setForm({ name: '', content: '', ownerId: profile?.id ? ownerKey('profile', profile.id) : '' });
     setEditingKey(null);
     showToast(editingKey ? 'Instruction modifiée' : 'Instruction ajoutée', 'success');
   }
@@ -83,8 +166,11 @@ export default function InstructionsManagerModal({ onClose }: { onClose?: () => 
     showToast('Instruction supprimée', 'success');
   }
 
-  // Ordre stable (alphabétique) pour éviter que les instructions "switchent" de position
-  const instructionEntries = Object.entries(savedInstructions).sort((a, b) => a[0].localeCompare(b[0]));
+  // Filtrer par utilisateur/traducteur sélectionné (défaut : moi). Legacy sans préfixe = profil
+  const effectiveFilterId = filterByOwnerId || (profile?.id ? ownerKey('profile', profile.id) : '');
+  const instructionEntries = Object.entries(savedInstructions)
+    .filter(([key]) => !effectiveFilterId || normalizeOwnerStored(instructionOwners[key], profile?.id) === effectiveFilterId)
+    .sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
     <div className="modal">
@@ -96,6 +182,30 @@ export default function InstructionsManagerModal({ onClose }: { onClose?: () => 
         flexDirection: 'column'
       }}>
         <h3>📋 Gestion des instructions</h3>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
+          <label style={{ fontSize: 13, color: 'var(--muted)' }}>Afficher les instructions de</label>
+          <select
+            value={filterByOwnerId}
+            onChange={(e) => setFilterByOwnerId(e.target.value)}
+            style={{
+              padding: '10px 12px',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              fontSize: 13,
+              color: 'var(--text)',
+              cursor: 'pointer',
+              maxWidth: 280
+            }}
+          >
+            {ownerOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div style={{ display: 'grid', gap: 16, flex: 1, minHeight: 0 }}>
           {/* Liste des instructions existantes - SCROLLABLE */}
@@ -182,22 +292,49 @@ export default function InstructionsManagerModal({ onClose }: { onClose?: () => 
 
             {addSectionOpen && (
               <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>
-                    Nom de l'instruction
-                  </label>
-                  <input
-                    placeholder="ex: Installation Windows, Guide Linux..."
-                    value={form.name}
-                    onChange={e => setForm({ ...form, name: e.target.value })}
-                    style={{ width: '100%' }}
-                    disabled={editingKey !== null}
-                  />
-                  {editingKey && (
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                      💡 Pour renommer, supprimez et recréez l'instruction
-                    </div>
-                  )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 12, alignItems: 'end' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>
+                      Nom de l'instruction
+                    </label>
+                    <input
+                      placeholder="Nom de l'instruction"
+                      value={form.name}
+                      onChange={e => setForm({ ...form, name: e.target.value })}
+                      style={{ width: '100%' }}
+                      disabled={editingKey !== null}
+                    />
+                    {editingKey && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                        💡 Pour renommer, supprimez et recréez l'instruction
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 4 }}>
+                      Appartient à
+                    </label>
+                    <select
+                      value={form.ownerId}
+                      onChange={e => setForm({ ...form, ownerId: e.target.value })}
+                      style={{
+                        padding: '10px 12px',
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 8,
+                        fontSize: 13,
+                        color: 'var(--text)',
+                        cursor: 'pointer',
+                        minWidth: 200
+                      }}
+                    >
+                      {ownerOptions.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div>

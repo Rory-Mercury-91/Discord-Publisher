@@ -9,7 +9,24 @@ export default function TemplatesHelp() {
           📄 À quoi servent les templates ?
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
-          Les templates définissent la structure du message Discord (titre, corps, mise en forme). Ils contiennent des <strong>variables</strong> entre crochets (ex. <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[Game_name]</code>, <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[instruction]</code>, <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[Overview]</code>) qui sont remplacées par les valeurs du formulaire au moment de la publication.
+          Les templates définissent la structure du message Discord (titre, corps, mise en forme). Ils contiennent des <strong>variables</strong> entre crochets (ex. <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[Game_name]</code>, <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[instruction]</code>, <code style={{ fontFamily: 'monospace', fontSize: 12 }}>[Overview]</code>) qui sont remplacées par les valeurs du formulaire <strong>au moment de leur écriture</strong> dans l'éditeur de contenu.
+        </p>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '12px 0 0 0' }}>
+          La fenêtre <strong>Gestion des templates & variables</strong> s'ouvre via le bouton <strong>« 📄 Templates »</strong> (dans l'en-tête). Les modifications sont synchronisées automatiquement avec Supabase.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(99, 102, 241, 0.08)',
+        border: '1px solid rgba(99, 102, 241, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#6366f1' }}>
+          📚 Mes templates
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Liste de vos templates : cliquez sur un template pour l'éditer. Vous pouvez <strong>créer</strong> un nouveau (saisir le nom puis bouton « ➕ Créer ») et <strong>supprimer</strong> un template (🗑️ sur le template sélectionné). Le template par défaut (⭐) ne peut pas être supprimé.
         </p>
       </section>
 
@@ -20,18 +37,10 @@ export default function TemplatesHelp() {
         padding: 16
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
-          Gérer le template
+          📄 Zone Template
         </h4>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
-          La fenêtre <strong>Gestion du template</strong> (bouton « Gérer le Template ») permet de modifier le template, de restaurer le template par défaut, ou d'exporter/importer un template. Les modifications sont <strong>synchronisées automatiquement avec Supabase</strong>.
-        </p>
-        <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: '8px 0 0 0', paddingLeft: 20 }}>
-          <li><strong>📤 Exporter</strong> : enregistre le template (et les variables) en fichier JSON, utile pour sauvegarder une version adaptée à une traduction et la recharger plus tard.</li>
-          <li><strong>📥 Importer</strong> : charge un template depuis un fichier JSON exporté.</li>
-          <li><strong>🔄 Restaurer</strong> : rétablit le template par défaut. Utilisez cette option si vous souhaitez revenir au template standard.</li>
-        </ul>
-        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '12px 0 0 0' }}>
-          Les variables disponibles (ex. <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Game_name]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Game_version]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[instruction]</code>, <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[Overview]</code>) sont documentées dans la modale Templates ou dans le Markdown d'aide du champ contenu.
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Contenu du template sélectionné, rédigé en Markdown. Le bouton <strong>?</strong> à côté du nom ouvre l'aide Markdown. Pour le template par défaut, le bouton <strong>🔄 Restaurer</strong> rétablit le contenu d'origine.
         </p>
       </section>
 
@@ -42,13 +51,52 @@ export default function TemplatesHelp() {
         padding: 16
       }}>
         <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4a9eff' }}>
-          👁️ Zone Aperçu
+          💡 Variables (cliquez pour copier)
         </h4>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
-          La zone d'aperçu (à droite) affiche le <strong>résultat final</strong> du template avec toutes les variables remplies. Cette zone est en <strong>lecture seule</strong> et montre exactement ce qui sera publié sur Discord. Utilisez le bouton <strong>🎨 Aperçu Discord</strong> pour voir le rendu avec la mise en forme Markdown.
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Toutes les variables disponibles sont listées sous la zone de contenu. Un clic sur une variable copie <code style={{ fontFamily: 'monospace', fontSize: 11 }}>[NomVariable]</code> dans le presse-papier pour l'insérer dans le template.
         </p>
-        <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 8px 0' }}>
-          Pour personnaliser le contenu, modifiez les <strong>variables du formulaire</strong> ou le <strong>template</strong> via la Gestion des templates.
+      </section>
+
+      <section style={{
+        background: 'rgba(245, 158, 11, 0.08)',
+        border: '1px solid rgba(245, 158, 11, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#f59e0b' }}>
+          🔧 Variables personnalisées
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          Ajoutez, modifiez ou supprimez des variables (nom, label, type texte ou textarea). Elles apparaissent dans le formulaire de l'éditeur de contenu et dans la liste des variables à copier.
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(168, 85, 247, 0.08)',
+        border: '1px solid rgba(168, 85, 247, 0.25)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#a855f7' }}>
+          📤 Exporter / 📥 Importer
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          <strong>Exporter</strong> : enregistre les templates et les variables en fichier JSON. <strong>Importer</strong> : charge un fichier JSON exporté pour réutiliser une configuration (ex. une version adaptée à une traduction).
+        </p>
+      </section>
+
+      <section style={{
+        background: 'rgba(100, 116, 139, 0.12)',
+        border: '1px solid rgba(100, 116, 139, 0.3)',
+        borderRadius: 8,
+        padding: 16
+      }}>
+        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#94a3b8' }}>
+          Enregistrer ou annuler
+        </h4>
+        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+          <strong>Annuler</strong> ferme la fenêtre sans enregistrer. <strong>Enregistrer</strong> applique les changements (raccourci <strong>Ctrl+S</strong>).
         </p>
       </section>
     </div>

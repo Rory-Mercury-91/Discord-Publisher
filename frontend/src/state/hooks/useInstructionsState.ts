@@ -1,34 +1,40 @@
 import { useEffect, useState } from 'react';
 import { getSupabase } from '../../lib/supabase';
 
+export type SavedInstructionRow = {
+  owner_type?: 'profile' | 'external';
+  owner_id: string;
+  value: Record<string, string> | string;
+};
+
 /**
  * Fusionne les instructions Supabase avec les instructions locales.
- * Les instructions sont propres à l'utilisateur connecté (saved_instructions.owner_id).
- * Seule la présence d'autorisation (allowed_editors) permet à un autre utilisateur de voir
- * les instructions du propriétaire sur son PC (RLS : select own or allowed).
- * - Instructions locales sans owner connu → conservées
- * - Instructions Supabase → ajoutées/mises à jour
- * - Instructions dont le owner était connu mais n'est plus accessible (révoqué) → supprimées
+ * Supabase peut renvoyer owner_type + owner_id (profil ou traducteur externe).
+ * - owner_type absent (legacy) → traité comme 'profile'.
  */
 export function mergeInstructionsFromSupabase(
-  supabaseData: Array<{ owner_id: string; value: Record<string, string> | string }>,
+  supabaseData: SavedInstructionRow[],
   currentInstructions: Record<string, string>,
   currentOwners: Record<string, string>
 ): { merged: Record<string, string>; owners: Record<string, string> } {
-  // Extraire toutes les instructions et owners depuis Supabase
   const supabaseInstructions: Record<string, string> = {};
   const supabaseOwners: Record<string, string> = {};
   const visibleOwnerIds = new Set<string>();
+  const PREFIX_PROFILE_MERGE = 'p:';
+  const PREFIX_EXTERNAL_MERGE = 'e:';
 
   for (const row of supabaseData) {
+    const kind = row.owner_type === 'external' ? 'external' : 'profile';
+    const prefixedOwner = kind === 'profile' ? PREFIX_PROFILE_MERGE + row.owner_id : PREFIX_EXTERNAL_MERGE + row.owner_id;
     visibleOwnerIds.add(row.owner_id);
+    visibleOwnerIds.add(prefixedOwner);
     try {
       const val = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
       if (val && typeof val === 'object' && !Array.isArray(val)) {
         for (const [k, v] of Object.entries(val)) {
           if (typeof v === 'string') {
             supabaseInstructions[k] = v;
-            supabaseOwners[k] = row.owner_id;
+            supabaseOwners[k] = prefixedOwner;
           }
         }
       }
@@ -44,10 +50,11 @@ export function mergeInstructionsFromSupabase(
   // 1. Parcourir les instructions locales existantes
   for (const [k, v] of Object.entries(currentInstructions)) {
     const existingOwner = currentOwners[k];
+    const normalizedExisting = existingOwner?.startsWith('p:') || existingOwner?.startsWith('e:') ? existingOwner : (existingOwner ? 'p:' + existingOwner : '');
     if (!existingOwner) {
       // Instruction locale pure (pas de owner connu) → garder
       merged[k] = v;
-    } else if (visibleOwnerIds.has(existingOwner)) {
+    } else if (visibleOwnerIds.has(normalizedExisting) || visibleOwnerIds.has(existingOwner)) {
       // Le owner est toujours accessible → sera écrasé par Supabase si présent
       // (ne pas ajouter ici, sera ajouté depuis supabaseInstructions)
     } else {
@@ -67,25 +74,52 @@ export function mergeInstructionsFromSupabase(
   return { merged: sortedMerged, owners: sortedOwners };
 }
 
-async function _syncMyInstructionsToSupabase(
+const PREFIX_PROFILE = 'p:';
+const PREFIX_EXTERNAL = 'e:';
+const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
+
+function groupInstructionsByOwner(
+  instructions: Record<string, string>,
+  owners: Record<string, string>
+): Array<{ owner_type: 'profile' | 'external'; owner_id: string; value: Record<string, string> }> {
+  const buckets: Record<string, Record<string, string>> = {};
+  for (const [name, text] of Object.entries(instructions)) {
+    const key = owners[name];
+    if (!key) continue;
+    const ownerType = key.startsWith(PREFIX_EXTERNAL) ? 'external' : 'profile';
+    const ownerId = key.startsWith(PREFIX_EXTERNAL) ? key.slice(2) : key.startsWith(PREFIX_PROFILE) ? key.slice(2) : key;
+    const bucketKey = `${ownerType}:${ownerId}`;
+    if (!buckets[bucketKey]) buckets[bucketKey] = {};
+    buckets[bucketKey][name] = text;
+  }
+  return Object.entries(buckets).map(([bucketKey, value]) => {
+    const [owner_type, owner_id] = bucketKey.split(':', 2) as ['profile' | 'external', string];
+    return { owner_type, owner_id, value };
+  });
+}
+
+async function _syncAllInstructionsToSupabase(
   instructions: Record<string, string>,
   owners: Record<string, string>,
   userId: string
 ): Promise<void> {
   const sb = getSupabase();
   if (!sb) return;
-
-  const myInstructions: Record<string, string> = {};
-  for (const [k, v] of Object.entries(instructions)) {
-    if (!owners[k] || owners[k] === userId) myInstructions[k] = v;
+  const isMasterAdmin = !!localStorage.getItem(STORAGE_KEY_MASTER_ADMIN);
+  const rows = groupInstructionsByOwner(instructions, owners);
+  const toSync = rows.filter(
+    r => r.owner_type === 'profile' && r.owner_id === userId
+      || (r.owner_type === 'external' && isMasterAdmin)
+  );
+  const now = new Date().toISOString();
+  for (const row of toSync) {
+    await sb
+      .from('saved_instructions')
+      .upsert(
+        { owner_type: row.owner_type, owner_id: row.owner_id, value: row.value, updated_at: now },
+        { onConflict: 'owner_type,owner_id' }
+      );
   }
-
-  await sb
-    .from('saved_instructions')
-    .upsert(
-      { owner_id: userId, value: myInstructions, updated_at: new Date().toISOString() },
-      { onConflict: 'owner_id' }
-    );
 }
 
 export function useInstructionsState() {
@@ -113,14 +147,17 @@ export function useInstructionsState() {
     localStorage.setItem('instructionOwners', JSON.stringify(instructionOwners));
   }, [instructionOwners]);
 
-  function saveInstruction(name: string, text: string) {
+  /** Enregistre une instruction. ownerId optionnel : profil auquel l'instruction est attribuée (ex. quand on publie pour un autre). */
+  function saveInstruction(name: string, text: string, ownerId?: string) {
     const newInstructions = { ...savedInstructions, [name]: text };
     setSavedInstructions(newInstructions);
     getSupabase()?.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.id) {
-        const newOwners = { ...instructionOwners, [name]: session.user.id };
-        setInstructionOwners(newOwners);
-        _syncMyInstructionsToSupabase(newInstructions, newOwners, session.user.id).catch(() => {});
+      const rawId = session?.user?.id;
+      const effectiveOwnerId = ownerId ?? (rawId ? PREFIX_PROFILE + rawId : undefined);
+      const newOwners = { ...instructionOwners, [name]: effectiveOwnerId ?? (rawId ? PREFIX_PROFILE + rawId : '') };
+      setInstructionOwners(newOwners);
+      if (rawId) {
+        _syncAllInstructionsToSupabase(newInstructions, newOwners, rawId).catch(() => {});
       }
     });
   }
@@ -134,7 +171,7 @@ export function useInstructionsState() {
     setInstructionOwners(newOwners);
     getSupabase()?.auth.getSession().then(({ data: { session } }) => {
       if (session?.user?.id) {
-        _syncMyInstructionsToSupabase(newInstructions, newOwners, session.user.id).catch(() => {});
+        _syncAllInstructionsToSupabase(newInstructions, newOwners, session.user.id).catch(() => {});
       }
     });
   }
@@ -146,17 +183,7 @@ export function useInstructionsState() {
       const { data: { session } } = await sb.auth.getSession();
       const userId = session?.user?.id;
       if (!userId) return { ok: false, error: 'Connectez-vous pour enregistrer les instructions' };
-      const myInstructions: Record<string, string> = {};
-      for (const [k, v] of Object.entries(savedInstructions)) {
-        if (instructionOwners[k] === userId) myInstructions[k] = v;
-      }
-      const { error } = await sb
-        .from('saved_instructions')
-        .upsert(
-          { owner_id: userId, value: myInstructions, updated_at: new Date().toISOString() },
-          { onConflict: 'owner_id' }
-        );
-      if (error) throw new Error((error as { message?: string })?.message);
+      await _syncAllInstructionsToSupabase(savedInstructions, instructionOwners, userId);
       return { ok: true };
     } catch (e: unknown) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -166,10 +193,11 @@ export function useInstructionsState() {
   async function fetchInstructionsFromSupabase(): Promise<void> {
     const sb = getSupabase();
     if (!sb) return;
-    const { data, error } = await sb.from('saved_instructions').select('owner_id, value');
-    if (error || !data?.length) return;
+    const { data, error } = await sb.from('saved_instructions').select('owner_type, owner_id, value');
+    if (error) return;
+    const rows = (data ?? []) as SavedInstructionRow[];
+    if (rows.length === 0) return;
 
-    // Lire les instructions locales depuis localStorage pour fusion
     let localInstructions: Record<string, string> = {};
     let localOwners: Record<string, string> = {};
     try {
@@ -179,12 +207,7 @@ export function useInstructionsState() {
       if (rawOwners) localOwners = JSON.parse(rawOwners);
     } catch { /* ignorer */ }
 
-    // Fusion intelligente : garder les locales sans owner, supprimer les révoquées, ajouter les Supabase
-    const { merged, owners } = mergeInstructionsFromSupabase(
-      data as Array<{ owner_id: string; value: Record<string, string> | string }>,
-      localInstructions,
-      localOwners
-    );
+    const { merged, owners } = mergeInstructionsFromSupabase(rows, localInstructions, localOwners);
     setSavedInstructions(merged);
     setInstructionOwners(owners);
   }

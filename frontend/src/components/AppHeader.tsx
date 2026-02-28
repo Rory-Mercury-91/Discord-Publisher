@@ -11,7 +11,7 @@ import { useToast } from './ToastProvider';
 const APP_VERSION = rootPkg.version;
 const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
 
-export type AppMode = 'translator' | 'user';
+export type AppMode = 'translator' | 'user' | 'listform';
 
 export interface AppHeaderProps {
   mode: AppMode;
@@ -179,7 +179,8 @@ export default function AppHeader({
           </div>
         </div>
 
-        {/* Barre de recherche (flex center) */}
+        {/* Barre de recherche (affichée uniquement en mode Traducteur) */}
+        {mode === 'translator' && (
         <div ref={searchWrapRef} style={{ flex: 1, maxWidth: 520, margin: '0 auto', position: 'relative' }}>
           <div style={{ position: 'relative' }}>
             <span style={{
@@ -188,14 +189,13 @@ export default function AppHeader({
             }}>🔍</span>
             <input
               type="text"
+              className="app-input"
               value={query}
               onChange={e => { setQuery(e.target.value); setShowDrop(true); }}
               onFocus={() => query.trim() && setShowDrop(true)}
-              placeholder={mode === 'translator' ? 'Rechercher parmi mes publications…' : 'Rechercher une traduction…'}
+              placeholder="Rechercher parmi mes publications…"
               style={{
-                width: '100%', padding: '7px 12px 7px 30px', borderRadius: 8,
-                border: '1px solid var(--border)', background: 'rgba(255,255,255,0.04)',
-                color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
+                width: '100%', paddingLeft: 30, boxSizing: 'border-box',
               }}
             />
           </div>
@@ -253,6 +253,7 @@ export default function AppHeader({
             </div>
           )}
         </div>
+        )}
 
         {/* Actions système (droite) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 'auto', flexShrink: 0 }}>
@@ -334,11 +335,15 @@ export default function AppHeader({
           borderRadius: 7, overflow: 'hidden',
         }}>
 
-          {(['translator', 'user'] as const).map((m, i) => (
+          {[
+            ['translator', '✏️ Traducteur', 'Mode traducteur'] as const,
+            ['user', '📚 Bibliothèque', 'Mode utilisateur – Bibliothèque des jeux'] as const,
+            ...(profile?.list_manager ? [['listform', '📋 Formulaire liste', 'Formulaire liste (page web)'] as const] : []),
+          ].map(([m, label, title], i) => (
             <button
               key={m}
-              onClick={() => onModeChange(m)}
-              title={m === 'translator' ? 'Mode traducteur' : 'Mode utilisateur – Bibliothèque des jeux'}
+              onClick={() => onModeChange(m as AppMode)}
+              title={title}
               style={{
                 padding: '4px 12px', fontSize: 12,
                 fontWeight: mode === m ? 700 : 400,
@@ -350,7 +355,7 @@ export default function AppHeader({
                 display: 'flex', alignItems: 'center', gap: 5,
               }}
             >
-              {m === 'translator' ? '✏️ Traducteur' : '📚 Bibliothèque'}
+              {label}
             </button>
           ))}
         </div>

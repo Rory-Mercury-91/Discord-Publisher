@@ -11,6 +11,9 @@
   --error: #ef4444;
   --text: #f1f5f9;
   --placeholder: rgba(255,255,255,0.3);
+  /* Arrière-plan unifié des modales (fond semi-transparent + flou) */
+  --modal-backdrop: rgba(0,0,0,0.5);
+  --modal-backdrop-blur: blur(4px);
 }
 
 [data-theme="light"]{
@@ -24,6 +27,8 @@
   --error: #ef4444;
   --text: #1e293b;
   --placeholder: rgba(0,0,0,0.4);
+  --modal-backdrop: rgba(0,0,0,0.4);
+  --modal-backdrop-blur: blur(4px);
 }
 
 input, textarea {
@@ -40,6 +45,65 @@ select {
   color: inherit;
   padding:8px;
   border-radius:6px;
+}
+
+/* Champs de formulaire unifiés (input + select) — même rendu partout */
+.app-input,
+input.app-input {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  box-sizing: border-box;
+  min-height: 34px;
+}
+
+.app-select,
+select.app-select {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  min-height: 34px;
+  height: 34px;
+  box-sizing: border-box;
+}
+
+/* Barre Bibliothèque : même hauteur pour input, select et boutons */
+.library-toolbar-input.app-input,
+input.library-toolbar-input {
+  height: 34px;
+}
+
+.library-toolbar-select.app-select,
+select.library-toolbar-select {
+  height: 34px;
+}
+
+.library-toolbar-btn {
+  width: 34px;
+  height: 34px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-theme="light"] .app-input,
+[data-theme="light"] input.app-input {
+  background: rgba(0,0,0,0.04);
+  border-color: var(--border);
+}
+
+[data-theme="light"] .app-select,
+[data-theme="light"] select.app-select {
+  background: var(--panel);
+  border-color: var(--border);
 }
 
 [data-theme="light"] input,
@@ -96,7 +160,7 @@ body{margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Seg
 }
 
 button{background:transparent; border:1px solid var(--border); color:inherit; padding:8px 10px; border-radius:6px; cursor:pointer}
-.modal{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(2,6,23,0.6)}
+.modal{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--modal-backdrop); backdrop-filter:var(--modal-backdrop-blur)}
 .modal .panel{background:var(--panel); padding:12px; border-radius:8px; width:640px; max-width:95%}
 
 /* App-specific styles */

@@ -1,10 +1,43 @@
 // frontend\src\components\SettingsComponents\PreferenceSettings.tsx
 import { useEffect, useState } from 'react';
 
-const sectionStyle: React.CSSProperties = { /* même que avant */ };
-const inputStyle: React.CSSProperties = { /* même */ };
-const labelStyle: React.CSSProperties = { /* même */ };
-const gridStyle: React.CSSProperties = { /* même */ };
+const sectionStyle: React.CSSProperties = {
+  border: '1px solid var(--border)',
+  borderRadius: 14,
+  padding: 20,
+  background: 'rgba(255,255,255,0.02)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 16,
+  boxSizing: 'border-box',
+  minHeight: 0,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: '1px solid var(--border)',
+  background: 'rgba(255,255,255,0.05)',
+  color: 'var(--text)',
+  fontSize: 14,
+  boxSizing: 'border-box',
+};
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: 14,
+  color: 'var(--muted)',
+  fontWeight: 500,
+};
+
+const gridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '1fr 1fr',
+  gap: 16,
+  alignItems: 'stretch',
+};
+
 const fullWidthStyle: React.CSSProperties = { gridColumn: '1 / -1' };
 
 type WindowState = 'normal' | 'maximized' | 'fullscreen' | 'minimized';
@@ -76,12 +109,20 @@ export default function PreferenceSettings() {
     localStorage.setItem('windowState', state);
   };
 
+  const sectionTitleStyle: React.CSSProperties = {
+    margin: 0,
+    marginBottom: 4,
+    fontSize: '1rem',
+    fontWeight: 600,
+    color: 'var(--text)',
+  };
+
   return (
     <div style={gridStyle}>
       {/* Clé API */}
       <section style={sectionStyle}>
-        <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🔑 Clé API</h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <h4 style={sectionTitleStyle}>🔑 Clé API</h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <label style={labelStyle}>Clé d'accès à l'API</label>
           <input
             type="password"
@@ -90,16 +131,13 @@ export default function PreferenceSettings() {
             placeholder="Votre clé secrète"
             style={inputStyle}
           />
-          <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0 }}>
-            🔒 Transmise par l'administrateur. Nécessaire pour publier.
-          </p>
         </div>
       </section>
 
       {/* Fenêtre */}
       <section style={sectionStyle}>
-        <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🪟 Affichage de la fenêtre</h4>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <h4 style={sectionTitleStyle}>🪟 Affichage de la fenêtre</h4>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <label style={labelStyle}>Mode d'affichage au démarrage</label>
           <select
             value={windowState}
@@ -116,12 +154,36 @@ export default function PreferenceSettings() {
 
       {/* Labels par défaut */}
       <section style={{ ...sectionStyle, ...fullWidthStyle }}>
-        <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🏷️ Labels par défaut</h4>
-        <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
-          Valeurs préservées lors de la réinitialisation du formulaire.
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
+          <div>
+            <h4 style={sectionTitleStyle}>🏷️ Labels par défaut</h4>
+            <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, lineHeight: 1.5 }}>
+              Valeurs préservées lors de la réinitialisation du formulaire.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setDefaultTranslationLabel('Traduction');
+              setDefaultModLabel('Mod');
+            }}
+            style={{
+              padding: '8px 14px',
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+              background: 'rgba(255,255,255,0.05)',
+              color: 'var(--text)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            Restaurer
+          </button>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <label style={labelStyle}>Label de traduction</label>
             <input
               type="text"
@@ -131,7 +193,7 @@ export default function PreferenceSettings() {
               style={inputStyle}
             />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <label style={labelStyle}>Label de mod</label>
             <input
               type="text"
@@ -146,102 +208,92 @@ export default function PreferenceSettings() {
 
       {/* Mode d'affichage Bibliothèque */}
       <section style={{ ...sectionStyle, ...fullWidthStyle }}>
-        <h4 style={{ margin: 0, fontSize: '0.95rem' }}>📚 Préférences de la Bibliothèque</h4>
-        <div style={{
-          background: 'rgba(99,102,241,0.05)',
-          border: '1px solid rgba(99,102,241,0.2)',
-          borderRadius: 8,
-          padding: 16
-        }}>
-          <div style={{ marginBottom: 12, fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-            Mode d'affichage
-          </div>
-
-          <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 16, lineHeight: 1.6 }}>
-            Choisissez comment afficher les jeux dans la bibliothèque :
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {/* Compact */}
-            <label style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 12,
-              padding: 14,
-              borderRadius: 8,
-              background: displayMode === 'compact' ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.02)',
-              border: `1px solid ${displayMode === 'compact' ? 'rgba(99,102,241,0.4)' : 'var(--border)'}`,
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}>
-              <input
-                type="radio"
-                checked={displayMode === 'compact'}
-                onChange={() => setDisplayMode('compact')}
-                style={{ marginTop: 2, accentColor: 'var(--accent)', cursor: 'pointer' }}
-              />
-              <div style={{ flex: 1 }}>
-                <div style={{
-                  fontWeight: 600,
-                  fontSize: 14,
-                  color: displayMode === 'compact' ? 'var(--accent)' : 'var(--text)',
-                  marginBottom: 4
-                }}>
-                  📋 Information directe
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  Affichage compact avec toutes les informations et liens visibles directement sur la carte.
-                  Idéal pour un accès rapide.
-                  <div style={{ marginTop: 6, fontSize: 11, opacity: 0.7 }}>
-                    • Versions visibles<br />
-                    • Traducteur + type de traduction<br />
-                    • Date de mise à jour<br />
-                    • Liens directs (jeu + traduction)
-                  </div>
+        <h4 style={sectionTitleStyle}>📚 Préférences de la Bibliothèque</h4>
+        <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0, marginBottom: 16, lineHeight: 1.5 }}>
+          Choisissez comment afficher les jeux dans la bibliothèque :
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {/* Compact — gauche */}
+          <label style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 14,
+            padding: 16,
+            borderRadius: 10,
+            background: displayMode === 'compact' ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.03)',
+            border: `1px solid ${displayMode === 'compact' ? 'rgba(99,102,241,0.35)' : 'var(--border)'}`,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            minHeight: 0,
+          }}>
+            <input
+              type="radio"
+              checked={displayMode === 'compact'}
+              onChange={() => setDisplayMode('compact')}
+              style={{ marginTop: 3, accentColor: 'var(--accent)', cursor: 'pointer' }}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontWeight: 600,
+                fontSize: 14,
+                color: displayMode === 'compact' ? 'var(--accent)' : 'var(--text)',
+                marginBottom: 6,
+              }}>
+                📋 Information directe
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>
+                Affichage compact avec toutes les informations et liens visibles directement sur la carte.
+                Idéal pour un accès rapide.
+                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
+                  • Versions visibles<br />
+                  • Traducteur + type de traduction<br />
+                  • Date de mise à jour<br />
+                  • Liens directs (jeu + traduction)
                 </div>
               </div>
-            </label>
+            </div>
+          </label>
 
-            {/* Enriched */}
-            <label style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 12,
-              padding: 14,
-              borderRadius: 8,
-              background: displayMode === 'enriched' ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.02)',
-              border: `1px solid ${displayMode === 'enriched' ? 'rgba(99,102,241,0.4)' : 'var(--border)'}`,
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}>
-              <input
-                type="radio"
-                checked={displayMode === 'enriched'}
-                onChange={() => setDisplayMode('enriched')}
-                style={{ marginTop: 2, accentColor: 'var(--accent)', cursor: 'pointer' }}
-              />
-              <div style={{ flex: 1 }}>
-                <div style={{
-                  fontWeight: 600,
-                  fontSize: 14,
-                  color: displayMode === 'enriched' ? 'var(--accent)' : 'var(--text)',
-                  marginBottom: 4
-                }}>
-                  ✨ Information enrichie
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  Affichage épuré avec un bouton "Plus d'informations" qui ouvre une modale détaillée.
-                  Idéal pour une vue d'ensemble claire.
-                  <div style={{ marginTop: 6, fontSize: 11, opacity: 0.7 }}>
-                    • Synopsis (FR/EN)<br />
-                    • Tags colorés<br />
-                    • Toutes les informations du jeu<br />
-                    • Liens + invitation Discord
-                  </div>
+          {/* Enriched — droite */}
+          <label style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 14,
+            padding: 16,
+            borderRadius: 10,
+            background: displayMode === 'enriched' ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.03)',
+            border: `1px solid ${displayMode === 'enriched' ? 'rgba(99,102,241,0.35)' : 'var(--border)'}`,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            minHeight: 0,
+          }}>
+            <input
+              type="radio"
+              checked={displayMode === 'enriched'}
+              onChange={() => setDisplayMode('enriched')}
+              style={{ marginTop: 3, accentColor: 'var(--accent)', cursor: 'pointer' }}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontWeight: 600,
+                fontSize: 14,
+                color: displayMode === 'enriched' ? 'var(--accent)' : 'var(--text)',
+                marginBottom: 6,
+              }}>
+                ✨ Information enrichie
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.55 }}>
+                Affichage épuré avec un bouton « Plus d'informations » qui ouvre une modale détaillée.
+                Idéal pour une vue d'ensemble claire.
+                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
+                  • Synopsis (FR/EN)<br />
+                  • Tags colorés<br />
+                  • Toutes les informations du jeu<br />
+                  • Liens + invitation Discord
                 </div>
               </div>
-            </label>
-          </div>
+            </div>
+          </label>
         </div>
       </section>
     </div>

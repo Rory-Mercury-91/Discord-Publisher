@@ -1,4 +1,4 @@
-﻿"""
+"""
 Commandes slash Discord (/generer-cle, /check_versions, /cleanup, /check_help).
 Dependances : config, api_key_auth, supabase_client, version_checker, publisher_bot
 Logger       : [publisher]
@@ -172,10 +172,10 @@ def register_commands(bot):
 
     @bot.tree.command(
         name="check_versions",
-        description="Controle les versions F95 (salon my)",
+        description="Controle les versions F95 (tous les salons forum)",
     )
     async def check_versions(interaction: discord.Interaction):
-        """Lance le controle des versions sur le salon my."""
+        """Lance le controle des versions sur tous les salons forum du serveur."""
         try:
             await interaction.response.defer(ephemeral=True)
         except Exception:
@@ -272,7 +272,7 @@ def register_commands(bot):
             "A entrer dans l'application → ⚙️ Configuration → Preferences → **Cle d'acces a l'API**.\n"
             "L'ancienne cle est automatiquement revoquee a chaque renouvellement.\n\n"
             "**🔍 Controle des versions**\n"
-            "**/check_versions** — Lance manuellement le controle des versions F95 sur le forum.\n\n"
+            "**/check_versions** — Lance manuellement le controle des versions F95 sur tous les salons forum.\n\n"
             "**🧹 Nettoyage**\n"
             "**/cleanup_empty_messages** — Supprime les messages vides dans les threads (sauf metadonnees).\n\n"
             "**ℹ️ Taches automatiques**\n"

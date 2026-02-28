@@ -3,6 +3,7 @@ import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useModalScrollLock } from '../hooks/useModalScrollLock';
 import { getSupabase } from '../lib/supabase';
 import { useAuth } from '../state/authContext';
+import Toggle from './Toggle';
 import { useToast } from './ToastProvider';
 
 const DISCORD_ID_HELP = `Pour récupérer votre ID Discord (mode développeur actif) :
@@ -14,44 +15,6 @@ const DISCORD_ID_HELP = `Pour récupérer votre ID Discord (mode développeur ac
 2. Une fois le mode dev actif : clic droit sur votre pseudo (dans un salon ou la liste des membres) > "Copier l'identifiant du membre".
 
 L'ID ressemble à un long nombre (ex. 394893413843206155).`;
-
-// Petit composant Toggle réutilisable (style LogsModal)
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
-  return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-      <div
-        style={{
-          position: 'relative',
-          width: 40,
-          height: 22,
-          borderRadius: 11,
-          background: checked ? 'var(--accent)' : 'var(--border)',
-          transition: 'background 0.2s ease',
-          cursor: 'pointer',
-          flexShrink: 0
-        }}
-        onClick={onChange}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            top: 3,
-            left: checked ? 21 : 3,
-            width: 16,
-            height: 16,
-            borderRadius: '50%',
-            background: '#fff',
-            transition: 'left 0.2s ease',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-          }}
-        />
-      </div>
-      <span style={{ fontSize: 13, fontWeight: 500, color: checked ? 'var(--text)' : 'var(--muted)' }}>
-        {label}
-      </span>
-    </label>
-  );
-}
 
 export default function AuthModal() {
   const { user, profile, loading, signUp, signIn, updateProfile } = useAuth();
@@ -196,7 +159,7 @@ export default function AuthModal() {
 
   if (loading) {
     return (
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999 }}>
+      <div style={{ position: 'fixed', inset: 0, background: 'var(--modal-backdrop)', backdropFilter: 'var(--modal-backdrop-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999 }}>
         <div style={{ color: 'var(--text)', fontSize: 18 }}>Chargement…</div>
       </div>
     );
@@ -205,7 +168,7 @@ export default function AuthModal() {
   if (!needProfile && user && profile?.discord_id?.trim()) return null;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: 20, boxSizing: 'border-box' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--modal-backdrop)', backdropFilter: 'var(--modal-backdrop-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: 20, boxSizing: 'border-box' }}>
       <div style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 16, padding: 28, maxWidth: 440, width: '100%', boxShadow: '0 12px 40px rgba(0,0,0,0.4)' }}>
         <h2 style={{ margin: '0 0 20px', fontSize: 20 }}>
           {needProfile || mode === 'profile'
@@ -285,7 +248,7 @@ export default function AuthModal() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <Toggle
                   checked={rememberMe}
-                  onChange={() => setRememberMe(v => !v)}
+                  onChange={setRememberMe}
                   label="Rester connecté"
                 />
                 <button type="submit" disabled={busy} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', cursor: busy ? 'not-allowed' : 'pointer', fontWeight: 600, flexShrink: 0 }}>

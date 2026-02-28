@@ -1,3 +1,4 @@
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ export default function ConfirmModal({
   cancelText = 'Annuler',
   type = 'warning'
 }: ConfirmModalProps) {
+  useEscapeKey(onCancel, isOpen);
   if (!isOpen) return null;
 
   const getTypeColor = () => {
@@ -39,14 +41,13 @@ export default function ConfirmModal({
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0,0,0,0.7)',
+        background: 'var(--modal-backdrop)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 100000, // ✅ AU-DESSUS du ConfigModal (99999)
-        backdropFilter: 'blur(4px)'
+        backdropFilter: 'var(--modal-backdrop-blur)'
       }}
-      onClick={onCancel}
     >
       <div
         style={{

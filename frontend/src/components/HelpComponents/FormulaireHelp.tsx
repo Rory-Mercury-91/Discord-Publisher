@@ -2,9 +2,11 @@
 import { useState } from 'react';
 import scriptTampermonkeyRaw from '../../assets/DiscordPublisherDataExtractor.js?raw';
 import { tauriAPI } from '../../lib/tauri-api';
+import { useToast } from '../ToastProvider';
 
 export default function FormulaireHelp() {
   const [showGuide, setShowGuide] = useState(false);
+  const { showToast } = useToast();
 
   const handleDownloadScript = () => {
     const blob = new Blob([scriptTampermonkeyRaw], { type: 'text/javascript' });
@@ -14,6 +16,7 @@ export default function FormulaireHelp() {
     a.download = 'DiscordPublisherDataExtractor.user.js';
     a.click();
     URL.revokeObjectURL(url);
+    showToast('Script Tampermonkey téléchargé avec succès', 'success');
   };
 
   return (

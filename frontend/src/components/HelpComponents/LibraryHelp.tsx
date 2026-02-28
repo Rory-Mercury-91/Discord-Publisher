@@ -15,13 +15,8 @@ export default function LibraryHelp() {
       </section>
 
       {/* Modes d’affichage */}
-      <section style={{
-        background: 'rgba(99, 102, 241, 0.08)',
-        border: '1px solid rgba(99, 102, 241, 0.25)',
-        borderRadius: 8,
-        padding: 16
-      }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#6366f1' }}>
+      <section className="help-section help-section--info">
+        <h4 className="help-section__title">
           📋 Modes d’affichage
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
@@ -37,13 +32,8 @@ export default function LibraryHelp() {
       </section>
 
       {/* Outils de recherche et filtres */}
-      <section style={{
-        background: 'rgba(74, 222, 128, 0.08)',
-        border: '1px solid rgba(74, 222, 128, 0.25)',
-        borderRadius: 8,
-        padding: 16
-      }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#4ade80' }}>
+      <section className="help-section help-section--success">
+        <h4 className="help-section__title">
           🔍 Recherche et filtres
         </h4>
         <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
@@ -58,13 +48,8 @@ export default function LibraryHelp() {
       </section>
 
       {/* Statut de synchro */}
-      <section style={{
-        background: 'rgba(249, 115, 22, 0.08)',
-        border: '1px solid rgba(249, 115, 22, 0.25)',
-        borderRadius: 8,
-        padding: 16
-      }}>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: '#fb923c' }}>
+      <section className="help-section help-section--warning">
+        <h4 className="help-section__title">
           🔄 Statut de synchro
         </h4>
         <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: '0 0 12px 0' }}>
@@ -77,9 +62,9 @@ export default function LibraryHelp() {
         </ul>
       </section>
 
-      {/* Actions sur les cartes */}
-      <section>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 16, color: 'var(--accent)' }}>
+      {/* Actions sur les jeux */}
+      <section className="help-section help-section--info">
+        <h4 className="help-section__title">
           🎮 Actions sur les jeux
         </h4>
         <ul style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', margin: 0, paddingLeft: 20 }}>
@@ -90,14 +75,7 @@ export default function LibraryHelp() {
         </ul>
       </section>
 
-      <section style={{
-        background: 'rgba(255,255,255,0.05)',
-        border: '1px solid var(--border)',
-        borderRadius: 8,
-        padding: 16,
-        fontSize: 13,
-        color: 'var(--muted)'
-      }}>
+      <section className="help-section help-section--tip" style={{ fontSize: 13 }}>
         💡 <strong>Astuce :</strong> La bibliothèque se met à jour automatiquement toutes les 2 heures grâce au bot. Vous pouvez forcer la mise à jour avec le bouton ↻.
       </section>
 

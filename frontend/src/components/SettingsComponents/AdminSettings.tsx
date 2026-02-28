@@ -35,10 +35,11 @@ interface AdminSettingsProps {
 export default function AdminSettings({ onClose }: AdminSettingsProps) {
   const { showToast } = useToast();
   const { profile } = useAuth();
-  const { importFullConfig, clearAllAppData, setApiBaseFromSupabase } = useApp();
+  const { importFullConfig, clearAllAppData, setApiBaseFromSupabase, listFormUrl } = useApp();
   const { confirm } = useConfirm();
 
   const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('apiUrl') || localStorage.getItem('apiBase') || 'http://138.2.182.125:8080');
+  const [listFormUrlLocal, setListFormUrlLocal] = useState('');
   const [adminUnlocked, setAdminUnlocked] = useState(() => !!localStorage.getItem(STORAGE_KEY_MASTER_ADMIN));
   const [adminCode, setAdminCode] = useState('');
   const [adminCodeError, setAdminCodeError] = useState<string | null>(null);
@@ -165,28 +166,70 @@ export default function AdminSettings({ onClose }: AdminSettingsProps) {
     }
   };
 
-  // ─── Sauvegarde auto URL ────────────────────────────────────────────────
+  // Synchroniser l'URL formulaire liste depuis le contexte (chargée depuis app_config)
   useEffect(() => {
+    setListFormUrlLocal(listFormUrl ?? '');
+  }, [listFormUrl]);
+
+  // ─── Sauvegarde config (API URL + URL formulaire liste) ─────────────────
+  const saveConfig = (silent = false) => {
     if (!adminUnlocked) return;
-    const base = apiUrl.trim().replace(/\/+$/, '');
-    if (!base) return;
-
-    localStorage.setItem('apiUrl', base);
-    localStorage.setItem('apiBase', base);
-    setApiBaseFromSupabase(base);
-
     const sb = getSupabase();
-    if (sb) {
-      sb.from('app_config')
-        .upsert(
-          { key: 'api_base_url', value: base, updated_at: new Date().toISOString() },
-          { onConflict: 'key' }
-        )
-        .then(r => {
-          if (r?.error) console.warn('app_config:', r.error.message);
-        });
+    if (!sb) return;
+
+    const base = apiUrl.trim().replace(/\/+$/, '');
+    if (base) {
+      localStorage.setItem('apiUrl', base);
+      localStorage.setItem('apiBase', base);
+      setApiBaseFromSupabase(base);
     }
-  }, [apiUrl, adminUnlocked, setApiBaseFromSupabase]);
+    const listForm = listFormUrlLocal.trim() || '';
+
+    const rows = [
+      ...(base ? [{ key: 'api_base_url', value: base, updated_at: new Date().toISOString() }] : []),
+      { key: 'list_form_url', value: listForm, updated_at: new Date().toISOString() },
+    ];
+    if (rows.length === 0) return;
+    sb.from('app_config')
+      .upsert(rows, { onConflict: 'key' })
+      .then(r => {
+        if (r?.error) {
+          if (!silent) showToast('Erreur enregistrement config', 'error');
+        } else if (!silent) {
+          showToast('Config enregistrée (API + URL formulaire liste)', 'success');
+        }
+      });
+  };
+
+  const handleSaveConfig = () => saveConfig(false);
+
+  // Refs pour lire les dernières valeurs au démontage (sauvegarde auto à la fermeture)
+  const apiUrlRef = useRef(apiUrl);
+  const listFormUrlLocalRef = useRef(listFormUrlLocal);
+  apiUrlRef.current = apiUrl;
+  listFormUrlLocalRef.current = listFormUrlLocal;
+
+  useEffect(() => {
+    return () => {
+      if (!adminUnlocked) return;
+      const sb = getSupabase();
+      if (!sb) return;
+      const base = (apiUrlRef.current ?? '').trim().replace(/\/+$/, '');
+      const listForm = (listFormUrlLocalRef.current ?? '').trim() || '';
+      if (base) {
+        localStorage.setItem('apiUrl', base);
+        localStorage.setItem('apiBase', base);
+        setApiBaseFromSupabase(base);
+      }
+      const rows = [
+        ...(base ? [{ key: 'api_base_url', value: base, updated_at: new Date().toISOString() }] : []),
+        { key: 'list_form_url', value: listForm, updated_at: new Date().toISOString() },
+      ];
+      if (rows.length > 0) {
+        sb.from('app_config').upsert(rows, { onConflict: 'key' }).then(() => {});
+      }
+    };
+  }, [adminUnlocked, setApiBaseFromSupabase]);
 
   // ─── Export / Import / Nettoyage ────────────────────────────────────────
   const handleExportConfig = () => {
@@ -261,24 +304,89 @@ export default function AdminSettings({ onClose }: AdminSettingsProps) {
     }
   };
 
+  const handleLockAdmin = () => {
+    localStorage.removeItem(STORAGE_KEY_MASTER_ADMIN);
+    setAdminUnlocked(false);
+    setAdminCode('');
+    setAdminCodeError(null);
+    window.dispatchEvent(new CustomEvent('masterAdminLocked'));
+    showToast('Mode admin désactivé', 'success');
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {adminUnlocked ? (
         <>
-          {/* URL API */}
+          {/* Déconnexion du mode admin */}
+          <section style={{ ...sectionStyle, background: 'rgba(100,116,139,0.08)', border: '1px solid rgba(100,116,139,0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🛡️ Mode administrateur</h4>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>Vous êtes connecté en tant qu’administrateur.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleLockAdmin}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  border: '1px solid rgba(239,68,68,0.4)',
+                  background: 'rgba(239,68,68,0.1)',
+                  color: '#f87171',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Se déconnecter du mode admin
+              </button>
+            </div>
+          </section>
+
+          {/* Config globale : URL API + URL formulaire liste */}
           <section style={sectionStyle}>
-            <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🌐 URL de l'API</h4>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <input
-                type="text"
-                value={apiUrl}
-                onChange={e => setApiUrl(e.target.value)}
-                placeholder="http://138.2.182.125:8080"
-                style={{ ...inputStyle, flex: 1 }}
-              />
-              <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-                Propagée via Supabase
-              </span>
+            <h4 style={{ margin: 0, fontSize: '0.95rem' }}>🌐 Configuration globale</h4>
+            <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 12px' }}>
+              URL de l&apos;API et URL du formulaire liste (script/tableur). Propagées via Supabase pour tous les utilisateurs.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>URL de l&apos;API</label>
+                <input
+                  type="text"
+                  value={apiUrl}
+                  onChange={e => setApiUrl(e.target.value)}
+                  placeholder="http://138.2.182.125:8080"
+                  style={{ ...inputStyle }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>URL du formulaire liste (script / tableur)</label>
+                <input
+                  type="url"
+                  value={listFormUrlLocal}
+                  onChange={e => setListFormUrlLocal(e.target.value)}
+                  placeholder="https://script.google.com/... ou page du formulaire"
+                  style={{ ...inputStyle }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveConfig}
+                style={{
+                  alignSelf: 'flex-start',
+                  padding: '10px 18px',
+                  borderRadius: 10,
+                  border: '1px solid var(--accent)',
+                  background: 'rgba(99,102,241,0.2)',
+                  color: 'var(--accent)',
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
+              >
+                Enregistrer la config
+              </button>
             </div>
           </section>
 

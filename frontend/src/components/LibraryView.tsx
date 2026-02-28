@@ -1,9 +1,11 @@
 // frontend/src/components/LibraryView.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { tauriAPI } from '../lib/tauri-api';
+import { trackTranslationClick } from '../lib/api-helpers';
 import { useApp } from '../state/appContext';
 import GameDetailModal from './GameDetailModal';
 import StatsView from './StatsView';
+import Toggle from './Toggle';
 import { useToast } from './ToastProvider';
 
 /* ── Types exportés (réutilisés dans StatsView + GameDetailModal) ─────────────── */
@@ -40,6 +42,14 @@ type AppMode = 'translator' | 'user';
 /* ── Sync helpers ─────────────────────────────────────────────── */
 function normalizeVersion(v: string) {
   return (v || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
+/** Formate une chaîne date (ISO ou autre) en français pour l'affichage. */
+function formatDateFr(value: string | undefined | null): string {
+  if (!value || !value.trim()) return '';
+  const d = new Date(value.trim());
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 function getSyncStatus(g: GameF95): SyncStatus {
@@ -114,8 +124,16 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const [isModeChanging, setIsModeChanging] = useState(false);
-  // ── Toggle tri par date ──────────────────────────────────────
   const [dateSort, setDateSort] = useState(false);
+  // Pagination : taille de page (nombre ou -1 = illimité), page courante (0-based)
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      const v = localStorage.getItem('library_page_size');
+      const n = v ? parseInt(v, 10) : 100;
+      return [50, 100, 250, 500, 1000, -1].includes(n) ? n : 100;
+    } catch { return 100; }
+  });
+  const [currentPage, setCurrentPage] = useState(0);
 
   const [displayMode, setDisplayMode] = useState<'compact' | 'enriched'>(() => {
     try {
@@ -138,12 +156,19 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     return () => window.removeEventListener('libraryDisplayModeChanged', handler as EventListener);
   }, []);
 
-  const toggleDateSort = () => {
-    setDateSort(prev => {
-      if (!prev) setSortKey('nom_du_jeu'); // reset sort manuel
-      return !prev;
-    });
+  const handleDateSortChange = (checked: boolean) => {
+    setDateSort(checked);
+    if (!checked) setSortKey('nom_du_jeu');
   };
+
+  useEffect(() => {
+    try { localStorage.setItem('library_page_size', String(pageSize)); } catch { /* ignore */ }
+  }, [pageSize]);
+
+  // Remettre à la page 0 quand les filtres changent
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [search, filterStatut, filterTrad, filterType, filterTradType, filterSync]);
 
   /* ── Edit ── */
   const handleEdit = useCallback((post: any) => {
@@ -243,6 +268,20 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     });
   }, [gamesEnriched, search, filterStatut, filterTrad, filterType, filterTradType, filterSync, sortKey, sortDir, dateSort]);
 
+  const totalPages = pageSize === -1 ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize));
+  const effectivePage = Math.min(currentPage, totalPages - 1);
+  const paginatedItems = useMemo(() => {
+    if (pageSize === -1) return filtered;
+    const start = effectivePage * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, pageSize, effectivePage]);
+
+  // Ramener la page courante dans les bornes si le nombre de pages diminue (ex. changement de taille de page)
+  useEffect(() => {
+    const total = pageSize === -1 ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize));
+    setCurrentPage(p => Math.min(p, total - 1));
+  }, [filtered.length, pageSize]);
+
   const resetFilters = () => {
     setSearch('');
     setFilterStatut('');
@@ -258,19 +297,13 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     else { setSortKey(key); setSortDir(1); }
   };
 
-  const sel: React.CSSProperties = {
-    height: 30, padding: '0 8px', borderRadius: 6,
-    border: '1px solid var(--border)',
-    background: 'var(--bg)', color: 'var(--text)',
-    fontSize: 12, cursor: 'pointer',
-  };
 
   /* ══════════ RENDER ══════════ */
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg)' }}>
 
       {/* ── Onglets ── */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', padding: '0 16px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', padding: '0 16px 12px 16px', flexShrink: 0 }}>
         {([['library', '📚 Bibliothèque'], ['stats', '📊 Statistiques']] as const).map(([k, label]) => (
           <button
             key={k}
@@ -294,22 +327,35 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
       {/* ══════════ BIBLIOTHÈQUE ══════════ */}
       {tab === 'library' && (
         <>
-          {/* Toolbar */}
-          <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-            {/* Filtres sync */}
-            <div style={{ display: 'flex', gap: 4 }}>
+          {/* Toolbar : hauteur 34px pour aligner badges, toggle, input et selects */}
+          <div style={{
+            height: 34,
+            padding: '0 16px',
+            marginTop: 4,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+            alignItems: 'center',
+            flexShrink: 0,
+          }}>
+            {/* Filtres sync + tri par date */}
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', height: 34 }}>
               {([
-                ['', 'Tous', 'var(--muted)', 'var(--border)'],
+                ['', '📚 Tous', 'var(--accent)', 'var(--accent)'],
                 ['ok', '✓ À jour', SYNC_META.ok.text, SYNC_META.ok.border],
                 ['outdated', '⚠ Non à jour', SYNC_META.outdated.text, SYNC_META.outdated.border],
-                ['unknown', '? Inconnu', SYNC_META.unknown.text, SYNC_META.unknown.border],
               ] as [string, string, string, string][]).map(([val, label, col, border]) => (
                 <button
                   key={val}
+                  type="button"
+                  title={val === '' && lastSync
+                    ? `Cache local : ${lastSync.toLocaleTimeString('fr-FR')} — mis à jour automatiquement toutes les 2h par le bot`
+                    : val === '' ? 'Afficher tous les jeux' : undefined}
                   onClick={() => setFilterSync(val as any)}
                   style={{
-                    padding: '3px 10px',
-                    borderRadius: 20,
+                    height: 28,
+                    padding: '0 10px',
+                    borderRadius: 14,
                     border: `1px solid ${filterSync === val ? border : 'var(--border)'}`,
                     background: filterSync === val ? `${border}22` : 'transparent',
                     color: filterSync === val ? col : 'var(--muted)',
@@ -317,107 +363,136 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                     fontWeight: 600,
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    boxSizing: 'border-box',
                   }}
                 >
                   {label}
-                  {val && <span style={{ marginLeft: 5, background: 'rgba(128,128,128,0.15)', borderRadius: 10, padding: '0 5px' }}>{syncCounts[val as SyncStatus] ?? 0}</span>}
+                  <span style={{ marginLeft: 5 }}>
+                    {val ? (syncCounts[val as SyncStatus] ?? 0) : games.length}
+                  </span>
                 </button>
               ))}
+              <div style={{ width: 1, height: 20, background: 'var(--border)', flexShrink: 0 }} />
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <Toggle
+                  label="📅 Date"
+                  checked={dateSort}
+                  onChange={handleDateSortChange}
+                  title={dateSort ? 'Tri par date actif — désactiver pour revenir A→Z' : 'Trier par date de MAJ (récent en premier)'}
+                  size="sm"
+                />
+              </div>
             </div>
 
-            <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-
-            {/* Toggle tri par date */}
-            <button
-              onClick={toggleDateSort}
-              title={dateSort ? 'Tri par date actif — cliquer pour revenir A→Z' : 'Trier par date de MAJ (récent en premier)'}
-              style={{
-                padding: '3px 12px',
-                borderRadius: 20,
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: 'pointer',
-                border: `1px solid ${dateSort ? '#f59e0b' : 'var(--border)'}`,
-                background: dateSort ? 'rgba(245,158,11,0.12)' : 'transparent',
-                color: dateSort ? '#fbbf24' : 'var(--muted)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              📅 {dateSort ? 'Date ↓' : 'Date'}
-            </button>
-
-            <span style={{ fontWeight: 700, fontSize: 14 }}>📚</span>
-            {games.length > 0 && (
-              <span style={{ fontSize: 11, color: 'var(--muted)', background: 'rgba(128,128,128,0.1)', padding: '2px 8px', borderRadius: 10 }}>
-                {filtered.length}/{games.length}
-              </span>
-            )}
-
             <input
+              type="text"
+              className="app-input library-toolbar-input"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Rechercher dans le catalogue (jeu, traducteur)…"
-              style={{ ...sel, flex: 1, minWidth: 160, padding: '0 10px' }}
+              style={{ flex: 1, minWidth: 160 }}
             />
 
-            <select value={filterStatut} onChange={e => setFilterStatut(e.target.value)} style={sel}>
+            <select className="app-select" value={filterStatut} onChange={e => setFilterStatut(e.target.value)} style={{ minWidth: 120 }}>
               <option value="">Tous les statuts</option>
               {statuts.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select value={filterTrad} onChange={e => setFilterTrad(e.target.value)} style={sel}>
+            <select className="app-select" value={filterTrad} onChange={e => setFilterTrad(e.target.value)} style={{ minWidth: 140 }}>
               <option value="">Tous les traducteurs</option>
               {traducteurs.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
-            <select value={filterType} onChange={e => setFilterType(e.target.value)} style={sel}>
-              <option value="">Tous les types</option>
+            <select className="app-select" value={filterType} onChange={e => setFilterType(e.target.value)} style={{ minWidth: 100 }}>
+              <option value="">Tous les moteurs</option>
               {types.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
-            <select value={filterTradType} onChange={e => setFilterTradType(e.target.value)} style={sel}>
-              <option value="">Type de trad.</option>
+            <select className="app-select" value={filterTradType} onChange={e => setFilterTradType(e.target.value)} style={{ minWidth: 100 }}>
+              <option value="">Tous les types de trad.</option>
               {tradTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
-
-            {(search || filterStatut || filterTrad || filterType || filterTradType || filterSync) && (
-              <button onClick={resetFilters} style={{ ...sel, color: '#f87171', borderColor: 'rgba(239,68,68,0.3)' }}>✕ Reset</button>
-            )}
-
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+            <select
+              className="app-select library-toolbar-select"
+              value={pageSize}
+              onChange={e => setPageSize(Number(e.target.value))}
+              title="Nombre d'entrées par page"
+              style={{ width: 'auto', minWidth: 92 }}
+            >
+              <option value={50}>50 / page</option>
+              <option value={100}>100 / page</option>
+              <option value={250}>250 / page</option>
+              <option value={500}>500 / page</option>
+              <option value={1000}>1000 / page</option>
+              <option value={-1}>Illimité</option>
+            </select>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center', height: 34 }}>
               {(['grid', 'list'] as const).map(v => (
                 <button
                   key={v}
+                  type="button"
                   onClick={() => setView(v)}
+                  className="library-toolbar-btn"
                   style={{
-                    width: 30,
-                    height: 30,
+                    width: 34,
+                    height: 34,
                     borderRadius: 6,
                     border: '1px solid var(--border)',
                     background: view === v ? 'var(--accent)' : 'transparent',
                     color: view === v ? '#fff' : 'var(--muted)',
                     cursor: 'pointer',
-                    fontSize: 14,
+                    fontSize: 20,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0,
                   }}
                 >
                   {v === 'grid' ? '⊞' : '≡'}
                 </button>
               ))}
-              <div style={{ padding: '3px 12px', borderRadius: 20, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.3)', fontSize: 11, fontWeight: 600, color: 'var(--accent)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div className="library-toolbar-badge" style={{
+                padding: '0 12px',
+                borderRadius: 20,
+                background: 'rgba(99,102,241,0.1)',
+                border: '1px solid rgba(99,102,241,0.3)',
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--accent)',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: 34,
+                boxSizing: 'border-box',
+              }}>
                 {displayMode === 'compact' ? '📋 Info directe' : '✨ Info enrichie'}
               </div>
-              <button onClick={fetchGames} disabled={loading} title="Forcer la synchronisation" style={{ width: 30, height: 30, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', cursor: loading ? 'wait' : 'pointer', fontSize: 14, color: 'var(--muted)' }}>
-                {loading ? '⏳' : '↻'}
+              <button
+                type="button"
+                onClick={resetFilters}
+                disabled={loading}
+                title="Réinitialiser tous les filtres"
+                className="library-toolbar-btn"
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                  background: 'transparent',
+                  cursor: loading ? 'wait' : 'pointer',
+                  fontSize: 20,
+                  color: 'var(--muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 0,
+                }}
+              >
+                ↻
               </button>
             </div>
           </div>
 
-          {lastSync && (
-            <div style={{ padding: '3px 16px', fontSize: 10, color: 'var(--muted)', borderBottom: '1px solid rgba(128,128,128,0.08)' }}>
-              Cache local : {lastSync.toLocaleTimeString('fr-FR')} — mis à jour automatiquement toutes les 2h par le bot
-              {dateSort && <span style={{ marginLeft: 12, color: '#fbbf24' }}>📅 Tri actif : date de MAJ décroissante</span>}
-            </div>
-          )}
           {/* Overlay de transition */}
           {isModeChanging && (
             <div style={{
@@ -454,7 +529,7 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
 
             {!loading && !error && view === 'grid' && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14 }}>
-                {filtered.map(g => (
+                {paginatedItems.map(g => (
                   <GameCard
                     key={g.id}
                     game={g}
@@ -468,7 +543,7 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
             )}
 
             {!loading && !error && view === 'list' && (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
                     {([
@@ -487,13 +562,13 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                         key={h}
                         onClick={k ? () => toggleSort(k) : undefined}
                         style={{
-                          padding: '8px 10px',
-                          textAlign: 'left',
+                          padding: '10px 12px',
+                          textAlign: k === '_sync' || k === 'statut' || k === 'type_maj' || k === null ? 'center' : 'left',
                           fontWeight: 600,
                           whiteSpace: 'nowrap',
                           cursor: k ? 'pointer' : 'default',
                           userSelect: 'none',
-                          fontSize: 13,
+                          fontSize: 14,
                           color: k === sortKey && !dateSort ? 'var(--accent)' : 'var(--text)',
                         }}
                       >
@@ -505,11 +580,53 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(g => (
+                  {paginatedItems.map(g => (
                     <GameRow key={g.id} game={g} post={findPost(g)} onEdit={handleEdit} />
                   ))}
                 </tbody>
               </table>
+            )}
+
+            {/* Pagination (si plus d'une page) */}
+            {!loading && !error && filtered.length > 0 && totalPages > 1 && (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+                padding: '12px 16px',
+                borderTop: '1px solid var(--border)',
+                flexShrink: 0,
+                fontSize: 13,
+                color: 'var(--muted)',
+              }}>
+                <span>
+                  Page {effectivePage + 1} sur {totalPages}
+                  {pageSize !== -1 && (
+                    <span style={{ marginLeft: 8 }}>
+                      ({effectivePage * pageSize + 1}–{Math.min((effectivePage + 1) * pageSize, filtered.length)} sur {filtered.length})
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  className="app-input"
+                  disabled={effectivePage === 0}
+                  onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                  style={{ padding: '6px 12px' }}
+                >
+                  ← Précédent
+                </button>
+                <button
+                  type="button"
+                  className="app-input"
+                  disabled={effectivePage >= totalPages - 1}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                  style={{ padding: '6px 12px' }}
+                >
+                  Suivant →
+                </button>
+              </div>
             )}
           </div>
         </>
@@ -554,11 +671,18 @@ function GameCard({ game, post, onEdit, showDateBadge, displayMode }: {
           <div style={{ position: 'absolute', bottom: 5, right: 5, padding: '2px 7px', borderRadius: 10, background: `${sync.border}cc`, fontSize: 10, fontWeight: 700, color: '#fff' }}>
             {sync.label}
           </div>
-          {post && (
-            <div style={{ position: 'absolute', top: 6, right: 6, padding: '2px 7px', borderRadius: 10, background: 'rgba(16,185,129,0.9)', fontSize: 10, fontWeight: 700, color: '#fff' }}>
-              ✓ Publié
-            </div>
-          )}
+          <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            {post && (
+              <span style={{ padding: '2px 7px', borderRadius: 10, background: 'rgba(16,185,129,0.9)', fontSize: 10, fontWeight: 700, color: '#fff' }}>
+                ✓ Publié
+              </span>
+            )}
+            {(game.statut || '—') !== '—' && (
+              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.text, fontWeight: 600 }}>
+                {game.statut}
+              </span>
+            )}
+          </div>
           {showDateBadge && game.type_maj && (
             <div style={{ position: 'absolute', top: 6, left: 6, padding: '2px 7px', borderRadius: 10, background: tmStyle.bg, border: `1px solid ${tmStyle.color}55`, fontSize: 10, fontWeight: 700, color: tmStyle.color }}>
               {tmStyle.icon} {game.type_maj}
@@ -571,21 +695,20 @@ function GameCard({ game, post, onEdit, showDateBadge, displayMode }: {
             {game.nom_du_jeu}
           </div>
           <VersionBadge game={game.version} trad={game.trad_ver} sync={game._sync!} />
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.text, fontWeight: 600 }}>
-              {game.statut || '—'}
-            </span>
-            {game.type && (
-              <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(128,128,128,0.1)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
-                {game.type}
-              </span>
-            )}
-          </div>
           {game.traducteur && <div style={{ fontSize: 11, color: 'var(--muted)' }}>👤 <span style={{ color: 'var(--text)' }}>{game.traducteur}</span></div>}
           {game.type_de_traduction && <div style={{ fontSize: 10, color: tradTypeColor(game.type_de_traduction) }}>⚙ {game.type_de_traduction}</div>}
-          {game.date_maj && (
-            <div style={{ fontSize: 10, color: showDateBadge ? '#fbbf24' : 'var(--muted)' }}>
-              📅 {game.date_maj}
+          {(game.date_maj || game.type) && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              {game.date_maj && (
+                <span style={{ fontSize: 10, color: showDateBadge ? '#fbbf24' : 'var(--muted)' }}>
+                  📅 {formatDateFr(game.date_maj)}
+                </span>
+              )}
+              {game.type && (
+                <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(128,128,128,0.1)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
+                  {game.type}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -599,8 +722,8 @@ function GameCard({ game, post, onEdit, showDateBadge, displayMode }: {
           )}
           {game.lien_trad && (
             <button onClick={() => tauriAPI.openUrl(game.lien_trad)} title="Ouvrir la traduction"
-              style={{ flex: 1, height: 28, borderRadius: 5, border: '1px solid rgba(99,102,241,0.3)', background: 'rgba(99,102,241,0.08)', color: '#818cf8', fontSize: 11, cursor: 'pointer' }}>
-              🇫🇷 Trad.
+              style={{ flex: 1, height: 28, borderRadius: 5, border: '1px solid rgba(99,102,241,0.3)', background: 'rgba(99,102,241,0.08)', color: '#818cf8', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+              <span style={{ fontFamily: '"Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif' }}>🇫🇷</span> Trad.
             </button>
           )}
           {post && (
@@ -631,11 +754,18 @@ function GameCard({ game, post, onEdit, showDateBadge, displayMode }: {
           <div style={{ position: 'absolute', bottom: 5, right: 5, padding: '2px 7px', borderRadius: 10, background: `${sync.border}cc`, fontSize: 10, fontWeight: 700, color: '#fff' }}>
             {sync.label}
           </div>
-          {post && (
-            <div style={{ position: 'absolute', top: 6, right: 6, padding: '2px 7px', borderRadius: 10, background: 'rgba(16,185,129,0.9)', fontSize: 10, fontWeight: 700, color: '#fff' }}>
-              ✓ Publié
-            </div>
-          )}
+          <div style={{ position: 'absolute', top: 6, right: 6, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            {post && (
+              <span style={{ padding: '2px 7px', borderRadius: 10, background: 'rgba(16,185,129,0.9)', fontSize: 10, fontWeight: 700, color: '#fff' }}>
+                ✓ Publié
+              </span>
+            )}
+            {(game.statut || '—') !== '—' && (
+              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.text, fontWeight: 600 }}>
+                {game.statut}
+              </span>
+            )}
+          </div>
           {showDateBadge && game.type_maj && (
             <div style={{ position: 'absolute', top: 6, left: 6, padding: '2px 7px', borderRadius: 10, background: tmStyle.bg, border: `1px solid ${tmStyle.color}55`, fontSize: 10, fontWeight: 700, color: tmStyle.color }}>
               {tmStyle.icon} {game.type_maj}
@@ -648,11 +778,6 @@ function GameCard({ game, post, onEdit, showDateBadge, displayMode }: {
             {game.nom_du_jeu}
           </div>
           <VersionBadge game={game.version} trad={game.trad_ver} sync={game._sync!} />
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.text, fontWeight: 600 }}>
-              {game.statut || '—'}
-            </span>
-          </div>
         </div>
 
         <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
@@ -719,7 +844,7 @@ function GameRow({ game, post, onEdit }: { game: GameF95; post: any; onEdit: (p:
   const tmStyle = typeMajStyle(game.type_maj);
 
   const td = (extra?: React.CSSProperties): React.CSSProperties => ({
-    padding: '9px 10px',
+    padding: '10px 12px',
     borderBottom: '1px solid var(--border)',
     verticalAlign: 'middle',
     fontSize: 14,
@@ -730,43 +855,71 @@ function GameRow({ game, post, onEdit }: { game: GameF95; post: any; onEdit: (p:
   return (
     <tr onMouseEnter={e => (e.currentTarget.style.background = 'rgba(128,128,128,0.05)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
       <td style={td({ maxWidth: 220 })}>
-        <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{game.nom_du_jeu}</div>
-        {game.type && <div style={{ fontSize: 10, color: 'var(--muted)' }}>{game.type}</div>}
+        <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 14 }}>{game.nom_du_jeu}</div>
+        {game.type && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{game.type}</div>}
       </td>
-      <td style={td()}><code style={{ fontSize: 11, color: 'var(--text)' }}>{game.version || '—'}</code></td>
-      <td style={td()}><code style={{ fontSize: 11, color: tradCol }}>{game.trad_ver || '—'}</code></td>
-      <td style={td()}>
-        <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: `${sync.border}22`, border: `1px solid ${sync.border}`, color: sync.text, fontWeight: 600, whiteSpace: 'nowrap' }}>
+      <td style={td()}><code style={{ fontSize: 13, color: 'var(--text)' }}>{game.version || '—'}</code></td>
+      <td style={td()}><code style={{ fontSize: 13, color: tradCol }}>{game.trad_ver || '—'}</code></td>
+      <td style={td({ textAlign: 'center' })}>
+        <span style={{ fontSize: 12, padding: '3px 8px', borderRadius: 10, background: `${sync.border}22`, border: `1px solid ${sync.border}`, color: sync.text, fontWeight: 600, whiteSpace: 'nowrap' }}>
           {sync.label}
         </span>
       </td>
-      <td style={td()}>
-        <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.text, fontWeight: 600 }}>
+      <td style={td({ textAlign: 'center' })}>
+        <span style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, background: sc.bg, border: `1px solid ${sc.border}`, color: sc.text, fontWeight: 600 }}>
           {game.statut || '—'}
         </span>
       </td>
-      <td style={td({ fontSize: 11, color: tradTypeColor(game.type_de_traduction) })}>{game.type_de_traduction || '—'}</td>
-      <td style={td({ fontSize: 11 })}>{game.traducteur || '—'}</td>
-      <td style={td({ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' })}>{game.date_maj || '—'}</td>
-      <td style={td()}>
+      <td style={td({ fontSize: 13, color: tradTypeColor(game.type_de_traduction) })}>{game.type_de_traduction || '—'}</td>
+      <td style={td({ fontSize: 13 })}>{game.traducteur || '—'}</td>
+      <td style={td({ fontSize: 13, color: 'var(--muted)', whiteSpace: 'nowrap' })}>{formatDateFr(game.date_maj) || '—'}</td>
+      <td style={td({ textAlign: 'center' })}>
         {game.type_maj ? (
-          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: tmStyle.bg, border: `1px solid ${tmStyle.color}55`, color: tmStyle.color, fontWeight: 600, whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 12, padding: '3px 8px', borderRadius: 10, background: tmStyle.bg, border: `1px solid ${tmStyle.color}55`, color: tmStyle.color, fontWeight: 600, whiteSpace: 'nowrap' }}>
             {tmStyle.icon} {game.type_maj}
           </span>
         ) : '—'}
       </td>
-      <td style={td()}>
-        <div style={{ display: 'flex', gap: 4 }}>
+      <td style={td({ textAlign: 'center' })}>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center', minHeight: 34 }}>
           {game.nom_url && (
-            <button onClick={() => tauriAPI.openUrl(game.nom_url)} title="Jeu" style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 12 }}>🔗</button>
+            <button type="button" onClick={() => tauriAPI.openUrl(game.nom_url)} title="Ouvrir la page du jeu" style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🔗</button>
           )}
           {game.lien_trad && (
-            <button onClick={() => tauriAPI.openUrl(game.lien_trad)} title="Traduction" style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid rgba(99,102,241,0.3)', background: 'rgba(99,102,241,0.08)', cursor: 'pointer', fontSize: 12 }}>🇫🇷</button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (game.nom_url) {
+                  await trackTranslationClick({
+                    f95Url: game.nom_url,
+                    translationUrl: game.lien_trad,
+                    source: 'library_list',
+                  });
+                }
+                tauriAPI.openUrl(game.lien_trad);
+              }}
+              title="Ouvrir la page de traduction"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 6,
+                border: '1px solid rgba(99,102,241,0.3)',
+                background: 'rgba(99,102,241,0.08)',
+                cursor: 'pointer',
+                fontSize: 14,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: '"Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif',
+              }}
+            >
+              🇫🇷
+            </button>
           )}
           {post ? (
-            <button onClick={() => onEdit(post)} title="Modifier le post Discord" style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.08)', color: '#4ade80', cursor: 'pointer', fontSize: 11 }}>✏️</button>
+            <button type="button" onClick={() => onEdit(post)} title="Modifier le post Discord" style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid rgba(16,185,129,0.3)', background: 'rgba(16,185,129,0.08)', color: '#4ade80', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✏️</button>
           ) : (
-            <span style={{ width: 26, height: 26, borderRadius: 4, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'var(--muted)' }}>—</span>
+            <span title="Aucun post Discord publié pour ce jeu" style={{ width: 32, height: 32, borderRadius: 6, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: 'var(--muted)', background: 'rgba(128,128,128,0.08)' }}>—</span>
           )}
         </div>
       </td>

@@ -109,7 +109,7 @@ ${error.discordError ? JSON.stringify(error.discordError, null, 2) : 'N/A'}
   const suggestions = getSuggestions();
 
   return (
-    <div className="modal" onClick={onClose}>
+    <div className="modal">
       <div className="panel" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 1000, width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         <h3 style={{ margin: 0, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
           {getErrorTitle()}

@@ -322,18 +322,17 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
             <button
               onClick={onClose}
               style={{
-                fontSize: 18,
-                padding: '4px 10px',
+                padding: '8px 16px',
                 background: 'transparent',
                 border: '1px solid var(--border)',
                 borderRadius: 6,
-                color: 'var(--muted)',
+                color: 'var(--text)',
                 cursor: 'pointer',
-                lineHeight: 1
+                fontSize: 13,
+                fontWeight: 600
               }}
-              title="Fermer (Échap)"
             >
-              ✕
+              ↩️ Fermer
             </button>
           </div>
         </div>
