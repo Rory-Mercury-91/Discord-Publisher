@@ -17,13 +17,11 @@ export default function InstructionsHelp() {
   }, []);
 
   return (
-    <div style={{ display: 'grid', gap: 24 }}>
+    <div className="help-content-inner">
 
-      <section>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: 'var(--accent)' }}>
-          📋 À quoi servent les instructions ?
-        </h4>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+      <section className="help-intro">
+        <h4 className="help-section__title">📋 À quoi servent les instructions ?</h4>
+        <p>
           Les instructions sont des blocs de texte nommés utilisés dans vos publications. Le template contient la variable <strong>[instruction]</strong> : au moment de la publication, elle est remplacée par le contenu de l'instruction que vous avez choisie ou saisie dans le formulaire.
         </p>
       </section>

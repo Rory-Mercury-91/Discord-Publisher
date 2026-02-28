@@ -1,0 +1,216 @@
+/* Styles partagés pour tout le centre d'aide — couleurs lisibles, pas de violet */
+
+.help-content-inner {
+  display: grid;
+  gap: 24px;
+}
+
+.help-section {
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.help-section__title {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.help-section__title--large {
+  margin-bottom: 12px;
+  font-size: 18px;
+}
+
+/* Succès / validation — vert lisible */
+.help-section--success {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.help-section--success .help-section__title {
+  color: #34d399;
+}
+
+/* Avertissement — ambre */
+.help-section--warning {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.help-section--warning .help-section__title {
+  color: #fbbf24;
+}
+
+/* Info / neutre — bleu (remplace l'ancien violet) */
+.help-section--info {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.help-section--info .help-section__title {
+  color: #60a5fa;
+}
+
+/* Astuce / encadré neutre */
+.help-section--tip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.help-section--tip .help-section__title {
+  color: var(--text);
+}
+
+/* Danger / suppression — rouge */
+.help-section--danger {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.help-section--danger .help-section__title {
+  color: #f87171;
+}
+
+/* Intro de page (titre principal + paragraphe) */
+.help-intro .help-section__title {
+  font-size: 18px;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.help-section ul,
+.help-section ol {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  margin: 0;
+  padding-left: 20px;
+}
+
+.help-section p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  margin: 0 0 8px 0;
+}
+
+.help-section p:last-child {
+  margin-bottom: 0;
+}
+
+/* Raccourcis : catégorie + liste de lignes */
+.help-shortcuts-category__title {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #60a5fa;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.help-shortcut-list {
+  display: grid;
+  gap: 8px;
+}
+
+.help-shortcut-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+}
+
+.help-shortcut-row kbd {
+  display: inline-block;
+  padding: 6px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: monospace;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.help-shortcut-row span {
+  font-size: 14px;
+  color: var(--text);
+}
+
+/* Bloc guide dépliable (ex. Tampermonkey) */
+.help-guide-block {
+  margin-top: 12px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.help-guide-block p:first-child {
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.help-guide-block ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.help-guide-block li {
+  margin-bottom: 8px;
+}
+
+.help-guide-block li:last-child {
+  margin-bottom: 0;
+}
+
+.help-link-inline {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+.help-btn--expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.help-btn--expand:hover {
+  opacity: 0.9;
+}
+
+.help-btn--download {
+  padding: 8px 14px;
+  background: #34d399;
+  color: #0f172a;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}

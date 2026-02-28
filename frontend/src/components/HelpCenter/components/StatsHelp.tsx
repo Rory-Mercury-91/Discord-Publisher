@@ -2,13 +2,11 @@
 
 export default function StatsHelp() {
   return (
-    <div style={{ display: 'grid', gap: 24 }}>
+    <div className="help-content-inner">
 
-      <section>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: 'var(--accent)' }}>
-          📈 À quoi servent les statistiques ?
-        </h4>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+      <section className="help-intro">
+        <h4 className="help-section__title">📈 À quoi servent les statistiques ?</h4>
+        <p>
           La fenêtre Statistiques affiche des indicateurs basés sur vos publications enregistrées dans l'historique. Les données proviennent des posts présents dans l'app (Supabase + historique local). L'interface est organisée en trois zones : filtre et total, répartition par traducteur, puis graphique des publications par mois.
         </p>
       </section>

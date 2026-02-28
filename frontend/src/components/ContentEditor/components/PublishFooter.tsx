@@ -1,8 +1,8 @@
 // frontend/src/components/ContentEditorComponents/PublishFooter.tsx
 import { useState } from 'react';
-import DiscordIcon from '../../assets/discord-icon.svg';
-import type { ConfirmOptions } from '../../hooks/useConfirm';
-import Toggle from '../Toggle';
+import DiscordIcon from '../../../assets/discord-icon.svg';
+import type { ConfirmOptions } from '../../../hooks/useConfirm';
+import Toggle from '../../Toggle';
 
 interface PublishFooterProps {
   canPublish: boolean;
@@ -57,17 +57,9 @@ export default function PublishFooter({
   const isDisabled = publishInProgress || !canPublish;
 
   return (
-    <div style={{
-      marginTop: 8,
-      display: 'flex',
-      justifyContent: 'flex-end',
-      alignItems: 'center',
-      gap: 12,
-      paddingTop: 12,
-      borderTop: '1px solid var(--border)'
-    }}>
+    <div className="publish-footer">
       {rateLimitCooldown !== null && (
-        <div style={{ color: 'var(--error)', fontSize: 13, fontWeight: 700 }}>
+        <div className="publish-footer__rate-limit">
           ⏳ Rate limit : {rateLimitRemaining}s
         </div>
       )}
@@ -82,27 +74,12 @@ export default function PublishFooter({
       )}
 
       <div
-        style={{ position: 'relative' }}
+        className="relative"
         onMouseEnter={() => (isDisabled && publishTooltipText) && setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
       >
         {showTooltip && publishTooltipText && (
-          <div style={{
-            position: 'absolute',
-            bottom: 'calc(100% + 8px)',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'var(--panel)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: '8px 12px',
-            fontSize: 12,
-            color: 'var(--text)',
-            whiteSpace: 'nowrap',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            zIndex: 100,
-            pointerEvents: 'none',
-          }}>
+          <div className="publish-footer__tooltip">
             ⚠️ {publishTooltipText}
           </div>
         )}
@@ -110,53 +87,18 @@ export default function PublishFooter({
         <button
           disabled={isDisabled}
           onClick={handleClick}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '10px',
-            padding: '12px 32px',
-            fontSize: 15,
-            fontWeight: 700,
-            background: isDisabled
-              ? 'rgba(148,163,184,0.4)'
-              : editingPostId
-                ? '#f59e0b'
-                : '#5865F2',
-            color: 'white',
-            minWidth: '220px',
-            cursor: isDisabled ? 'not-allowed' : 'pointer',
-            border: 'none',
-            borderRadius: 6,
-            transition: 'opacity 0.15s',
-          }}
+          className={`form-btn form-btn--publish ${editingPostId ? 'form-btn--publish-update' : ''}`}
         >
           {publishInProgress ? (
             <span>⏳ Publication en cours...</span>
           ) : editingPostId ? (
             <>
-              <img
-                src={DiscordIcon}
-                alt="Discord"
-                style={{
-                  width: 20,
-                  height: 20,
-                  filter: 'brightness(0) invert(1)'
-                }}
-              />
+              <img src={DiscordIcon} alt="Discord" className="icon-discord" />
               <span>Mettre à jour le post</span>
             </>
           ) : (
             <>
-              <img
-                src={DiscordIcon}
-                alt="Discord"
-                style={{
-                  width: 20,
-                  height: 20,
-                  filter: 'brightness(0) invert(1)'
-                }}
-              />
+              <img src={DiscordIcon} alt="Discord" className="icon-discord" />
               <span>Publier sur Discord</span>
             </>
           )}

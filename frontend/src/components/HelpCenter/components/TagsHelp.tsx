@@ -2,13 +2,11 @@
 
 export default function TagsHelp() {
   return (
-    <div style={{ display: 'grid', gap: 24 }}>
+    <div className="help-content-inner">
 
-      <section>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: 'var(--accent)' }}>
-          🏷️ À quoi servent les tags ?
-        </h4>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+      <section className="help-intro">
+        <h4 className="help-section__title">🏷️ À quoi servent les tags ?</h4>
+        <p>
           Les tags sont des étiquettes affichées sur vos publications Discord (site, type de traduction, statut du jeu, etc.). Ils permettent d’identifier et de filtrer les traductions. Certains sont gérés automatiquement, d’autres sont optionnels et s’ajoutent depuis la modale.
         </p>
       </section>

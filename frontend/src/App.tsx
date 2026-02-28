@@ -5,7 +5,7 @@ import ConfigModal from './components/ConfigModal';
 import ConfirmModal from './components/ConfirmModal';
 import ContentEditor from './components/ContentEditor';
 import DiscordPreviewModal from './components/DiscordPreviewModal';
-import HelpCenterModal from './components/HelpCenterModal';
+import HelpCenterModal from './components/HelpCenter';
 import HistoryModal from './components/HistoryModal';
 import InstructionsManagerModal from './components/InstructionsManagerModal';
 import LibraryView from './components/LibraryView';

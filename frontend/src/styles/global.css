@@ -1,0 +1,835 @@
+/**
+ * global.css — classes réutilisables pour ContentEditor, HelpCenter et le reste de l'app.
+ * Utilise les variables définies dans index.css (:root, [data-theme="light"]).
+ * Un fichier par section (ex. HelpCenter.css) garde les styles spécifiques à un module.
+ */
+
+/* ========== Labels de formulaire ========== */
+.form-label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.form-label--inline {
+  display: inline;
+  margin-bottom: 0;
+}
+
+/* ========== Champs (alignés sur .app-input de index.css) ========== */
+.form-input,
+input.form-input {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.form-input--readonly {
+  cursor: default;
+}
+
+.form-input--disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Textarea (formulaire) */
+.form-textarea,
+textarea.form-textarea {
+  width: 100%;
+  min-height: 100px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.form-textarea--fill {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  overflow-y: auto;
+}
+
+.form-textarea--disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+[data-theme="light"] .form-textarea,
+[data-theme="light"] textarea.form-textarea {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: var(--border);
+}
+
+[data-theme="light"] .form-input,
+[data-theme="light"] input.form-input {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: var(--border);
+}
+
+/* ========== Boutons ========== */
+.form-btn {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.form-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.form-btn--primary {
+  background: var(--accent);
+  color: white;
+  border: none;
+}
+
+.form-btn--primary:not(:disabled):hover {
+  opacity: 0.9;
+}
+
+.form-btn--icon {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.form-btn--icon-sm {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 4px;
+  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: white;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ========== Bloc de champ (label + input/control) ========== */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-field--row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ========== Grilles de formulaire ========== */
+.form-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.form-grid--2col {
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+}
+
+.form-grid--3col {
+  grid-template-columns: 1fr 1fr 200px;
+  grid-template-rows: auto auto;
+}
+
+.form-grid--3col-versions {
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+}
+
+.form-field--fullwidth {
+  grid-column: 1 / -1;
+}
+
+/* ========== Modale — structure commune ========== */
+.modal-panel {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--panel);
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.modal-panel--large {
+  max-width: min(1400px, 98vw);
+  width: 98%;
+  height: 85vh;
+}
+
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--border);
+  flex-shrink: 0;
+}
+
+.modal-header h3 {
+  margin: 0;
+}
+
+.modal-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 32px;
+}
+
+/* ========== Centre d'aide — layout ========== */
+.help-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  grid-template-rows: 1fr;
+  gap: 24px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 20px;
+  padding: 0 8px;
+  overflow: hidden;
+}
+
+.help-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-right: 1px solid var(--border);
+  padding-right: 16px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.help-content {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 12px;
+  padding-bottom: 24px;
+}
+
+.help-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.help-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.help-nav-btn--active {
+  background: var(--accent);
+  color: white;
+  font-weight: 600;
+}
+
+.help-nav-btn span:first-child {
+  font-size: 18px;
+}
+
+/* ========== Segmented control (ex. Type de traduction : Automatique | Semi | Manuelle) ========== */
+.segmented {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  align-items: center;
+}
+
+.segmented__option {
+  flex: 1;
+  height: 32px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.segmented__option--active {
+  background: var(--accent);
+  color: white;
+  font-weight: 700;
+}
+
+/* Zone image (éditeur) */
+.image-preview-box {
+  width: 100%;
+  min-height: 160px;
+  border: 2px dashed var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  padding: 12px;
+  gap: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.image-preview-box--filled {
+  border-style: solid;
+}
+
+/* Bouton danger (ex. supprimer image) */
+.form-btn--danger {
+  background: rgba(239, 68, 68, 0.65);
+  color: #fff;
+  border: none;
+  font-size: 12px;
+  padding: 6px 14px;
+  height: auto;
+}
+
+/* Barre d'outils éditeur */
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 10px;
+  flex-wrap: nowrap;
+  height: 32px;
+  min-height: 32px;
+}
+
+.editor-toolbar__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  line-height: 32px;
+}
+
+.editor-toolbar__badge {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  background: rgba(125, 211, 252, 0.15);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.editor-toolbar__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.form-btn--toolbar {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.form-btn--export {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #22c55e;
+}
+
+.form-btn--import {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #818cf8;
+}
+
+.form-btn--reset {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #ef4444;
+}
+
+.form-btn--ghost {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  height: auto;
+}
+
+.editor-toolbar__divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.editor-toolbar__select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 8px;
+  height: 32px;
+  background: rgba(88, 101, 242, 0.05);
+  border: 1px solid rgba(88, 101, 242, 0.2);
+  flex-shrink: 0;
+}
+
+.editor-toolbar__select {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  min-width: 140px;
+}
+
+/* Footer publication */
+.publish-footer {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.publish-footer__rate-limit {
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.publish-footer__tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  pointer-events: none;
+}
+
+.form-btn--publish {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 32px;
+  font-size: 15px;
+  font-weight: 700;
+  color: white;
+  min-width: 220px;
+  border: none;
+  border-radius: 6px;
+  transition: opacity 0.15s;
+  cursor: pointer;
+}
+
+.form-btn--publish:not(:disabled) {
+  background: #5865F2;
+}
+
+.form-btn--publish-update:not(:disabled) {
+  background: #f59e0b;
+}
+
+.form-btn--publish:disabled {
+  background: rgba(148, 163, 184, 0.4);
+  cursor: not-allowed;
+}
+
+/* Bloc liens additionnels (Traduction / Mod) */
+.links-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.links-block__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.links-block__add-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  height: 32px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text);
+}
+
+.links-block__row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.links-block__row-headers {
+  margin-bottom: 4px;
+}
+
+.links-block__row-headers .form-label {
+  margin-bottom: 0;
+}
+
+.form-field__label-row .form-label {
+  margin-bottom: 0;
+}
+
+/* Champ lien avec aperçu URL (LinkField) */
+.link-field {
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+.link-field__header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.link-preview {
+  font-size: 11px;
+  color: var(--link-preview);
+  font-family: monospace;
+  padding: 2px 8px;
+  background: var(--link-preview-bg);
+  border-radius: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  border: none;
+  text-align: left;
+}
+
+.link-preview:hover {
+  opacity: 0.9;
+}
+
+.link-preview--static {
+  cursor: default;
+  background: transparent;
+}
+
+.link-field__grid {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 12px;
+}
+
+.link-field__grid .form-input,
+.link-field__grid select.form-input {
+  height: 40px;
+}
+
+/* ========== Utilitaires layout (répétables) ========== */
+.relative {
+  position: relative;
+}
+
+.pb-4 {
+  padding-bottom: 4px;
+}
+
+.form-field--row-h40 {
+  height: 40px;
+}
+
+.form-input--flex {
+  flex: 1;
+  height: 40px;
+}
+
+.form-grid--start {
+  align-items: start;
+}
+
+/* Ligne « label » alignée entre colonnes (ex. Lien du jeu / Type de traduction) */
+.form-grid--align-rows .form-field__label-row {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+}
+
+.grid-cell--col3-row2 {
+  grid-column: 3;
+  grid-row: 1 / 3;
+}
+
+.grid-cell--span2 {
+  grid-column: 1 / 3;
+}
+
+.form-btn--icon-danger {
+  color: var(--error);
+  background: transparent;
+}
+
+.form-field--fill {
+  height: 100%;
+  min-height: 150px;
+}
+
+/* Bloc liens : en-tête gauche + cellules vides */
+.links-block__header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.links-block__spacer {
+  width: 40px;
+}
+
+/* Barre éditeur : label "Publier pour" */
+.editor-toolbar__label-sm {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Icône Discord (bouton publier) */
+.icon-discord {
+  width: 20px;
+  height: 20px;
+  filter: brightness(0) invert(1);
+}
+
+/* Zone image : overlays et états */
+.image-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-overlay--loading {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.image-overlay--error {
+  background: rgba(255, 0, 0, 0.1);
+}
+
+.image-overlay__muted {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.image-overlay__error {
+  font-size: 12px;
+  color: var(--error);
+}
+
+.image-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.image-delete-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+}
+
+.image-empty-icon {
+  font-size: 32px;
+}
+
+.image-empty-text {
+  font-size: 11px;
+  text-align: center;
+}
+
+/* Tags : liste et badges */
+.tags-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.form-btn--sm {
+  height: 36px;
+  padding: 0 14px;
+}
+
+.tag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.14);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tag-badge__remove {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  font-size: 14px;
+}
+
+/* Dropdown / suggestions */
+.dropdown-wrap {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.dropdown-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 1001;
+  max-height: 200px;
+}
+
+.suggestion-item__name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.suggestion-item__preview {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.form-textarea--mono {
+  font-family: monospace;
+  font-size: 13px;
+}
+
+/* Éditeur principal (ContentEditor/index) */
+.editor-main {
+  padding: 16px 15px;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.editor-content-grid {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+}
+
+.editor-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+/* Aligner la ligne du haut : même espace sous le label que Synopsis (label mb 6px + gap 8px = 14px) */
+.editor-two-col .dropdown-wrap .form-label {
+  margin-bottom: 14px;
+}
+
+.editor-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+}

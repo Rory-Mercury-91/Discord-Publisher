@@ -1,26 +1,23 @@
-// frontend/src/components/ContentEditor.tsx
+// frontend/src/components/ContentEditor/index.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { tauriAPI } from '../lib/tauri-api';
-import { useConfirm } from '../hooks/useConfirm';
-import { getSupabase } from '../lib/supabase';
-import { useApp } from '../state/appContext';
-import { useAuth } from '../state/authContext';
-import { useTranslatorSelector } from '../state/hooks/useTranslatorSelector';
-import ConfirmModal from './ConfirmModal';
-import TagSelectorModal from './TagSelectorModal';
-import Toggle from './Toggle';
-import { useToast } from './ToastProvider';
+import { useConfirm } from '../../hooks/useConfirm';
+import { getSupabase } from '../../lib/supabase';
+import { useApp } from '../../state/appContext';
+import { useAuth } from '../../state/authContext';
+import { useTranslatorSelector } from '../../state/hooks/useTranslatorSelector';
+import ConfirmModal from '../ConfirmModal';
+import TagSelectorModal from '../TagSelectorModal';
+import { useToast } from '../ToastProvider';
 
-// Import des composants découpés
-import CustomVarsSection from './ContentEditorComponents/CustomVarsSection';
-import EditorHeader from './ContentEditorComponents/EditorHeader';
-import ImageSection from './ContentEditorComponents/ImageSection';
-import InstructionsSection from './ContentEditorComponents/InstructionsSection';
-import LinksSection from './ContentEditorComponents/LinksSection';
-import PublishFooter from './ContentEditorComponents/PublishFooter';
-import SynopsisSection from './ContentEditorComponents/SynopsisSection';
-import TagsSection from './ContentEditorComponents/TagsSection';
-import VersionsSection from './ContentEditorComponents/VersionsSection';
+import CustomVarsSection from './components/CustomVarsSection';
+import EditorHeader from './components/EditorHeader';
+import GameLinkAndTranslationTypeSection from './components/GameLinkAndTranslationTypeSection';
+import HeaderGridSection from './components/HeaderGridSection';
+import InstructionsSection from './components/InstructionsSection';
+import LinksSection from './components/LinksSection';
+import PublishFooter from './components/PublishFooter';
+import SynopsisSection from './components/SynopsisSection';
+import VersionsSection from './components/VersionsSection';
 
 export default function ContentEditor() {
   const {
@@ -610,7 +607,7 @@ export default function ContentEditor() {
   };
 
   return (
-    <div style={{ padding: '16px 15px', position: 'relative', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+    <div className="editor-main">
 
       <EditorHeader
         editingPostId={editingPostId}
@@ -625,122 +622,23 @@ export default function ContentEditor() {
         onExportListManager={handleExportListManager}
       />
 
-      <div style={{ display: 'grid', gap: 16, width: '100%' }}>
+      <div className="editor-content-grid">
 
-        {/* === GRILLE PRINCIPALE : Titre + Tags + Image / Nom du jeu + Lien image === */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 200px',
-          gridTemplateRows: 'auto auto',
-          gap: 12
-        }}>
-
-          {/* LIGNE 1 - Col 1 : Titre du post */}
-          <div>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-              Titre du post
-            </label>
-            <input
-              readOnly
-              value={postTitle}
-              style={{
-                width: '100%',
-                height: '40px',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                padding: '0 12px',
-                background: 'rgba(255,255,255,0.03)',
-                cursor: 'default'
-              }}
-            />
-          </div>
-
-          {/* LIGNE 1 - Col 2 : Tags */}
-          <TagsSection
-            selectedTagIds={selectedTagIds}
-            savedTags={savedTags}
-            onOpenTagSelector={handleOpenTagSelector}
-            onRemoveTag={handleRemoveTag}
-          />
-
-          {/* LIGNE 1-2 - Col 3 : Image preview (prend 2 lignes) */}
-          <div style={{ gridColumn: 3, gridRow: '1 / 3' }}>
-            <ImageSection
-              uploadedImages={uploadedImages}
-              removeImage={removeImage}
-            />
-          </div>
-
-          {/* LIGNE 2 - Col 1 : Nom du jeu */}
-          <div>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-              Nom du jeu
-            </label>
-            <input
-              value={inputs['Game_name'] || ''}
-              onChange={(e) => setInput('Game_name', e.target.value)}
-              disabled={!varsUsedInTemplate.has('Game_name')}
-              style={{
-                width: '100%',
-                height: '40px',
-                borderRadius: 6,
-                padding: '0 12px',
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid var(--border)',
-                color: 'var(--text)',
-                opacity: varsUsedInTemplate.has('Game_name') ? 1 : 0.6,
-                cursor: varsUsedInTemplate.has('Game_name') ? 'text' : 'not-allowed'
-              }}
-              placeholder="Nom du jeu"
-            />
-          </div>
-
-          {/* LIGNE 2 - Col 2 : Lien de l'image */}
-          <div>
-            <label style={{ display: 'block', fontSize: 13, color: 'var(--muted)', marginBottom: 6, fontWeight: 600 }}>
-              Lien de l'image
-            </label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                value={imageUrlInput}
-                onChange={(e) => setImageUrlInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddImage();
-                }}
-                placeholder="https://..."
-                style={{
-                  flex: 1,
-                  height: '40px',
-                  borderRadius: 6,
-                  padding: '0 12px',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)'
-                }}
-              />
-              <button
-                type="button"
-                onClick={handleAddImage}
-                disabled={!imageUrlInput.trim()}
-                style={{
-                  height: '40px',
-                  padding: '0 16px',
-                  borderRadius: 6,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: imageUrlInput.trim() ? 'pointer' : 'not-allowed',
-                  opacity: imageUrlInput.trim() ? 1 : 0.5,
-                  background: imageUrlInput.trim() ? 'var(--accent)' : 'rgba(255,255,255,0.05)',
-                  border: '1px solid var(--border)',
-                  color: 'white'
-                }}
-              >
-                Ajouter
-              </button>
-            </div>
-          </div>
-        </div>
+        <HeaderGridSection
+          postTitle={postTitle}
+          gameName={inputs['Game_name'] || ''}
+          onGameNameChange={(v) => setInput('Game_name', v)}
+          gameNameDisabled={!varsUsedInTemplate.has('Game_name')}
+          imageUrlInput={imageUrlInput}
+          onImageUrlInputChange={setImageUrlInput}
+          onAddImage={handleAddImage}
+          selectedTagIds={selectedTagIds}
+          savedTags={savedTags}
+          onOpenTagSelector={handleOpenTagSelector}
+          onRemoveTag={handleRemoveTag}
+          uploadedImages={uploadedImages}
+          removeImage={removeImage}
+        />
 
         {/* Versions */}
         <VersionsSection
@@ -753,125 +651,16 @@ export default function ContentEditor() {
           onSyncVersion={syncVersion}
         />
 
-        {/* Grille 2 colonnes : Lien du jeu + Type de traduction */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, alignItems: 'stretch' }}>
-          {/* Lien du jeu */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ minHeight: 32, display: 'flex', alignItems: 'center' }}>
-              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600, margin: 0 }}>
-                Lien du jeu
-              </label>
-            </div>
-            <div style={{ height: 40, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="text"
-                value={buildFinalLink(linkConfigs.Game_link)}
-                onChange={(e) => {
-                  let val = e.target.value.trim();
-                  let detectedSource: 'F95' | 'Lewd' | 'Autre' = linkConfigs.Game_link.source;
-
-                  const lower = val.toLowerCase();
-                  if (lower.includes('f95zone.to')) detectedSource = 'F95';
-                  else if (lower.includes('lewdcorner.com')) detectedSource = 'Lewd';
-                  else if (lower.includes('http')) detectedSource = 'Autre';
-
-                  setLinkConfig('Game_link', detectedSource, val);
-                }}
-                placeholder="https://..."
-                disabled={!varsUsedInTemplate.has('Game_link')}
-                style={{
-                  flex: 1,
-                  height: '40px',
-                  borderRadius: 6,
-                  padding: '0 12px',
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)',
-                  opacity: varsUsedInTemplate.has('Game_link') ? 1 : 0.6,
-                  cursor: varsUsedInTemplate.has('Game_link') ? 'text' : 'not-allowed'
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const url = buildFinalLink(linkConfigs.Game_link);
-                  if (url && !url.includes('...')) tauriAPI.openUrl(url);
-                }}
-                title="Ouvrir le lien"
-                style={{
-                  width: 40,
-                  height: 40,
-                  flexShrink: 0,
-                  borderRadius: 6,
-                  border: '1px solid var(--border)',
-                  background: 'rgba(255,255,255,0.05)',
-                  cursor: 'pointer',
-                  fontSize: 18,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                🔗
-              </button>
-            </div>
-          </div>
-
-          {/* Type de traduction */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{
-              minHeight: 32,
-              display: 'grid',
-              gridTemplateColumns: '1fr auto',
-              gap: 8,
-              alignItems: 'center'
-            }}>
-              <label style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600, margin: 0 }}>
-                Type de traduction
-              </label>
-              <Toggle
-                checked={isIntegrated}
-                onChange={setIsIntegrated}
-                label="Traduction intégrée au jeu"
-              />
-            </div>
-            <div style={{
-              height: 40,
-              display: 'flex',
-              gap: 4,
-              padding: 4,
-              borderRadius: 8,
-              border: '1px solid var(--border)',
-              background: 'rgba(255,255,255,0.03)',
-              alignItems: 'center'
-            }}>
-              {(['Automatique', 'Semi-automatique', 'Manuelle'] as const).map((opt) => {
-                const active = translationType === opt;
-                return (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => setTranslationType(opt)}
-                    style={{
-                      flex: 1,
-                      height: '32px',
-                      borderRadius: 6,
-                      border: 'none',
-                      cursor: 'pointer',
-                      background: active ? 'var(--accent)' : 'transparent',
-                      color: active ? 'white' : 'var(--muted)',
-                      fontSize: 13,
-                      fontWeight: active ? 700 : 600,
-                      transition: 'all 0.15s'
-                    }}
-                  >
-                    {opt}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        <GameLinkAndTranslationTypeSection
+          gameLinkConfig={linkConfigs.Game_link}
+          setLinkConfig={setLinkConfig}
+          buildFinalLink={buildFinalLink}
+          gameLinkDisabled={!varsUsedInTemplate.has('Game_link')}
+          translationType={translationType}
+          setTranslationType={setTranslationType}
+          isIntegrated={isIntegrated}
+          setIsIntegrated={setIsIntegrated}
+        />
 
         {/* Liens Traduction + Mod */}
         <LinksSection
@@ -900,7 +689,7 @@ export default function ContentEditor() {
         />
 
         {/* Synopsis + Instructions */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="editor-two-col">
           <SynopsisSection
             ref={overviewRef}
             value={inputs['Overview'] || ''}
@@ -930,8 +719,9 @@ export default function ContentEditor() {
         {/* Overlay pour fermer les suggestions */}
         {showInstructionSuggestions && (
           <div
+            className="editor-overlay"
             onClick={() => setShowInstructionSuggestions(false)}
-            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999 }}
+            aria-hidden
           />
         )}
 

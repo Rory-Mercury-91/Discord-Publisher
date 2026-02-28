@@ -2,13 +2,13 @@
 
 export default function LibraryHelp() {
   return (
-    <div style={{ display: 'grid', gap: 24 }}>
+    <div className="help-content-inner">
 
-      <section>
-        <h4 style={{ margin: '0 0 12px 0', fontSize: 18, color: 'var(--accent)' }}>
+      <section className="help-intro">
+        <h4 className="help-section__title">
           📚 La Bibliothèque — Vue d’ensemble
         </h4>
-        <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text)', margin: 0 }}>
+        <p>
           La Bibliothèque affiche tous les jeux traduits suivis par le serveur.
           C’est ici que vous pouvez consulter l’état de vos traductions, voir les mises à jour, et accéder rapidement aux liens du jeu et de la traduction.
         </p>
