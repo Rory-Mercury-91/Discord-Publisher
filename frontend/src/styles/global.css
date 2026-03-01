@@ -307,6 +307,87 @@ textarea.form-textarea {
 
 .form-btn--warning:hover { opacity: 0.9; }
 
+/* ========== Modale Auth (Connexion / Inscription / Mot de passe oublié) ========== */
+.modal.modal--auth {
+  z-index: 99999;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.modal .panel.modal-panel--auth {
+  max-width: 440px;
+  width: 100%;
+  padding: 28px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.auth-modal__title {
+  margin: 0 0 20px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.auth-form__field { margin-bottom: 14px; }
+.auth-form__row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.auth-form__row--remember { flex-wrap: wrap; gap: 12px; }
+.auth-form__actions { display: flex; gap: 10px; margin-top: 20px; }
+.auth-form__actions .form-btn--ghost { flex-shrink: 0; }
+.auth-form__hint { margin: -10px 0 12px 0; font-size: 11px; color: var(--muted); line-height: 1.4; }
+.auth-form__intro { margin-bottom: 16px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.auth-form__link-row { margin: 0 0 16px 0; font-size: 13px; color: var(--muted); }
+.auth-form__link-row--top { margin-top: 16px; }
+.form-label__hint { font-weight: 400; color: var(--muted); }
+.auth-link--normal { font-weight: 400; }
+.auth-form__row--remember .form-btn--primary { flex-shrink: 0; }
+.auth-form__divider { border-top: 1px solid var(--border); margin-bottom: 14px; }
+.auth-form__divider--labeled { margin: 16px 0; position: relative; }
+.auth-form__divider-label {
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel);
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.auth-form__center { text-align: center; }
+.auth-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: inherit;
+  font-family: inherit;
+  padding: 0;
+}
+.auth-link--muted { color: var(--muted); font-size: 12px; }
+.auth-help-box {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  white-space: pre-line;
+}
+.auth-modal__loading {
+  position: fixed;
+  inset: 0;
+  background: var(--modal-backdrop);
+  backdrop-filter: var(--modal-backdrop-blur);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  color: var(--text);
+  font-size: 18px;
+}
+
 /* ========== Modale Configuration (Settings) ========== */
 .modal-panel--config {
   width: 92%;

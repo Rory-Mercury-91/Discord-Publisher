@@ -188,7 +188,7 @@ function AppContentInner() {
 
 function AppWithAuth() {
   const { user, profile, loading } = useAuth();
-  const needAuth = loading || !user || !profile?.discord_id?.trim() || !profile?.pseudo?.trim();
+  const needAuth = loading || !user;
   return (
     <>
       {needAuth && <AuthModal />}
