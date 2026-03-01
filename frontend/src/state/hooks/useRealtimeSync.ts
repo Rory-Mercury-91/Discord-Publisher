@@ -150,6 +150,6 @@ export function useRealtimeSync(deps: RealtimeSyncDeps) {
     setPublishedPosts,
     setSavedInstructions,
     setInstructionOwners,
-    setTemplates,
+    applySavedTemplatesPayload,
   ]);
 }
