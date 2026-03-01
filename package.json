@@ -15,7 +15,6 @@
     "tauri": "tauri",
     "supabase:login": "supabase login",
     "supabase:link": "supabase link --project-ref ffsdgocbhghyermqqwlv",
-    "supabase:deploy-fn": "supabase functions deploy validate-tags-master-code --no-verify-jwt",
     "supabase:db-push": "supabase db push"
   },
   "devDependencies": {

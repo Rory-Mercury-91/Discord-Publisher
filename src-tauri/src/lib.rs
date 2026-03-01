@@ -305,54 +305,6 @@ async fn test_api_connection() -> Result<serde_json::Value, String> {
     Ok(json)
 }
 
-/// Appel côté backend à l'Edge Function Supabase validate-list-manager-code (évite CORS en build Tauri).
-#[tauri::command(rename_all = "camelCase")]
-async fn validate_list_manager_code(
-    supabase_url: String,
-    access_token: String,
-    code: String,
-) -> Result<serde_json::Value, String> {
-    let url = format!(
-        "{}/functions/v1/validate-list-manager-code",
-        supabase_url.trim_end_matches('/')
-    );
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Client HTTP : {}", e))?;
-    let response = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", access_token))
-        .header("Content-Type", "application/json")
-        .json(&serde_json::json!({ "code": code, "access_token": access_token }))
-        .send()
-        .await
-        .map_err(|e| {
-            let s = e.to_string();
-            let msg: String = if s.contains("connection refused") || s.contains("Connection refused") {
-                "Connexion refusée. Vérifiez que l'URL Supabase est correcte et que le réseau est accessible.".into()
-            } else if s.contains("timeout") || s.contains("Timeout") {
-                "Délai dépassé. Vérifiez votre connexion internet.".into()
-            } else if s.contains("dns") || s.contains("DNS") || s.contains("not resolve") {
-                "Impossible de joindre le serveur (DNS). Vérifiez l'URL Supabase et la connexion.".into()
-            } else {
-                format!("Requête : {}", s)
-            };
-            msg
-        })?;
-    let status = response.status();
-    let body: String = response
-        .text()
-        .await
-        .map_err(|e| format!("Lecture réponse : {}", e))?;
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({ "valid": false, "error": body }));
-    if !status.is_success() {
-        let err = json.get("error").and_then(|v| v.as_str()).unwrap_or("Erreur inconnue");
-        return Err(err.to_string());
-    }
-    Ok(json)
-}
-
 fn local_history_user_folder(author_discord_id: Option<&String>) -> String {
     author_discord_id
         .filter(|s| !s.trim().is_empty())
@@ -507,7 +459,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             test_api_connection,
-            validate_list_manager_code,
             save_window_state,
             save_local_history_post,
             has_local_history_archive,

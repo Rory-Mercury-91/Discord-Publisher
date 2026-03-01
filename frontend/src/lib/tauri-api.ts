@@ -369,21 +369,4 @@ export const tauriAPI = {
       return { ok: false };
     }
   },
-
-  /**
-   * Valide le code List_manager via l'Edge Function Supabase (appel côté backend pour éviter CORS en build Tauri).
-   */
-  async validateListManagerCode(supabaseUrl: string, accessToken: string, code: string): Promise<{ valid: boolean; error?: string }> {
-    try {
-      const result = await invoke<{ valid?: boolean; error?: string }>('validate_list_manager_code', {
-        supabaseUrl: supabaseUrl.replace(/\/+$/, ''),
-        accessToken,
-        code
-      });
-      return { valid: result?.valid === true, error: result?.error };
-    } catch (e: unknown) {
-      const msg = typeof e === 'string' ? e : (e && typeof e === 'object' && 'message' in e) ? String((e as Error).message) : (e as Error)?.message ?? 'Erreur réseau';
-      return { valid: false, error: msg || 'Erreur réseau' };
-    }
-  },
 };
