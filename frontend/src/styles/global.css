@@ -388,6 +388,235 @@ textarea.form-textarea {
   font-size: 18px;
 }
 
+/* ========== Modale Statistiques ========== */
+.modal .panel.modal-panel--stats {
+  max-width: 1000px;
+  width: 95%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.stats-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.stats-modal__header h3 { margin: 0; }
+
+.stats-modal__body {
+  flex: 1;
+  overflow-y: auto;
+  margin-right: -16px;
+  padding-right: 16px;
+}
+
+.stats-modal__empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.stats-modal__empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+.stats-modal__grid-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stats-modal__card {
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.stats-modal__card-label {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.stats-modal__card .stats-modal__chart-select { width: 100%; }
+
+.stats-modal__card--total {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.05));
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.stats-modal__total-value {
+  font-size: 36px;
+  font-weight: 700;
+  color: rgb(59, 130, 246);
+}
+
+.stats-modal__total-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.stats-modal__section { margin-bottom: 24px; }
+.stats-modal__section-title {
+  font-size: 16px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stats-modal__section-title h4 { margin: 0; }
+
+.stats-modal__translators-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.stats-modal__translator-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.stats-modal__translator-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.stats-modal__translator-avatar {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stats-modal__translator-avatar--1 { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.stats-modal__translator-avatar--2 { background: linear-gradient(135deg, #22c55e, #16a34a); }
+.stats-modal__translator-avatar--3 { background: linear-gradient(135deg, #a855f7, #9333ea); }
+.stats-modal__translator-avatar--4 { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.stats-modal__translator-avatar--5 { background: linear-gradient(135deg, #ef4444, #dc2626); }
+
+.stats-modal__translator-name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-modal__translator-count {
+  font-size: 15px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.stats-modal__translator-count--1 { color: #3b82f6; }
+.stats-modal__translator-count--2 { color: #22c55e; }
+.stats-modal__translator-count--3 { color: #a855f7; }
+.stats-modal__translator-count--4 { color: #f59e0b; }
+.stats-modal__translator-count--5 { color: #ef4444; }
+
+.stats-modal__empty-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.stats-modal__chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stats-modal__chart-header h4 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+
+.stats-modal__chart-select {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  min-width: 120px;
+}
+
+.stats-modal__chart-box {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.stats-modal__chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 200px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.stats-modal__chart-bar-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 200px;
+  min-height: 0;
+}
+
+.stats-modal__chart-bar {
+  width: 100%;
+  max-width: 40px;
+  min-height: 4px;
+  background: linear-gradient(180deg, #3b82f6, #2563eb);
+  border-radius: 4px 4px 0 0;
+  transition: height 0.3s ease;
+  flex-shrink: 0;
+}
+
+.stats-modal__chart-labels {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.stats-modal__chart-label-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.stats-modal__chart-label-num { font-size: 12px; font-weight: 600; }
+.stats-modal__chart-label-month { font-size: 12px; color: var(--muted); text-align: center; }
+
 /* ========== Modale Configuration (Settings) ========== */
 .modal-panel--config {
   width: 92%;

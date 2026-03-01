@@ -209,9 +209,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // ─── DÉCONNEXION ─────────────────────────────────────────────────────────────
   const signOut = async () => {
     if (sb) await sb.auth.signOut();
-    // 🆕 Nettoyer les flags de session
+    // Nettoyer les flags de session
     sessionStorage.removeItem('sessionActive');
     localStorage.removeItem('rememberMe');
+    // Révoquer l'accès Master Admin : à la déconnexion il faut réappliquer le code
+    localStorage.removeItem('discord-publisher:master-admin-code');
+    window.dispatchEvent(new CustomEvent('masterAdminLocked'));
     setUser(null);
     setProfile(null);
   };

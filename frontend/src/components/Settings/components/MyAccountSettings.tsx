@@ -212,6 +212,8 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
         if (sb) await sb.auth.signOut();
         sessionStorage.removeItem('sessionActive');
         localStorage.removeItem('rememberMe');
+        localStorage.removeItem('discord-publisher:master-admin-code');
+        window.dispatchEvent(new CustomEvent('masterAdminLocked'));
       }, 1000);
     } catch (err: any) {
       showToast(`Erreur : ${err?.message || err}`, 'error');
