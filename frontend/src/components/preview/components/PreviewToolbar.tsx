@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import DiscordIcon from '../../../assets/discord-icon.svg';
 
 interface TemplateOption {
   id: string;
@@ -193,7 +194,8 @@ export default function PreviewToolbar({
               e.currentTarget.style.borderColor = 'var(--border)';
             }}
           >
-            🎨 Aperçu Discord
+            <img src={DiscordIcon} alt="" style={{ width: 18, height: 18, marginRight: 6 }} />
+            Aperçu Discord
           </button>
         )}
       </div>

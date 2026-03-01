@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
+import { getSupabase } from '../../lib/supabase';
 import { useConfirm } from '../../hooks/useConfirm';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 import { useApp } from '../../state/appContext';
+import { useAuth } from '../../state/authContext';
 import type { Template, VarConfig } from '../../state/types';
 import ConfirmModal from '../Modals/ConfirmModal';
 import { useToast } from '../shared/ToastProvider';
+import InstructionsFilter from '../instructions/components/InstructionsFilter';
 import TemplatesModalFooter from './components/TemplatesModalFooter';
 import TemplatesModalHeader from './components/TemplatesModalHeader';
 import TemplateVarChips from './components/TemplateVarChips';
@@ -13,7 +16,10 @@ import TemplatesListSection from './components/TemplatesListSection';
 import TemplatesVarsColumn from './components/TemplatesVarsColumn';
 import MarkdownHelpModal from './MarkdownHelpModal';
 
+type TemplateOwnerOption = { id: string; label: string };
+
 export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
+  const { profile } = useAuth();
   const {
     templates,
     updateTemplate,
@@ -23,9 +29,15 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
     addVarConfig,
     updateVarConfig,
     deleteVarConfig,
+    syncTemplatesForOwnerToSupabase,
   } = useApp();
   const { showToast } = useToast();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
+
+  const isMasterAdmin = profile?.is_master_admin === true;
+  const [templateOwnerOptions, setTemplateOwnerOptions] = useState<TemplateOwnerOption[]>([]);
+  const [selectedTemplateOwnerId, setSelectedTemplateOwnerId] = useState<string>(() => profile?.id ?? '');
+  const [templatesByOwner, setTemplatesByOwner] = useState<Record<string, Template[]>>({});
 
   const [selectedTemplateIdx, setSelectedTemplateIdx] = useState(0);
   const [newTemplateName, setNewTemplateName] = useState('');
@@ -38,9 +50,14 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
+  const isViewingSelf = selectedTemplateOwnerId === profile?.id || !selectedTemplateOwnerId;
+  const templatesToShow: Template[] = isViewingSelf
+    ? templates
+    : (templatesByOwner[selectedTemplateOwnerId] ?? []);
+
   const handleCancelAndClose = () => {
-    if (templates.length > 0) {
-      setFormContent(templates[selectedTemplateIdx]?.content ?? '');
+    if (templatesToShow.length > 0) {
+      setFormContent(templatesToShow[selectedTemplateIdx]?.content ?? '');
     }
     cancelVarEdit();
     onClose?.();
@@ -50,10 +67,51 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   useModalScrollLock();
 
   useEffect(() => {
-    if (templates.length > 0 && templates[selectedTemplateIdx]) {
-      setFormContent(templates[selectedTemplateIdx].content);
+    if (!profile?.id || !isMasterAdmin) return;
+    const sb = getSupabase();
+    if (!sb) return;
+    (async () => {
+      try {
+        const [{ data: profilesData }, { data: templatesRows }] = await Promise.all([
+          sb.from('profiles').select('id, pseudo'),
+          sb.from('saved_templates').select('owner_id, value'),
+        ]);
+        const options: TemplateOwnerOption[] = (profilesData ?? []).map((p: { id: string; pseudo?: string }) => ({
+          id: p.id,
+          label: p.id === profile.id ? `Moi (${p.pseudo || '(sans nom)'})` : (p.pseudo || '(sans nom)'),
+        }));
+        setTemplateOwnerOptions(options);
+        if (profile.id && !selectedTemplateOwnerId) setSelectedTemplateOwnerId(profile.id);
+
+        const byOwner: Record<string, Template[]> = {};
+        for (const row of templatesRows ?? []) {
+          const ownerId = (row as { owner_id: string }).owner_id;
+          const val = (row as { value: unknown }).value;
+          try {
+            const parsed = (Array.isArray(val) ? val : JSON.parse(String(val))) as Template[];
+            if (Array.isArray(parsed) && parsed.length > 0) byOwner[ownerId] = parsed;
+          } catch {
+            /* ignorer */
+          }
+        }
+        setTemplatesByOwner(prev => ({ ...prev, ...byOwner }));
+      } catch {
+        setTemplateOwnerOptions([{ id: profile.id, label: `Moi (${profile.pseudo || 'Moi'})` }]);
+      }
+    })();
+  }, [profile?.id, profile?.pseudo, isMasterAdmin]);
+
+  useEffect(() => {
+    if (selectedTemplateOwnerId && selectedTemplateIdx >= templatesToShow.length) {
+      setSelectedTemplateIdx(0);
     }
-  }, [templates, selectedTemplateIdx]);
+  }, [selectedTemplateOwnerId, templatesToShow.length, selectedTemplateIdx]);
+
+  useEffect(() => {
+    if (templatesToShow.length > 0 && templatesToShow[selectedTemplateIdx]) {
+      setFormContent(templatesToShow[selectedTemplateIdx].content);
+    }
+  }, [templatesToShow, selectedTemplateIdx]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -64,14 +122,14 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [formContent, templates, selectedTemplateIdx]);
+  }, [formContent, templatesToShow, selectedTemplateIdx]);
 
   function createNewTemplate() {
     if (!newTemplateName.trim()) {
       showToast('Veuillez entrer un nom pour le template', 'warning');
       return;
     }
-    const existingNames = templates.map(t => t.name.toLowerCase());
+    const existingNames = templatesToShow.map(t => t.name.toLowerCase());
     if (existingNames.includes(newTemplateName.trim().toLowerCase())) {
       showToast('Un template avec ce nom existe déjà', 'warning');
       return;
@@ -84,45 +142,73 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       modifiedAt: Date.now(),
       isDefault: false,
     };
-    const updatedTemplates = [...templates, newTemplate];
-    importFullConfig({ templates: updatedTemplates });
-    setSelectedTemplateIdx(updatedTemplates.length - 1);
+    if (isViewingSelf) {
+      const updatedTemplates = [...templates, newTemplate];
+      importFullConfig({ templates: updatedTemplates });
+      setSelectedTemplateIdx(updatedTemplates.length - 1);
+    } else {
+      const list = [...templatesToShow, newTemplate];
+      setTemplatesByOwner(prev => ({ ...prev, [selectedTemplateOwnerId]: list }));
+      setSelectedTemplateIdx(list.length - 1);
+      syncTemplatesForOwnerToSupabase(selectedTemplateOwnerId, list).then(r => {
+        if (!r.ok) showToast(r.error ?? 'Erreur enregistrement', 'error');
+      });
+    }
     setNewTemplateName('');
     showToast('Nouveau template créé', 'success');
   }
 
   async function deleteTemplate(idx: number) {
-    if (templates[idx]?.isDefault) {
+    if (templatesToShow[idx]?.isDefault) {
       showToast('Impossible de supprimer le template par défaut', 'error');
       return;
     }
     const ok = await confirm({
       title: 'Supprimer le template',
-      message: `Voulez-vous vraiment supprimer le template "${templates[idx]?.name}" ?`,
+      message: `Voulez-vous vraiment supprimer le template "${templatesToShow[idx]?.name}" ?`,
       confirmText: 'Supprimer',
       type: 'danger',
     });
     if (!ok) return;
-    const updatedTemplates = templates.filter((_, i) => i !== idx);
-    importFullConfig({ templates: updatedTemplates });
-    if (selectedTemplateIdx >= updatedTemplates.length || selectedTemplateIdx === idx) {
-      setSelectedTemplateIdx(0);
+    if (isViewingSelf) {
+      const updatedTemplates = templates.filter((_, i) => i !== idx);
+      importFullConfig({ templates: updatedTemplates });
+      if (selectedTemplateIdx >= updatedTemplates.length || selectedTemplateIdx === idx) {
+        setSelectedTemplateIdx(0);
+      }
+    } else {
+      const updatedTemplates = templatesToShow.filter((_, i) => i !== idx);
+      setTemplatesByOwner(prev => ({ ...prev, [selectedTemplateOwnerId]: updatedTemplates }));
+      if (selectedTemplateIdx >= updatedTemplates.length || selectedTemplateIdx === idx) {
+        setSelectedTemplateIdx(0);
+      }
+      const res = await syncTemplatesForOwnerToSupabase(selectedTemplateOwnerId, updatedTemplates);
+      if (!res.ok) showToast(res.error ?? 'Erreur suppression', 'error');
     }
     showToast('Template supprimé', 'success');
   }
 
   function saveAndClose() {
-    if (templates.length === 0) {
+    if (templatesToShow.length === 0) {
       showToast('Aucun template à modifier', 'error');
       return;
     }
-    const currentTemplate = templates[selectedTemplateIdx];
+    const currentTemplate = templatesToShow[selectedTemplateIdx];
     if (!currentTemplate) {
       showToast('Template introuvable', 'error');
       return;
     }
     const payload = { ...currentTemplate, content: formContent, modifiedAt: Date.now() };
-    updateTemplate(selectedTemplateIdx, payload);
+    if (isViewingSelf) {
+      updateTemplate(selectedTemplateIdx, payload);
+    } else {
+      const updated = [...templatesToShow];
+      updated[selectedTemplateIdx] = payload;
+      setTemplatesByOwner(prev => ({ ...prev, [selectedTemplateOwnerId]: updated }));
+      syncTemplatesForOwnerToSupabase(selectedTemplateOwnerId, updated).then(r => {
+        if (!r.ok) showToast(r.error ?? 'Erreur enregistrement', 'error');
+      });
+    }
     showToast('Template enregistré', 'success');
     onClose?.();
   }
@@ -253,7 +339,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   }
 
   const customVars = allVarsConfig.map((v, idx) => ({ v, idx })).filter(({ v }) => v.isCustom);
-  const currentTemplate = templates[selectedTemplateIdx];
+  const currentTemplate = templatesToShow[selectedTemplateIdx];
 
   return (
     <div className="modal">
@@ -277,8 +363,19 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
           }}
         />
 
+        {isMasterAdmin && templateOwnerOptions.length > 0 && (
+          <InstructionsFilter
+            label="Afficher les templates de"
+            value={selectedTemplateOwnerId}
+            options={templateOwnerOptions.map(o => ({ id: o.id, label: o.label, kind: 'profile' as const }))}
+            onChange={v => {
+              setSelectedTemplateOwnerId(v);
+              setSelectedTemplateIdx(0);
+            }}
+          />
+        )}
         <TemplatesListSection
-          templates={templates}
+          templates={templatesToShow}
           selectedTemplateIdx={selectedTemplateIdx}
           onSelect={setSelectedTemplateIdx}
           newTemplateName={newTemplateName}

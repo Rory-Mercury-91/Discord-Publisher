@@ -420,6 +420,33 @@ async def scrape_enrich(request):
     
     return response
 
+async def translate_handler(request):
+    """
+    Traduit un texte (ex. synopsis) via Google Translate.
+    POST /api/translate
+    Body JSON: { "text": "...", "source_lang": "en", "target_lang": "fr" }
+    Réponse: { "ok": true, "translated": "..." } ou { "ok": false, "error": "..." }
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/translate")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+    try:
+        data = await request.json()
+        text = (data.get("text") or "").strip()
+        if not text:
+            return _with_cors(request, web.json_response({"ok": False, "error": "Texte vide"}, status=400))
+        source_lang = (data.get("source_lang") or "en").strip() or "en"
+        target_lang = (data.get("target_lang") or "fr").strip() or "fr"
+        async with aiohttp.ClientSession() as session:
+            translated = await translate_text(session, text, source_lang, target_lang)
+        if translated is None:
+            return _with_cors(request, web.json_response({"ok": False, "error": "Traduction échouée"}, status=500))
+        return _with_cors(request, web.json_response({"ok": True, "translated": translated}))
+    except Exception as e:
+        logger.exception("[api] /api/translate erreur: %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+
 async def get_logs(request):
     """Retourne le fichier de logs complet (protégé par clé API)."""
     # ✅ Utilise le nouveau système d'auth
@@ -872,6 +899,31 @@ async def get_history(request):
     return _with_cors(request, web.json_response(resp_data))
 
 
+async def get_instructions(request):
+    """Retourne toutes les instructions (saved_instructions) pour les master admin uniquement."""
+    is_valid, discord_user_id, _, is_legacy = await _auth_request(request, "/api/instructions")
+    if not is_valid or is_legacy or not discord_user_id:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Accès refusé"}, status=403))
+    sb = _get_supabase()
+    if not sb:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Supabase non configure"}, status=500))
+    try:
+        res = sb.table("profiles").select("is_master_admin").eq("discord_id", discord_user_id).limit(1).execute()
+        if not res.data or not res.data[0].get("is_master_admin"):
+            logger.warning("[api] get_instructions refusé — discord_id=%s non master_admin", discord_user_id)
+            return _with_cors(request, web.json_response({"ok": False, "error": "Droits insuffisants"}, status=403))
+    except Exception as e:
+        logger.error("[api] Vérification master_admin (instructions): %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+    try:
+        res = sb.table("saved_instructions").select("owner_type, owner_id, value").execute()
+        rows = list(res.data or [])
+        return _with_cors(request, web.json_response({"ok": True, "instructions": rows, "count": len(rows)}))
+    except Exception as e:
+        logger.error("[api] Erreur lecture saved_instructions: %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+
 async def get_forum_tags(request):
     """
     Retourne les tags disponibles d'un salon forum Discord (GET /api/forum-tags?forum_id=...).
@@ -1299,6 +1351,7 @@ def make_app() -> web.Application:
         ("POST",    "/api/forum-post/delete", forum_post_delete),
         ("GET",     "/api/publisher/health",  health),
         ("GET",     "/api/history",           get_history),
+        ("GET",     "/api/instructions",      get_instructions),
         ("GET",     "/api/forum-tags",         get_forum_tags),
         ("POST",    "/api/forum-tags/sync",    sync_forum_tags),
         ("GET",     "/api/jeux",              get_jeux),
@@ -1307,6 +1360,7 @@ def make_app() -> web.Application:
         ("POST",    "/api/server/action",     server_action),
         ("POST",    "/api/transfer-ownership", transfer_ownership),
         ("POST",    "/api/scrape/enrich",     scrape_enrich),
+        ("POST",    "/api/translate",         translate_handler),
         # Catch-all en dernier
         ("*",       "/{tail:.*}",             handle_404),
     ]

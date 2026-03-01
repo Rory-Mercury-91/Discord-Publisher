@@ -6,6 +6,19 @@ import {
   isGoogleUrl,
   LISTFORM_GOOGLE_KEY,
 } from './constants';
+
+const LISTFORM_BAR_EXPANDED_KEY = 'listform_bar_expanded';
+
+function getInitialBarExpanded(): boolean {
+  try {
+    const v = localStorage.getItem(LISTFORM_BAR_EXPANDED_KEY);
+    if (v === 'false') return false;
+    if (v === 'true') return true;
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
 import ListFormActionBar from './components/ListFormActionBar';
 import ListFormGoogleSteps from './components/ListFormGoogleSteps';
 import ListFormIframe from './components/ListFormIframe';
@@ -17,7 +30,16 @@ export default function ListFormView() {
   const [tryIframeForGoogle, setTryIframeForGoogle] = useState(
     getInitialTryIframeGoogle
   );
-  const [barExpanded, setBarExpanded] = useState(true);
+  const [barExpanded, setBarExpanded] = useState(getInitialBarExpanded);
+
+  const setBarExpandedPersisted = (value: boolean) => {
+    setBarExpanded(value);
+    try {
+      localStorage.setItem(LISTFORM_BAR_EXPANDED_KEY, String(value));
+    } catch {
+      /* ignore */
+    }
+  };
 
   const openInBrowser = () => {
     if (url) tauriAPI.openUrl(url);
@@ -52,7 +74,7 @@ export default function ListFormView() {
     <main className="list-form-view">
       {barExpanded ? (
         <ListFormActionBar
-          onCollapse={() => setBarExpanded(false)}
+          onCollapse={() => setBarExpandedPersisted(false)}
           isGoogle={isGoogle}
           tryIframeForGoogle={tryIframeForGoogle}
           onConnectWindow={openInAppWindow}
@@ -64,7 +86,7 @@ export default function ListFormView() {
         <button
           type="button"
           className="list-form-bar-reopen"
-          onClick={() => setBarExpanded(true)}
+          onClick={() => setBarExpandedPersisted(true)}
           title="Afficher la barre d'outils"
         >
           ▲ Afficher la barre d'outils

@@ -151,13 +151,19 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
       content = content.replace(/\n\n\n+/g, '\n\n');
     }
 
-    // [instruction] : bloc de type code (indépendant du synopsis)
+    // [instruction] : bloc dans un cadre noir (code block) avec titre + liste numérotée
     const instructionContent = (inputs['instruction'] || '').trim();
     const instructionBlock = instructionContent
       ? (() => {
-        const instructionLines = instructionContent.split('\n').map(l => l.trim()).filter(Boolean);
-        const numberedInstructions = instructionLines.map((l, index) => `${index + 1}. ${l}`).join('\n');
-        return '```\nInstructions d\'installation :\n' + numberedInstructions + '\n```';
+        // Découper sur " 2. ", " 3. " ou ".2. ", ".3. " (sans espace après le point)
+        const normalized = instructionContent
+          .replace(/\.(\d{1,3})\.\s+/g, '.\n$1. ')
+          .replace(/\s+(\d{1,3})\.\s+/g, '\n$1. ');
+        const instructionLines = normalized.split('\n').map(l => l.trim()).filter(Boolean);
+        const numberedInstructions = instructionLines
+          .map((l, i) => (/^\d+\.\s/.test(l) ? l : `${i + 1}. ${l}`))
+          .join('\n');
+        return '```\nInstructions d\'installation :\n\n' + numberedInstructions + '\n```';
       })()
       : '';
     content = content.split('[instruction]').join(instructionBlock);
@@ -165,6 +171,12 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
 
     // 7. Réduire les retours à la ligne multiples (garder au moins une ligne vide entre sections pour le preview Discord)
     content = content.replace(/\n\n\n+/g, '\n\n');
+
+    // Garder « Version du jeu » et « Version traduite » sur la même ligne (éviter bloc en dessous)
+    content = content.replace(/\*\*Version du jeu :\*\*\s*```\s*\n?([^`]*?)\n?```/g, (_, val) => `**Version du jeu :** \`${(val || '').trim()}\``);
+    content = content.replace(/\*\*Version traduite :\*\*\s*```\s*\n?([^`]*?)\n?```/g, (_, val) => `**Version traduite :** \`${(val || '').trim()}\``);
+    content = content.replace(/\*\*Version du jeu :\*\*[\s\n]*`/g, '**Version du jeu :** `');
+    content = content.replace(/\*\*Version traduite :\*\*[\s\n]*`/g, '**Version traduite :** `');
 
     // Ne pas ajouter le lien dans le preview - il sera ajouté uniquement lors de la publication
     // L'image sera affichée séparément via le composant PreviewImage

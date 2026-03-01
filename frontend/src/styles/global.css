@@ -4079,6 +4079,33 @@ textarea.form-textarea {
   cursor: pointer;
   background: transparent;
   color: var(--text);
+  transition: background 0.15s, border-color 0.15s;
+}
+.links-block__add-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--accent);
+}
+
+/* Même style pour le bouton Traduire (section Synopsis), hauteur = dropdown (40px) */
+.editor-section-header-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  height: 40px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text);
+  transition: background 0.15s, border-color 0.15s;
+}
+.editor-section-header-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--accent);
+}
+.editor-section-header-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .links-block__row {
@@ -4363,12 +4390,56 @@ textarea.form-textarea {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
-/* Aligner la ligne du haut : même espace sous le label que Synopsis (label mb 6px + gap 8px = 14px) */
-.editor-two-col .dropdown-wrap .form-label {
-  margin-bottom: 14px;
+/* Colonnes Synopsis + Instructions : même hauteur, textareas remplissent l'espace sous la ligne 1 */
+.editor-two-col .form-field.form-field--fill {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.editor-two-col .form-field .editor-section-header + .form-textarea {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Ligne 1 des sections Synopsis / Instructions : label à gauche, contrôle à droite (même hauteur = alignement textareas) */
+.editor-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+.editor-section-header .form-label {
+  margin-bottom: 0;
+  flex: 0 1 50%;
+  min-width: 0;
+}
+.editor-section-header-input-wrap {
+  flex: 0 1 50%;
+  min-width: 0;
+  position: relative;
+}
+/* Pas de marge sous le dropdown dans la ligne 1, pour aligner les textareas (même espace que gauche) */
+.editor-section-header .editor-section-header-input-wrap.dropdown-wrap {
+  margin-bottom: 0;
+}
+.editor-section-header-input-wrap .form-input {
+  width: 100%;
+}
+
+/* Hover sur tous les boutons du formulaire (content editor) */
+.form-btn:not(:disabled):hover {
+  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.08);
+}
+.form-btn--primary:not(:disabled):hover {
+  background: var(--accent);
+  opacity: 0.95;
 }
 
 .editor-overlay {
@@ -5906,6 +5977,13 @@ textarea.form-textarea {
 
 .library-table-row:hover {
   background: rgba(128, 128, 128, 0.05);
+}
+
+.library-table-row--clickable {
+  cursor: pointer;
+}
+.library-table-row--clickable:hover {
+  background: rgba(128, 128, 128, 0.1);
 }
 
 .library-row-actions {

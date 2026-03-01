@@ -3,6 +3,7 @@ import type { AppMode, GameF95, SyncStatus } from './library-types';
 import { getSyncStatus } from './library-constants';
 import GameCard from './components/GameCard';
 import GameRow from './components/GameRow';
+import GameDetailModal from './GameDetailModal';
 import { useApp } from '../../state/appContext';
 import { useToast } from '../shared/ToastProvider';
 import Toggle from '../shared/Toggle';
@@ -29,7 +30,15 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'library' | 'stats'>('library');
-  const [view, setView] = useState<'grid' | 'list'>('grid');
+  const [view, setView] = useState<'grid' | 'list'>(() => {
+    try {
+      const v = localStorage.getItem('library_view');
+      return v === 'list' || v === 'grid' ? v : 'grid';
+    } catch {
+      return 'grid';
+    }
+  });
+  const [selectedGameForDetail, setSelectedGameForDetail] = useState<GameF95 | null>(null);
   const [search, setSearch] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
   const [filterTrad, setFilterTrad] = useState('');
@@ -63,6 +72,14 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
       /* ignore */
     }
   }, [pageSize]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('library_view', view);
+    } catch {
+      /* ignore */
+    }
+  }, [view]);
 
   useEffect(() => {
     setCurrentPage(0);
@@ -341,6 +358,7 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                   type="button"
                   className={`library-toolbar-btn ${view === v ? 'library-toolbar-btn--active' : ''}`}
                   onClick={() => setView(v)}
+                  title={v === 'grid' ? 'Vue grille' : 'Vue liste'}
                 >
                   {v === 'grid' ? '⊞' : '≡'}
                 </button>
@@ -413,10 +431,23 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                 </thead>
                 <tbody>
                   {paginatedItems.map((g) => (
-                    <GameRow key={g.id} game={g} post={findPost(g)} onEdit={handleEdit} />
+                    <GameRow
+                      key={g.id}
+                      game={g}
+                      post={findPost(g)}
+                      onEdit={handleEdit}
+                      onOpenDetail={() => setSelectedGameForDetail(g)}
+                    />
                   ))}
                 </tbody>
               </table>
+            )}
+
+            {selectedGameForDetail && (
+              <GameDetailModal
+                game={selectedGameForDetail}
+                onClose={() => setSelectedGameForDetail(null)}
+              />
             )}
 
             {!loading && !error && filtered.length > 0 && totalPages > 1 && (

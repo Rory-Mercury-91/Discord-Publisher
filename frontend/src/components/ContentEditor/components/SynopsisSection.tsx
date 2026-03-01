@@ -5,20 +5,35 @@ interface SynopsisSectionProps {
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
+  onTranslate?: () => void;
+  translating?: boolean;
 }
 
 const SynopsisSection = forwardRef<HTMLTextAreaElement, SynopsisSectionProps>(
-  ({ value, onChange, disabled }, ref) => {
+  ({ value, onChange, disabled, onTranslate, translating }, ref) => {
     return (
       <div className="form-field form-field--fill">
-        <label className="form-label">Synopsis</label>
+        <div className="editor-section-header">
+          <label className="form-label">Synopsis</label>
+          {onTranslate && (
+            <button
+              type="button"
+              className="editor-section-header-btn"
+              onClick={onTranslate}
+              disabled={disabled || translating || !value.trim()}
+              title="Traduire le synopsis (EN → FR) via Google Translate"
+            >
+              {translating ? 'Traduction…' : 'Traduire'}
+            </button>
+          )}
+        </div>
         <textarea
           ref={ref}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           placeholder="Décrivez le jeu..."
-          className={`form-textarea form-textarea--fill styled-scrollbar ${disabled ? 'form-textarea--disabled' : ''}`}
+          className={`form-textarea form-textarea--fill form-textarea--synopsis styled-scrollbar ${disabled ? 'form-textarea--disabled' : ''}`}
         />
       </div>
     );

@@ -108,7 +108,8 @@ async function _syncAllInstructionsToSupabase(
   const isMasterAdmin = !!localStorage.getItem(STORAGE_KEY_MASTER_ADMIN);
   const rows = groupInstructionsByOwner(instructions, owners);
   const toSync = rows.filter(
-    r => r.owner_type === 'profile' && r.owner_id === userId
+    r =>
+      (r.owner_type === 'profile' && (r.owner_id === userId || isMasterAdmin))
       || (r.owner_type === 'external' && isMasterAdmin)
   );
   const now = new Date().toISOString();

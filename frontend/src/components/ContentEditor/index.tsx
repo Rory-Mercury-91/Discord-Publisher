@@ -1,6 +1,8 @@
 // frontend/src/components/ContentEditor/index.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { useConfirm } from '../../hooks/useConfirm';
+import { apiFetch } from '../../lib/api-helpers';
 import { getSupabase } from '../../lib/supabase';
 import { useApp } from '../../state/appContext';
 import { useAuth } from '../../state/authContext';
@@ -9,6 +11,7 @@ import ConfirmModal from '../Modals/ConfirmModal';
 import { TagSelectorModal } from '../tags';
 import { useToast } from '../shared/ToastProvider';
 
+import { DISCORD_TAG_ALIASES } from '../tags/tags-modal-constants';
 import CustomVarsSection from './components/CustomVarsSection';
 import EditorHeader from './components/EditorHeader';
 import GameLinkAndTranslationTypeSection from './components/GameLinkAndTranslationTypeSection';
@@ -18,6 +21,15 @@ import LinksSection from './components/LinksSection';
 import PublishFooter from './components/PublishFooter';
 import SynopsisSection from './components/SynopsisSection';
 import VersionsSection from './components/VersionsSection';
+
+/** Mappe le statut exporté (Tampermonkey / F95) vers la clé du tag "Statut du jeu". */
+function statusExportToGameStatusKey(status: string): 'ongoing' | 'completed' | 'abandoned' | null {
+  const k = (status || '').toUpperCase().trim();
+  if (/EN COURS|ONGOING|IN PROGRESS|ACTIF/.test(k)) return 'ongoing';
+  if (/TERMINÉ|TERMINE|COMPLET|COMPLETED|FINI/.test(k)) return 'completed';
+  if (/ABANDONNÉ|ABANDONNE|ABANDONED/.test(k)) return 'abandoned';
+  return null;
+}
 
 export default function ContentEditor() {
   const {
@@ -58,6 +70,7 @@ export default function ContentEditor() {
     setTranslationType,
     isIntegrated,
     setIsIntegrated,
+    apiUrl,
   } = useApp();
 
   const { profile } = useAuth();
@@ -81,6 +94,7 @@ export default function ContentEditor() {
   const [showInstructionSuggestions, setShowInstructionSuggestions] = useState(false);
   const [silentUpdateMode, setSilentUpdateMode] = useState(false);
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
+  const [translatingOverview, setTranslatingOverview] = useState(false);
 
   const overviewRef = useRef<HTMLTextAreaElement>(null);
   /** Données F95 importées (tags, status, type) pour les réutiliser dans l'export formulaire liste */
@@ -109,6 +123,42 @@ export default function ContentEditor() {
   const selectedTagIds = useMemo(() =>
     postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [],
     [postTags]);
+
+  const handleTranslateSynopsis = useCallback(async () => {
+    const text = (inputs['Overview'] || '').trim();
+    if (!text) return;
+    const base = (localStorage.getItem('apiBase') || apiUrl || '').replace(/\/+$/, '');
+    if (!base) {
+      showToast('URL de l’API non configurée', 'error');
+      return;
+    }
+    const apiKey = localStorage.getItem('apiKey') || '';
+    if (!apiKey) {
+      showToast('Clé API non configurée', 'error');
+      return;
+    }
+    setTranslatingOverview(true);
+    try {
+      const res = await apiFetch(`${base}/api/translate`, apiKey, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, source_lang: 'en', target_lang: 'fr' }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showToast(data?.error || 'Traduction échouée', 'error');
+        return;
+      }
+      if (data.translated) {
+        setInput('Overview', data.translated);
+        showToast('Synopsis traduit (EN → FR)', 'success');
+      }
+    } catch (e) {
+      showToast((e as Error)?.message || 'Erreur réseau', 'error');
+    } finally {
+      setTranslatingOverview(false);
+    }
+  }, [inputs['Overview'], apiUrl, setInput, showToast]);
 
   const hasRequiredTags = useMemo(() => {
     const hasSite = selectedTagIds.some(id =>
@@ -172,13 +222,14 @@ export default function ContentEditor() {
       return 'p:' + stored;
     };
     let names = Object.keys(savedInstructions);
-    if (ownerKey && instructionOwners) {
+    // Admin : afficher toutes les instructions ; sinon filtrer par propriétaire (traducteur sélectionné)
+    if (!profile?.is_master_admin && ownerKey && instructionOwners) {
       names = names.filter(name => normalizeStored(instructionOwners[name]) === ownerKey);
     }
     if (!instructionSearchQuery.trim()) return names;
     const q = instructionSearchQuery.toLowerCase();
     return names.filter(name => name.toLowerCase().includes(q));
-  }, [savedInstructions, instructionOwners, instructionSearchQuery, selectedTranslatorId, selectedTranslatorKind, profile?.id]);
+  }, [savedInstructions, instructionOwners, instructionSearchQuery, selectedTranslatorId, selectedTranslatorKind, profile?.id, profile?.is_master_admin]);
 
   // Tags du traducteur actif (mêmes règles que TagSelectorModal)
   const activeTranslatorId = selectedTranslatorId;
@@ -486,6 +537,30 @@ export default function ContentEditor() {
         setInput('_f95_type', typeStr);
       }
 
+      // Mapper le statut importé (EN COURS, Terminé, Abandonnée) vers le tag utilisateur "Statut du jeu"
+      const statusKey = statusExportToGameStatusKey(typeof data.status === 'string' ? data.status : '');
+      if (statusKey && savedTags?.length) {
+        const aliasEntry = DISCORD_TAG_ALIASES.find(
+          a => a.section === 'gameStatus' && a.key === statusKey
+        );
+        const gameStatusTag = savedTags.find(t => {
+          if (t.tagType !== 'gameStatus') return false;
+          const name = (t.name || '').toLowerCase().replace(/\p{Emoji}/gu, '').trim();
+          return aliasEntry?.aliases.some(a => name.includes(a) || a.includes(name)) ?? false;
+        });
+        if (gameStatusTag) {
+          const tagId = gameStatusTag.id || gameStatusTag.name || String(gameStatusTag.discordTagId ?? '');
+          const currentIds = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
+          const withoutGameStatus = currentIds.filter(id => {
+            const t = savedTags.find(st =>
+              (st.id || st.name) === id || String(st.discordTagId ?? '') === id
+            );
+            return t?.tagType !== 'gameStatus';
+          });
+          setPostTags([...withoutGameStatus, tagId].join(','));
+        }
+      }
+
       showToast('Données importées avec succès !', 'success');
     } catch {
       showToast('Format JSON invalide', 'error');
@@ -703,6 +778,8 @@ export default function ContentEditor() {
             value={inputs['Overview'] || ''}
             onChange={(v) => setInput('Overview', v)}
             disabled={!varsUsedInTemplate.has('Overview')}
+            onTranslate={handleTranslateSynopsis}
+            translating={translatingOverview}
           />
 
           <InstructionsSection

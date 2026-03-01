@@ -7,14 +7,21 @@ interface GameRowProps {
   game: GameF95;
   post: any;
   onEdit: (p: any) => void;
+  onOpenDetail?: () => void;
 }
 
-export default function GameRow({ game, post, onEdit }: GameRowProps) {
+export default function GameRow({ game, post, onEdit, onOpenDetail }: GameRowProps) {
   const sync = SYNC_META[game._sync!];
   const tmStyle = typeMajStyle(game.type_maj);
 
   return (
-    <tr className="library-table-row">
+    <tr
+      className={`library-table-row ${onOpenDetail ? 'library-table-row--clickable' : ''}`}
+      role={onOpenDetail ? 'button' : undefined}
+      tabIndex={onOpenDetail ? 0 : undefined}
+      onClick={onOpenDetail ?? undefined}
+      onKeyDown={onOpenDetail ? (e) => e.key === 'Enter' && onOpenDetail() : undefined}
+    >
       <td className="library-table-td library-table-td--title">
         <div className="library-table-cell-title library-table-cell-title--with-type">{game.nom_du_jeu}</div>
         {game.type && <div className="library-version-muted">{game.type}</div>}
@@ -35,7 +42,7 @@ export default function GameRow({ game, post, onEdit }: GameRowProps) {
           <span className="library-table-badge" data-type-maj={getTypeMajData(game.type_maj)}>{tmStyle.icon} {game.type_maj}</span>
         ) : '—'}
       </td>
-      <td className="library-table-td library-table-td--center">
+      <td className="library-table-td library-table-td--center" onClick={(e) => e.stopPropagation()}>
         <div className="library-row-actions">
           {game.nom_url && (
             <button type="button" className="library-row-btn" onClick={() => tauriAPI.openUrl(game.nom_url)} title="Ouvrir la page du jeu">🔗</button>

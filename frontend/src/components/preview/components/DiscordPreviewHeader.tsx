@@ -1,3 +1,5 @@
+import DiscordIcon from '../../../assets/discord-icon.svg';
+
 interface DiscordPreviewHeaderProps {
   characterCount: number;
   isOverLimit: boolean;
@@ -22,8 +24,9 @@ export default function DiscordPreviewHeader({
         background: '#2f3136',
       }}
     >
-      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#f2f3f5' }}>
-        🎨 Aperçu Discord
+      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#f2f3f5', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <img src={DiscordIcon} alt="" style={{ width: 22, height: 22 }} />
+        Aperçu Discord
       </h3>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <div
