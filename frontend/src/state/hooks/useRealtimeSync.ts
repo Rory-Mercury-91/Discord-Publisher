@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { getSupabase } from '../../lib/supabase';
 import { mergeInstructionsFromSupabase, type SavedInstructionRow } from './useInstructionsState';
 import { rowToPost } from '../logic/history';
-import type { PublishedPost, Tag, TagType, Template } from '../types';
+import type { PublishedPost, Tag, TagType } from '../types';
 
 type RealtimeSyncDeps = {
   setSavedTags: React.Dispatch<React.SetStateAction<Tag[]>>;
@@ -11,7 +11,8 @@ type RealtimeSyncDeps = {
   setPublishedPosts: React.Dispatch<React.SetStateAction<PublishedPost[]>>;
   setSavedInstructions: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setInstructionOwners: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  setTemplates: React.Dispatch<React.SetStateAction<Template[]>>;
+  /** Applique le payload saved_templates (templates + customVars) reçu par realtime. */
+  applySavedTemplatesPayload: (value: unknown) => void;
 };
 
 function mapTagRow(r: { id: string; name: string; tag_type: string; author_discord_id?: string | null; discord_tag_id?: string | null }) {
@@ -33,7 +34,7 @@ export function useRealtimeSync(deps: RealtimeSyncDeps) {
     setPublishedPosts,
     setSavedInstructions,
     setInstructionOwners,
-    setTemplates,
+    applySavedTemplatesPayload,
   } = deps;
 
   useEffect(() => {
@@ -97,13 +98,7 @@ export function useRealtimeSync(deps: RealtimeSyncDeps) {
         })
         .then((res) => {
           if (!res?.data?.value || res.error) return;
-          const value = res.data.value;
-          try {
-            const parsed = (Array.isArray(value) ? value : JSON.parse(String(value))) as Template[];
-            if (Array.isArray(parsed) && parsed.length > 0) setTemplates(parsed);
-          } catch {
-            /* ignorer */
-          }
+          applySavedTemplatesPayload(res.data.value);
         });
     });
 

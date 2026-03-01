@@ -2696,15 +2696,11 @@ textarea.form-textarea {
 .template-var-row__label { color: var(--muted); font-size: 11px; margin-top: 2px; }
 .template-var-row__btn { font-size: 11px; padding: 4px 8px; }
 
-.templates-vars-column__actions { margin-bottom: 8px; }
-.templates-vars-column__actions .form-btn--primary { font-size: 12px; padding: 6px 12px; }
-
-.templates-vars-existing { margin-bottom: 16px; }
+.templates-vars-existing { margin-top: 16px; }
+.templates-vars-list > .templates-vars-form + .templates-vars-existing { border-top: 1px solid var(--border); padding-top: 12px; }
 .templates-vars-existing__title { font-size: 11px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
 .templates-vars-existing__list { display: flex; flex-direction: column; gap: 6px; }
 
-.templates-vars-form { padding-top: 12px; }
-.templates-vars-list > .templates-vars-existing + .templates-vars-form { border-top: 1px solid var(--border); }
 .templates-vars-form__title { margin: 0 0 8px 0; font-size: 12px; font-weight: 600; }
 .templates-vars-form__grid { display: grid; gap: 8px; }
 .templates-vars-form__actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }

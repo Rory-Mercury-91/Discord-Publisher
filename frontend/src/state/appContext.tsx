@@ -67,8 +67,9 @@ type AppContextValue = {
   syncInstructionsToSupabase: () => Promise<{ ok: boolean; error?: string }>;
   fetchInstructionsFromSupabase: () => Promise<void>;
   syncTemplatesToSupabase: (templatesToSync?: Template[]) => Promise<{ ok: boolean; error?: string }>;
-  syncTemplatesForOwnerToSupabase: (ownerId: string, templates: Template[]) => Promise<{ ok: boolean; error?: string }>;
+  syncTemplatesForOwnerToSupabase: (ownerId: string, templates: Template[], customVars?: VarConfig[]) => Promise<{ ok: boolean; error?: string }>;
   fetchTemplatesFromSupabase: () => Promise<void>;
+  applySavedTemplatesPayload: (value: unknown) => void;
   importFullConfig: (config: any) => void;
 
   savedInstructions: Record<string, string>;
@@ -615,17 +616,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         instructionsState.setInstructionOwners(owners);
       }
 
-      // Templates : saved_templates (propre à l'utilisateur connecté, un row par owner)
+      // Templates + variables personnalisées : saved_templates (un row par owner, value = { templates, customVars })
       if (userId) {
         const resTpl = await sb.from('saved_templates').select('value').eq('owner_id', userId).maybeSingle();
-        if (!resTpl.error && resTpl.data?.value) {
-          try {
-            const parsed = (Array.isArray(resTpl.data.value) ? resTpl.data.value : JSON.parse(String(resTpl.data.value))) as Template[];
-            if (Array.isArray(parsed) && parsed.length > 0) tvState.setTemplates(parsed);
-          } catch (_e) {
-            /* ignorer */
-          }
-        }
+        if (!resTpl.error && resTpl.data?.value) tvState.applySavedTemplatesPayload(resTpl.data.value);
       }
     })();
   }, []);
@@ -670,7 +664,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPublishedPosts: pubState.setPublishedPosts,
     setSavedInstructions: instructionsState.setSavedInstructions,
     setInstructionOwners: instructionsState.setInstructionOwners,
-    setTemplates: tvState.setTemplates,
+    applySavedTemplatesPayload: tvState.applySavedTemplatesPayload,
   });
 
   useEffect(() => {
@@ -769,6 +763,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     syncTemplatesToSupabase: tvState.syncTemplatesToSupabase,
     syncTemplatesForOwnerToSupabase: tvState.syncTemplatesForOwnerToSupabase,
     fetchTemplatesFromSupabase: tvState.fetchTemplatesFromSupabase,
+    applySavedTemplatesPayload: tvState.applySavedTemplatesPayload,
 
     savedInstructions: instructionsState.savedInstructions,
     saveInstruction: instructionsState.saveInstruction,

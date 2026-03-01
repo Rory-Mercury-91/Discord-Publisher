@@ -9,7 +9,6 @@ interface TemplatesVarsColumnProps {
   onCancelEdit: () => void;
   onSaveVar: () => void;
   onDeleteVar: (idx: number) => void;
-  onAddNew: () => void;
 }
 
 export default function TemplatesVarsColumn({
@@ -21,51 +20,11 @@ export default function TemplatesVarsColumn({
   onCancelEdit,
   onSaveVar,
   onDeleteVar,
-  onAddNew,
 }: TemplatesVarsColumnProps) {
   return (
     <div className="templates-vars-column">
       <h4 className="templates-vars-column__title">🔧 Variables personnalisées</h4>
-      <div className="templates-vars-column__actions">
-        <button type="button" onClick={onAddNew} className="form-btn form-btn--primary">
-          ➕ Ajouter une variable
-        </button>
-      </div>
       <div className="templates-vars-list styled-scrollbar">
-        {customVars.length > 0 && (
-          <div className="templates-vars-existing">
-            <div className="templates-vars-existing__title">Variables existantes</div>
-            <div className="templates-vars-existing__list">
-              {customVars.map(({ v, idx }) => (
-                <div
-                  key={idx}
-                  className={
-                    editingVarIdx === idx
-                      ? 'template-var-row template-var-row--editing'
-                      : 'template-var-row'
-                  }
-                >
-                  {editingVarIdx === idx ? (
-                    <div className="template-var-row__edit-label">✏️ En édition</div>
-                  ) : (
-                    <>
-                      <div className="template-var-row__cell">
-                        <strong className="template-var-row__name">[{v.name}]</strong>
-                        <div className="template-var-row__label">{v.label}</div>
-                      </div>
-                      <button type="button" className="template-var-row__btn" onClick={() => onStartEdit(idx)} title="Éditer">
-                        ✏️
-                      </button>
-                      <button type="button" className="template-var-row__btn" onClick={() => onDeleteVar(idx)} title="Supprimer">
-                        🗑️
-                      </button>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
         <div className="templates-vars-form">
           <h5 className="templates-vars-form__title">
             {editingVarIdx !== null ? '✏️ Modifier la variable' : '➕ Ajouter une variable'}
@@ -109,6 +68,40 @@ export default function TemplatesVarsColumn({
             </div>
           </div>
         </div>
+        {customVars.length > 0 && (
+          <div className="templates-vars-existing">
+            <div className="templates-vars-existing__title">Variables existantes</div>
+            <div className="templates-vars-existing__list">
+              {customVars.map(({ v, idx }) => (
+                <div
+                  key={idx}
+                  className={
+                    editingVarIdx === idx
+                      ? 'template-var-row template-var-row--editing'
+                      : 'template-var-row'
+                  }
+                >
+                  {editingVarIdx === idx ? (
+                    <div className="template-var-row__edit-label">✏️ En édition</div>
+                  ) : (
+                    <>
+                      <div className="template-var-row__cell">
+                        <strong className="template-var-row__name">[{v.name}]</strong>
+                        <div className="template-var-row__label">{v.label}</div>
+                      </div>
+                      <button type="button" className="template-var-row__btn" onClick={() => onStartEdit(idx)} title="Éditer">
+                        ✏️
+                      </button>
+                      <button type="button" className="template-var-row__btn" onClick={() => onDeleteVar(idx)} title="Supprimer">
+                        🗑️
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

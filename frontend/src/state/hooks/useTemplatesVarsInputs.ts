@@ -4,6 +4,24 @@ import { cleanGameLinkUrl } from '../logic/links';
 import { defaultTemplates, defaultVarsConfig } from '../defaults';
 import type { Template, VarConfig } from '../types';
 
+/** Format Supabase : objet { templates, customVars } ou ancien format (tableau de templates). */
+export type SavedTemplatesPayload =
+  | { templates: Template[]; customVars?: VarConfig[] }
+  | Template[];
+
+export function parseSavedTemplatesValue(value: unknown): { templates: Template[]; customVars: VarConfig[] } {
+  if (Array.isArray(value) && value.length >= 0) {
+    return { templates: value as Template[], customVars: [] };
+  }
+  if (value && typeof value === 'object' && 'templates' in value) {
+    const o = value as { templates: unknown; customVars?: unknown };
+    const templates = Array.isArray(o.templates) ? (o.templates as Template[]) : [];
+    const customVars = Array.isArray(o.customVars) ? (o.customVars as VarConfig[]) : [];
+    return { templates, customVars };
+  }
+  return { templates: [], customVars: [] };
+}
+
 function getStoredVarsConfig(): VarConfig[] {
   try {
     const raw = localStorage.getItem('customVariables');
@@ -92,21 +110,23 @@ export function useTemplatesVarsInputs() {
   }, []);
 
   const syncTemplatesToSupabase = useCallback(
-    async (templatesToSync?: Template[]): Promise<{ ok: boolean; error?: string }> => {
+    async (templatesToSync?: Template[], customVarsToSync?: VarConfig[]): Promise<{ ok: boolean; error?: string }> => {
       const sb = getSupabase();
       if (!sb) return { ok: false, error: 'Supabase non configuré' };
       const { data: { session } } = await sb.auth.getSession();
       const userId = session?.user?.id;
       if (!userId) return { ok: true };
       const list = templatesToSync ?? templates;
-      if (!templatesToSync && list.length > 0 && list[0]?.isDefault === true) {
+      const customVars = customVarsToSync ?? allVarsConfig.filter(v => v.isCustom);
+      if (!templatesToSync && list.length > 0 && list[0]?.isDefault === true && customVars.length === 0) {
         return { ok: true };
       }
+      const payload: SavedTemplatesPayload = { templates: list, customVars };
       try {
         const { error } = await sb
           .from('saved_templates')
           .upsert(
-            { owner_id: userId, value: list, updated_at: new Date().toISOString() },
+            { owner_id: userId, value: payload, updated_at: new Date().toISOString() },
             { onConflict: 'owner_id' }
           );
         if (error) throw new Error((error as { message?: string })?.message);
@@ -115,7 +135,7 @@ export function useTemplatesVarsInputs() {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
     },
-    [templates]
+    [templates, allVarsConfig]
   );
 
   const fetchTemplatesFromSupabase = useCallback(async () => {
@@ -131,23 +151,47 @@ export function useTemplatesVarsInputs() {
       .maybeSingle();
     if (error || !data?.value) return;
     try {
-      const parsed = (Array.isArray(data.value) ? data.value : JSON.parse(String(data.value))) as Template[];
-      if (Array.isArray(parsed) && parsed.length > 0) setTemplates(parsed);
+      const raw = Array.isArray(data.value) ? data.value : JSON.parse(String(data.value));
+      const { templates: tpl, customVars: cv } = parseSavedTemplatesValue(raw);
+      if (tpl.length > 0) setTemplates(tpl);
+      if (cv.length > 0) {
+        const merged = [...defaultVarsConfig, ...cv.map(v => ({ ...v, isCustom: true as const }))];
+        setAllVarsConfig(merged);
+      }
     } catch {
       /* ignore */
     }
   }, []);
 
-  /** Enregistre les templates pour un owner donné (usage admin : éditer les templates d'un autre utilisateur). */
+  /** Applique un payload Supabase (templates + customVars) sur l'état local. Utilisé au chargement initial et par le realtime. */
+  const applySavedTemplatesPayload = useCallback((value: unknown) => {
+    try {
+      const { templates: tpl, customVars: cv } = parseSavedTemplatesValue(value);
+      if (tpl.length > 0) setTemplates(tpl);
+      if (cv.length > 0) {
+        const merged = [...defaultVarsConfig, ...cv.map(v => ({ ...v, isCustom: true as const }))];
+        setAllVarsConfig(merged);
+      }
+    } catch {
+      /* ignorer */
+    }
+  }, []);
+
+  /** Enregistre les templates et variables personnalisées pour un owner donné (usage admin). */
   const syncTemplatesForOwnerToSupabase = useCallback(
-    async (ownerId: string, templatesToSync: Template[]): Promise<{ ok: boolean; error?: string }> => {
+    async (
+      ownerId: string,
+      templatesToSync: Template[],
+      customVarsToSync: VarConfig[] = []
+    ): Promise<{ ok: boolean; error?: string }> => {
       const sb = getSupabase();
       if (!sb) return { ok: false, error: 'Supabase non configuré' };
+      const payload: SavedTemplatesPayload = { templates: templatesToSync, customVars: customVarsToSync };
       try {
         const { error } = await sb
           .from('saved_templates')
           .upsert(
-            { owner_id: ownerId, value: templatesToSync, updated_at: new Date().toISOString() },
+            { owner_id: ownerId, value: payload, updated_at: new Date().toISOString() },
             { onConflict: 'owner_id' }
           );
         if (error) throw new Error((error as { message?: string })?.message);
@@ -166,8 +210,8 @@ export function useTemplatesVarsInputs() {
     } catch {
       /* ignore */
     }
-    syncTemplatesToSupabase(defaultTemplates).catch(() => {});
-  }, [syncTemplatesToSupabase]);
+    syncTemplatesToSupabase(defaultTemplates, allVarsConfig.filter(v => v.isCustom)).catch(() => {});
+  }, [syncTemplatesToSupabase, allVarsConfig]);
 
   useEffect(() => {
     if (!templatesSyncEnabledRef.current) return;
@@ -175,7 +219,7 @@ export function useTemplatesVarsInputs() {
       syncTemplatesToSupabase().catch(() => {});
     }, 400);
     return () => clearTimeout(id);
-  }, [templates, syncTemplatesToSupabase]);
+  }, [templates, allVarsConfig, syncTemplatesToSupabase]);
 
   const addVarConfig = useCallback((v: VarConfig) => {
     if (v.name === 'Traductor' || v.name === 'Developpeur' || v.name === 'install_instructions') return;
@@ -224,6 +268,7 @@ export function useTemplatesVarsInputs() {
     syncTemplatesToSupabase,
     syncTemplatesForOwnerToSupabase,
     fetchTemplatesFromSupabase,
+    applySavedTemplatesPayload,
     allVarsConfig,
     setAllVarsConfig,
     addVarConfig,

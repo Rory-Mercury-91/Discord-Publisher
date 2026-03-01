@@ -1,4 +1,5 @@
-import rootPkg from '../../../package.json';
+// Version alignée sur la release : package.json racine (et tauri.conf.json), pas frontend/package.json
+import rootPkg from '../../../../package.json';
 
 export const APP_VERSION = (rootPkg as { version?: string }).version ?? '0.0.0';
 export const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';

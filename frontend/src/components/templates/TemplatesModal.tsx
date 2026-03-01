@@ -5,6 +5,7 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 import { useApp } from '../../state/appContext';
 import { useAuth } from '../../state/authContext';
+import { parseSavedTemplatesValue } from '../../state/hooks/useTemplatesVarsInputs';
 import type { Template, VarConfig } from '../../state/types';
 import ConfirmModal from '../Modals/ConfirmModal';
 import { useToast } from '../shared/ToastProvider';
@@ -38,6 +39,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   const [templateOwnerOptions, setTemplateOwnerOptions] = useState<TemplateOwnerOption[]>([]);
   const [selectedTemplateOwnerId, setSelectedTemplateOwnerId] = useState<string>(() => profile?.id ?? '');
   const [templatesByOwner, setTemplatesByOwner] = useState<Record<string, Template[]>>({});
+  const [customVarsByOwner, setCustomVarsByOwner] = useState<Record<string, VarConfig[]>>({});
 
   const [selectedTemplateIdx, setSelectedTemplateIdx] = useState(0);
   const [newTemplateName, setNewTemplateName] = useState('');
@@ -84,17 +86,21 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
         if (profile.id && !selectedTemplateOwnerId) setSelectedTemplateOwnerId(profile.id);
 
         const byOwner: Record<string, Template[]> = {};
+        const varsByOwner: Record<string, VarConfig[]> = {};
         for (const row of templatesRows ?? []) {
           const ownerId = (row as { owner_id: string }).owner_id;
           const val = (row as { value: unknown }).value;
           try {
-            const parsed = (Array.isArray(val) ? val : JSON.parse(String(val))) as Template[];
-            if (Array.isArray(parsed) && parsed.length > 0) byOwner[ownerId] = parsed;
+            const raw = Array.isArray(val) ? val : JSON.parse(String(val));
+            const { templates: tpl, customVars: cv } = parseSavedTemplatesValue(raw);
+            if (tpl.length > 0) byOwner[ownerId] = tpl;
+            if (cv.length > 0) varsByOwner[ownerId] = cv;
           } catch {
             /* ignorer */
           }
         }
         setTemplatesByOwner(prev => ({ ...prev, ...byOwner }));
+        setCustomVarsByOwner(prev => ({ ...prev, ...varsByOwner }));
       } catch {
         setTemplateOwnerOptions([{ id: profile.id, label: `Moi (${profile.pseudo || 'Moi'})` }]);
       }
@@ -150,7 +156,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       const list = [...templatesToShow, newTemplate];
       setTemplatesByOwner(prev => ({ ...prev, [selectedTemplateOwnerId]: list }));
       setSelectedTemplateIdx(list.length - 1);
-      syncTemplatesForOwnerToSupabase(selectedTemplateOwnerId, list).then(r => {
+      syncTemplatesForOwnerToSupabase(selectedTemplateOwnerId, list, customVarsByOwner[selectedTemplateOwnerId] ?? []).then(r => {
         if (!r.ok) showToast(r.error ?? 'Erreur enregistrement', 'error');
       });
     }
@@ -182,7 +188,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       if (selectedTemplateIdx >= updatedTemplates.length || selectedTemplateIdx === idx) {
         setSelectedTemplateIdx(0);
       }
-      const res = await syncTemplatesForOwnerToSupabase(selectedTemplateOwnerId, updatedTemplates);
+      const res = await syncTemplatesForOwnerToSupabase(selectedTemplateOwnerId, updatedTemplates, customVarsByOwner[selectedTemplateOwnerId] ?? []);
       if (!res.ok) showToast(res.error ?? 'Erreur suppression', 'error');
     }
     showToast('Template supprimé', 'success');
@@ -205,7 +211,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       const updated = [...templatesToShow];
       updated[selectedTemplateIdx] = payload;
       setTemplatesByOwner(prev => ({ ...prev, [selectedTemplateOwnerId]: updated }));
-      syncTemplatesForOwnerToSupabase(selectedTemplateOwnerId, updated).then(r => {
+      syncTemplatesForOwnerToSupabase(selectedTemplateOwnerId, updated, customVarsByOwner[selectedTemplateOwnerId] ?? []).then(r => {
         if (!r.ok) showToast(r.error ?? 'Erreur enregistrement', 'error');
       });
     }
@@ -427,10 +433,6 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
             onCancelEdit={cancelVarEdit}
             onSaveVar={saveVar}
             onDeleteVar={handleDeleteVar}
-            onAddNew={() => {
-              setEditingVarIdx(null);
-              setVarForm({ name: '', label: '', type: 'text' });
-            }}
           />
         </div>
 

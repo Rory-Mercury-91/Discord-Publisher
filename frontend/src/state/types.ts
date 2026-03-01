@@ -109,7 +109,9 @@ export type AppContextValue = {
   syncInstructionsToSupabase: () => Promise<{ ok: boolean; error?: string }>;
   fetchInstructionsFromSupabase: () => Promise<void>;
   syncTemplatesToSupabase: (templatesToSync?: Template[]) => Promise<{ ok: boolean; error?: string }>;
+  syncTemplatesForOwnerToSupabase: (ownerId: string, templates: Template[], customVars?: VarConfig[]) => Promise<{ ok: boolean; error?: string }>;
   fetchTemplatesFromSupabase: () => Promise<void>;
+  applySavedTemplatesPayload: (value: unknown) => void;
   importFullConfig: (config: any) => void;
 
   savedInstructions: Record<string, string>;
