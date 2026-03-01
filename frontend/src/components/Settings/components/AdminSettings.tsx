@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getSupabase } from '../../../lib/supabase';
 import { useApp } from '../../../state/appContext';
-import { useToast } from '../../ToastProvider';
+import { useToast } from '../../shared/ToastProvider';
 
 const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
 
@@ -223,7 +223,7 @@ export default function AdminSettings({ onClose: _onClose }: AdminSettingsProps)
   };
 
   return (
-    <div className="settings-config-fields" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="settings-config-fields settings-config-fields--col">
       {adminUnlocked ? (
         <>
           {/* Déconnexion du mode admin */}

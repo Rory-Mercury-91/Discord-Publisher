@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import ErrorModal from '../components/Modals/ErrorModal';
-import { useToast } from '../components/ToastProvider';
+import { useToast } from '../components/shared/ToastProvider';
 import { createApiHeaders } from '../lib/api-helpers';
 import { getSupabase } from '../lib/supabase';
 import { tauriAPI } from '../lib/tauri-api';

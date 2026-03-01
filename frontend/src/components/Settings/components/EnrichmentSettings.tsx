@@ -94,8 +94,14 @@ export default function EnrichmentSettings() {
     ? Math.round((progress.current / progress.total) * 100)
     : 0;
 
+  const logLineClass = (line: string) =>
+    line.startsWith('✅') ? 'settings-enrichment-log-line--success'
+      : line.startsWith('❌') ? 'settings-enrichment-log-line--error'
+        : line.startsWith('⏭️') ? 'settings-enrichment-log-line--skip'
+          : '';
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="settings-enrichment-root">
       {/* Logs + bouton sur une ligne, puis barre de progression et zone logs */}
       <section className="settings-section">
         <div className="settings-log-header">
@@ -106,7 +112,7 @@ export default function EnrichmentSettings() {
               onClick={handleStartEnrichment}
               className="form-btn form-btn--primary"
             >
-              <span style={{ marginRight: 6 }}>▶️</span>
+              <span className="settings-enrichment-btn-icon">▶️</span>
               Lancer l'enrichissement
             </button>
           ) : (
@@ -115,30 +121,21 @@ export default function EnrichmentSettings() {
               onClick={handleStopEnrichment}
               className="form-btn form-btn--danger"
             >
-              <span style={{ marginRight: 6 }}>⏹️</span>
+              <span className="settings-enrichment-btn-icon">⏹️</span>
               Arrêter
             </button>
           )}
         </div>
 
         {progress.total > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{
-              flex: 1,
-              height: 12,
-              background: 'rgba(255,255,255,0.1)',
-              borderRadius: 6,
-              overflow: 'hidden'
-            }}>
-              <div style={{
-                width: `${progressPercent}%`,
-                height: '100%',
-                background: 'var(--accent)',
-                transition: 'width 0.3s',
-                borderRadius: 6
-              }} />
+          <div className="settings-enrichment-progress-row">
+            <div className="settings-enrichment-progress-track">
+              <div
+                className="settings-enrichment-progress-fill"
+                style={{ ['--progress-pct' as string]: `${progressPercent}%` }}
+              />
             </div>
-            <span style={{ fontSize: 13, fontWeight: 600, minWidth: 80, textAlign: 'right' }}>
+            <span className="settings-enrichment-progress-label">
               {progress.current} / {progress.total} ({progressPercent}%)
             </span>
           </div>
@@ -146,21 +143,12 @@ export default function EnrichmentSettings() {
 
         <div className="settings-logs-box styled-scrollbar">
           {logs.length === 0 ? (
-            <div style={{ color: 'var(--muted)', fontStyle: 'italic', textAlign: 'center', padding: 20 }}>
+            <div className="settings-enrichment-empty">
               Aucune activité pour le moment
             </div>
           ) : (
             logs.map((log, idx) => (
-              <div
-                key={idx}
-                style={{
-                  padding: '4px 0',
-                  color: log.startsWith('✅') ? '#10b981'
-                    : log.startsWith('❌') ? '#ef4444'
-                      : log.startsWith('⏭️') ? '#f59e0b'
-                        : 'var(--text)'
-                }}
-              >
+              <div key={idx} className={`settings-enrichment-log-line ${logLineClass(log)}`}>
                 {log}
               </div>
             ))

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import scriptTampermonkeyRaw from '../../../assets/DiscordPublisherDataExtractor.js?raw';
 import { tauriAPI } from '../../../lib/tauri-api';
-import { useToast } from '../../ToastProvider';
+import { useToast } from '../../shared/ToastProvider';
 
 export default function FormulaireHelp() {
   const [showGuide, setShowGuide] = useState(false);

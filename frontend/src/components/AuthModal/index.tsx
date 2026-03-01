@@ -3,10 +3,10 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 import { getSupabase } from '../../lib/supabase';
 import { useAuth } from '../../state/authContext';
-import { useToast } from '../ToastProvider';
-import AuthSignIn from './AuthSignIn';
-import AuthSignUp from './AuthSignUp';
-import AuthForgotPassword from './AuthForgotPassword';
+import { useToast } from '../shared/ToastProvider';
+import AuthSignIn from './components/AuthSignIn';
+import AuthSignUp from './components/AuthSignUp';
+import AuthForgotPassword from './components/AuthForgotPassword';
 
 export type AuthMode = 'signin' | 'signup' | 'forgot';
 

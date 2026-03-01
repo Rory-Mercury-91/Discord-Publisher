@@ -1,6 +1,7 @@
 // frontend/src/components/ContentEditorComponents/ImageSection.tsx
 import { useConfirm } from '../../../hooks/useConfirm';
 import { useImageLoader } from '../../../hooks/useImageLoader';
+import ConfirmModal from '../../Modals/ConfirmModal';
 
 interface ImageSectionProps {
   uploadedImages: Array<{ id: string; url?: string; name: string; isMain: boolean }>;
@@ -40,7 +41,7 @@ export default function ImageSection({
   uploadedImages,
   removeImage,
 }: ImageSectionProps) {
-  const { confirm } = useConfirm();
+  const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
 
   const handleDeleteImage = async (idx: number) => {
     const ok = await confirm({
@@ -56,18 +57,30 @@ export default function ImageSection({
   const currentImage = uploadedImages[0];
 
   return (
-    <div className={`image-preview-box ${currentImage ? 'image-preview-box--filled' : ''}`}>
-      {currentImage ? (
-        <FormImageDisplay
-          imagePath={currentImage.url || ''}
-          onDelete={() => handleDeleteImage(0)}
-        />
-      ) : (
-        <>
-          <div className="image-empty-icon">🖼️</div>
-          <div className="image-empty-text">Aucune image</div>
-        </>
-      )}
-    </div>
+    <>
+      <div className={`image-preview-box ${currentImage ? 'image-preview-box--filled' : ''}`}>
+        {currentImage ? (
+          <FormImageDisplay
+            imagePath={currentImage.url || ''}
+            onDelete={() => handleDeleteImage(0)}
+          />
+        ) : (
+          <>
+            <div className="image-empty-icon">🖼️</div>
+            <div className="image-empty-text">Aucune image</div>
+          </>
+        )}
+      </div>
+      <ConfirmModal
+        isOpen={confirmState.isOpen}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmText={confirmState.confirmText}
+        cancelText={confirmState.cancelText}
+        type={confirmState.type}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
+    </>
   );
 }

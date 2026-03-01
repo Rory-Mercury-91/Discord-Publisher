@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import DiscordIcon from '../../../assets/discord-icon.svg';
 import type { ConfirmOptions } from '../../../hooks/useConfirm';
-import Toggle from '../../Toggle';
+import Toggle from '../../shared/Toggle';
 
 interface PublishFooterProps {
   canPublish: boolean;

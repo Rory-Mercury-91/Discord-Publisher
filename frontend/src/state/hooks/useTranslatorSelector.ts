@@ -7,6 +7,8 @@ export type TranslatorOption = {
   id: string;
   name: string;
   kind: 'profile' | 'external';
+  /** Discord ID du profil (pour faire correspondre l'auteur d'un post chargé depuis l'historique) */
+  discordId?: string;
 };
 
 /**
@@ -32,12 +34,12 @@ export function useTranslatorSelector(profileId: string | undefined) {
 
       if (isMasterAdmin) {
         const [{ data: profiles }, { data: externals }, { data: mappings }] = await Promise.all([
-          sb.from('profiles').select('id, pseudo'),
+          sb.from('profiles').select('id, pseudo, discord_id'),
           sb.from('external_translators').select('id, name, tag_id'),
           sb.from('translator_forum_mappings').select('profile_id, tag_id'),
         ]);
         for (const p of (profiles ?? []) as any[])
-          opts.push({ id: p.id, name: p.pseudo || '(sans nom)', kind: 'profile' });
+          opts.push({ id: p.id, name: p.pseudo || '(sans nom)', kind: 'profile', discordId: p.discord_id ?? undefined });
         for (const e of (externals ?? []) as any[]) {
           opts.push({ id: e.id, name: e.name || '(sans nom)', kind: 'external' });
           if (e.tag_id) map[e.id] = e.tag_id;
@@ -46,16 +48,16 @@ export function useTranslatorSelector(profileId: string | undefined) {
           if (m.tag_id) map[m.profile_id] = m.tag_id;
       } else {
         // Propre profil
-        const { data: me } = await sb.from('profiles').select('id, pseudo').eq('id', profileId).single();
-        if (me) opts.push({ id: (me as any).id, name: (me as any).pseudo || 'Mon profil', kind: 'profile' });
+        const { data: me } = await sb.from('profiles').select('id, pseudo, discord_id').eq('id', profileId).single();
+        if (me) opts.push({ id: (me as any).id, name: (me as any).pseudo || 'Mon profil', kind: 'profile', discordId: (me as any).discord_id ?? undefined });
 
         // Traducteurs dont on est éditeur autorisé
         const { data: editorRows } = await sb.from('allowed_editors').select('owner_id').eq('editor_id', profileId);
         if ((editorRows as any[])?.length) {
           const ownerIds = (editorRows as any[]).map(r => r.owner_id);
-          const { data: owners } = await sb.from('profiles').select('id, pseudo').in('id', ownerIds);
+          const { data: owners } = await sb.from('profiles').select('id, pseudo, discord_id').in('id', ownerIds);
           for (const o of (owners ?? []) as any[])
-            opts.push({ id: o.id, name: o.pseudo || '(sans nom)', kind: 'profile' });
+            opts.push({ id: o.id, name: o.pseudo || '(sans nom)', kind: 'profile', discordId: (o as any).discord_id ?? undefined });
         }
 
         // Récupérer les tag IDs pour tous les profils trouvés
@@ -86,6 +88,19 @@ export function useTranslatorSelector(profileId: string | undefined) {
     if (opt) { setSelectedId(id); setSelectedKind(opt.kind); }
   };
 
+  /** Sélectionne le traducteur correspondant à l'auteur du post (pour chargement depuis l'historique). */
+  const selectByAuthor = (authorDiscordId: string | undefined, authorExternalTranslatorId: string | undefined) => {
+    if (authorExternalTranslatorId) {
+      const opt = options.find(o => o.kind === 'external' && o.id === authorExternalTranslatorId);
+      if (opt) { setSelectedId(opt.id); setSelectedKind('external'); }
+      return;
+    }
+    if (authorDiscordId) {
+      const opt = options.find(o => o.kind === 'profile' && o.discordId === authorDiscordId);
+      if (opt) { setSelectedId(opt.id); setSelectedKind('profile'); }
+    }
+  };
+
   return {
     options,
     selectedId,
@@ -94,5 +109,6 @@ export function useTranslatorSelector(profileId: string | undefined) {
     translatorTagId: tagMap[selectedId] ?? '',
     loaded,
     select,
+    selectByAuthor,
   };
 }

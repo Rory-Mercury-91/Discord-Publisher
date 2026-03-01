@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 export type ConfirmOptions = {
   title: string;
@@ -27,11 +27,12 @@ export function useConfirm() {
     type: 'warning'
   });
 
-  const [resolver, setResolver] = useState<((v: boolean) => void) | null>(null);
+  // Ref pour éviter stale closure : au clic sur Confirmer/Annuler on lit toujours le bon resolver
+  const resolverRef = useRef<((v: boolean) => void) | null>(null);
 
   const confirm = useCallback((options: ConfirmOptions) => {
     return new Promise<boolean>((resolve) => {
-      setResolver(() => resolve);
+      resolverRef.current = (v: boolean) => resolve(v);
       setConfirmState({
         isOpen: true,
         title: options.title,
@@ -44,16 +45,16 @@ export function useConfirm() {
   }, []);
 
   const handleConfirm = useCallback(() => {
-    resolver?.(true);
-    setResolver(null);
+    resolverRef.current?.(true);
+    resolverRef.current = null;
     setConfirmState(prev => ({ ...prev, isOpen: false }));
-  }, [resolver]);
+  }, []);
 
   const handleCancel = useCallback(() => {
-    resolver?.(false);
-    setResolver(null);
+    resolverRef.current?.(false);
+    resolverRef.current = null;
     setConfirmState(prev => ({ ...prev, isOpen: false }));
-  }, [resolver]);
+  }, []);
 
   return { confirm, confirmState, handleConfirm, handleCancel };
 }

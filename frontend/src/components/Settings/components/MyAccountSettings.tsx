@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useConfirm } from '../../../hooks/useConfirm';
 import { getSupabase } from '../../../lib/supabase';
 import { useAuth } from '../../../state/authContext';
-import { useToast } from '../../ToastProvider';
+import { useToast } from '../../shared/ToastProvider';
 
 interface MyAccountSettingsProps {
   onClose?: () => void;
@@ -228,10 +228,10 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
       {profile?.id && (
         <section className="settings-section settings-grid--full">
           <h4 className="settings-section__title">👥 Qui peut modifier mes posts</h4>
-          <p className="settings-section__intro" style={{ marginBottom: 12 }}>
+          <p className="settings-section__intro settings-section__intro--mb-12">
             Cliquez sur un utilisateur pour autoriser ou révoquer son droit d&apos;édition. &nbsp;
-            <span style={{ color: '#9ca3af' }}>⚪ Gris</span> = Non autorisé &nbsp;•&nbsp;
-            <span style={{ color: '#10b981' }}>🟢 Vert</span> = Autorisé
+            <span className="settings-editor-legend--disallowed">⚪ Gris</span> = Non autorisé &nbsp;•&nbsp;
+            <span className="settings-editor-legend--allowed">🟢 Vert</span> = Autorisé
           </p>
 
           {editorsLoading ? (
@@ -266,7 +266,7 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
 
       <section className="settings-section settings-grid--full">
         <h4 className="settings-section__title">🔐 Sécurité du compte</h4>
-        <p className="settings-section__intro" style={{ marginBottom: 16 }}>Modifier votre mot de passe de connexion.</p>
+        <p className="settings-section__intro settings-section__intro--mb-16">Modifier votre mot de passe de connexion.</p>
 
         <div className="settings-form-actions">
           <div className="settings-password-grid">
@@ -279,7 +279,7 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
                 placeholder="••••••••"
                 className="form-input"
               />
-              <p className="settings-section__intro" style={{ marginTop: 4, marginBottom: 0, fontSize: 11 }}>Minimum 6 caractères</p>
+              <p className="settings-section__intro settings-section__intro--hint">Minimum 6 caractères</p>
             </div>
             <div className="form-field">
               <label className="form-label">Confirmer le nouveau</label>

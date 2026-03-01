@@ -1,7 +1,7 @@
 // frontend/src/components/ContentEditor/components/LinksSection.tsx
 import React from 'react';
 import { tauriAPI } from '../../../lib/tauri-api';
-import Toggle from '../../Toggle';
+import Toggle from '../../shared/Toggle';
 
 interface LinkConfig {
   source: 'F95' | 'Lewd' | 'Autre';

@@ -6,8 +6,8 @@ import { useApp } from '../../state/appContext';
 import { useAuth } from '../../state/authContext';
 import { useTranslatorSelector } from '../../state/hooks/useTranslatorSelector';
 import ConfirmModal from '../Modals/ConfirmModal';
-import TagSelectorModal from '../TagSelectorModal';
-import { useToast } from '../ToastProvider';
+import { TagSelectorModal } from '../tags';
+import { useToast } from '../shared/ToastProvider';
 
 import CustomVarsSection from './components/CustomVarsSection';
 import EditorHeader from './components/EditorHeader';
@@ -38,6 +38,7 @@ export default function ContentEditor() {
     addImageFromUrl,
     removeImage,
     editingPostId,
+    editingPostData,
     setEditingPostId,
     setEditingPostData,
     rateLimitCooldown,
@@ -70,6 +71,7 @@ export default function ContentEditor() {
     translatorTagId,
     loaded: translatorLoaded,
     select: selectTranslator,
+    selectByAuthor: selectTranslatorByAuthor,
   } = useTranslatorSelector(profile?.id);
 
   // États locaux
@@ -242,6 +244,12 @@ export default function ContentEditor() {
   useEffect(() => {
     if (!editingPostId) setSilentUpdateMode(false);
   }, [editingPostId]);
+
+  // Quand on charge un post depuis l'historique : mettre « Publié pour » sur l'auteur du post (évite duplication tags traducteur)
+  useEffect(() => {
+    if (!editingPostData || !translatorLoaded) return;
+    selectTranslatorByAuthor(editingPostData.authorDiscordId, editingPostData.authorExternalTranslatorId);
+  }, [editingPostData, translatorLoaded, selectTranslatorByAuthor]);
 
   // Synchronisation champ de recherche d'instructions <-> valeur de contexte
   useEffect(() => {

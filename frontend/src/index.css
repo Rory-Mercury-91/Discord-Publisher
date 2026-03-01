@@ -9,7 +9,17 @@
   --blueish: #3b82f6;
   --border: #334155;
   --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.15);
+  --success-border: rgba(16, 185, 129, 0.35);
   --error: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.1);
+  --error-border: rgba(239, 68, 68, 0.2);
+  --accent-bg: rgba(99, 102, 241, 0.08);
+  --accent-border: rgba(99, 102, 241, 0.2);
+  --accent-bg-subtle: rgba(99, 102, 241, 0.15);
+  --info-bg: rgba(59, 130, 246, 0.15);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.2);
   --text: #f1f5f9;
   --placeholder: rgba(255,255,255,0.3);
   /* Arrière-plan unifié des modales (fond semi-transparent + flou) */
@@ -18,6 +28,13 @@
   /* Aperçu lien (style type Discord) */
   --link-preview: #5865F2;
   --link-preview-bg: rgba(88, 101, 242, 0.1);
+  /* Catégories Analyse IP (panneau serveur) */
+  --ip-cat-moi: #38bdf8;
+  --ip-cat-membre: #4ade80;
+  --ip-cat-proxy: #e879f9;
+  --ip-cat-public: #e2e8f0;
+  --ip-cat-erreur: #ef4444;
+  --table-row-border: rgba(255, 255, 255, 0.04);
 }
 
 [data-theme="light"]{
@@ -28,13 +45,29 @@
   --blueish: #3b82f6;
   --border: #cbd5e1;
   --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.15);
+  --success-border: rgba(16, 185, 129, 0.35);
   --error: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.1);
+  --error-border: rgba(239, 68, 68, 0.2);
+  --accent-bg: rgba(99, 102, 241, 0.08);
+  --accent-border: rgba(99, 102, 241, 0.2);
+  --accent-bg-subtle: rgba(99, 102, 241, 0.15);
+  --info-bg: rgba(59, 130, 246, 0.15);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.2);
   --text: #1e293b;
   --placeholder: rgba(0,0,0,0.4);
   --modal-backdrop: rgba(0,0,0,0.4);
   --modal-backdrop-blur: blur(4px);
   --link-preview: #5865F2;
   --link-preview-bg: rgba(88, 101, 242, 0.15);
+  --ip-cat-moi: #0ea5e9;
+  --ip-cat-membre: #22c55e;
+  --ip-cat-proxy: #a855f7;
+  --ip-cat-public: #64748b;
+  --ip-cat-erreur: #ef4444;
+  --table-row-border: rgba(0, 0, 0, 0.06);
 }
 
 input, textarea {
@@ -171,6 +204,11 @@ button{background:transparent; border:1px solid var(--border); color:inherit; pa
 /* Centre d'aide : modale large (évite d'être limitée à 640px) */
 .modal .panel.modal-panel--large{width:98%; max-width:min(1400px,98vw)}
 .modal .panel.modal-panel--config{width:92%; max-width:960px}
+/* Templates & Aide Markdown : largeur large (sinon .modal .panel impose 640px) */
+.modal .panel.templates-panel{width:98%; max-width:min(1520px,98vw)}
+.modal .panel.md-help-panel{width:98%; max-width:min(1100px,98vw)}
+.modal .panel.instructions-panel{width:98%; max-width:min(1000px,98vw)}
+.modal .panel.history-panel{width:95%; max-width:min(1200px,95vw)}
 
 /* App-specific styles */
 .app h1{margin:0; font-size:18px}

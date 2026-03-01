@@ -1,6 +1,6 @@
 // Lien du jeu + Type de traduction (grille 2 colonnes).
 import { tauriAPI } from '../../../lib/tauri-api';
-import Toggle from '../../Toggle';
+import Toggle from '../../shared/Toggle';
 
 interface LinkConfig {
   source: 'F95' | 'Lewd' | 'Autre';

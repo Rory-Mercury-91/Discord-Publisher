@@ -75,9 +75,9 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           {activeTab === 'enrichment' && masterAdmin && <EnrichmentSettings />}
           {activeTab === 'enrichment' && !masterAdmin && (
             <div className="settings-master-required">
-              <div style={{ fontSize: 48 }}>🛡️</div>
+              <div className="settings-master-required__icon">🛡️</div>
               <h4 className="settings-section__title">Master Admin requis</h4>
-              <p style={{ margin: 0, fontSize: 14, color: 'var(--muted)', lineHeight: 1.6, maxWidth: 400 }}>
+              <p className="settings-master-required__p">
                 Cette section est réservée aux utilisateurs ayant débloqué l'accès administrateur. Saisissez le code Master Admin dans l'onglet <strong>Administration</strong> pour y accéder.
               </p>
               <button

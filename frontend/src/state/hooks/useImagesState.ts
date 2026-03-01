@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 type ImageData = {
   id: string;
@@ -58,14 +58,14 @@ export function useImagesState() {
     });
   }
 
-  function removeImage(idx: number) {
+  const removeImage = useCallback((idx: number) => {
     setUploadedImages(prev => {
       const copy = [...prev];
       copy.splice(idx, 1);
       if (copy.length && !copy.some(i => i.isMain)) copy[0].isMain = true;
       return copy;
     });
-  }
+  }, []);
 
   function setMainImage(idx: number) {
     setUploadedImages(prev => prev.map((i, s) => ({ ...i, isMain: s === idx })));

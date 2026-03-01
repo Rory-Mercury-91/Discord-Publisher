@@ -1,22 +1,20 @@
 import { useEffect, useState } from 'react';
-import AppHeader, { AppMode } from './components/AppHeader';
+import { AppHeader, type AppMode } from './components/header';
 import AuthModal from './components/AuthModal';
 import SettingsModal from './components/Settings';
 import ConfirmModal from './components/Modals/ConfirmModal';
 import ContentEditor from './components/ContentEditor';
-import DiscordPreviewModal from './components/DiscordPreviewModal';
+import { DiscordPreviewModal, Preview } from './components/preview';
 import HelpCenterModal from './components/HelpCenter';
-import HistoryModal from './components/HistoryModal';
-import InstructionsManagerModal from './components/InstructionsManagerModal';
-import LibraryView from './components/LibraryView';
-import ListFormView from './components/ListFormView';
-import LogsModal from './components/LogsModal';
-import Preview from './components/Preview';
-import ServerModal from './components/ServerModal';
-import StatsModal from './components/StatsModal';
-import TagsModal from './components/TagsModal';
-import TemplatesModal from './components/TemplatesModal';
-import { ToastProvider, useToast } from './components/ToastProvider';
+import { HistoryModal } from './components/history';
+import { InstructionsManagerModal } from './components/instructions';
+import { LibraryView } from './components/library';
+import { ListFormView } from './components/list-form-view';
+import { LogsModal, ServerModal } from './components/server';
+import { StatsModal } from './components/stats';
+import { TagsModal } from './components/tags';
+import { TemplatesModal } from './components/templates';
+import { ToastProvider, useToast } from './components/shared/ToastProvider';
 import UpdateNotification from './components/UpdateNotification';
 import { AppProvider, useApp } from './state/appContext';
 import { AuthProvider, useAuth } from './state/authContext';
@@ -187,7 +185,7 @@ function AppContentInner() {
 }
 
 function AppWithAuth() {
-  const { user, profile, loading } = useAuth();
+  const { user, loading } = useAuth();
   const needAuth = loading || !user;
   return (
     <>
