@@ -77,7 +77,7 @@ checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
 
 [[package]]
 name = "app"
-version = "2.0.4"
+version = "2.0.5-Fix"
 dependencies = [
  "base64 0.21.7",
  "dunce",

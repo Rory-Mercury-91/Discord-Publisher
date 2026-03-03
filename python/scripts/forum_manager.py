@@ -88,26 +88,29 @@ def _message_has_metadata_embed(msg_dict: dict) -> bool:
 
 # ==================== TAGS ====================
 
-# Liste des noms de tags fixes à créer sur un salon forum (ordre affiché).
-# Doit correspondre au PREDEFINED du frontend (TagsModal).
-FIXED_TAG_NAMES: List[str] = [
-    "🧠 Manuelle",
-    "🖨️ Semi-Automatique",
-    "🤖 Automatique",
-    "✅ Terminé",
-    "🔄 En cours",
-    "❌ Abandonné",
-    "🔞 F95",
-    "⛔ LewdCorner",
-    "🔗 Autres Sites",
+# Tags fixes à créer sur un salon forum (ordre affiché).
+# Chaque entrée : (nom du tag sans emoji, caractère Unicode pour emoji_name).
+# L'emoji est défini via le champ emoji du tag Discord (aspect "emoji tag"), pas dans le nom.
+# Doit correspondre au PREDEFINED du frontend (TagsModal) : label = emoji + nom.
+FIXED_TAGS: List[Tuple[str, str]] = [
+    ("Manuelle", "🧠"),
+    ("Semi-Automatique", "🖨️"),
+    ("Automatique", "🤖"),
+    ("Terminé", "✅"),
+    ("En cours", "🔄"),
+    ("Abandonné", "❌"),
+    ("F95", "🔞"),
+    ("LewdCorner", "⛔"),
+    ("Autres Sites", "🔗"),
 ]
 
 
 async def sync_forum_fixed_tags(session, forum_id: str) -> Tuple[int, str, list]:
     """
     Crée ou met à jour les tags fixes sur un salon forum Discord.
-    Préserve les IDs existants pour les tags qui ont déjà le bon nom, et ajoute
-    les tags manquants. Préserve aussi les tags libres (noms non dans FIXED_TAG_NAMES).
+    Utilise le nom du tag (sans emoji) et emoji_name pour l'emoji (affichage "emoji tag").
+    Préserve les IDs existants pour les tags qui correspondent (nom exact ou ancien format "emoji nom"),
+    et ajoute les tags manquants. Préserve aussi les tags libres.
     Retourne (status_http, message_erreur, liste des tags après sync).
     """
     forum_id = str(forum_id).strip()
@@ -119,15 +122,24 @@ async def sync_forum_fixed_tags(session, forum_id: str) -> Tuple[int, str, list]
     if ch.get("type") not in (15, 16):  # GUILD_FORUM, GUILD_MEDIA
         return 400, "Le salon n'est pas un forum Discord", []
     existing_raw = ch.get("available_tags") or []
-    existing_by_name: Dict[str, dict] = {}
+    # Pour chaque (nom_fixe, emoji), on garde l’id du tag existant s’il correspond (nom ou "emoji nom")
+    existing_by_fixed_name: Dict[str, dict] = {}
     free_tags: List[dict] = []
-    fixed_names_set = set(FIXED_TAG_NAMES)
+    fixed_names_set = {name for name, _ in FIXED_TAGS}
     for t in existing_raw:
         name = (t.get("name") or "").strip()
         if not name:
             continue
+        matched_fixed_name = None
         if name in fixed_names_set:
-            existing_by_name[name] = {"id": str(t.get("id", "")), "name": name}
+            matched_fixed_name = name
+        else:
+            for fname, emoji_char in FIXED_TAGS:
+                if name == f"{emoji_char} {fname}":
+                    matched_fixed_name = fname
+                    break
+        if matched_fixed_name is not None:
+            existing_by_fixed_name[matched_fixed_name] = {"id": str(t.get("id", "")), "name": matched_fixed_name}
         else:
             ft = {"name": name}
             if t.get("id"):
@@ -137,11 +149,11 @@ async def sync_forum_fixed_tags(session, forum_id: str) -> Tuple[int, str, list]
                     ft[k] = t[k]
             free_tags.append(ft)
     new_tags: List[dict] = []
-    for name in FIXED_TAG_NAMES:
-        if name in existing_by_name:
-            new_tags.append(existing_by_name[name])
-        else:
-            new_tags.append({"name": name})
+    for name, emoji_char in FIXED_TAGS:
+        tag_payload: dict = {"name": name, "emoji_name": emoji_char}
+        if name in existing_by_fixed_name:
+            tag_payload["id"] = existing_by_fixed_name[name]["id"]
+        new_tags.append(tag_payload)
     for t in free_tags:
         new_tags.append(t)
     if len(new_tags) > 20:

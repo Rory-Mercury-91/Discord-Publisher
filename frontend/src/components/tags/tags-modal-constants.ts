@@ -33,7 +33,7 @@ export const DISCORD_TAG_ALIASES: { section: Section; key: string; aliases: stri
   { section: 'gameStatus', key: 'ongoing', aliases: ['en cours', 'ongoing', 'en cours...', 'in progress'] },
   { section: 'gameStatus', key: 'abandoned', aliases: ['abandonné', 'abandonne', 'abandoned'] },
   { section: 'translationType', key: 'manual', aliases: ['manuelle', 'manual', 'manuel'] },
-  { section: 'translationType', key: 'semi_auto', aliases: ['semi-auto', 'semi automatique', 'semi-auto', 'semi auto'] },
+  { section: 'translationType', key: 'semi_auto', aliases: ['semi-automatique', 'semi-auto', 'semi automatique', 'semi auto'] },
   { section: 'translationType', key: 'auto', aliases: ['automatique', 'automatic', 'auto'] },
   { section: 'sites', key: 'f95', aliases: ['f95', 'f95zone'] },
   { section: 'sites', key: 'lewdcorner', aliases: ['lewdcorner', 'lewd corner', 'lewd'] },

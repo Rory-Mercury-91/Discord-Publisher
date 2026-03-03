@@ -376,8 +376,9 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
     for (const tag of tags) {
       const nameNorm = (tag.name || '').toLowerCase().trim();
       if (!nameNorm) continue;
+      // Correspondance exacte uniquement pour éviter qu'"Automatique" matche "semi automatique"
       for (const { section, key, aliases } of DISCORD_TAG_ALIASES) {
-        if (aliases.some(a => nameNorm === a || nameNorm.includes(a) || a.includes(nameNorm))) {
+        if (aliases.some(a => nameNorm === a.toLowerCase().trim())) {
           updates.push({ section, key, discordTagId: tag.id });
           matchedTagIds.add(tag.id);
           break;
