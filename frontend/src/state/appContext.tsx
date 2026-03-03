@@ -38,7 +38,7 @@ export type {
   AdditionalTranslationLink, LinkConfig, PublishedPost, Tag, Template, VarConfig
 };
 
-type AppContextValue = {
+ type AppContextValue = {
   resetAllFields: () => void;
   templates: Template[];
   updateTemplate: (idx: number, t: Template) => void;
@@ -90,7 +90,16 @@ type AppContextValue = {
   apiUrl: string;
   publishInProgress: boolean;
   lastPublishResult: string | null;
-  publishPost: (authorDiscordId?: string) => Promise<{ ok: boolean, data?: any, error?: string }>;
+  /** 
+   * Publie un post.
+   * - authorDiscordId : Discord ID du profil qui publie (utilisateur connecté)
+   * - authorExternalTranslatorId : si défini, le post est attribué à ce traducteur externe dans l'historique
+   */
+  publishPost: (
+    authorDiscordId?: string,
+    authorExternalTranslatorId?: string,
+    options?: { silentUpdate?: boolean }
+  ) => Promise<{ ok: boolean; data?: any; error?: string }>;
 
   showErrorModal: (error: { code?: string | number; message: string; context?: string; httpStatus?: number; discordError?: any }) => void;
 
@@ -235,7 +244,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     onClearInstructionOwners: () => instructionsState.setInstructionOwners({}),
   });
 
-  async function publishPost(authorDiscordId?: string, options?: { silentUpdate?: boolean }) {
+  async function publishPost(
+    authorDiscordId?: string,
+    authorExternalTranslatorId?: string,
+    options?: { silentUpdate?: boolean }
+  ) {
     const title = (postFormState.postTitle || '').trim();
     const content = previewEngine.preview || '';
     const templateId = tvState.templates[tvState.currentTemplateIdx]?.id || null;
@@ -427,6 +440,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           discordUrl: '',
           forumId: 0,
           authorDiscordId: authorDiscordId ?? undefined,
+          authorExternalTranslatorId: authorExternalTranslatorId ?? undefined,
           templateId: templateId ?? undefined
         };
         formData.append('history_payload', JSON.stringify(postToRow(newPostForHistory)));
@@ -519,7 +533,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           pubState.setEditingPostData(null);
         } else {
           const now = Date.now();
-          const newPost: PublishedPost = {
+        const newPost: PublishedPost = {
             id: postId,
             timestamp: now,
             createdAt: now,
@@ -539,6 +553,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             discordUrl: threadUrl,
             forumId: typeof forumId === 'number' ? forumId : parseInt(String(forumId)) || 0,
             authorDiscordId: authorDiscordId ?? undefined,
+            authorExternalTranslatorId: authorExternalTranslatorId ?? undefined,
             templateId: templateId ?? undefined
           };
           await pubState.addPublishedPost(newPost, true);

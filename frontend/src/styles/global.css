@@ -2443,6 +2443,25 @@ textarea.form-textarea {
 }
 
 .templates-section__title { margin: 0; font-size: 15px; color: var(--text); }
+.templates-section__btn-add { flex-shrink: 0; white-space: nowrap; }
+.templates-section__owner-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.templates-section__owner-label { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.templates-section__owner-select {
+  width: auto;
+  min-width: 140px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
 
 .templates-list {
   display: grid;
@@ -2512,6 +2531,45 @@ textarea.form-textarea {
 
 .templates-create-row .form-btn--primary { padding: 8px 16px; font-size: 13px; }
 
+/* Modale « Nouveau template » (dans la modale Templates) */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--modal-backdrop, rgba(0, 0, 0, 0.6));
+  backdrop-filter: var(--modal-backdrop-blur, none);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.templates-create-modal-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 320px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+.templates-create-modal__title { margin: 0 0 14px 0; font-size: 15px; font-weight: 600; }
+.templates-create-modal__input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: var(--text);
+  margin-bottom: 16px;
+  box-sizing: border-box;
+}
+.templates-create-modal__input::placeholder { color: var(--muted); }
+.templates-create-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .templates-layout {
   display: flex;
   gap: 20px;
@@ -2546,6 +2604,8 @@ textarea.form-textarea {
 }
 
 .templates-editor-body { flex: 1; min-height: 120px; display: flex; flex-direction: column; overflow: hidden; }
+
+.templates-editor-name-row { margin-bottom: 12px; }
 
 .templates-editor-body textarea {
   width: 100%;
@@ -2612,7 +2672,15 @@ textarea.form-textarea {
 
 .templates-vars-column__title { margin: 0 0 12px 0; font-size: 15px; }
 
-.templates-vars-list { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.templates-vars-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-right: 4px;
+}
+.templates-vars-list > .templates-vars-form { flex-shrink: 0; }
 
 .templates-vars-list .form-label { font-size: 11px; margin-bottom: 4px; color: var(--muted); }
 .templates-vars-list input,
@@ -2634,6 +2702,7 @@ textarea.form-textarea {
   justify-content: flex-end;
   gap: 8px;
 }
+.templates-footer--single { justify-content: flex-end; }
 
 .templates-btn-secondary {
   font-size: 12px;
@@ -2696,13 +2765,37 @@ textarea.form-textarea {
 .template-var-row__label { color: var(--muted); font-size: 11px; margin-top: 2px; }
 .template-var-row__btn { font-size: 11px; padding: 4px 8px; }
 
-.templates-vars-existing { margin-top: 16px; }
+.templates-vars-existing {
+  margin-top: 16px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .templates-vars-list > .templates-vars-form + .templates-vars-existing { border-top: 1px solid var(--border); padding-top: 12px; }
-.templates-vars-existing__title { font-size: 11px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
-.templates-vars-existing__list { display: flex; flex-direction: column; gap: 6px; }
+.templates-vars-existing__title { margin: 0 0 8px 0; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.templates-vars-existing__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 6px;
+  overflow-y: auto;
+  min-height: 0;
+}
 
 .templates-vars-form__title { margin: 0 0 8px 0; font-size: 12px; font-weight: 600; }
 .templates-vars-form__grid { display: grid; gap: 8px; }
+.templates-vars-form__type-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+.templates-vars-form__type-cell { flex: 1; min-width: 0; }
+.templates-vars-form__type-row .templates-vars-form__actions {
+  flex-shrink: 0;
+  margin-top: 0;
+}
+.templates-vars-form__btn-add { width: auto; white-space: nowrap; }
 .templates-vars-form__actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
 .templates-vars-form__actions .form-btn { font-size: 12px; padding: 6px 12px; }
 

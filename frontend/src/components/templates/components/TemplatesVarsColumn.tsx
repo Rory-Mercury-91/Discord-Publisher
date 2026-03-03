@@ -46,32 +46,34 @@ export default function TemplatesVarsColumn({
                 onChange={e => setVarForm({ ...varForm, label: e.target.value })}
               />
             </div>
-            <div>
-              <label className="form-label">Type</label>
-              <select
-                value={varForm.type}
-                onChange={e => setVarForm({ ...varForm, type: e.target.value as 'text' | 'textarea' })}
-              >
-                <option value="text">Texte</option>
-                <option value="textarea">Textarea</option>
-              </select>
-            </div>
-            <div className="templates-vars-form__actions">
-              {editingVarIdx !== null && (
-                <button type="button" onClick={onCancelEdit} className="form-btn form-btn--ghost">
-                  ❌ Annuler
+            <div className="templates-vars-form__type-row">
+              <div className="templates-vars-form__type-cell">
+                <label className="form-label">Type</label>
+                <select
+                  value={varForm.type}
+                  onChange={e => setVarForm({ ...varForm, type: e.target.value as 'text' | 'textarea' })}
+                >
+                  <option value="text">Texte</option>
+                  <option value="textarea">Textarea</option>
+                </select>
+              </div>
+              <div className="templates-vars-form__actions">
+                {editingVarIdx !== null && (
+                  <button type="button" onClick={onCancelEdit} className="form-btn form-btn--ghost">
+                    ❌ Annuler
+                  </button>
+                )}
+                <button type="button" onClick={onSaveVar} className="form-btn form-btn--primary templates-vars-form__btn-add">
+                  {editingVarIdx !== null ? '✅ Enregistrer' : '➕ Ajouter'}
                 </button>
-              )}
-              <button type="button" onClick={onSaveVar} className="form-btn form-btn--primary">
-                {editingVarIdx !== null ? '✅ Enregistrer' : '➕ Ajouter'}
-              </button>
+              </div>
             </div>
           </div>
         </div>
         {customVars.length > 0 && (
           <div className="templates-vars-existing">
             <div className="templates-vars-existing__title">Variables existantes</div>
-            <div className="templates-vars-existing__list">
+            <div className="templates-vars-existing__list styled-scrollbar">
               {customVars.map(({ v, idx }) => (
                 <div
                   key={idx}

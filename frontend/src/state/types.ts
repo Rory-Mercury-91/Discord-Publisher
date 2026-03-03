@@ -131,7 +131,16 @@ export type AppContextValue = {
   apiUrl: string;
   publishInProgress: boolean;
   lastPublishResult: string | null;
-  publishPost: (authorDiscordId?: string, options?: { silentUpdate?: boolean }) => Promise<{ ok: boolean, data?: any, error?: string }>;
+  /**
+   * Publie un post.
+   * - authorDiscordId : Discord ID du profil qui publie (utilisateur connecté)
+   * - authorExternalTranslatorId : si défini, le post est attribué à ce traducteur externe dans l'historique
+   */
+  publishPost: (
+    authorDiscordId?: string,
+    authorExternalTranslatorId?: string,
+    options?: { silentUpdate?: boolean }
+  ) => Promise<{ ok: boolean; data?: any; error?: string }>;
 
   showErrorModal: (error: { code?: string | number; message: string; context?: string; httpStatus?: number; discordError?: any }) => void;
 

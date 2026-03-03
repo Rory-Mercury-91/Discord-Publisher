@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabase } from '../../lib/supabase';
 import { useConfirm } from '../../hooks/useConfirm';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
@@ -9,7 +9,6 @@ import { parseSavedTemplatesValue } from '../../state/hooks/useTemplatesVarsInpu
 import type { Template, VarConfig } from '../../state/types';
 import ConfirmModal from '../Modals/ConfirmModal';
 import { useToast } from '../shared/ToastProvider';
-import InstructionsFilter from '../instructions/components/InstructionsFilter';
 import TemplatesModalFooter from './components/TemplatesModalFooter';
 import TemplatesModalHeader from './components/TemplatesModalHeader';
 import TemplateVarChips from './components/TemplateVarChips';
@@ -44,10 +43,12 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   const [selectedTemplateIdx, setSelectedTemplateIdx] = useState(0);
   const [newTemplateName, setNewTemplateName] = useState('');
   const [formContent, setFormContent] = useState('');
+  const [formName, setFormName] = useState('');
   const [copiedVar, setCopiedVar] = useState<string | null>(null);
   const [editingVarIdx, setEditingVarIdx] = useState<number | null>(null);
   const [varForm, setVarForm] = useState({ name: '', label: '', type: 'text' as 'text' | 'textarea' });
   const [showMarkdownHelp, setShowMarkdownHelp] = useState(false);
+  const [showCreateTemplateModal, setShowCreateTemplateModal] = useState(false);
 
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -57,15 +58,36 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
     ? templates
     : (templatesByOwner[selectedTemplateOwnerId] ?? []);
 
-  const handleCancelAndClose = () => {
-    if (templatesToShow.length > 0) {
-      setFormContent(templatesToShow[selectedTemplateIdx]?.content ?? '');
-    }
+  const doClose = useCallback(() => {
     cancelVarEdit();
     onClose?.();
-  };
+  }, [onClose]);
 
-  useEscapeKey(handleCancelAndClose, true);
+  const hasChanges = useMemo(() => {
+    const t = templatesToShow[selectedTemplateIdx];
+    if (!t) return false;
+    const contentMatch = formContent === (t.content ?? '');
+    const nameMatch = (formName || '').trim() === (t.name ?? '').trim();
+    return !contentMatch || !nameMatch;
+  }, [templatesToShow, selectedTemplateIdx, formContent, formName]);
+
+  const handleEscape = useCallback(() => {
+    if (hasChanges) {
+      confirm({
+        title: 'Quitter sans sauvegarder ?',
+        message: 'Des modifications non enregistrées seront perdues.',
+        confirmText: 'Quitter',
+        cancelText: 'Rester',
+        type: 'warning',
+      }).then(ok => {
+        if (ok) doClose();
+      });
+    } else {
+      doClose();
+    }
+  }, [hasChanges, confirm, doClose]);
+
+  useEscapeKey(handleEscape, true);
   useModalScrollLock();
 
   useEffect(() => {
@@ -115,7 +137,12 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
 
   useEffect(() => {
     if (templatesToShow.length > 0 && templatesToShow[selectedTemplateIdx]) {
-      setFormContent(templatesToShow[selectedTemplateIdx].content);
+      const tpl = templatesToShow[selectedTemplateIdx];
+      setFormContent(tpl.content);
+      setFormName(tpl.name ?? '');
+    } else {
+      setFormContent('');
+      setFormName('');
     }
   }, [templatesToShow, selectedTemplateIdx]);
 
@@ -161,6 +188,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       });
     }
     setNewTemplateName('');
+    setShowCreateTemplateModal(false);
     showToast('Nouveau template créé', 'success');
   }
 
@@ -204,7 +232,22 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       showToast('Template introuvable', 'error');
       return;
     }
-    const payload = { ...currentTemplate, content: formContent, modifiedAt: Date.now() };
+
+    const nextName = (formName || '').trim() || currentTemplate.name || 'Template';
+    const existingNames = templatesToShow
+      .map((t, i) => (i === selectedTemplateIdx ? null : (t.name || '').toLowerCase()))
+      .filter((n): n is string => !!n);
+    if (existingNames.includes(nextName.toLowerCase())) {
+      showToast('Un template avec ce nom existe déjà', 'warning');
+      return;
+    }
+
+    const payload = {
+      ...currentTemplate,
+      name: nextName,
+      content: formContent,
+      modifiedAt: Date.now(),
+    };
     if (isViewingSelf) {
       updateTemplate(selectedTemplateIdx, payload);
     } else {
@@ -352,7 +395,6 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       <div className="panel templates-panel" onClick={e => e.stopPropagation()}>
         <TemplatesModalHeader
           onExport={exportTemplateLocal}
-          onClose={onClose ?? (() => {})}
           importInputRef={importInputRef}
         />
         <input
@@ -369,25 +411,28 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
           }}
         />
 
-        {isMasterAdmin && templateOwnerOptions.length > 0 && (
-          <InstructionsFilter
-            label="Afficher les templates de"
-            value={selectedTemplateOwnerId}
-            options={templateOwnerOptions.map(o => ({ id: o.id, label: o.label, kind: 'profile' as const }))}
-            onChange={v => {
-              setSelectedTemplateOwnerId(v);
-              setSelectedTemplateIdx(0);
-            }}
-          />
-        )}
         <TemplatesListSection
           templates={templatesToShow}
           selectedTemplateIdx={selectedTemplateIdx}
           onSelect={setSelectedTemplateIdx}
-          newTemplateName={newTemplateName}
-          setNewTemplateName={setNewTemplateName}
-          onCreate={createNewTemplate}
+          onOpenCreateModal={() => {
+            setNewTemplateName('');
+            setShowCreateTemplateModal(true);
+          }}
           onDelete={deleteTemplate}
+          ownerFilter={
+            isMasterAdmin && templateOwnerOptions.length > 0
+              ? {
+                  label: 'Afficher les templates de',
+                  value: selectedTemplateOwnerId,
+                  options: templateOwnerOptions.map(o => ({ id: o.id, label: o.label })),
+                  onChange: v => {
+                    setSelectedTemplateOwnerId(v);
+                    setSelectedTemplateIdx(0);
+                  },
+                }
+              : null
+          }
         />
 
         <div className="templates-layout">
@@ -411,6 +456,15 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
               )}
             </div>
             <div className="templates-editor-body">
+              <div className="templates-editor-name-row">
+                <label className="form-label" style={{ marginBottom: 4 }}>Nom du template</label>
+                <input
+                  type="text"
+                  value={formName}
+                  onChange={e => setFormName(e.target.value)}
+                  placeholder="Nom du template..."
+                />
+              </div>
               <textarea
                 ref={contentRef}
                 placeholder="Contenu du template..."
@@ -436,7 +490,10 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
           />
         </div>
 
-        <TemplatesModalFooter onCancel={handleCancelAndClose} onSave={saveAndClose} />
+        <TemplatesModalFooter
+          hasChanges={hasChanges}
+          onPrimaryAction={() => (hasChanges ? saveAndClose() : doClose())}
+        />
       </div>
 
       <ConfirmModal
@@ -451,6 +508,64 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       />
 
       {showMarkdownHelp && <MarkdownHelpModal onClose={() => setShowMarkdownHelp(false)} />}
+
+      {showCreateTemplateModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => setShowCreateTemplateModal(false)}
+          role="presentation"
+        >
+          <div
+            className="templates-create-modal-panel"
+            onClick={e => e.stopPropagation()}
+            onKeyDown={e => {
+              if (e.key === 'Escape') {
+                setShowCreateTemplateModal(false);
+                e.stopPropagation();
+              }
+            }}
+            role="dialog"
+            aria-labelledby="create-template-title"
+          >
+            <h4 id="create-template-title" className="templates-create-modal__title">
+              Nouveau template
+            </h4>
+            <input
+              type="text"
+              value={newTemplateName}
+              onChange={e => setNewTemplateName(e.target.value)}
+              placeholder="Nom du template..."
+              className="templates-create-modal__input"
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  setShowCreateTemplateModal(false);
+                  e.stopPropagation();
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  createNewTemplate();
+                }
+              }}
+              autoFocus
+            />
+            <div className="templates-create-modal__actions">
+              <button
+                type="button"
+                className="form-btn form-btn--ghost"
+                onClick={() => setShowCreateTemplateModal(false)}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className="form-btn form-btn--primary"
+                onClick={() => createNewTemplate()}
+              >
+                Créer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

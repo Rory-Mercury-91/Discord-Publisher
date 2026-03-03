@@ -1,16 +1,13 @@
 interface TemplatesModalFooterProps {
-  onCancel: () => void;
-  onSave: () => void;
+  hasChanges: boolean;
+  onPrimaryAction: () => void;
 }
 
-export default function TemplatesModalFooter({ onCancel, onSave }: TemplatesModalFooterProps) {
+export default function TemplatesModalFooter({ hasChanges, onPrimaryAction }: TemplatesModalFooterProps) {
   return (
-    <div className="templates-footer">
-      <button type="button" onClick={onCancel} className="form-btn form-btn--ghost">
-        ❌ Annuler
-      </button>
-      <button type="button" onClick={onSave} className="form-btn form-btn--primary">
-        ✅ Enregistrer
+    <div className="templates-footer templates-footer--single">
+      <button type="button" onClick={onPrimaryAction} className="form-btn form-btn--primary">
+        {hasChanges ? '↩✅ Enregistrer et Fermer' : '↩️ Fermer'}
       </button>
     </div>
   );

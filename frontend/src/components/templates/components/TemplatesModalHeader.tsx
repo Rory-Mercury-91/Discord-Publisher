@@ -1,12 +1,10 @@
 interface TemplatesModalHeaderProps {
   onExport: () => void;
-  onClose: () => void;
   importInputRef: React.RefObject<HTMLInputElement | null>;
 }
 
 export default function TemplatesModalHeader({
   onExport,
-  onClose,
   importInputRef,
 }: TemplatesModalHeaderProps) {
   return (
@@ -28,9 +26,6 @@ export default function TemplatesModalHeader({
           title="Importer un fichier JSON (template + variables)"
         >
           📥 Importer
-        </button>
-        <button type="button" onClick={onClose} className="form-btn form-btn--ghost">
-          ↩️ Fermer
         </button>
       </div>
     </div>

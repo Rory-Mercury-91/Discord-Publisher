@@ -679,7 +679,9 @@ export default function ContentEditor() {
   };
 
   const onPublish = async (silentUpdate = false) => {
-    const res = await (publishPost as any)(profile?.discord_id, { silentUpdate });
+    const externalIdForHistory =
+      selectedTranslatorKind === 'external' ? selectedTranslatorId : undefined;
+    const res = await publishPost(profile?.discord_id, externalIdForHistory, { silentUpdate });
     if (res?.ok) {
       showToast(editingPostId ? 'Post mis à jour !' : 'Post publié avec succès !', 'success');
       if (editingPostId) {
