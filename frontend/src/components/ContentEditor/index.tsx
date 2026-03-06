@@ -93,6 +93,7 @@ export default function ContentEditor() {
   const [instructionSearchQuery, setInstructionSearchQuery] = useState('');
   const [showInstructionSuggestions, setShowInstructionSuggestions] = useState(false);
   const [silentUpdateMode, setSilentUpdateMode] = useState(false);
+  const [skipVersionControlMode, setSkipVersionControlMode] = useState(false);
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
   const [translatingOverview, setTranslatingOverview] = useState(false);
 
@@ -293,8 +294,13 @@ export default function ContentEditor() {
   }, [editingPostId, translatorLoaded, translatorTagId, setPostTags]);
 
   useEffect(() => {
-    if (!editingPostId) setSilentUpdateMode(false);
-  }, [editingPostId]);
+    if (!editingPostId) {
+      setSilentUpdateMode(false);
+      setSkipVersionControlMode(false);
+    } else if (editingPostData?.savedInputs?._skip_version_check) {
+      setSkipVersionControlMode(['true', '1', 'yes'].includes(String(editingPostData.savedInputs._skip_version_check)));
+    }
+  }, [editingPostId, editingPostData?.savedInputs?._skip_version_check]);
 
   // Quand on charge un post depuis l'historique : mettre « Publié pour » sur l'auteur du post (évite duplication tags traducteur)
   useEffect(() => {
@@ -678,10 +684,10 @@ export default function ContentEditor() {
     }
   };
 
-  const onPublish = async (silentUpdate = false) => {
+  const onPublish = async (silentUpdate = false, skipVersionControl = false) => {
     const externalIdForHistory =
       selectedTranslatorKind === 'external' ? selectedTranslatorId : undefined;
-    const res = await publishPost(profile?.discord_id, externalIdForHistory, { silentUpdate });
+    const res = await publishPost(profile?.discord_id, externalIdForHistory, { silentUpdate, skipVersionControl });
     if (res?.ok) {
       showToast(editingPostId ? 'Post mis à jour !' : 'Post publié avec succès !', 'success');
       if (editingPostId) {
@@ -819,6 +825,8 @@ export default function ContentEditor() {
           editingPostId={editingPostId}
           silentUpdateMode={silentUpdateMode}
           setSilentUpdateMode={setSilentUpdateMode}
+          skipVersionControlMode={skipVersionControlMode}
+          setSkipVersionControlMode={setSkipVersionControlMode}
           rateLimitCooldown={rateLimitCooldown}
           publishTooltipText={publishTooltipText}
           onPublish={onPublish}

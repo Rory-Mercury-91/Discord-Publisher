@@ -135,16 +135,19 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
     }
   }, [selectedTemplateOwnerId, templatesToShow.length, selectedTemplateIdx]);
 
+  // Ne synchroniser le formulaire que lors d’un vrai changement de template (index ou id),
+  // pas à chaque re-rendu, pour ne pas écraser le contenu en cours de saisie/collage.
+  const currentTemplateId = templatesToShow[selectedTemplateIdx]?.id;
   useEffect(() => {
     if (templatesToShow.length > 0 && templatesToShow[selectedTemplateIdx]) {
       const tpl = templatesToShow[selectedTemplateIdx];
-      setFormContent(tpl.content);
+      setFormContent(tpl.content ?? '');
       setFormName(tpl.name ?? '');
     } else {
       setFormContent('');
       setFormName('');
     }
-  }, [templatesToShow, selectedTemplateIdx]);
+  }, [selectedTemplateIdx, templatesToShow.length, currentTemplateId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

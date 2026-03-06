@@ -4091,6 +4091,13 @@ textarea.form-textarea {
   border-top: 1px solid var(--border);
 }
 
+.publish-footer__toggles {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
 .publish-footer__rate-limit {
   color: var(--error);
   font-size: 13px;

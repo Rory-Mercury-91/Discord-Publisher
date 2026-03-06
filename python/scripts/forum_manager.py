@@ -358,6 +358,9 @@ async def _extract_post_data(thread: discord.Thread) -> Tuple[Optional[str], Opt
     row = await loop.run_in_executor(None, _fetch_post_by_thread_id_sync, thread.id)
     if row:
         saved = _parse_saved_inputs(row)
+        if saved.get("_skip_version_check") in ("true", "1", "yes", True):
+            logger.debug("[publisher] Thread exclu du controle de version : %s", thread.name)
+            return None, None
         game_version = (saved.get("Game_version") or "").strip()
         version_from_name = _extract_version_from_thread_name(getattr(thread, "name", "") or "")
         if version_from_name:

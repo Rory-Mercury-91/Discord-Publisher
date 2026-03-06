@@ -98,7 +98,7 @@ export type {
   publishPost: (
     authorDiscordId?: string,
     authorExternalTranslatorId?: string,
-    options?: { silentUpdate?: boolean }
+    options?: { silentUpdate?: boolean; skipVersionControl?: boolean }
   ) => Promise<{ ok: boolean; data?: any; error?: string }>;
 
   showErrorModal: (error: { code?: string | number; message: string; context?: string; httpStatus?: number; discordError?: any }) => void;
@@ -247,7 +247,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   async function publishPost(
     authorDiscordId?: string,
     authorExternalTranslatorId?: string,
-    options?: { silentUpdate?: boolean }
+    options?: { silentUpdate?: boolean; skipVersionControl?: boolean }
   ) {
     const title = (postFormState.postTitle || '').trim();
     const content = previewEngine.preview || '';
@@ -391,6 +391,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      const savedInputsWithVersionFlag = options?.skipVersionControl
+        ? { ...tvState.inputs, _skip_version_check: 'true' }
+        : { ...tvState.inputs };
+
       const now = Date.now();
       const postId = `post_${now}_${Math.random().toString(36).substr(2, 9)}`;
       const imagePathVal = imagesState.uploadedImages.find(i => i.isMain)?.url;
@@ -406,7 +410,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           imagePath: imagePathVal,
           translationType: postFormState.translationType,
           isIntegrated: postFormState.isIntegrated,
-          savedInputs: { ...tvState.inputs },
+          savedInputs: savedInputsWithVersionFlag,
           savedLinkConfigs: JSON.parse(JSON.stringify(linkState.linkConfigs)),
           savedAdditionalTranslationLinks: JSON.parse(JSON.stringify(linkState.additionalTranslationLinks)),
           savedAdditionalModLinks: JSON.parse(JSON.stringify(linkState.additionalModLinks)),
@@ -431,7 +435,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           imagePath: imagePathVal,
           translationType: postFormState.translationType,
           isIntegrated: postFormState.isIntegrated,
-          savedInputs: { ...tvState.inputs },
+          savedInputs: savedInputsWithVersionFlag,
           savedLinkConfigs: JSON.parse(JSON.stringify(linkState.linkConfigs)),
           savedAdditionalTranslationLinks: JSON.parse(JSON.stringify(linkState.additionalTranslationLinks)),
           savedAdditionalModLinks: JSON.parse(JSON.stringify(linkState.additionalModLinks)),
@@ -502,6 +506,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const forumId = res.forum_id || res.forumId || 0;
 
       if (threadId && messageId) {
+        const savedInputsForState = options?.skipVersionControl
+          ? { ...tvState.inputs, _skip_version_check: 'true' }
+          : { ...tvState.inputs };
         if (isEditMode && pubState.editingPostId && pubState.editingPostData) {
           const now = Date.now();
           const updatedPost: PublishedPost = {
@@ -516,7 +523,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             imagePath: imagesState.uploadedImages.find(i => i.isMain)?.url,
             translationType: postFormState.translationType,
             isIntegrated: postFormState.isIntegrated,
-            savedInputs: { ...tvState.inputs },
+            savedInputs: savedInputsForState,
             savedLinkConfigs: JSON.parse(JSON.stringify(linkState.linkConfigs)),
             savedAdditionalTranslationLinks: JSON.parse(JSON.stringify(linkState.additionalTranslationLinks)),
             savedAdditionalModLinks: JSON.parse(JSON.stringify(linkState.additionalModLinks)),
@@ -544,7 +551,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             imagePath: imagesState.uploadedImages.find(i => i.isMain)?.url,
             translationType: postFormState.translationType,
             isIntegrated: postFormState.isIntegrated,
-            savedInputs: { ...tvState.inputs },
+            savedInputs: savedInputsForState,
             savedLinkConfigs: JSON.parse(JSON.stringify(linkState.linkConfigs)),
             savedAdditionalTranslationLinks: JSON.parse(JSON.stringify(linkState.additionalTranslationLinks)),
             savedAdditionalModLinks: JSON.parse(JSON.stringify(linkState.additionalModLinks)),

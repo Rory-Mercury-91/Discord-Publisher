@@ -10,9 +10,11 @@ interface PublishFooterProps {
   editingPostId: string | null;
   silentUpdateMode: boolean;
   setSilentUpdateMode: (value: boolean) => void;
+  skipVersionControlMode: boolean;
+  setSkipVersionControlMode: (value: boolean) => void;
   rateLimitCooldown: number | null;
   publishTooltipText: string;
-  onPublish: (silentUpdate?: boolean) => Promise<void>;
+  onPublish: (silentUpdate?: boolean, skipVersionControl?: boolean) => Promise<void>;
   confirm: (options: ConfirmOptions) => Promise<boolean>;
 }
 
@@ -22,6 +24,8 @@ export default function PublishFooter({
   editingPostId,
   silentUpdateMode,
   setSilentUpdateMode,
+  skipVersionControlMode,
+  setSkipVersionControlMode,
   rateLimitCooldown,
   publishTooltipText,
   onPublish,
@@ -51,7 +55,7 @@ export default function PublishFooter({
     if (!ok) return;
 
     const silent = isUpdate ? silentUpdateMode : false;
-    await onPublish(silent);
+    await onPublish(silent, skipVersionControlMode);
   };
 
   const isDisabled = publishInProgress || !canPublish;
@@ -64,14 +68,22 @@ export default function PublishFooter({
         </div>
       )}
 
-      {editingPostId && (
+      <div className="publish-footer__toggles">
+        {editingPostId && (
+          <Toggle
+            checked={silentUpdateMode}
+            onChange={setSilentUpdateMode}
+            label="Mise à jour silencieuse"
+            title="Ne pas envoyer de notification de mise à jour"
+          />
+        )}
         <Toggle
-          checked={silentUpdateMode}
-          onChange={setSilentUpdateMode}
-          label="Mise à jour silencieuse"
-          title="Ne pas envoyer de notification de mise à jour"
+          checked={skipVersionControlMode}
+          onChange={setSkipVersionControlMode}
+          label="Ne pas appliquer le contrôle de version"
+          title="Exclure ce post du contrôle des versions F95 (le script ne le vérifiera pas)"
         />
-      )}
+      </div>
 
       <div
         className="relative"

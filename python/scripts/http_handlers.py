@@ -537,21 +537,23 @@ async def forum_post(request):
     translator_label = state_label = game_version = ""
     received_forum_id = translate_version = announce_image_url = ""
     history_payload_raw = None
+    skip_version_control = False
 
     reader = await request.multipart()
     async for part in reader:
         n = part.name
-        if   n == "title":              title               = (await part.text()).strip()
-        elif n == "content":            content             = (await part.text()).strip()
-        elif n == "tags":               tags                = (await part.text()).strip()
-        elif n == "metadata":           metadata_b64        = (await part.text()).strip()
-        elif n == "translator_label":   translator_label    = (await part.text()).strip()
-        elif n == "state_label":        state_label         = (await part.text()).strip()
-        elif n == "game_version":       game_version        = (await part.text()).strip()
-        elif n == "translate_version":  translate_version   = (await part.text()).strip()
-        elif n == "announce_image_url": announce_image_url  = (await part.text()).strip()
-        elif n == "forum_channel_id":   received_forum_id   = (await part.text()).strip()
-        elif n == "history_payload":    history_payload_raw = (await part.text()).strip()
+        if   n == "title":                 title               = (await part.text()).strip()
+        elif n == "content":               content             = (await part.text()).strip()
+        elif n == "tags":                  tags                = (await part.text()).strip()
+        elif n == "metadata":              metadata_b64        = (await part.text()).strip()
+        elif n == "translator_label":      translator_label    = (await part.text()).strip()
+        elif n == "state_label":           state_label         = (await part.text()).strip()
+        elif n == "game_version":          game_version        = (await part.text()).strip()
+        elif n == "translate_version":     translate_version   = (await part.text()).strip()
+        elif n == "announce_image_url":    announce_image_url  = (await part.text()).strip()
+        elif n == "forum_channel_id":      received_forum_id   = (await part.text()).strip()
+        elif n == "history_payload":       history_payload_raw = (await part.text()).strip()
+        elif n == "skip_version_control":  skip_version_control = (await part.text()).strip().lower() in ("true", "1", "yes")
 
     forum_id = int(received_forum_id) if received_forum_id else config.FORUM_MY_ID
 
@@ -626,11 +628,13 @@ async def forum_post_update(request):
     translate_version = announce_image_url = thread_url = ""
     history_payload_raw = None
     silent_update = False
+    skip_version_control = False
 
     reader = await request.multipart()
     async for part in reader:
         n = part.name
         if   n == "silent_update":       silent_update       = (await part.text()).strip().lower() in ("true", "1", "yes")
+        elif n == "skip_version_control": skip_version_control = (await part.text()).strip().lower() in ("true", "1", "yes")
         elif n == "title":               title               = (await part.text()).strip()
         elif n == "content":             content             = (await part.text()).strip()
         elif n == "tags":                tags                = (await part.text()).strip()
