@@ -3,6 +3,7 @@ import { useCollection, type UserCollectionEntryEnriched } from '../../state/hoo
 import { useTagAvoirs } from '../../state/hooks/useTagAvoirs';
 import { useToast } from '../shared/ToastProvider';
 import { tauriAPI } from '../../lib/tauri-api';
+import { getSupabase } from '../../lib/supabase';
 import type { GameF95, SyncStatus } from './library-types';
 import { TABLE_HEADERS, getSyncStatus } from './library-constants';
 import GameCard from './components/GameCard';
@@ -16,7 +17,6 @@ import CollectionToolbar from './components/CollectionToolbar';
 import { type FilterTagState } from './components/FilterTagsPopover';
 import { type FilterLabelState } from './components/FilterLabelsPopover';
 
-/** Construit un GameF95 à partir d'une entrée de collection (données identiques à la bibliothèque si dispo). */
 function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
   const nomUrl =
     entry.f95_url ||
@@ -84,23 +84,17 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [, startTransition] = useTransition();
   const [f95CookieInput, setF95CookieInput] = useState(() => {
-    try {
-      return localStorage.getItem('f95_cookies') ?? '';
-    } catch {
-      return '';
-    }
+    try { return localStorage.getItem('f95_cookies') ?? ''; } catch { return ''; }
   });
   const [cookieSectionOpen, setCookieSectionOpen] = useState(() => {
     try {
       const stored = localStorage.getItem('collection_f95_cookie_section_open');
       if (stored !== null) return stored === '1';
       return !localStorage.getItem('f95_cookies');
-    } catch {
-      return true;
-    }
+    } catch { return true; }
   });
 
-  // Ouvre la modale détail dès que l'item avec pendingOpenThreadId apparaît dans items
+  // ── Ouvre la modale détail quand l'item en attente est disponible ─────────
   useEffect(() => {
     if (pendingOpenThreadId == null) return;
     const entry = items.find(i => i.f95_thread_id === pendingOpenThreadId);
@@ -111,25 +105,70 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     }
   }, [items, pendingOpenThreadId]);
 
-  // Écoute les ajouts Tampermonkey (inserts directs Supabase depuis appContext)
+  // ── Enrichissement silencieux après import Tampermonkey ───────────────────
+  const triggerSilentEnrichment = useCallback(async (threadId: number) => {
+    const key = localStorage.getItem('apiKey') || '';
+    const base = (localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
+    if (!key || !base) return;
+
+    const sb = getSupabase();
+    if (!sb) return;
+
+    try {
+      // Trouver l'ID f95_jeux pour ce thread
+      const { data } = await sb
+        .from('f95_jeux')
+        .select('id, synopsis_fr')
+        .eq('site_id', threadId)
+        .maybeSingle();
+
+      // Ne lancer l'enrichissement que si le synopsis est absent
+      if (!data?.id || data.synopsis_fr) return;
+
+      const res = await fetch(`${base}/api/scrape/enrich`, {
+        method: 'POST',
+        headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: false, target_ids: [data.id] }),
+      });
+      if (!res.ok) return;
+
+      const reader = res.body?.getReader();
+      if (!reader) return;
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        for (const line of decoder.decode(value, { stream: true }).split('\n').filter(Boolean)) {
+          try {
+            const d = JSON.parse(line);
+            if (d.status === 'completed' && (d.updated ?? 0) > 0) {
+              showToast('✅ Synopsis traduit automatiquement', 'success');
+            }
+          } catch { /* ligne NDJSON invalide */ }
+        }
+      }
+    } catch {
+      /* enrichissement silencieux — on ignore les erreurs */
+    }
+  }, [showToast]);
+
+  // ── Écoute des ajouts Tampermonkey ────────────────────────────────────────
   useEffect(() => {
     const handler = (e: Event) => {
       const { threadId } = (e as CustomEvent<{ threadId: number }>).detail;
       refresh();
       setPendingOpenThreadId(threadId);
+      // Lancer l'enrichissement synopsis en arrière-plan
+      triggerSilentEnrichment(threadId);
     };
     window.addEventListener('collection:game-added', handler);
     return () => window.removeEventListener('collection:game-added', handler);
-  }, [refresh]);
+  }, [refresh, triggerSilentEnrichment]);
 
   const toggleCookieSection = useCallback(() => {
-    setCookieSectionOpen((prev) => {
+    setCookieSectionOpen(prev => {
       const next = !prev;
-      try {
-        localStorage.setItem('collection_f95_cookie_section_open', next ? '1' : '0');
-      } catch {
-        /* ignore */
-      }
+      try { localStorage.setItem('collection_f95_cookie_section_open', next ? '1' : '0'); } catch { }
       return next;
     });
   }, []);
@@ -148,18 +187,12 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
       const v = localStorage.getItem('library_page_size');
       const n = v ? parseInt(v, 10) : 100;
       return [50, 100, 250, 500, 1000, -1].includes(n) ? n : 100;
-    } catch {
-      return 100;
-    }
+    } catch { return 100; }
   });
   const [currentPage, setCurrentPage] = useState(0);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('library_page_size', String(pageSize));
-    } catch {
-      /* ignore */
-    }
+    try { localStorage.setItem('library_page_size', String(pageSize)); } catch { }
   }, [pageSize]);
 
   const saveF95Cookies = useCallback(() => {
@@ -173,65 +206,45 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     }
   }, [f95CookieInput, showToast]);
 
-  const gamesEnriched = useMemo(
-    () => items.map((entry) => entryToGameF95(entry)),
-    [items]
-  );
+  const gamesEnriched = useMemo(() => items.map(entry => entryToGameF95(entry)), [items]);
 
-  const statuts = useMemo(
-    () => [...new Set(gamesEnriched.map((g) => g.statut).filter(Boolean))].sort(),
-    [gamesEnriched]
-  );
-  const traducteurs = useMemo(
-    () => [...new Set(gamesEnriched.map((g) => g.traducteur).filter(Boolean))].sort(),
-    [gamesEnriched]
-  );
-  const types = useMemo(
-    () => [...new Set(gamesEnriched.map((g) => g.type).filter(Boolean))].sort(),
-    [gamesEnriched]
-  );
-  const tradTypes = useMemo(
-    () => [...new Set(gamesEnriched.map((g) => g.type_de_traduction).filter(Boolean))].sort(),
-    [gamesEnriched]
-  );
+  const statuts  = useMemo(() => [...new Set(gamesEnriched.map(g => g.statut).filter(Boolean))].sort(), [gamesEnriched]);
+  const traducteurs = useMemo(() => [...new Set(gamesEnriched.map(g => g.traducteur).filter(Boolean))].sort(), [gamesEnriched]);
+  const types    = useMemo(() => [...new Set(gamesEnriched.map(g => g.type).filter(Boolean))].sort(), [gamesEnriched]);
+  const tradTypes = useMemo(() => [...new Set(gamesEnriched.map(g => g.type_de_traduction).filter(Boolean))].sort(), [gamesEnriched]);
   const allUniqueTags = useMemo(() => {
     const set = new Set<string>();
-    gamesEnriched.forEach((g) => {
-      const raw = g.tags ?? '';
-      raw.split(',').map((t) => t.trim()).filter(Boolean).forEach((t) => set.add(t));
+    gamesEnriched.forEach(g => {
+      (g.tags ?? '').split(',').map(t => t.trim()).filter(Boolean).forEach(t => set.add(t));
     });
     return [...set].sort();
   }, [gamesEnriched]);
   const syncCounts = useMemo(() => {
     const c = { ok: 0, outdated: 0, unknown: 0 };
-    gamesEnriched.forEach((g) => {
-      const s = g._sync ?? 'unknown';
-      if (s in c) c[s as keyof typeof c]++;
-    });
+    gamesEnriched.forEach(g => { const s = g._sync ?? 'unknown'; if (s in c) c[s as keyof typeof c]++; });
     return c;
   }, [gamesEnriched]);
 
   const entryById = useMemo(() => {
     const map = new Map<number, UserCollectionEntryEnriched>();
-    items.forEach((e) => map.set(e.f95_thread_id, e));
+    items.forEach(e => map.set(e.f95_thread_id, e));
     return map;
   }, [items]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    let list = gamesEnriched.filter((g) => {
-      if (q && !g.nom_du_jeu.toLowerCase().includes(q) && !(g.traducteur || '').toLowerCase().includes(q))
-        return false;
+    let list = gamesEnriched.filter(g => {
+      if (q && !g.nom_du_jeu.toLowerCase().includes(q) && !(g.traducteur || '').toLowerCase().includes(q)) return false;
       if (filterStatut && g.statut !== filterStatut) return false;
       if (filterTrad && g.traducteur !== filterTrad) return false;
       if (filterType && g.type !== filterType) return false;
       if (filterTradType && g.type_de_traduction !== filterTradType) return false;
       if (filterSync && g._sync !== filterSync) return false;
-      const tagList = (g.tags ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+      const tagList = (g.tags ?? '').split(',').map(t => t.trim()).filter(Boolean);
       const includedTags = Object.entries(filterTagsByTag).filter(([, v]) => v === 'include').map(([k]) => k);
       const excludedTags = Object.entries(filterTagsByTag).filter(([, v]) => v === 'exclude').map(([k]) => k);
-      if (excludedTags.length > 0 && excludedTags.some((t) => tagList.includes(t))) return false;
-      if (includedTags.length > 0 && !tagList.some((t) => includedTags.includes(t))) return false;
+      if (excludedTags.length > 0 && excludedTags.some(t => tagList.includes(t))) return false;
+      if (includedTags.length > 0 && !tagList.some(t => includedTags.includes(t))) return false;
       const entry = entryById.get(g.site_id);
       const entryLabels = (entry?.labels ?? []).map(l => l.label);
       const includedLabels = Object.entries(filterLabelsByLabel).filter(([, v]) => v === 'include').map(([k]) => k);
@@ -242,12 +255,9 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     });
     if (dateSort) {
       return list.sort((a, b) => {
-        const da = a.date_maj || '';
-        const db = b.date_maj || '';
+        const da = a.date_maj || '', db = b.date_maj || '';
         if (db !== da) return db.localeCompare(da);
-        const ta = (a.type_maj || '').includes('AJOUT') ? 0 : 1;
-        const tb = (b.type_maj || '').includes('AJOUT') ? 0 : 1;
-        return ta - tb;
+        return ((a.type_maj || '').includes('AJOUT') ? 0 : 1) - ((b.type_maj || '').includes('AJOUT') ? 0 : 1);
       });
     }
     return list.sort((a, b) => {
@@ -265,65 +275,46 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     return filtered.slice(start, start + pageSize);
   }, [filtered, pageSize, effectivePage]);
 
-
   useEffect(() => {
-    setCurrentPage((p) => Math.min(p, Math.max(0, totalPages - 1)));
+    setCurrentPage(p => Math.min(p, Math.max(0, totalPages - 1)));
   }, [totalPages]);
 
   const resetFilters = () => {
-    setSearch('');
-    setFilterStatut('');
-    setFilterTrad('');
-    setFilterType('');
-    setFilterTradType('');
-    setFilterSync('');
-    setFilterTagsByTag({});
-    setFilterLabelsByLabel({});
+    setSearch(''); setFilterStatut(''); setFilterTrad(''); setFilterType('');
+    setFilterTradType(''); setFilterSync(''); setFilterTagsByTag({}); setFilterLabelsByLabel({});
   };
 
   const cycleFilterTag = useCallback((tag: string) => {
-    setFilterTagsByTag((prev) => {
+    setFilterTagsByTag(prev => {
       const current = prev[tag];
-      const next =
-        current === undefined ? 'include' : current === 'include' ? 'exclude' : undefined;
+      const next = current === undefined ? 'include' : current === 'include' ? 'exclude' : undefined;
       const nextRec = { ...prev };
-      if (next === undefined) delete nextRec[tag];
-      else nextRec[tag] = next;
+      if (next === undefined) delete nextRec[tag]; else nextRec[tag] = next;
       return nextRec;
     });
   }, []);
 
   const cycleFilterLabel = useCallback((label: string) => {
-    setFilterLabelsByLabel((prev) => {
+    setFilterLabelsByLabel(prev => {
       const current = prev[label];
       const next = current === undefined ? 'include' : current === 'include' ? 'exclude' : undefined;
       const nextRec = { ...prev };
-      if (next === undefined) delete nextRec[label];
-      else nextRec[label] = next;
+      if (next === undefined) delete nextRec[label]; else nextRec[label] = next;
       return nextRec;
     });
   }, []);
 
-  const resetFiltersAndRefresh = () => {
-    resetFilters();
-    refresh();
-  };
+  const resetFiltersAndRefresh = () => { resetFilters(); refresh(); };
 
   const toggleSort = (key: string) => {
     setDateSort(false);
-    if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
-    else {
-      setSortKey(key);
-      setSortDir(1);
-    }
+    if (sortKey === key) setSortDir(d => d === 1 ? -1 : 1);
+    else { setSortKey(key); setSortDir(1); }
   };
 
   const handleAddByUrlOrId = async () => {
     const raw = importInput.trim();
-    if (!raw) {
-      showToast('Saisissez une URL F95 ou un ID de thread', 'info');
-      return;
-    }
+    if (!raw) { showToast('Saisissez une URL F95 ou un ID de thread', 'info'); return; }
     setImporting(true);
     try {
       const result = await addByUrlOrId(raw);
@@ -332,6 +323,8 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
         setImportInput('');
         if ('f95_thread_id' in result && result.f95_thread_id != null) {
           setPendingOpenThreadId(result.f95_thread_id);
+          // Enrichissement synopsis après ajout manuel
+          triggerSilentEnrichment(result.f95_thread_id as number);
         }
       } else {
         showToast(result.error || 'Erreur ajout', 'error');
@@ -343,18 +336,12 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
 
   const handleAddManual = async (data: Parameters<typeof addManual>[0]) => {
     const result = await addManual(data);
-    if (result.ok) {
-      showToast('Jeu ajouté à la collection', 'success');
-    } else {
-      showToast(result.error || 'Erreur lors de l\'ajout', 'error');
-    }
+    if (result.ok) showToast('Jeu ajouté à la collection', 'success');
+    else showToast(result.error || "Erreur lors de l'ajout", 'error');
     return result;
   };
 
-  const handleEdit = async (
-    entryId: string,
-    updates: Parameters<typeof updateCollectionEntry>[1]
-  ) => {
+  const handleEdit = async (entryId: string, updates: Parameters<typeof updateCollectionEntry>[1]) => {
     const result = await updateCollectionEntry(entryId, updates);
     if (result.ok) showToast('Modifications enregistrées', 'success');
     else showToast(result.error || 'Erreur lors de la mise à jour', 'error');
@@ -362,18 +349,14 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
   };
 
   const toggleDeleteMode = useCallback(() => {
-    setDeleteMode((prev) => {
-      if (prev) setSelectedIds(new Set());
-      return !prev;
-    });
+    setDeleteMode(prev => { if (prev) setSelectedIds(new Set()); return !prev; });
   }, []);
 
   const toggleSelect = useCallback((id: string) => {
     startTransition(() => {
-      setSelectedIds((prev) => {
+      setSelectedIds(prev => {
         const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
+        if (next.has(id)) next.delete(id); else next.add(id);
         return next;
       });
     });
@@ -381,30 +364,21 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
 
   const selectAll = useCallback(() => {
     startTransition(() => {
-      setSelectedIds(new Set(filtered.map((g) => {
-        const entry = entryById.get(g.site_id);
-        return entry?.id ?? '';
-      }).filter(Boolean)));
+      setSelectedIds(new Set(filtered.map(g => { const entry = entryById.get(g.site_id); return entry?.id ?? ''; }).filter(Boolean)));
     });
   }, [filtered, entryById]);
 
-  const selectNone = useCallback(() => {
-    startTransition(() => setSelectedIds(new Set()));
-  }, []);
+  const selectNone = useCallback(() => { startTransition(() => setSelectedIds(new Set())); }, []);
 
   const handleDeleteSelected = useCallback(async () => {
     if (selectedIds.size === 0) return;
     setIsDeleting(true);
-    let successCount = 0;
-    let errorCount = 0;
+    let successCount = 0, errorCount = 0;
     for (const id of selectedIds) {
       try {
         const result = await remove(id);
-        if (result.ok) successCount++;
-        else errorCount++;
-      } catch {
-        errorCount++;
-      }
+        if (result.ok) successCount++; else errorCount++;
+      } catch { errorCount++; }
     }
     setIsDeleting(false);
     setSelectedIds(new Set());
@@ -435,111 +409,64 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
       </div>
 
       <CollectionToolbar
-        search={search}
-        setSearch={setSearch}
-        filterSync={filterSync}
-        setFilterSync={setFilterSync}
-        syncCounts={syncCounts}
-        gamesCount={gamesEnriched.length}
-        statuts={statuts}
-        filterStatut={filterStatut}
-        setFilterStatut={setFilterStatut}
-        traducteurs={traducteurs}
-        filterTrad={filterTrad}
-        setFilterTrad={setFilterTrad}
-        types={types}
-        filterType={filterType}
-        setFilterType={setFilterType}
-        tradTypes={tradTypes}
-        filterTradType={filterTradType}
-        setFilterTradType={setFilterTradType}
-        pageSize={pageSize}
-        setPageSize={setPageSize}
-        filterTagsByTag={filterTagsByTag}
-        filterTagsOpen={filterTagsOpen}
-        setFilterTagsOpen={setFilterTagsOpen}
-        filterTagsAnchorRef={filterTagsAnchorRef}
-        allUniqueTags={allUniqueTags}
-        cycleFilterTag={cycleFilterTag}
+        search={search} setSearch={setSearch}
+        filterSync={filterSync} setFilterSync={setFilterSync}
+        syncCounts={syncCounts} gamesCount={gamesEnriched.length}
+        statuts={statuts} filterStatut={filterStatut} setFilterStatut={setFilterStatut}
+        traducteurs={traducteurs} filterTrad={filterTrad} setFilterTrad={setFilterTrad}
+        types={types} filterType={filterType} setFilterType={setFilterType}
+        tradTypes={tradTypes} filterTradType={filterTradType} setFilterTradType={setFilterTradType}
+        pageSize={pageSize} setPageSize={setPageSize}
+        filterTagsByTag={filterTagsByTag} filterTagsOpen={filterTagsOpen} setFilterTagsOpen={setFilterTagsOpen}
+        filterTagsAnchorRef={filterTagsAnchorRef} allUniqueTags={allUniqueTags} cycleFilterTag={cycleFilterTag}
         onOpenTagAvoirsModal={() => setShowTagAvoirsModal(true)}
-        filterLabelsByLabel={filterLabelsByLabel}
-        filterLabelsOpen={filterLabelsOpen}
-        setFilterLabelsOpen={setFilterLabelsOpen}
-        filterLabelsAnchorRef={filterLabelsAnchorRef}
-        allLabels={allLabels}
-        cycleFilterLabel={cycleFilterLabel}
-        view={view}
-        setView={setView}
+        filterLabelsByLabel={filterLabelsByLabel} filterLabelsOpen={filterLabelsOpen} setFilterLabelsOpen={setFilterLabelsOpen}
+        filterLabelsAnchorRef={filterLabelsAnchorRef} allLabels={allLabels} cycleFilterLabel={cycleFilterLabel}
+        view={view} setView={setView}
         onResetFiltersAndRefresh={resetFiltersAndRefresh}
         loading={loading}
-        deleteMode={deleteMode}
-        onToggleDeleteMode={toggleDeleteMode}
+        deleteMode={deleteMode} onToggleDeleteMode={toggleDeleteMode}
       />
 
       {deleteMode && (
         <div className="collection-delete-banner">
           <div className="collection-delete-banner__info">
             <span className="collection-delete-banner__count">
-              {selectedIds.size > 0
-                ? `${selectedIds.size} jeu${selectedIds.size > 1 ? 'x' : ''} sélectionné${selectedIds.size > 1 ? 's' : ''}`
-                : 'Aucun jeu sélectionné'}
+              {selectedIds.size > 0 ? `${selectedIds.size} jeu${selectedIds.size > 1 ? 'x' : ''} sélectionné${selectedIds.size > 1 ? 's' : ''}` : 'Aucun jeu sélectionné'}
             </span>
             <span className="collection-delete-banner__hint">— Cliquez sur les tuiles pour sélectionner</span>
           </div>
           <div className="collection-delete-banner__actions">
-            <button type="button" className="form-btn form-btn--ghost collection-delete-banner__btn-select" onClick={selectAll}>
-              ☑ Tout sélectionner
-            </button>
-            <button type="button" className="form-btn form-btn--ghost collection-delete-banner__btn-select" onClick={selectNone} disabled={selectedIds.size === 0}>
-              ☐ Rien sélectionner
-            </button>
-            <button
-              type="button"
-              className="form-btn collection-delete-banner__btn-delete"
-              onClick={handleDeleteSelected}
-              disabled={selectedIds.size === 0 || isDeleting}
-            >
+            <button type="button" className="form-btn form-btn--ghost collection-delete-banner__btn-select" onClick={selectAll}>☑ Tout sélectionner</button>
+            <button type="button" className="form-btn form-btn--ghost collection-delete-banner__btn-select" onClick={selectNone} disabled={selectedIds.size === 0}>☐ Rien sélectionner</button>
+            <button type="button" className="form-btn collection-delete-banner__btn-delete" onClick={handleDeleteSelected} disabled={selectedIds.size === 0 || isDeleting}>
               {isDeleting ? '⏳ Suppression…' : `🗑️ Supprimer (${selectedIds.size})`}
             </button>
-            <button type="button" className="form-btn form-btn--ghost" onClick={toggleDeleteMode}>
-              ✕ Annuler
-            </button>
+            <button type="button" className="form-btn form-btn--ghost" onClick={toggleDeleteMode}>✕ Annuler</button>
           </div>
         </div>
       )}
 
       <div className="library-content styled-scrollbar">
-        {loading && (
-          <div className="library-loading">
-            <span className="library-loading-icon">⏳</span> Chargement de la collection…
-          </div>
-        )}
+        {loading && <div className="library-loading"><span className="library-loading-icon">⏳</span> Chargement de la collection…</div>}
 
         {error && !loading && (
-          <div className="library-error">
-            ❌ {error}
-            <br />
-            <button type="button" className="library-retry-btn" onClick={refresh}>
-              Réessayer
-            </button>
+          <div className="library-error">❌ {error}<br />
+            <button type="button" className="library-retry-btn" onClick={refresh}>Réessayer</button>
           </div>
         )}
 
         {!loading && !error && items.length === 0 && (
-          <div className="library-empty">
-            📭 Aucun jeu dans votre collection. Ajoutez-en via l’onglet Bibliothèque ou avec une URL / ID F95 ci-dessus.
-          </div>
+          <div className="library-empty">📭 Aucun jeu dans votre collection. Ajoutez-en via l'onglet Bibliothèque ou avec une URL / ID F95 ci-dessus.</div>
         )}
 
         {!loading && !error && items.length > 0 && filtered.length === 0 && (
-          <div className="library-empty">
-            🔍 Aucun résultat pour ces filtres.
-          </div>
+          <div className="library-empty">🔍 Aucun résultat pour ces filtres.</div>
         )}
 
         {!loading && !error && view === 'grid' && filtered.length > 0 && (
           <div className="library-grid">
-            {paginatedItems.map((game) => {
+            {paginatedItems.map(game => {
               const entry = entryById.get(game.site_id);
               if (!entry) return null;
               const isSelected = selectedIds.has(entry.id);
@@ -551,11 +478,7 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
                   role={deleteMode ? 'checkbox' : undefined}
                   aria-checked={deleteMode ? isSelected : undefined}
                 >
-                  {deleteMode && (
-                    <div className="collection-card-checkbox" aria-hidden="true">
-                      {isSelected ? '✔' : ''}
-                    </div>
-                  )}
+                  {deleteMode && <div className="collection-card-checkbox" aria-hidden="true">{isSelected ? '✔' : ''}</div>}
                   <GameCard
                     game={game}
                     post={null}
@@ -568,6 +491,7 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
                     onUpdateExecutablePaths={updateExecutablePaths}
                     onLabelsUpdated={refresh}
                     clickDisabled={deleteMode}
+                    onOpenEdit={deleteMode ? undefined : () => setEditEntry(entry)}
                   />
                   {!deleteMode && (
                     <button
@@ -575,9 +499,7 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
                       className="library-collection-card-edit"
                       onClick={e => { e.stopPropagation(); setEditEntry(entry); }}
                       title="Modifier les données de ce jeu"
-                    >
-                      ✏️
-                    </button>
+                    >✏️</button>
                   )}
                 </div>
               );
@@ -596,14 +518,13 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
                     className={`library-table-th ${k ? 'library-table-th--sortable' : ''} ${sortKey === k && !dateSort ? 'library-table-th--active' : ''} ${k === '_sync' || k === 'statut' || k === 'type_maj' || k === null ? 'library-table-th--center' : 'library-table-th--left'}`}
                     onClick={k ? () => toggleSort(k) : undefined}
                   >
-                    {h}
-                    {k && sortKey === k && !dateSort ? (sortDir > 0 ? ' ↑' : ' ↓') : ''}
+                    {h}{k && sortKey === k && !dateSort ? (sortDir > 0 ? ' ↑' : ' ↓') : ''}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {paginatedItems.map((game) => {
+              {paginatedItems.map(game => {
                 const entry = entryById.get(game.site_id);
                 if (!entry) return null;
                 const isSelected = selectedIds.has(entry.id);
@@ -635,70 +556,45 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
               Page {effectivePage + 1} sur {totalPages}
               {pageSize !== -1 && (
                 <span className="library-pagination-detail">
-                  ({effectivePage * pageSize + 1}–
-                  {Math.min((effectivePage + 1) * pageSize, filtered.length)} sur {filtered.length})
+                  ({effectivePage * pageSize + 1}–{Math.min((effectivePage + 1) * pageSize, filtered.length)} sur {filtered.length})
                 </span>
               )}
             </span>
-            <button
-              type="button"
-              className="library-pagination-btn app-input"
-              disabled={effectivePage === 0}
-              onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-            >
-              ← Précédent
-            </button>
-            <button
-              type="button"
-              className="library-pagination-btn app-input"
-              disabled={effectivePage >= totalPages - 1}
-              onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
-            >
-              Suivant →
-            </button>
+            <button type="button" className="library-pagination-btn app-input" disabled={effectivePage === 0} onClick={() => setCurrentPage(p => Math.max(0, p - 1))}>← Précédent</button>
+            <button type="button" className="library-pagination-btn app-input" disabled={effectivePage >= totalPages - 1} onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}>Suivant →</button>
           </div>
         )}
 
-        {showManualModal && (
-          <ManualGameModal
-            onClose={() => setShowManualModal(false)}
-            onSubmit={handleAddManual}
-          />
-        )}
+        {showManualModal && <ManualGameModal onClose={() => setShowManualModal(false)} onSubmit={handleAddManual} />}
 
-        {editEntry && (
-          <EditGameModal
-            entry={editEntry}
-            onClose={() => setEditEntry(null)}
-            onSubmit={handleEdit}
-          />
-        )}
+        {editEntry && <EditGameModal entry={editEntry} onClose={() => setEditEntry(null)} onSubmit={handleEdit} />}
 
         {showTagAvoirsModal && (
-          <TagAvoirsModal
-            allTags={allUniqueTags}
-            getAvoir={getAvoir}
-            onSetAvoir={setAvoir}
-            onClose={() => setShowTagAvoirsModal(false)}
-          />
+          <TagAvoirsModal allTags={allUniqueTags} getAvoir={getAvoir} onSetAvoir={setAvoir} onClose={() => setShowTagAvoirsModal(false)} />
         )}
 
+        {/* Modale détail avec callbacks édition + enrichissement */}
         {selectedGameForDetail && (
           <GameDetailModal
             game={selectedGameForDetail}
-            onClose={() => {
-              setSelectedGameForDetail(null);
-              setSelectedEntryForDetail(null);
-            }}
+            onClose={() => { setSelectedGameForDetail(null); setSelectedEntryForDetail(null); }}
             isInCollection={true}
-            collectionEntry={selectedEntryForDetail ? { id: selectedEntryForDetail.id, labels: selectedEntryForDetail.labels ?? null, executable_paths: selectedEntryForDetail.executable_paths ?? null } : undefined}
+            collectionEntry={selectedEntryForDetail ? {
+              id: selectedEntryForDetail.id,
+              labels: selectedEntryForDetail.labels ?? null,
+              executable_paths: selectedEntryForDetail.executable_paths ?? null,
+            } : undefined}
             allLabels={allLabels}
             onUpdateLabels={updateLabels}
             onUpdateExecutablePaths={updateExecutablePaths}
             onLabelsUpdated={refresh}
+            onOpenEdit={selectedEntryForDetail ? () => {
+              setSelectedGameForDetail(null);
+              setSelectedEntryForDetail(null);
+              setEditEntry(selectedEntryForDetail);
+            } : undefined}
           />
         )}
-
       </div>
     </div>
   );

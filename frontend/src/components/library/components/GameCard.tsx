@@ -14,7 +14,6 @@ interface GameCardProps {
   showDateBadge: boolean;
   onAddToCollection?: (game: GameF95) => void;
   isInCollection?: boolean;
-  /** Contexte Ma collection : entrée pour afficher et gérer les labels et chemins exécutables */
   collectionEntry?: { id: string; labels?: CollectionLabel[] | null; executable_paths?: ExecutablePathEntry[] | string[] | null };
   allLabels?: CollectionLabel[];
   onUpdateLabels?: (entryId: string, labels: CollectionLabel[]) => Promise<{ ok: boolean; error?: string }>;
@@ -22,21 +21,17 @@ interface GameCardProps {
   onLabelsUpdated?: () => void;
   /** Désactive le clic sur la carte (utilisé en mode suppression multiple) */
   clickDisabled?: boolean;
+  /** Callback pour ouvrir la modale d'édition depuis le footer de la modale détail */
+  onOpenEdit?: () => void;
 }
 
 export default function GameCard({
-  game,
-  post,
-  onEdit,
-  showDateBadge,
-  onAddToCollection,
-  isInCollection,
-  collectionEntry,
-  allLabels = [],
-  onUpdateLabels,
-  onUpdateExecutablePaths,
-  onLabelsUpdated,
+  game, post, onEdit, showDateBadge,
+  onAddToCollection, isInCollection,
+  collectionEntry, allLabels = [],
+  onUpdateLabels, onUpdateExecutablePaths, onLabelsUpdated,
   clickDisabled = false,
+  onOpenEdit,
 }: GameCardProps) {
   const sync = SYNC_META[game._sync!];
   const [imgErr, setImgErr] = useState(false);
@@ -87,37 +82,16 @@ export default function GameCard({
             <div className="library-card-labels" onClick={e => e.stopPropagation()}>
               {hasCollectionLabels ? (
                 <>
-                    {collectionEntry?.labels && collectionEntry.labels.length > 0 && collectionEntry.labels.map(({ label, color }) => (
-                    <span
-                      key={label}
-                      className="library-labels-badge"
-                      style={{ background: `${color}22`, borderColor: `${color}66`, color }}
-                      title={label}
-                    >
-                      {label}
-                    </span>
+                  {collectionEntry?.labels && collectionEntry.labels.length > 0 && collectionEntry.labels.map(({ label, color }) => (
+                    <span key={label} className="library-labels-badge" style={{ background: `${color}22`, borderColor: `${color}66`, color }} title={label}>{label}</span>
                   ))}
                   {onUpdateLabels && (
-                    <button
-                      type="button"
-                      className="library-card-label-btn"
-                      onClick={e => { e.stopPropagation(); setShowLabelsModal(true); }}
-                      title="Gérer les labels"
-                    >
-                      🏷️
-                    </button>
+                    <button type="button" className="library-card-label-btn" onClick={e => { e.stopPropagation(); setShowLabelsModal(true); }} title="Gérer les labels">🏷️</button>
                   )}
                 </>
               ) : (
                 onUpdateLabels && (
-                  <button
-                    type="button"
-                    className="library-card-label-btn"
-                    onClick={e => { e.stopPropagation(); setShowLabelsModal(true); }}
-                    title="Ajouter des labels"
-                  >
-                    🏷️ Labels
-                  </button>
+                  <button type="button" className="library-card-label-btn" onClick={e => { e.stopPropagation(); setShowLabelsModal(true); }} title="Ajouter des labels">🏷️ Labels</button>
                 )
               )}
             </div>
@@ -148,6 +122,7 @@ export default function GameCard({
           )}
         </div>
       </div>
+
       {showDetailModal && (
         <GameDetailModal
           game={game}
@@ -159,8 +134,14 @@ export default function GameCard({
           onUpdateLabels={onUpdateLabels}
           onUpdateExecutablePaths={onUpdateExecutablePaths}
           onLabelsUpdated={onLabelsUpdated}
+          // Ferme la modale détail ET déclenche l'édition dans le parent
+          onOpenEdit={onOpenEdit ? () => {
+            setShowDetailModal(false);
+            onOpenEdit();
+          } : undefined}
         />
       )}
+
       {showLabelsModal && collectionEntry && onUpdateLabels && (
         <CollectionLabelsModal
           entryId={collectionEntry.id}
