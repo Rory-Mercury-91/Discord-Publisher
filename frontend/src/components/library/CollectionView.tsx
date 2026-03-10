@@ -105,52 +105,51 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     }
   }, [items, pendingOpenThreadId]);
 
-  // ── Enrichissement silencieux après import Tampermonkey ───────────────────
-  const triggerSilentEnrichment = useCallback(async (threadId: number) => {
-    const key = localStorage.getItem('apiKey') || '';
+// ── Enrichissement silencieux après import Tampermonkey ───────────────────
+const triggerSilentEnrichment = useCallback(async (threadId: number) => {
+  const sb = getSupabase();
+  if (!sb) return;
+
+  try {
+    // 1. Récupérer l'entrée dans la collection
+    const { data: collData } = await sb
+      .from('user_collection')
+      .select('id, scraped_data')
+      .eq('f95_thread_id', threadId)
+      .maybeSingle();
+
+    if (!collData || !collData.scraped_data) return;
+    const sd = collData.scraped_data as Record<string, any>;
+    
+    // Si déjà traduit ou s'il n'y a pas de synopsis source, on arrête
+    if (sd.synopsis_fr || !sd.synopsis) return;
+
     const base = (localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
-    if (!key || !base) return;
+    const key = localStorage.getItem('apiKey') || '';
+    if (!base || !key) return;
 
-    const sb = getSupabase();
-    if (!sb) return;
+    // 2. Traduire le synopsis existant via l'API
+    const res = await fetch(`${base}/api/translate`, {
+      method: 'POST',
+      headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: sd.synopsis, source_lang: 'en', target_lang: 'fr' }),
+    });
 
-    try {
-      // Trouver l'ID f95_jeux pour ce thread
-      const { data } = await sb
-        .from('f95_jeux')
-        .select('id, synopsis_fr')
-        .eq('site_id', threadId)
-        .maybeSingle();
-
-      // Ne lancer l'enrichissement que si le synopsis est absent
-      if (!data?.id || data.synopsis_fr) return;
-
-      const res = await fetch(`${base}/api/scrape/enrich`, {
-        method: 'POST',
-        headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ force: false, target_ids: [data.id] }),
-      });
-      if (!res.ok) return;
-
-      const reader = res.body?.getReader();
-      if (!reader) return;
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        for (const line of decoder.decode(value, { stream: true }).split('\n').filter(Boolean)) {
-          try {
-            const d = JSON.parse(line);
-            if (d.status === 'completed' && (d.updated ?? 0) > 0) {
-              showToast('✅ Synopsis traduit automatiquement', 'success');
-            }
-          } catch { /* ligne NDJSON invalide */ }
-        }
-      }
-    } catch {
-      /* enrichissement silencieux — on ignore les erreurs */
+    if (!res.ok) return;
+    const json = await res.json();
+    
+    if (json.ok && json.translated) {
+      // 3. Mettre à jour user_collection.scraped_data
+      const newSd = { ...sd, synopsis_fr: json.translated };
+      await sb.from('user_collection').update({ scraped_data: newSd }).eq('id', collData.id);
+      
+      showToast('✅ Synopsis traduit automatiquement', 'success');
+      refresh(); // Met à jour l'affichage de la carte
     }
-  }, [showToast]);
+  } catch {
+    /* enrichissement silencieux — on ignore les erreurs */
+  }
+}, [showToast, refresh]);
 
   // ── Écoute des ajouts Tampermonkey ────────────────────────────────────────
   useEffect(() => {

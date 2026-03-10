@@ -1502,13 +1502,24 @@ async def collection_enrich_entries(request):
                             await asyncio.sleep(scrape_delay)
                         continue
 
-                    # Construire scraped_data depuis les données scrapées
+# Construire scraped_data depuis les données scrapées
                     existing_scraped = entry.get("scraped_data") or {}
                     if isinstance(existing_scraped, str):
                         try:
                             existing_scraped = json.loads(existing_scraped)
                         except Exception:
                             existing_scraped = {}
+
+                    # --- NOUVEAU CODE : Traduction à la volée ---
+                    synopsis_en = game_data.get("synopsis")
+                    synopsis_fr = existing_scraped.get("synopsis_fr")
+
+                    if synopsis_en and not synopsis_fr:
+                        try:
+                            synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
+                        except Exception as e:
+                            logger.warning("[api] enrich-entries translation failed: %s", e)
+                    # --------------------------------------------
 
                     new_scraped = {
                         **existing_scraped,
@@ -1518,7 +1529,8 @@ async def collection_enrich_entries(request):
                         "type":    game_data.get("type"),
                         "image":   game_data.get("image"),
                         "tags":    game_data.get("tags"),
-                        "synopsis": game_data.get("synopsis"),
+                        "synopsis": synopsis_en,
+                        "synopsis_fr": synopsis_fr, # Ajout de la VF ici
                         "source":  "f95zone_scraped",
                     }
                     # Nettoyer les None inutiles
