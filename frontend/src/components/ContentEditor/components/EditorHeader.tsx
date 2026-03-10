@@ -77,7 +77,7 @@ export default function EditorHeader({
             className="form-btn form-btn--toolbar form-btn--export"
             title="Copier les données du formulaire au format attendu par « Insérer les données du jeu »"
           >
-            📤 Exporter
+            📤 Copier Données
           </button>
         )}
         <button type="button" onClick={onImportData} className="form-btn form-btn--toolbar form-btn--import">

@@ -26,6 +26,20 @@ export const SYNC_META: Record<SyncStatus, { border: string; text: string; label
   unknown: { border: '#78716c', text: '#a8a29e', label: '? Inconnu' },
 };
 
+/** En-têtes de la table liste (Bibliothèque et Ma collection). */
+export const TABLE_HEADERS: [string | null, string][] = [
+  ['nom_du_jeu', 'Jeu'],
+  ['version', 'Ver. jeu'],
+  ['trad_ver', 'Ver. trad.'],
+  ['_sync', 'Sync'],
+  ['statut', 'Statut'],
+  ['type_de_traduction', 'Type trad.'],
+  ['traducteur', 'Traducteur'],
+  ['date_maj', 'Date MAJ'],
+  ['type_maj', 'Type MAJ'],
+  [null, 'Actions'],
+];
+
 const STATUS_MAP: Record<string, { bg: string; border: string; text: string }> = {
   'TERMINÉ': { bg: '#14532d', border: '#22c55e', text: '#4ade80' },
   'COMPLET': { bg: '#14532d', border: '#22c55e', text: '#4ade80' },

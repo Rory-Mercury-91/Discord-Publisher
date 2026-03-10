@@ -98,7 +98,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       try {
         const [{ data: profilesData }, { data: templatesRows }] = await Promise.all([
           sb.from('profiles').select('id, pseudo'),
-          sb.from('saved_templates').select('owner_id, value'),
+          sb.from('owner_data').select('owner_id, value').eq('owner_type', 'profile').eq('data_key', 'templates'),
         ]);
         const options: TemplateOwnerOption[] = (profilesData ?? []).map((p: { id: string; pseudo?: string }) => ({
           id: p.id,
@@ -396,10 +396,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   return (
     <div className="modal">
       <div className="panel templates-panel" onClick={e => e.stopPropagation()}>
-        <TemplatesModalHeader
-          onExport={exportTemplateLocal}
-          importInputRef={importInputRef}
-        />
+        <TemplatesModalHeader />
         <input
           ref={importInputRef}
           type="file"
@@ -423,6 +420,8 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
             setShowCreateTemplateModal(true);
           }}
           onDelete={deleteTemplate}
+          onExport={exportTemplateLocal}
+          onImport={() => importInputRef.current?.click()}
           ownerFilter={
             isMasterAdmin && templateOwnerOptions.length > 0
               ? {

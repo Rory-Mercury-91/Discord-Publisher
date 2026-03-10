@@ -115,10 +115,10 @@ async function _syncAllInstructionsToSupabase(
   const now = new Date().toISOString();
   for (const row of toSync) {
     await sb
-      .from('saved_instructions')
+      .from('owner_data')
       .upsert(
-        { owner_type: row.owner_type, owner_id: row.owner_id, value: row.value, updated_at: now },
-        { onConflict: 'owner_type,owner_id' }
+        { owner_type: row.owner_type, owner_id: row.owner_id, data_key: 'instructions', value: row.value, updated_at: now },
+        { onConflict: 'owner_type,owner_id,data_key' }
       );
   }
 }
@@ -194,7 +194,7 @@ export function useInstructionsState() {
   async function fetchInstructionsFromSupabase(): Promise<void> {
     const sb = getSupabase();
     if (!sb) return;
-    const { data, error } = await sb.from('saved_instructions').select('owner_type, owner_id, value');
+    const { data, error } = await sb.from('owner_data').select('owner_type, owner_id, value').eq('data_key', 'instructions');
     if (error) return;
     const rows = (data ?? []) as SavedInstructionRow[];
     if (rows.length === 0) return;

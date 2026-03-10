@@ -267,6 +267,76 @@ def _fetch_all_jeux_sync() -> list:
     return all_rows
 
 
+def _norm_nom_url(url) -> Optional[str]:
+    """Normalise nom_url pour regroupement (sans utiliser nom_du_jeu)."""
+    if not url or not isinstance(url, str):
+        return None
+    u = url.strip().lower()
+    if u.endswith("/"):
+        u = u[:-1]
+    return u if u else None
+
+
+def _dedupe_jeux_by_site(rows: list) -> list:
+    """
+    Déduplique visuellement les lignes f95_jeux : même jeu = une seule entrée affichée.
+    - Clé de groupe : nom_url normalisé (même URL = même jeu). Pas nom_du_jeu. Si nom_url vide : (site_id, site).
+    - Ligne principale : ac='1' si coché (prioritaire), sinon la plus récente par updated_at (ac vide = oubli case).
+    - Autres lignes du groupe = variantes (saisons / traductions) dans le champ "variants".
+    """
+    if not rows:
+        return []
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for r in rows:
+        norm_url = _norm_nom_url(r.get("nom_url"))
+        if norm_url:
+            key = ("url", norm_url)
+        else:
+            sid = r.get("site_id")
+            site = (r.get("site") or "").strip() or ""
+            key = ("site", sid, site)
+        groups[key].append(r)
+
+    out = []
+    for key, group in groups.items():
+        if not group:
+            continue
+        # Lignes sans clé utilisable : les renvoyer telles quelles
+        if key[0] == "site" and key[1] is None:
+            out.extend(group)
+            continue
+        # Trier : ac='1' (ligne principale si coché) en premier, puis par updated_at desc (ac vide = oubli)
+        ac_main = [r for r in group if str(r.get("ac") or "").strip() == "1"]
+        ac_other = [r for r in group if str(r.get("ac") or "").strip() != "1"]
+        key_updated = lambda r: (r.get("updated_at") or "") or "0"
+        ac_main.sort(key=key_updated, reverse=True)
+        ac_other.sort(key=key_updated, reverse=True)
+        group_sorted = ac_main + ac_other
+        primary = group_sorted[0] if group_sorted else group[0]
+        variants = (group_sorted[1:] if len(group_sorted) > 1 else [])
+
+        variant_payload = []
+        for v in variants:
+            variant_payload.append({
+                "id": v.get("id"),
+                "trad_ver": v.get("trad_ver"),
+                "lien_trad": v.get("lien_trad"),
+                "type_de_traduction": v.get("type_de_traduction"),
+                "nom_url": v.get("nom_url"),
+                "traducteur": v.get("traducteur"),
+                "traducteur_url": v.get("traducteur_url"),
+                "version": v.get("version"),
+                "statut": v.get("statut"),
+            })
+
+        merged = dict(primary)
+        merged["variants"] = variant_payload
+        out.append(merged)
+
+    return out
+
+
 def _sync_jeux_to_supabase(jeux: list):
     """Upsert des jeux dans la table f95_jeux (sync, appele en arriere-plan)."""
     sb = _get_supabase()
@@ -414,6 +484,14 @@ def _delete_account_data_sync(user_id: str) -> dict:
         results["published_posts_migrated"] = f"erreur: {e}"
         logger.warning("[supabase] delete_account migration posts -> externe : %s", e)
 
+    # Collection personnelle (user_collection — games ajoutés par l'utilisateur)
+    try:
+        sb.table("user_collection").delete().eq("owner_id", user_id).execute()
+        results["user_collection"] = "ok"
+    except Exception as e:
+        results["user_collection"] = f"erreur: {e}"
+        logger.warning("[supabase] delete_account user_collection : %s", e)
+
     # Autorisations editeur
     try:
         sb.table("allowed_editors").delete().eq("owner_id",  user_id).execute()
@@ -423,21 +501,13 @@ def _delete_account_data_sync(user_id: str) -> dict:
         results["allowed_editors"] = f"erreur: {e}"
         logger.warning("[supabase] delete_account allowed_editors : %s", e)
 
-    # Instructions sauvegardees
+    # owner_data (instructions + templates du profil)
     try:
-        sb.table("saved_instructions").delete().eq("owner_type", "profile").eq("owner_id", user_id).execute()
-        results["saved_instructions"] = "ok"
+        sb.table("owner_data").delete().eq("owner_type", "profile").eq("owner_id", user_id).execute()
+        results["owner_data"] = "ok"
     except Exception as e:
-        results["saved_instructions"] = f"erreur: {e}"
-        logger.warning("[supabase] delete_account saved_instructions : %s", e)
-
-    # Templates
-    try:
-        sb.table("saved_templates").delete().eq("owner_id", user_id).execute()
-        results["saved_templates"] = "ok"
-    except Exception as e:
-        results["saved_templates"] = f"erreur: {e}"
-        logger.warning("[supabase] delete_account saved_templates : %s", e)
+        results["owner_data"] = f"erreur: {e}"
+        logger.warning("[supabase] delete_account owner_data : %s", e)
 
     # Profil
     try:

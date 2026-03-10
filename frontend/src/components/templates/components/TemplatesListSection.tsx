@@ -13,6 +13,8 @@ interface TemplatesListSectionProps {
   onSelect: (idx: number) => void;
   onOpenCreateModal: () => void;
   onDelete: (idx: number) => void;
+  onExport: () => void;
+  onImport: () => void;
   ownerFilter?: TemplateOwnerFilter | null;
 }
 
@@ -22,19 +24,39 @@ export default function TemplatesListSection({
   onSelect,
   onOpenCreateModal,
   onDelete,
+  onExport,
+  onImport,
   ownerFilter,
 }: TemplatesListSectionProps) {
   return (
     <div className="templates-section">
       <div className="templates-section__header">
         <h4 className="templates-section__title">📚 Templates ({templates.length})</h4>
-        <button
-          type="button"
-          className="form-btn form-btn--primary templates-section__btn-add"
-          onClick={onOpenCreateModal}
-        >
-          ➕ Ajouter
-        </button>
+        <div className="templates-section__actions">
+          <button
+            type="button"
+            className="form-btn form-btn--ghost form-btn--sm"
+            onClick={onExport}
+            title="Exporter les templates et variables en JSON"
+          >
+            📤 Exporter
+          </button>
+          <button
+            type="button"
+            className="form-btn form-btn--ghost form-btn--sm"
+            onClick={onImport}
+            title="Importer un fichier JSON (templates + variables)"
+          >
+            📥 Importer
+          </button>
+          <button
+            type="button"
+            className="form-btn form-btn--primary form-btn--sm"
+            onClick={onOpenCreateModal}
+          >
+            ➕ Ajouter
+          </button>
+        </div>
       </div>
       {ownerFilter && (
         <div className="templates-section__owner-row">

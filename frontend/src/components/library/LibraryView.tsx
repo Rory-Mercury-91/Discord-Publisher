@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppMode, GameF95, SyncStatus } from './library-types';
-import { getSyncStatus } from './library-constants';
+import { getSyncStatus, TABLE_HEADERS } from './library-constants';
 import GameCard from './components/GameCard';
 import GameRow from './components/GameRow';
 import GameDetailModal from './GameDetailModal';
@@ -8,28 +8,20 @@ import { useApp } from '../../state/appContext';
 import { useToast } from '../shared/ToastProvider';
 import Toggle from '../shared/Toggle';
 import { StatsView } from '../stats';
-
-const TABLE_HEADERS: [string | null, string][] = [
-  ['nom_du_jeu', 'Jeu'],
-  ['version', 'Ver. jeu'],
-  ['trad_ver', 'Ver. trad.'],
-  ['_sync', 'Sync'],
-  ['statut', 'Statut'],
-  ['type_de_traduction', 'Type trad.'],
-  ['traducteur', 'Traducteur'],
-  ['date_maj', 'Date MAJ'],
-  ['type_maj', 'Type MAJ'],
-  [null, 'Actions'],
-];
+import { useUserPreferences } from '../../state/hooks/useUserPreferences';
+import { useCollection } from '../../state/hooks/useCollection';
+import CollectionView from './CollectionView';
 
 export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMode) => void }) {
   const { publishedPosts, loadPostForEditing } = useApp();
   const { showToast } = useToast();
+  const { showMaCollection } = useUserPreferences();
+  const { items: collectionItems, addByGame, refresh: refreshCollection } = useCollection();
 
   const [games, setGames] = useState<GameF95[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'library' | 'stats'>('library');
+  const [tab, setTab] = useState<'library' | 'stats' | 'collection'>('library');
   const [view, setView] = useState<'grid' | 'list'>(() => {
     try {
       const v = localStorage.getItem('library_view');
@@ -84,6 +76,15 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
   useEffect(() => {
     setCurrentPage(0);
   }, [search, filterStatut, filterTrad, filterType, filterTradType, filterSync]);
+
+  // Rafraîchir la liste collection quand on revient sur l’onglet Bibliothèque (ex. après avoir retiré un jeu de Ma collection)
+  const prevTabRef = useRef<'library' | 'stats' | 'collection'>(tab);
+  useEffect(() => {
+    if (prevTabRef.current === 'collection' && tab === 'library') {
+      refreshCollection();
+    }
+    prevTabRef.current = tab;
+  }, [tab, refreshCollection]);
 
   const handleEdit = useCallback(
     (post: any) => {
@@ -225,13 +226,30 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     ['outdated', '⚠ Non à jour'],
   ];
 
+  const collectionF95Ids = useMemo(
+    () => new Set(collectionItems.map((c) => c.f95_thread_id)),
+    [collectionItems]
+  );
+
+  const handleAddToCollection = useCallback(
+    async (game: GameF95) => {
+      const result = await addByGame(game.site_id, game.nom_du_jeu, game.nom_url || undefined);
+      if (result.ok) showToast('Ajouté à ma collection', 'success');
+      else showToast(result.error || 'Erreur', 'error');
+    },
+    [addByGame, showToast]
+  );
+
   return (
     <div className="library-view-root">
       <div className="library-tabs">
-        {([
-          ['library', '📚 Bibliothèque'],
-          ['stats', '📊 Statistiques'],
-        ] as const).map(([k, label]) => (
+        {(
+          [
+            ['library', '📚 Bibliothèque'],
+            ...(showMaCollection ? [['collection', '📁 Ma collection'] as const] : []),
+            ['stats', '📊 Statistiques'],
+          ] as readonly (readonly ['library' | 'stats' | 'collection', string])[]
+        ).map(([k, label]) => (
           <button
             key={k}
             type="button"
@@ -407,6 +425,8 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                     post={findPost(g)}
                     onEdit={handleEdit}
                     showDateBadge={dateSort}
+                    onAddToCollection={showMaCollection ? handleAddToCollection : undefined}
+                    isInCollection={showMaCollection ? collectionF95Ids.has(g.site_id) : false}
                   />
                 ))}
               </div>
@@ -437,6 +457,8 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                       post={findPost(g)}
                       onEdit={handleEdit}
                       onOpenDetail={() => setSelectedGameForDetail(g)}
+                      onAddToCollection={showMaCollection ? handleAddToCollection : undefined}
+                      isInCollection={showMaCollection ? collectionF95Ids.has(g.site_id) : false}
                     />
                   ))}
                 </tbody>
@@ -447,6 +469,8 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
               <GameDetailModal
                 game={selectedGameForDetail}
                 onClose={() => setSelectedGameForDetail(null)}
+                onAddToCollection={showMaCollection ? handleAddToCollection : undefined}
+                isInCollection={showMaCollection ? collectionF95Ids.has(selectedGameForDetail.site_id) : false}
               />
             )}
 
@@ -483,6 +507,9 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
         </>
       )}
 
+      {tab === 'collection' && (
+        <CollectionView view={view} setView={setView} />
+      )}
       {tab === 'stats' && <StatsView jeux={gamesEnriched} />}
     </div>
   );

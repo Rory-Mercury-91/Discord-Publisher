@@ -11,7 +11,7 @@ type RealtimeSyncDeps = {
   setPublishedPosts: React.Dispatch<React.SetStateAction<PublishedPost[]>>;
   setSavedInstructions: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setInstructionOwners: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  /** Applique le payload saved_templates (templates + customVars) reçu par realtime. */
+  /** Applique le payload templates (templates + customVars) reçu par realtime. */
   applySavedTemplatesPayload: (value: unknown) => void;
 };
 
@@ -25,7 +25,7 @@ function mapTagRow(r: { id: string; name: string; tag_type: string; author_disco
   };
 }
 
-/** Souscrit au canal Realtime Supabase et met à jour les états (tags, app_config, published_posts, saved_instructions, saved_templates). */
+/** Souscrit au canal Realtime Supabase et met à jour les états (tags, app_config, published_posts, owner_data). */
 export function useRealtimeSync(deps: RealtimeSyncDeps) {
   const {
     setSavedTags,
@@ -61,10 +61,13 @@ export function useRealtimeSync(deps: RealtimeSyncDeps) {
       }
     );
 
-    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'saved_instructions' }, () => {
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'owner_data' }, (payload: { new?: { data_key?: string } }) => {
+      const dataKey = payload.new?.data_key;
+      if (dataKey === 'instructions') {
         getSupabase()
-          ?.from('saved_instructions')
+          ?.from('owner_data')
           .select('owner_type, owner_id, value')
+          .eq('data_key', 'instructions')
           .then((res) => {
             if (res.error || !res.data?.length) return;
             let localInstructions: Record<string, string> = {};
@@ -87,19 +90,18 @@ export function useRealtimeSync(deps: RealtimeSyncDeps) {
             setSavedInstructions(prev => (instrEq(prev, merged) ? prev : merged));
             setInstructionOwners(prev => (instrEq(prev, owners) ? prev : owners));
           });
-    });
-
-    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'saved_templates' }, () => {
-      getSupabase()
-        ?.auth.getSession()
-        .then(({ data: { session } }) => {
-          if (!session?.user?.id) return null;
-          return getSupabase()?.from('saved_templates').select('value').eq('owner_id', session.user.id).maybeSingle();
-        })
-        .then((res) => {
-          if (!res?.data?.value || res.error) return;
-          applySavedTemplatesPayload(res.data.value);
-        });
+      } else if (dataKey === 'templates') {
+        getSupabase()
+          ?.auth.getSession()
+          .then(({ data: { session } }) => {
+            if (!session?.user?.id) return null;
+            return getSupabase()?.from('owner_data').select('value').eq('owner_type', 'profile').eq('owner_id', session.user.id).eq('data_key', 'templates').maybeSingle();
+          })
+          .then((res) => {
+            if (!res?.data?.value || res.error) return;
+            applySavedTemplatesPayload(res.data.value);
+          });
+      }
     });
 
     (channel as { on: (ev: string, config: unknown, cb: (p: unknown) => void) => unknown }).on(

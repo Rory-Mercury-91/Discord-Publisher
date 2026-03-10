@@ -7,21 +7,47 @@ interface GameRowProps {
   game: GameF95;
   post: any;
   onEdit: (p: any) => void;
+  /** En contexte Ma collection (post null) : ouvre la modale d'édition de l'entrée */
+  onEditEntry?: () => void;
   onOpenDetail?: () => void;
+  onAddToCollection?: (game: GameF95) => void;
+  isInCollection?: boolean;
+  deleteMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
-export default function GameRow({ game, post, onEdit, onOpenDetail }: GameRowProps) {
+export default function GameRow({ game, post, onEdit, onEditEntry, onOpenDetail, onAddToCollection, isInCollection, deleteMode, selected, onToggleSelect }: GameRowProps) {
   const sync = SYNC_META[game._sync!];
   const tmStyle = typeMajStyle(game.type_maj);
 
   return (
     <tr
-      className={`library-table-row ${onOpenDetail ? 'library-table-row--clickable' : ''}`}
-      role={onOpenDetail ? 'button' : undefined}
-      tabIndex={onOpenDetail ? 0 : undefined}
-      onClick={onOpenDetail ?? undefined}
-      onKeyDown={onOpenDetail ? (e) => e.key === 'Enter' && onOpenDetail() : undefined}
+      className={`library-table-row${onOpenDetail ? ' library-table-row--clickable' : ''}${deleteMode ? ' library-table-row--delete-mode' : ''}${selected ? ' library-table-row--selected' : ''}`}
+      role={deleteMode ? 'checkbox' : onOpenDetail ? 'button' : undefined}
+      aria-checked={deleteMode ? selected : undefined}
+      tabIndex={deleteMode || onOpenDetail ? 0 : undefined}
+      onClick={deleteMode ? onToggleSelect : onOpenDetail ?? undefined}
+      onKeyDown={
+        deleteMode
+          ? (e) => e.key === 'Enter' && onToggleSelect?.()
+          : onOpenDetail
+          ? (e) => e.key === 'Enter' && onOpenDetail()
+          : undefined
+      }
     >
+      {deleteMode && (
+        <td className="library-table-td library-table-td--checkbox" onClick={(e) => e.stopPropagation()}>
+          <div
+            className={`collection-row-checkbox${selected ? ' collection-row-checkbox--selected' : ''}`}
+            onClick={onToggleSelect}
+            role="checkbox"
+            aria-checked={selected}
+          >
+            {selected && '✔'}
+          </div>
+        </td>
+      )}
       <td className="library-table-td library-table-td--title">
         <div className="library-table-cell-title library-table-cell-title--with-type">{game.nom_du_jeu}</div>
         {game.type && <div className="library-version-muted">{game.type}</div>}
@@ -62,8 +88,21 @@ export default function GameRow({ game, post, onEdit, onOpenDetail }: GameRowPro
               🇫🇷
             </button>
           )}
+          {onAddToCollection && (
+            <button
+              type="button"
+              className="library-row-btn library-row-btn--collection"
+              onClick={e => { e.stopPropagation(); onAddToCollection(game); }}
+              title={isInCollection ? 'Déjà dans ma collection' : 'Ajouter à ma collection'}
+              disabled={!!isInCollection}
+            >
+              {isInCollection ? '📁' : '➕'}
+            </button>
+          )}
           {post ? (
-            <button type="button" className="library-row-btn library-row-btn--edit" onClick={() => onEdit(post)} title="Modifier le post Discord">✏️</button>
+            <button type="button" className="library-row-btn library-row-btn--edit" onClick={(e) => { e.stopPropagation(); onEdit(post); }} title="Modifier le post Discord">✏️</button>
+          ) : onEditEntry ? (
+            <button type="button" className="library-row-btn library-row-btn--edit" onClick={(e) => { e.stopPropagation(); onEditEntry(); }} title="Modifier les données de ce jeu">✏️</button>
           ) : (
             <span title="Aucun post Discord publié pour ce jeu" className="library-row-btn library-row-btn--empty">—</span>
           )}

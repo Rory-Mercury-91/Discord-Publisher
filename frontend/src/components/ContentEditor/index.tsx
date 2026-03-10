@@ -549,7 +549,11 @@ export default function ContentEditor() {
         const aliasEntry = DISCORD_TAG_ALIASES.find(
           a => a.section === 'gameStatus' && a.key === statusKey
         );
-        const gameStatusTag = savedTags.find(t => {
+        // Utiliser myTags (filtrés par traducteur sélectionné) pour trouver le tag
+        // correspondant au bon salon Discord, avec fallback sur tous les tags si aucun
+        // tag personnalisé n'est configuré pour ce traducteur.
+        const tagsToSearch = myTags.length > 0 ? myTags : savedTags;
+        const gameStatusTag = tagsToSearch.find(t => {
           if (t.tagType !== 'gameStatus') return false;
           const name = (t.name || '').toLowerCase().replace(/\p{Emoji}/gu, '').trim();
           return aliasEntry?.aliases.some(a => name.includes(a) || a.includes(name)) ?? false;

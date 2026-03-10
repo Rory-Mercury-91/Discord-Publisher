@@ -297,6 +297,58 @@ export const tauriAPI = {
   },
 
   /**
+   * Lancer un exécutable (ou ouvrir un fichier avec l’application par défaut).
+   */
+  async openPath(path: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      await invoke('open_path', { path });
+      return { ok: true };
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: msg };
+    }
+  },
+
+  /**
+   * Ouvre la page de connexion F95Zone dans une fenêtre de l'app (pour se connecter et avoir la session).
+   * Réutilise la fenêtre "f95-login" si elle existe déjà (focus), sinon en crée une nouvelle.
+   * En dehors de Tauri, ouvre l'URL dans le navigateur.
+   */
+  async openF95LoginWindow(): Promise<{ ok: boolean; error?: string }> {
+    const url = 'https://f95zone.to/login';
+    try {
+      if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+        const label = 'f95-login';
+        const existing = await WebviewWindow.getByLabel(label);
+        if (existing) {
+          await existing.setFocus();
+          return { ok: true };
+        }
+        const win = new WebviewWindow(label, {
+          url,
+          title: 'Connexion F95Zone',
+          width: 480,
+          height: 640,
+        });
+        return new Promise((resolve) => {
+          win.once('tauri://error', (e: { payload?: { message?: string } }) => {
+            resolve({ ok: false, error: e?.payload?.message ?? 'Erreur création fenêtre' });
+          });
+          win.once('tauri://created', () => {
+            resolve({ ok: true });
+          });
+        });
+      }
+      await this.openUrl(url);
+      return { ok: true };
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: msg };
+    }
+  },
+
+  /**
    * Ouvrir le formulaire liste dans une fenêtre secondaire de l'app (évite 403 iframe Google).
    * Réutilise la fenêtre "formulaire-liste" si elle existe déjà (focus), sinon en crée une nouvelle.
    */

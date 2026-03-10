@@ -17,14 +17,18 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 
+import tempfile
+
 from config import config
 from translator import translate_text
-from scraper import scrape_f95_synopsis
+from scraper import scrape_f95_synopsis, scrape_f95_title, scrape_f95_game_data, extract_f95_thread_id
+from nexus_export import parse_nexus_db
 from api_key_auth import _auth_request, LEGACY_KEY_WARNING
 from supabase_client import (
     _get_supabase, _fetch_post_by_thread_id_sync,
     _delete_from_supabase_sync, _normalize_history_row,
-    _fetch_all_jeux_sync, _sync_jeux_to_supabase,
+    _fetch_all_jeux_sync, _dedupe_jeux_by_site, _sync_jeux_to_supabase,
+    _norm_nom_url,
     _delete_account_data_sync, _transfer_post_ownership_sync,
 )
 from discord_api import rate_limiter
@@ -160,9 +164,28 @@ async def scrape_enrich(request):
             status=401
         )
     
+    # Option force : re-traduire tous les synopsis (ignorer les existants)
+    body_params = {}
+    try:
+        body = await request.read()
+        if body:
+            body_params = json.loads(body.decode("utf-8")) or {}
+    except Exception:
+        pass
+    force = body_params.get("force", False)
+    target_ids_raw = body_params.get("target_ids")
+    target_set: set = set()
+    if target_ids_raw and isinstance(target_ids_raw, list):
+        for i in target_ids_raw:
+            try:
+                target_set.add(int(i))
+            except (TypeError, ValueError):
+                pass
+
     logger.info(
-        "[api] /scrape/enrich lancé par %s (id=%s)",
-        discord_name or "unknown", discord_user_id or "N/A"
+        "[api] /scrape/enrich lancé par %s (id=%s) force=%s target_ids=%s",
+        discord_name or "unknown", discord_user_id or "N/A", force,
+        len(target_set) if target_set else "tous"
     )
     
     # ═══ VÉRIFICATION SUPABASE ═══
@@ -237,175 +260,152 @@ async def scrape_enrich(request):
             "progress": {"current": 0, "total": len(all_jeux)}
         })
         
-        # ═══ ÉTAPE 2 : Charger les synopsis existants ═══
-        await send_json({"log": "🔍 Vérification des synopsis existants..."})
+        # ═══ ÉTAPE 2 : Charger les synopsis existants (f95_jeux uniquement — pas published_posts pour la biblio) ═══
+        await send_json({"log": "🔍 Vérification des synopsis existants (f95_jeux)..."})
         
-        # A) Synopsis depuis games (par f95_url)
-        games_res = sb.table("games") \
-            .select("f95_url, synopsis_fr") \
+        jeux_synopsis_res = sb.table("f95_jeux") \
+            .select("nom_url, synopsis_fr") \
             .not_.is_("synopsis_fr", "null") \
             .execute()
         
-        existing_games = {}
-        for g in (games_res.data or []):
-            url = (g.get("f95_url") or "").strip()
-            if url:
-                existing_games[url.lower()] = g.get("synopsis_fr")
-        
-        # B) Synopsis depuis published_posts (saved_inputs.Overview)
-        posts_res = sb.table("published_posts") \
-            .select("saved_inputs") \
-            .not_.is_("saved_inputs", "null") \
-            .execute()
-        
-        existing_posts_synopsis = {}
-        for p in (posts_res.data or []):
-            inputs = p.get("saved_inputs") or {}
-            if isinstance(inputs, str):
-                try:
-                    inputs = json.loads(inputs)
-                except:
-                    inputs = {}
-            
-            game_link = (inputs.get("Game_link") or "").strip().lower()
-            overview = (inputs.get("Overview") or "").strip()
-            
-            if game_link and overview:
-                existing_posts_synopsis[game_link] = overview
+        existing_by_url = {}
+        for g in (jeux_synopsis_res.data or []):
+            norm = _norm_nom_url(g.get("nom_url"))
+            if norm:
+                existing_by_url[norm] = True
         
         await send_json({
-            "log": f"✅ {len(existing_games)} synopsis trouvés dans games, "
-                   f"{len(existing_posts_synopsis)} dans published_posts"
+            "log": f"✅ {len(existing_by_url)} URL(s) avec synopsis dans f95_jeux"
         })
         
-        # ═══ ÉTAPE 3 : Filtrage des jeux à enrichir ═══
-        to_enrich = []
-        
+        # ═══ ÉTAPE 3 : Grouper par nom_url (1 traduction = toutes les lignes du même jeu) ═══
+        from collections import defaultdict
+        by_norm_url = defaultdict(list)
         for jeu in all_jeux:
-            nom = jeu.get("nom_du_jeu", "Sans nom")
             url = (jeu.get("nom_url") or "").strip()
-            
-            # Validation URL F95Zone
             if not url or "f95zone.to" not in url.lower():
                 continue
-            
-            url_lower = url.lower()
-            
-            # Priorité 1 : published_posts (synopsis manuel)
-            if url_lower in existing_posts_synopsis:
-                continue
-            
-            # Priorité 2 : games (synopsis déjà enrichi)
-            if url_lower in existing_games:
-                continue
-            
-            # À enrichir
-            to_enrich.append(jeu)
+            norm = _norm_nom_url(url)
+            if norm:
+                by_norm_url[norm].append(jeu)
         
+        to_enrich = []
+        for norm_url, group in by_norm_url.items():
+            if not group:
+                continue
+            if target_set:
+                # Retry ciblé : seulement les groupes contenant au moins un ID cible
+                if not any(jeu.get("id") in target_set for jeu in group):
+                    continue
+            elif not force and existing_by_url.get(norm_url):
+                continue
+            to_enrich.append((norm_url, group))
+
         total = len(to_enrich)
-        
+
         if total == 0:
-            await send_json({
-                "log": f"ℹ️ Aucun jeu à enrichir ({len(all_jeux)} jeux vérifiés, tous ont déjà un synopsis)"
-            })
-            await send_json({"status": "completed"})
+            if target_set:
+                msg = f"ℹ️ Aucun groupe trouvé pour les {len(target_set)} ID(s) ciblé(s)."
+            else:
+                msg = f"ℹ️ Aucun jeu à enrichir ({len(by_norm_url)} groupes, tous ont déjà un synopsis). Utilisez « Forcer la re-traduction » pour tout refaire."
+            await send_json({"log": msg})
+            await send_json({"status": "completed", "failed_entries": []})
             await response.write_eof()
             return response
         
+        total_rows = sum(len(g) for _, g in to_enrich)
         await send_json({
-            "log": f"🎮 {total} jeu(x) sans synopsis à enrichir",
+            "log": f"🎮 {total} groupe(s) à enrichir ({total_rows} ligne(s) au total) — 1 scrape + 1 traduction par groupe",
             "progress": {"current": 0, "total": total}
         })
         
-        # ═══ ÉTAPE 4 : Enrichissement séquentiel ═══
+        # ═══ ÉTAPE 4 : Enrichissement (1 scrape + 1 traduction par groupe, puis update de toutes les lignes) ═══
         enriched = 0
+        failed: list = []  # Entrées dont le synopsis n'a pas pu être récupéré
         
         async with aiohttp.ClientSession() as session:
-            for idx, jeu in enumerate(to_enrich, 1):
+            for idx, (norm_url, group) in enumerate(to_enrich, 1):
                 if client_disconnected[0]:
                     break
-                jeu_id = jeu.get("id")
-                nom = jeu.get("nom_du_jeu", "Sans nom")
-                f95_url = jeu.get("nom_url", "").strip()
+                first = group[0]
+                nom = first.get("nom_du_jeu", "Sans nom")
+                f95_url = (first.get("nom_url") or "").strip()
                 
                 if not await send_json({"progress": {"current": idx, "total": total}}):
                     break
                 
-                # ── SCRAPING ──
+                # ── SCRAPING (une fois par groupe) ──
                 if not await send_json({"log": f"🕷️ [{idx}/{total}] {nom} — Scraping synopsis..."}):
                     break
                 
                 synopsis_en = await scrape_f95_synopsis(session, f95_url)
                 
                 if not synopsis_en:
+                    failed.append({
+                        "id":        first.get("id"),
+                        "nom_du_jeu": nom,
+                        "nom_url":   f95_url,
+                        "group_ids": [j.get("id") for j in group if j.get("id") is not None],
+                        "raison":    "synopsis_introuvable",
+                    })
                     if not await send_json({"log": f"⏭️ [{idx}/{total}] {nom} — Synopsis introuvable"}):
                         break
                     continue
-                
-                # ── TRADUCTION ──
+
+                # ── TRADUCTION (une fois par groupe) ──
                 if not await send_json({"log": f"🌐 [{idx}/{total}] {nom} — Traduction EN → FR..."}):
                     break
-                
+
                 synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
-                
+
                 if not synopsis_fr:
+                    failed.append({
+                        "id":        first.get("id"),
+                        "nom_du_jeu": nom,
+                        "nom_url":   f95_url,
+                        "group_ids": [j.get("id") for j in group if j.get("id") is not None],
+                        "raison":    "traduction_echouee",
+                    })
                     if not await send_json({"log": f"❌ [{idx}/{total}] {nom} — Traduction échouée"}):
                         break
                     continue
                 
-                # ── SAUVEGARDE dans games (UPSERT par f95_url) ──
+                # ── SAUVEGARDE : appliquer le même synopsis à toutes les lignes du groupe ──
+                now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
                 try:
-                    now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
-                    
-                    # ✅ CORRECTION : Utiliser .limit(1).execute() au lieu de .maybe_single()
-                    res = sb.table("games") \
-                        .select("id") \
-                        .eq("f95_url", f95_url) \
-                        .limit(1) \
-                        .execute()
-                    
-                    # Vérifier si un enregistrement existe
-                    is_existing = res.data and len(res.data) > 0
-                    
-                    if is_existing:
-                        # Update
-                        sb.table("games").update({
+                    for jeu in group:
+                        jeu_id = jeu.get("id")
+                        if jeu_id is None:
+                            continue
+                        sb.table("f95_jeux").update({
                             "synopsis_en": synopsis_en,
                             "synopsis_fr": synopsis_fr,
                             "updated_at": now
-                        }).eq("f95_url", f95_url).execute()
-                    else:
-                        # Insert
-                        sb.table("games").insert({
-                            "name": nom,
-                            "f95_url": f95_url,
-                            "synopsis_en": synopsis_en,
-                            "synopsis_fr": synopsis_fr,
-                            "created_at": now,
-                            "updated_at": now
-                        }).execute()
-                    
-                    enriched += 1
-                    if not await send_json({"log": f"✅ [{idx}/{total}] {nom} — Enrichi avec succès"}):
+                        }).eq("id", jeu_id).execute()
+                    enriched += len(group)
+                    if not await send_json({"log": f"✅ [{idx}/{total}] {nom} — {len(group)} ligne(s) mise(s) à jour"}):
                         break
-                
                 except Exception as e:
                     logger.error(
-                        "[api] Erreur sauvegarde games (%s) : %s",
+                        "[api] Erreur sauvegarde f95_jeux synopsis (%s) : %s",
                         nom, e
                     )
                     if not await send_json({"log": f"❌ [{idx}/{total}] {nom} — Erreur sauvegarde : {e}"}):
                         break
                 
-                # Délai entre jeux (politesse F95Zone + Google Translate)
                 if idx < total and not client_disconnected[0]:
                     await asyncio.sleep(2.0)
         
         # ═══ TERMINÉ ═══
         if not client_disconnected[0]:
+            failed_count = len(failed)
+            summary_parts = [f"{enriched} ligne(s) mise(s) à jour dans {total} groupe(s)"]
+            if failed_count:
+                summary_parts.append(f"{failed_count} échec(s)")
             await send_json({
-                "log": f"🎉 Enrichissement terminé : {enriched}/{total} jeux enrichis avec succès",
-                "status": "completed"
+                "log":            f"🎉 Enrichissement terminé : {', '.join(summary_parts)}",
+                "status":         "completed",
+                "failed_entries": failed,
             })
     
     except Exception as e:
@@ -445,6 +445,1135 @@ async def translate_handler(request):
     except Exception as e:
         logger.exception("[api] /api/translate erreur: %s", e)
         return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+
+async def collection_resolve(request):
+    """
+    Résout une URL ou un ID F95 via le scraper complet (scrape_f95_game_data) et retourne
+    f95_thread_id, titre, URL et scraped_data (image, version, statut, tags, type, synopsis, synopsis_fr).
+    POST /api/collection/resolve
+    Body JSON: { "url": "..." } ou { "f95_thread_id": 12345 }
+    Option: "translate_synopsis" (bool, défaut True) — traduit le synopsis EN→FR via Google Translate.
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/collection/resolve")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+    try:
+        data = await request.json() or {}
+        url = (data.get("url") or "").strip()
+        thread_id_raw = data.get("f95_thread_id")
+        f95_thread_id = int(thread_id_raw) if thread_id_raw is not None and str(thread_id_raw).strip() != "" else None
+
+        if url and "f95zone.to" not in url.lower() and "lewdcorner.com" not in url.lower():
+            return _with_cors(request, web.json_response({"ok": False, "error": "URL F95Zone/LewdCorner invalide"}, status=400))
+        if not url and f95_thread_id is None:
+            return _with_cors(request, web.json_response({"ok": False, "error": "Fournir url ou f95_thread_id"}, status=400))
+
+        if url:
+            tid_str = extract_f95_thread_id(url)
+            f95_thread_id = int(tid_str) if tid_str else None
+            if not f95_thread_id:
+                return _with_cors(request, web.json_response({"ok": False, "error": "Impossible d'extraire l'ID du thread depuis l'URL"}, status=400))
+            if not url.startswith("http"):
+                url = "https://f95zone.to" + url if url.startswith("/") else "https://f95zone.to/threads/thread." + str(f95_thread_id) + "/"
+        else:
+            url = f"https://f95zone.to/threads/thread.{f95_thread_id}/"
+
+        cookies = (data.get("cookies") or "").strip() or None
+        translate_synopsis = data.get("translate_synopsis", True)
+
+        synopsis_en = None
+        synopsis_fr = None
+        async with aiohttp.ClientSession() as session:
+            game_data = await scrape_f95_game_data(session, url, cookies=cookies)
+
+            if not game_data:
+                return _with_cors(request, web.json_response({
+                    "ok": True,
+                    "f95_thread_id": f95_thread_id,
+                    "title": None,
+                    "f95_url": url,
+                    "scraped_data": None,
+                }))
+
+            synopsis_en = (game_data.get("synopsis") or "").strip()
+            if synopsis_en and translate_synopsis:
+                try:
+                    synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
+                except Exception as e:
+                    logger.warning("[api] collection_resolve: traduction synopsis échouée: %s", e)
+
+        title = game_data.get("name") or game_data.get("title")
+        scraped_data = {
+            "name": game_data.get("name"),
+            "version": game_data.get("version"),
+            "image": game_data.get("image"),
+            "status": game_data.get("status"),
+            "tags": game_data.get("tags"),
+            "type": game_data.get("type"),
+            "synopsis": synopsis_en or game_data.get("synopsis"),
+            "synopsis_fr": synopsis_fr,
+        }
+
+        return _with_cors(request, web.json_response({
+            "ok": True,
+            "f95_thread_id": game_data.get("id") or f95_thread_id,
+            "title": title,
+            "f95_url": url,
+            "scraped_data": scraped_data,
+        }))
+    except ValueError as e:
+        return _with_cors(request, web.json_response({"ok": False, "error": "f95_thread_id invalide"}, status=400))
+    except Exception as e:
+        logger.exception("[api] /api/collection/resolve erreur: %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+
+async def nexus_parse_db(request):
+    """
+    Analyse un fichier .db SQLite de Nexus et retourne les entrées de jeux adultes.
+    POST /api/collection/nexus-parse-db (multipart form: champ "file")
+    Réponse : { "ok": true, "entries": [...], "stats": {...}, "warnings": [...] }
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/collection/nexus-parse-db")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+
+    db_bytes = None
+    try:
+        reader = await request.multipart()
+        async for field in reader:
+            if field.name == "file":
+                db_bytes = await field.read()
+                break
+    except Exception as e:
+        return _with_cors(request, web.json_response({"ok": False, "error": f"Lecture du fichier échouée : {e}"}, status=400))
+
+    if not db_bytes:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Champ 'file' manquant dans la requête"}, status=400))
+
+    # Taille raisonnable (max 200 Mo pour une base SQLite)
+    MAX_SIZE = 200 * 1024 * 1024
+    if len(db_bytes) > MAX_SIZE:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "Fichier trop volumineux (max 200 Mo)"},
+            status=413
+        ))
+
+    tmp_path = None
+    try:
+        # Écriture dans un fichier temporaire (sqlite3 ne peut pas lire depuis des bytes)
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+            tmp.write(db_bytes)
+            tmp_path = tmp.name
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, parse_nexus_db, tmp_path)
+
+        logger.info(
+            "[api] nexus-parse-db : %d entrée(s) parsée(s) (%d F95, %d LC)",
+            result["stats"]["total"],
+            result["stats"]["with_f95"],
+            result["stats"]["with_lc"],
+        )
+        return _with_cors(request, web.json_response({"ok": True, **result}))
+
+    except ValueError as e:
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=422))
+    except Exception as e:
+        logger.exception("[api] nexus-parse-db erreur : %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+    finally:
+        if tmp_path:
+            try:
+                import os
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+
+async def collection_import_batch(request):
+    """
+    Import en masse de jeux depuis un export Nexus (ou tout autre source).
+    POST /api/collection/import-batch
+
+    Body JSON:
+    {
+        "owner_id": "<uuid>",          -- Requis : owner_id Supabase de l'utilisateur
+        "entries": [                   -- Liste de jeux à importer
+            {
+                "f95_thread_id":        12345,      // Priorité 1
+                "f95_url":              "https://...", // Optionnel
+                "lewdcorner_thread_id": null,
+                "lewdcorner_url":       null,
+                "game_site":            "F95Zone",
+                "title":                "Game Name",
+                "executable_paths":     [{"path": "C:\\\\..."}],
+                "labels":               [{"label": "Favori", "color": "#ff0"}],
+                "notes":                "..."
+            }
+        ],
+        "skip_existing":   true,   // Ne pas écraser les entrées déjà en collection
+        "overwrite_labels": false, // Écraser les labels si le jeu est déjà en collection
+        "overwrite_paths":  false  // Écraser les chemins exécutables si déjà en collection
+    }
+
+    Réponse streaming NDJSON :
+        {"progress": {"current": 5, "total": 100}}
+        {"log": "✅ Game Name importé"}
+        {"log": "⏭️ Game Name déjà en collection (ignoré)"}
+        {"log": "❌ ID 99999 — erreur: ..."}
+        {"status": "completed", "imported": 80, "skipped": 15, "errors": 5}
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/collection/import-batch")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+
+    sb = _get_supabase()
+    if not sb:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Supabase non configuré"}, status=500))
+
+    try:
+        body = await request.json() or {}
+    except Exception:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Body JSON invalide"}, status=400))
+
+    owner_id = (body.get("owner_id") or "").strip()
+    if not owner_id:
+        return _with_cors(request, web.json_response({"ok": False, "error": "owner_id requis"}, status=400))
+
+    entries = body.get("entries")
+    if not isinstance(entries, list) or not entries:
+        return _with_cors(request, web.json_response({"ok": False, "error": "entries requis (liste non vide)"}, status=400))
+
+    skip_existing    = bool(body.get("skip_existing", True))
+    overwrite_labels = bool(body.get("overwrite_labels", False))
+    overwrite_paths  = bool(body.get("overwrite_paths", False))
+    overwrite_all    = bool(body.get("overwrite_all", False))
+    # overwrite_all implique l'écrasement de tout, y compris labels et chemins
+    if overwrite_all:
+        overwrite_labels = True
+        overwrite_paths  = True
+
+    total = len(entries)
+
+    # Streaming NDJSON
+    response = web.StreamResponse()
+    response.headers["Content-Type"] = "application/x-ndjson"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+
+    origin = request.headers.get("Origin", "")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+
+    await response.prepare(request)
+
+    client_disconnected = [False]
+
+    async def send(data: dict) -> bool:
+        try:
+            await response.write((json.dumps(data, ensure_ascii=False) + "\n").encode("utf-8"))
+            await response.drain()
+            return True
+        except Exception as e:
+            err_lower = str(e).lower()
+            if any(k in err_lower for k in ("closing transport", "connection reset", "broken pipe")):
+                client_disconnected[0] = True
+            return False
+
+    try:
+        await send({"log": f"📥 {total} entrée(s) à traiter…", "progress": {"current": 0, "total": total}})
+
+        # Charger les f95_thread_id déjà en collection pour ce owner
+        existing_ids: set[int] = set()
+        try:
+            res = sb.table("user_collection") \
+                .select("f95_thread_id, id, labels, executable_paths") \
+                .eq("owner_id", owner_id) \
+                .execute()
+            existing_map: dict[int, dict] = {}
+            for row in (res.data or []):
+                tid = row.get("f95_thread_id")
+                if tid is not None:
+                    existing_ids.add(int(tid))
+                    existing_map[int(tid)] = row
+        except Exception as e:
+            logger.error("[api] import-batch : lecture collection existante : %s", e)
+            existing_map = {}
+
+        await send({"log": f"ℹ️ {len(existing_ids)} jeu(x) déjà en collection"})
+
+        imported_count = 0
+        skipped_count  = 0
+        error_count    = 0
+        now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+
+        for idx, entry in enumerate(entries, 1):
+            if client_disconnected[0]:
+                break
+
+            if not await send({"progress": {"current": idx, "total": total}}):
+                break
+
+            f95_id  = entry.get("f95_thread_id")
+            lc_id   = entry.get("lewdcorner_thread_id")
+            f95_url = (entry.get("f95_url") or "").strip() or None
+            title   = (entry.get("title") or "").strip() or None
+            notes   = (entry.get("notes") or "").strip() or None
+            labels  = entry.get("labels") or []
+            raw_paths = entry.get("executable_paths") or []
+
+            # Données de jeu exportées depuis Nexus → scraped_data
+            game_version   = (entry.get("game_version") or "").strip() or None
+            game_statut    = (entry.get("game_statut") or "").strip() or None
+            game_engine    = (entry.get("game_engine") or "").strip() or None
+            game_developer = (entry.get("game_developer") or "").strip() or None
+            couverture_url = (entry.get("couverture_url") or "").strip() or None
+            tags_list      = entry.get("tags") or []
+            game_site      = (entry.get("game_site") or "").strip() or None
+
+            # Construire scraped_data uniquement si des données sont disponibles
+            has_scraped = any([game_version, game_statut, game_engine, couverture_url, tags_list])
+            scraped_data = None
+            if has_scraped:
+                scraped_data = {
+                    "name"     : title,
+                    "version"  : game_version,
+                    "status"   : game_statut,
+                    "type"     : game_engine,
+                    "developer": game_developer,
+                    "image"    : couverture_url,
+                    "tags"     : tags_list,
+                    "source"   : game_site,
+                }
+
+            # Normalisation des chemins exécutables
+            exe_paths = []
+            for p in raw_paths:
+                if isinstance(p, str) and p.strip():
+                    exe_paths.append({"path": p.strip()})
+                elif isinstance(p, dict) and p.get("path"):
+                    exe_paths.append({"path": p["path"].strip()})
+
+            # Validation : on a besoin d'au moins un identifiant
+            if not f95_id and not lc_id and not f95_url:
+                msg = f"⚠️  [{idx}/{total}] Entrée ignorée (aucun identifiant F95/Lewdcorner)"
+                if not await send({"log": msg}):
+                    break
+                error_count += 1
+                continue
+
+            # f95_thread_id est NOT NULL en base — utiliser lewdcorner_thread_id comme fallback
+            # (le champ stocke n'importe quel ID de thread numérique, pas seulement F95)
+            effective_thread_id = int(f95_id) if f95_id else (int(lc_id) if lc_id else None)
+            if effective_thread_id is None:
+                msg = f"⚠️  [{idx}/{total}] Entrée ignorée (impossible de résoudre un thread_id)"
+                if not await send({"log": msg}):
+                    break
+                error_count += 1
+                continue
+
+            # Construire f95_url si manquant
+            if not f95_url:
+                if f95_id:
+                    f95_url = f"https://f95zone.to/threads/thread.{f95_id}/"
+                elif entry.get("lewdcorner_url"):
+                    f95_url = entry["lewdcorner_url"]
+
+            display_name = title or (f"ID {f95_id}" if f95_id else f"Lewdcorner #{lc_id}")
+
+            # Vérifier si déjà en collection
+            if effective_thread_id in existing_ids:
+                existing_row = existing_map.get(effective_thread_id, {})
+
+                # Ignorer si aucune option d'écrasement active
+                if skip_existing and not overwrite_labels and not overwrite_paths and not overwrite_all:
+                    msg = f"⏭️  [{idx}/{total}] {display_name} — déjà en collection (ignoré)"
+                    if not await send({"log": msg}):
+                        break
+                    skipped_count += 1
+                    continue
+
+                if overwrite_all:
+                    # Écrasement complet : toutes les données Nexus
+                    update_payload: dict = {
+                        "title":            title,
+                        "f95_url":          f95_url,
+                        "notes":            notes or None,
+                        "updated_at":       now,
+                    }
+                    if labels:
+                        update_payload["labels"] = labels
+                    if exe_paths:
+                        update_payload["executable_paths"] = exe_paths
+                    if scraped_data:
+                        update_payload["scraped_data"] = scraped_data
+                    try:
+                        sb.table("user_collection") \
+                            .update(update_payload) \
+                            .eq("id", existing_row["id"]) \
+                            .eq("owner_id", owner_id) \
+                            .execute()
+                        details = []
+                        if scraped_data: details.append("données")
+                        if labels:      details.append(f"{len(labels)} label(s)")
+                        if exe_paths:   details.append(f"{len(exe_paths)} chemin(s)")
+                        msg = f"🔄 [{idx}/{total}] {display_name} — réimporté ({', '.join(details) or 'titre/notes'})"
+                        if not await send({"log": msg}):
+                            break
+                        imported_count += 1
+                    except Exception as e:
+                        logger.error("[api] import-batch overwrite_all %s: %s", display_name, e)
+                        if not await send({"log": f"❌ [{idx}/{total}] {display_name} — erreur: {e}"}):
+                            break
+                        error_count += 1
+                else:
+                    # Mise à jour partielle (labels / chemins seulement)
+                    update_payload = {"updated_at": now}
+                    changes = []
+                    if overwrite_labels and labels:
+                        update_payload["labels"] = labels
+                        changes.append("labels")
+                    if overwrite_paths and exe_paths:
+                        update_payload["executable_paths"] = exe_paths
+                        changes.append("chemins")
+
+                    if changes:
+                        try:
+                            sb.table("user_collection") \
+                                .update(update_payload) \
+                                .eq("id", existing_row["id"]) \
+                                .eq("owner_id", owner_id) \
+                                .execute()
+                            msg = f"🔄 [{idx}/{total}] {display_name} — mis à jour ({', '.join(changes)})"
+                            if not await send({"log": msg}):
+                                break
+                            imported_count += 1
+                        except Exception as e:
+                            logger.error("[api] import-batch update %s: %s", display_name, e)
+                            if not await send({"log": f"❌ [{idx}/{total}] {display_name} — erreur: {e}"}):
+                                break
+                            error_count += 1
+                    else:
+                        if not await send({"log": f"⏭️  [{idx}/{total}] {display_name} — déjà en collection (ignoré)"}):
+                            break
+                        skipped_count += 1
+                continue
+
+            # Insertion (upsert) du jeu
+            try:
+                row: dict = {
+                    "owner_id":         owner_id,
+                    "f95_thread_id":    effective_thread_id,  # NOT NULL — toujours renseigné ici
+                    "f95_url":          f95_url,
+                    "title":            title,
+                    "notes":            notes or None,
+                    "updated_at":       now,
+                }
+                if labels:
+                    row["labels"] = labels
+                if exe_paths:
+                    row["executable_paths"] = exe_paths
+                if scraped_data:
+                    row["scraped_data"] = scraped_data
+
+                sb.table("user_collection").upsert(row, on_conflict="owner_id,f95_thread_id").execute()
+
+                existing_ids.add(effective_thread_id)
+                existing_map[effective_thread_id] = {"id": None}  # Marqueur pour éviter les doublons
+
+                details = []
+                if labels:       details.append(f"{len(labels)} label(s)")
+                if exe_paths:    details.append(f"{len(exe_paths)} chemin(s)")
+                if game_version: details.append(f"v{game_version}")
+                detail_str = f" — {', '.join(details)}" if details else ""
+
+                msg = f"✅ [{idx}/{total}] {display_name}{detail_str}"
+                if not await send({"log": msg}):
+                    break
+                imported_count += 1
+
+            except Exception as e:
+                logger.error("[api] import-batch insert %s: %s", display_name, e)
+                if not await send({"log": f"❌ [{idx}/{total}] {display_name} — erreur: {e}"}):
+                    break
+                error_count += 1
+
+            # Pause légère entre insertions pour éviter la saturation
+            if idx % 10 == 0 and not client_disconnected[0]:
+                await asyncio.sleep(0.1)
+
+        if not client_disconnected[0]:
+            await send({
+                "log": (
+                    f"🎉 Import terminé : {imported_count} importé(s), "
+                    f"{skipped_count} ignoré(s), {error_count} erreur(s)"
+                ),
+                "status":   "completed",
+                "imported": imported_count,
+                "skipped":  skipped_count,
+                "errors":   error_count,
+            })
+
+    except Exception as e:
+        logger.error("[api] import-batch erreur globale : %s", e, exc_info=True)
+        await send({"error": str(e), "status": "error"})
+
+    finally:
+        await response.write_eof()
+
+    return response
+
+
+async def collection_f95_traducteurs(request):
+    """
+    Liste des traducteurs distincts de f95_jeux (pour le select).
+    GET /api/collection/f95-traducteurs
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/collection/f95-traducteurs")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+
+    sb = _get_supabase()
+    if not sb:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Supabase non configuré"}, status=500))
+
+    try:
+        res = sb.table("f95_jeux").select("traducteur").not_.is_("traducteur", "null").execute()
+        raw = [r.get("traducteur", "").strip() for r in (res.data or []) if r.get("traducteur")]
+        traducteurs = sorted({t for t in raw if t})
+        return _with_cors(request, web.json_response({"ok": True, "traducteurs": traducteurs}))
+    except Exception as e:
+        logger.exception("[api] f95-traducteurs : %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+
+async def collection_f95_preview(request):
+    """
+    Prévisualise les jeux de f95_jeux correspondant aux filtres fournis.
+    POST /api/collection/f95-preview
+    Body JSON: { "owner_id": "<uuid>", "traducteur": "...", "type": "...", "statut": "...", "search": "...", "limit": 500 }
+    Réponse: { "ok": true, "count": N, "already_in_collection": M, "new_count": K, "sample": [...] }
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/collection/f95-preview")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+
+    sb = _get_supabase()
+    if not sb:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Supabase non configuré"}, status=500))
+
+    try:
+        body = await request.json() or {}
+    except Exception:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Body JSON invalide"}, status=400))
+
+    owner_id   = (body.get("owner_id")   or "").strip()
+    traducteur = (body.get("traducteur") or "").strip()
+    type_jeu   = (body.get("type")       or "").strip()
+    statut     = (body.get("statut")     or "").strip()
+    search     = (body.get("search")     or "").strip()
+    try:
+        limit = min(int(body.get("limit") or 500), 2000)
+    except (TypeError, ValueError):
+        limit = 500
+
+    if not owner_id:
+        return _with_cors(request, web.json_response({"ok": False, "error": "owner_id requis"}, status=400))
+    if not traducteur and not type_jeu and not statut and not search:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "Au moins un filtre requis (traducteur, type, statut, search)"},
+            status=400,
+        ))
+
+    full_list = bool(body.get("full_list", False))
+
+    try:
+        query = sb.table("f95_jeux").select(
+            "site_id, nom_du_jeu, traducteur, version, trad_ver, statut, type, nom_url"
+        ).not_.is_("site_id", "null")
+
+        if traducteur:
+            query = query.eq("traducteur", traducteur)
+        if type_jeu:
+            query = query.ilike("type", f"%{type_jeu}%")
+        if statut:
+            query = query.ilike("statut", f"%{statut}%")
+        if search:
+            query = query.ilike("nom_du_jeu", f"%{search}%")
+
+        res = query.limit(limit).execute()
+        all_jeux = res.data or []
+
+        # Dédupliquer par site_id (plusieurs lignes peuvent partager le même site_id)
+        seen: set = set()
+        unique_jeux = []
+        for j in all_jeux:
+            sid = j.get("site_id")
+            if sid and sid not in seen:
+                seen.add(sid)
+                unique_jeux.append(j)
+
+        # Jeux déjà en collection
+        existing_site_ids: set = set()
+        if unique_jeux:
+            site_ids = [j["site_id"] for j in unique_jeux]
+            coll_res = sb.table("user_collection") \
+                .select("f95_thread_id") \
+                .eq("owner_id", owner_id) \
+                .in_("f95_thread_id", site_ids) \
+                .execute()
+            existing_site_ids = {r["f95_thread_id"] for r in (coll_res.data or [])}
+
+        new_count     = sum(1 for j in unique_jeux if j.get("site_id") not in existing_site_ids)
+        already_count = len(unique_jeux) - new_count
+
+        result = {
+            "ok":                   True,
+            "count":                len(unique_jeux),
+            "already_in_collection": already_count,
+            "new_count":            new_count,
+        }
+        if full_list:
+            result["items"] = unique_jeux
+        else:
+            sample_new = [j for j in unique_jeux if j.get("site_id") not in existing_site_ids][:8]
+            sample_old = [j for j in unique_jeux if j.get("site_id") in existing_site_ids][:2]
+            result["sample"] = (sample_new + sample_old)[:10]
+
+        return _with_cors(request, web.json_response(result))
+
+    except Exception as e:
+        logger.exception("[api] /api/collection/f95-preview erreur: %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+
+async def collection_f95_import(request):
+    """
+    Importe en masse des jeux filtrés depuis f95_jeux vers user_collection (streaming NDJSON).
+    POST /api/collection/f95-import
+    Body JSON: { "owner_id": "...", "traducteur": "...", "type": "...", "statut": "...",
+                 "search": "...", "limit": 500, "skip_existing": true, "overwrite_all": false }
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/collection/f95-import")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+
+    sb = _get_supabase()
+    if not sb:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Supabase non configuré"}, status=500))
+
+    try:
+        body = await request.json() or {}
+    except Exception:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Body JSON invalide"}, status=400))
+
+    owner_id         = (body.get("owner_id")   or "").strip()
+    traducteur       = (body.get("traducteur") or "").strip()
+    type_jeu         = (body.get("type")       or "").strip()
+    statut           = (body.get("statut")     or "").strip()
+    search           = (body.get("search")     or "").strip()
+    skip_existing    = bool(body.get("skip_existing", True))
+    overwrite_all    = bool(body.get("overwrite_all", False))
+    selected_site_ids = body.get("selected_site_ids")
+    if selected_site_ids is not None and not isinstance(selected_site_ids, list):
+        selected_site_ids = None
+    try:
+        limit = min(int(body.get("limit") or 500), 2000)
+    except (TypeError, ValueError):
+        limit = 500
+
+    if not owner_id:
+        return _with_cors(request, web.json_response({"ok": False, "error": "owner_id requis"}, status=400))
+    if not selected_site_ids and not traducteur and not type_jeu and not statut and not search:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Au moins un filtre ou selected_site_ids requis"}, status=400))
+
+    response = web.StreamResponse()
+    response.headers["Content-Type"] = "application/x-ndjson"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    origin = request.headers.get("Origin", "")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    await response.prepare(request)
+
+    client_disconnected = [False]
+
+    async def send(data: dict) -> bool:
+        try:
+            await response.write((json.dumps(data, ensure_ascii=False) + "\n").encode("utf-8"))
+            await response.drain()
+            return True
+        except Exception as e:
+            if any(k in str(e).lower() for k in ("closing transport", "connection reset", "broken pipe")):
+                client_disconnected[0] = True
+            return False
+
+    try:
+        await send({"log": "🔍 Récupération des jeux depuis f95_jeux..."})
+
+        if selected_site_ids:
+            # Import ciblé par IDs sélectionnés
+            ids_clean = [int(x) for x in selected_site_ids if x is not None and str(x).isdigit()][:2000]
+            if not ids_clean:
+                await send({"log": "ℹ️ Aucun ID valide.", "status": "completed", "imported": 0, "skipped": 0, "errors": 0})
+                await response.write_eof()
+                return response
+            res = sb.table("f95_jeux").select(
+                "site_id, nom_du_jeu, traducteur, traducteur_url, version, trad_ver, statut, "
+                "type, type_de_traduction, lien_trad, nom_url, image, tags, synopsis_fr, synopsis_en"
+            ).in_("site_id", ids_clean).execute()
+        else:
+            query = sb.table("f95_jeux").select(
+                "site_id, nom_du_jeu, traducteur, traducteur_url, version, trad_ver, statut, "
+                "type, type_de_traduction, lien_trad, nom_url, image, tags, synopsis_fr, synopsis_en"
+            ).not_.is_("site_id", "null")
+            if traducteur:
+                query = query.eq("traducteur", traducteur)
+            if type_jeu:
+                query = query.ilike("type", f"%{type_jeu}%")
+            if statut:
+                query = query.ilike("statut", f"%{statut}%")
+            if search:
+                query = query.ilike("nom_du_jeu", f"%{search}%")
+            res = query.limit(limit).execute()
+
+        all_jeux = res.data or []
+
+        # Dédupliquer par site_id
+        seen: set = set()
+        jeux = []
+        for j in all_jeux:
+            sid = j.get("site_id")
+            if sid and sid not in seen:
+                seen.add(sid)
+                jeux.append(j)
+
+        total = len(jeux)
+        if total == 0:
+            await send({"log": "ℹ️ Aucun jeu correspondant aux filtres.", "status": "completed",
+                        "imported": 0, "skipped": 0, "errors": 0})
+            await response.write_eof()
+            return response
+
+        await send({"log": f"📊 {total} jeu(x) trouvé(s)", "progress": {"current": 0, "total": total}})
+
+        # Entrées déjà en collection
+        coll_res = sb.table("user_collection").select("f95_thread_id, id").eq("owner_id", owner_id).execute()
+        existing_map: dict = {}
+        for row in (coll_res.data or []):
+            tid = row.get("f95_thread_id")
+            if tid is not None:
+                existing_map[int(tid)] = row
+        await send({"log": f"ℹ️ {len(existing_map)} jeu(x) déjà en collection"})
+
+        imported_count = 0
+        skipped_count  = 0
+        error_count    = 0
+        now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+
+        for idx, jeu in enumerate(jeux, 1):
+            if client_disconnected[0]:
+                break
+            if not await send({"progress": {"current": idx, "total": total}}):
+                break
+
+            site_id      = jeu.get("site_id")
+            title        = (jeu.get("nom_du_jeu") or "").strip() or None
+            f95_url      = (jeu.get("nom_url")    or "").strip() or None
+            display_name = title or f"site_id={site_id}"
+
+            scraped_data = {
+                "name":               title,
+                "version":            jeu.get("version"),
+                "trad_ver":           jeu.get("trad_ver"),
+                "status":             jeu.get("statut"),
+                "type":               jeu.get("type"),
+                "type_de_traduction": jeu.get("type_de_traduction"),
+                "traducteur":         jeu.get("traducteur"),
+                "traducteur_url":     jeu.get("traducteur_url"),
+                "lien_trad":          jeu.get("lien_trad"),
+                "image":              jeu.get("image"),
+                "tags":               jeu.get("tags"),
+                "synopsis":           jeu.get("synopsis_en"),
+                "synopsis_fr":        jeu.get("synopsis_fr"),
+                "source":             "f95_jeux",
+            }
+
+            if site_id in existing_map:
+                if skip_existing and not overwrite_all:
+                    if not await send({"log": f"⏭️ [{idx}/{total}] {display_name} — déjà en collection (ignoré)"}):
+                        break
+                    skipped_count += 1
+                    continue
+                if overwrite_all:
+                    try:
+                        sb.table("user_collection").update({
+                            "title":        title,
+                            "f95_url":      f95_url,
+                            "scraped_data": scraped_data,
+                            "updated_at":   now,
+                        }).eq("id", existing_map[site_id]["id"]).eq("owner_id", owner_id).execute()
+                        if not await send({"log": f"🔄 [{idx}/{total}] {display_name} — données mises à jour"}):
+                            break
+                        imported_count += 1
+                    except Exception as e:
+                        logger.error("[api] f95-import overwrite %s: %s", display_name, e)
+                        if not await send({"log": f"❌ [{idx}/{total}] {display_name} — erreur: {e}"}):
+                            break
+                        error_count += 1
+                continue
+
+            try:
+                sb.table("user_collection").upsert({
+                    "owner_id":      owner_id,
+                    "f95_thread_id": int(site_id),
+                    "f95_url":       f95_url,
+                    "title":         title,
+                    "scraped_data":  scraped_data,
+                    "updated_at":    now,
+                }, on_conflict="owner_id,f95_thread_id").execute()
+                existing_map[site_id] = {"id": None}
+                if not await send({"log": f"✅ [{idx}/{total}] {display_name}"}):
+                    break
+                imported_count += 1
+            except Exception as e:
+                logger.error("[api] f95-import insert %s: %s", display_name, e)
+                if not await send({"log": f"❌ [{idx}/{total}] {display_name} — erreur: {e}"}):
+                    break
+                error_count += 1
+
+            if idx % 20 == 0 and not client_disconnected[0]:
+                await asyncio.sleep(0.05)
+
+        if not client_disconnected[0]:
+            await send({
+                "log": f"🎉 Import terminé : {imported_count} importé(s), {skipped_count} ignoré(s), {error_count} erreur(s)",
+                "status":   "completed",
+                "imported": imported_count,
+                "skipped":  skipped_count,
+                "errors":   error_count,
+            })
+
+    except Exception as e:
+        logger.error("[api] f95-import erreur globale : %s", e, exc_info=True)
+        await send({"error": str(e), "status": "error"})
+    finally:
+        await response.write_eof()
+
+    return response
+
+
+async def collection_enrich_entries(request):
+    """
+    Met à jour les scraped_data des entrées user_collection depuis f95_jeux (streaming NDJSON).
+    Si scrape_missing=True, scrape directement F95Zone pour les entrées sans correspondance f95_jeux.
+    POST /api/collection/enrich-entries
+    Body JSON:
+    {
+        "owner_id":      "<uuid>",
+        "fields":        [...],          // optionnel, défaut = tous les champs
+        "scrape_missing": false,         // si true : scrape F95 pour les entrées sans données (rate-limited)
+        "f95_cookies":   "...",          // optionnel : cookie xf_session pour les jeux 18+
+        "scrape_delay":  2.0             // délai entre les scrapes (défaut 2s)
+    }
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/collection/enrich-entries")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+
+    sb = _get_supabase()
+    if not sb:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Supabase non configuré"}, status=500))
+
+    try:
+        body = await request.json() or {}
+    except Exception:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Body JSON invalide"}, status=400))
+
+    owner_id       = (body.get("owner_id") or "").strip()
+    scrape_missing = bool(body.get("scrape_missing", False))
+    f95_cookies    = (body.get("f95_cookies") or "").strip() or None
+    try:
+        scrape_delay = max(1.0, float(body.get("scrape_delay") or 2.0))
+    except (TypeError, ValueError):
+        scrape_delay = 2.0
+
+    if not owner_id:
+        return _with_cors(request, web.json_response({"ok": False, "error": "owner_id requis"}, status=400))
+
+    # Champs à synchroniser (f95_jeux → scraped_data)
+    F95_TO_SCRAPED = {
+        "version":            "version",
+        "trad_ver":           "trad_ver",
+        "statut":             "status",
+        "type":               "type",
+        "type_de_traduction": "type_de_traduction",
+        "lien_trad":          "lien_trad",
+        "traducteur":         "traducteur",
+        "traducteur_url":     "traducteur_url",
+        "image":              "image",
+        "tags":               "tags",
+        "synopsis_en":        "synopsis",
+        "synopsis_fr":        "synopsis_fr",
+    }
+    fields_to_sync = body.get("fields") or list(F95_TO_SCRAPED.keys())
+
+    response = web.StreamResponse()
+    response.headers["Content-Type"] = "application/x-ndjson"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    origin = request.headers.get("Origin", "")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    await response.prepare(request)
+
+    client_disconnected = [False]
+
+    async def send(data: dict) -> bool:
+        try:
+            await response.write((json.dumps(data, ensure_ascii=False) + "\n").encode("utf-8"))
+            await response.drain()
+            return True
+        except Exception as e:
+            if any(k in str(e).lower() for k in ("closing transport", "connection reset", "broken pipe")):
+                client_disconnected[0] = True
+            return False
+
+    try:
+        await send({"log": "📋 Chargement des entrées de la collection..."})
+
+        coll_res = sb.table("user_collection") \
+            .select("id, f95_thread_id, title, f95_url, scraped_data") \
+            .eq("owner_id", owner_id) \
+            .execute()
+        entries = [r for r in (coll_res.data or []) if r.get("f95_thread_id")]
+
+        if not entries:
+            await send({"log": "ℹ️ Aucune entrée à enrichir.", "status": "completed", "updated": 0, "skipped": 0, "scraped": 0})
+            await response.write_eof()
+            return response
+
+        total = len(entries)
+        await send({"log": f"📊 {total} entrée(s) — récupération des données f95_jeux…",
+                    "progress": {"current": 0, "total": total}})
+
+        # Charger les données f95_jeux par batches
+        thread_ids = [e["f95_thread_id"] for e in entries]
+        f95_map: dict = {}
+        BATCH = 500
+        for i in range(0, len(thread_ids), BATCH):
+            batch = thread_ids[i:i + BATCH]
+            f95_res = sb.table("f95_jeux").select(
+                "site_id, nom_du_jeu, version, trad_ver, statut, type, type_de_traduction, "
+                "lien_trad, traducteur, traducteur_url, nom_url, image, tags, synopsis_fr, synopsis_en"
+            ).in_("site_id", batch).execute()
+            for row in (f95_res.data or []):
+                sid = row.get("site_id")
+                if sid:
+                    f95_map[sid] = row
+
+        matched = len(f95_map)
+        missing = total - matched
+        log_msg = f"✅ {matched} correspondance(s) f95_jeux"
+        if scrape_missing and missing > 0:
+            log_msg += f" — {missing} à scraper depuis F95Zone ({scrape_delay:.0f}s entre chaque)"
+        await send({"log": log_msg})
+
+        updated_count = 0
+        skipped_count = 0
+        scraped_count = 0
+        now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+
+        # Séparation : entrées avec/sans correspondance f95_jeux
+        entries_with_f95    = [e for e in entries if f95_map.get(e["f95_thread_id"])]
+        entries_without_f95 = [e for e in entries if not f95_map.get(e["f95_thread_id"])]
+
+        # ─── Phase 1 : enrichissement depuis f95_jeux ───────────────────────────
+        for idx, entry in enumerate(entries_with_f95, 1):
+            if client_disconnected[0]:
+                break
+            if not await send({"progress": {"current": idx, "total": total}}):
+                break
+
+            tid   = entry["f95_thread_id"]
+            f95   = f95_map.get(tid)
+            title = entry.get("title") or f"ID {tid}"
+
+            existing_scraped = entry.get("scraped_data") or {}
+            if isinstance(existing_scraped, str):
+                try:
+                    existing_scraped = json.loads(existing_scraped)
+                except Exception:
+                    existing_scraped = {}
+
+            new_scraped    = dict(existing_scraped)
+            changed_fields = []
+
+            for f95_field, scraped_field in F95_TO_SCRAPED.items():
+                if f95_field not in fields_to_sync:
+                    continue
+                f95_val = f95.get(f95_field)
+                if f95_val is not None and new_scraped.get(scraped_field) != f95_val:
+                    new_scraped[scraped_field] = f95_val
+                    changed_fields.append(scraped_field)
+
+            new_title   = f95.get("nom_du_jeu") or entry.get("title")
+            new_f95_url = f95.get("nom_url") or entry.get("f95_url")
+            title_changed = bool(new_title and new_title != entry.get("title"))
+
+            if not changed_fields and not title_changed:
+                if not await send({"log": f"⏭️ [{idx}/{total}] {title} — déjà à jour"}):
+                    break
+                skipped_count += 1
+                continue
+
+            try:
+                update_payload: dict = {"scraped_data": new_scraped, "updated_at": now}
+                if new_title:
+                    update_payload["title"] = new_title
+                if new_f95_url:
+                    update_payload["f95_url"] = new_f95_url
+                sb.table("user_collection").update(update_payload) \
+                    .eq("id", entry["id"]).eq("owner_id", owner_id).execute()
+                fields_str = ", ".join(changed_fields[:4]) + ("…" if len(changed_fields) > 4 else "")
+                if not await send({"log": f"✅ [{idx}/{total}] {new_title or title} — {fields_str or 'titre'}"}):
+                    break
+                updated_count += 1
+            except Exception as e:
+                logger.error("[api] enrich-entries update %s: %s", title, e)
+                if not await send({"log": f"❌ [{idx}/{total}] {title} — erreur: {e}"}):
+                    break
+
+        # ─── Phase 2 : scraping F95Zone pour les entrées sans f95_jeux ──────────
+        if scrape_missing and entries_without_f95 and not client_disconnected[0]:
+            base_idx = len(entries_with_f95)
+            total_scrape = len(entries_without_f95)
+            await send({"log": f"🕷️ Démarrage du scraping F95Zone pour {total_scrape} entrée(s) sans données…"})
+
+            async with aiohttp.ClientSession() as session:
+                for s_idx, entry in enumerate(entries_without_f95, 1):
+                    if client_disconnected[0]:
+                        break
+
+                    global_idx = base_idx + s_idx
+                    if not await send({"progress": {"current": global_idx, "total": total}}):
+                        break
+
+                    tid   = entry["f95_thread_id"]
+                    title = entry.get("title") or f"ID {tid}"
+
+                    # Construire l'URL F95 si absente
+                    f95_url = (entry.get("f95_url") or "").strip()
+                    if not f95_url:
+                        f95_url = f"https://f95zone.to/threads/thread.{tid}/"
+
+                    # Ignorer les URLs non-F95 (LewdCorner, manuels sans URL valide)
+                    if "f95zone.to" not in f95_url.lower():
+                        if not await send({"log": f"⏭️ [{global_idx}/{total}] {title} — URL non-F95 (ignoré)"}):
+                            break
+                        skipped_count += 1
+                        continue
+
+                    if not await send({"log": f"🕷️ [{global_idx}/{total}] {title} — scraping F95…"}):
+                        break
+
+                    try:
+                        game_data = await scrape_f95_game_data(
+                            session, f95_url, cookies=f95_cookies or None
+                        )
+                    except Exception as e:
+                        logger.warning("[api] enrich-entries scrape %s: %s", title, e)
+                        if not await send({"log": f"❌ [{global_idx}/{total}] {title} — scrape échoué: {e}"}):
+                            break
+                        if s_idx < total_scrape:
+                            await asyncio.sleep(scrape_delay)
+                        continue
+
+                    if not game_data:
+                        if not await send({"log": f"⏭️ [{global_idx}/{total}] {title} — aucune donnée scrappée"}):
+                            break
+                        skipped_count += 1
+                        if s_idx < total_scrape:
+                            await asyncio.sleep(scrape_delay)
+                        continue
+
+                    # Construire scraped_data depuis les données scrapées
+                    existing_scraped = entry.get("scraped_data") or {}
+                    if isinstance(existing_scraped, str):
+                        try:
+                            existing_scraped = json.loads(existing_scraped)
+                        except Exception:
+                            existing_scraped = {}
+
+                    new_scraped = {
+                        **existing_scraped,
+                        "name":    game_data.get("name") or game_data.get("title"),
+                        "version": game_data.get("version"),
+                        "status":  game_data.get("status"),
+                        "type":    game_data.get("type"),
+                        "image":   game_data.get("image"),
+                        "tags":    game_data.get("tags"),
+                        "synopsis": game_data.get("synopsis"),
+                        "source":  "f95zone_scraped",
+                    }
+                    # Nettoyer les None inutiles
+                    new_scraped = {k: v for k, v in new_scraped.items() if v is not None}
+
+                    new_title   = game_data.get("name") or game_data.get("title") or entry.get("title")
+                    scraped_f95_id = game_data.get("id")
+
+                    try:
+                        update_payload = {
+                            "scraped_data": new_scraped,
+                            "updated_at":   now,
+                        }
+                        if new_title:
+                            update_payload["title"] = new_title
+                        if scraped_f95_id:
+                            # Mettre à jour f95_thread_id si le scrape a résolu un id plus précis
+                            update_payload["f95_url"] = f95_url
+                        sb.table("user_collection").update(update_payload) \
+                            .eq("id", entry["id"]).eq("owner_id", owner_id).execute()
+                        v = new_scraped.get("version", "")
+                        ver_str = f" (v{v})" if v else ""
+                        if not await send({"log": f"✅ [{global_idx}/{total}] {new_title or title}{ver_str} — scrappé et mis à jour"}):
+                            break
+                        updated_count += 1
+                        scraped_count += 1
+                    except Exception as e:
+                        logger.error("[api] enrich-entries scrape save %s: %s", title, e)
+                        if not await send({"log": f"❌ [{global_idx}/{total}] {title} — erreur sauvegarde: {e}"}):
+                            break
+
+                    # Rate limiting entre les scrapes
+                    if s_idx < total_scrape and not client_disconnected[0]:
+                        await asyncio.sleep(scrape_delay)
+
+        if not client_disconnected[0]:
+            parts = [f"{updated_count} mis à jour"]
+            if scraped_count:
+                parts.append(f"dont {scraped_count} scrappé(s) depuis F95")
+            parts.append(f"{skipped_count} ignoré(s)")
+            await send({
+                "log":     f"🎉 Enrichissement terminé : {', '.join(parts)}",
+                "status":  "completed",
+                "updated": updated_count,
+                "skipped": skipped_count,
+                "scraped": scraped_count,
+            })
+
+    except Exception as e:
+        logger.error("[api] enrich-entries erreur globale : %s", e, exc_info=True)
+        await send({"error": str(e), "status": "error"})
+    finally:
+        await response.write_eof()
+
+    return response
 
 
 async def get_logs(request):
@@ -904,7 +2033,7 @@ async def get_history(request):
 
 
 async def get_instructions(request):
-    """Retourne toutes les instructions (saved_instructions) pour les master admin uniquement."""
+    """Retourne toutes les instructions (owner_data, data_key=instructions) pour les master admin uniquement."""
     is_valid, discord_user_id, _, is_legacy = await _auth_request(request, "/api/instructions")
     if not is_valid or is_legacy or not discord_user_id:
         return _with_cors(request, web.json_response({"ok": False, "error": "Accès refusé"}, status=403))
@@ -920,11 +2049,11 @@ async def get_instructions(request):
         logger.error("[api] Vérification master_admin (instructions): %s", e)
         return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
     try:
-        res = sb.table("saved_instructions").select("owner_type, owner_id, value").execute()
-        rows = list(res.data or [])
+        res = sb.table("owner_data").select("owner_type, owner_id, value").eq("data_key", "instructions").execute()
+        rows = [{"owner_type": r["owner_type"], "owner_id": r["owner_id"], "value": r["value"]} for r in (res.data or [])]
         return _with_cors(request, web.json_response({"ok": True, "instructions": rows, "count": len(rows)}))
     except Exception as e:
-        logger.error("[api] Erreur lecture saved_instructions: %s", e)
+        logger.error("[api] Erreur lecture owner_data (instructions): %s", e)
         return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
 
 
@@ -974,6 +2103,48 @@ async def sync_forum_tags(request):
     return _with_cors(request, web.json_response({"ok": True, "tags": tags, "count": len(tags)}))
 
 
+async def update_f95_jeu_synopsis(request):
+    """
+    Met à jour synopsis_fr et/ou synopsis_en d'une ligne f95_jeux (édition depuis l'app).
+    PATCH /api/f95-jeux/{id}/synopsis
+    Body: { "synopsis_fr": "...", "synopsis_en": "..." } (au moins un des deux)
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/f95-jeux/synopsis")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+    try:
+        jeu_id = request.match_info.get("id")
+        if not jeu_id:
+            return _with_cors(request, web.json_response({"ok": False, "error": "id manquant"}, status=400))
+        try:
+            jeu_id = int(jeu_id)
+        except ValueError:
+            return _with_cors(request, web.json_response({"ok": False, "error": "id invalide"}, status=400))
+        body = await request.json() if request.body_exists else {}
+        synopsis_fr = body.get("synopsis_fr")
+        synopsis_en = body.get("synopsis_en")
+        if synopsis_fr is None and synopsis_en is None:
+            return _with_cors(request, web.json_response(
+                {"ok": False, "error": "Fournir au moins synopsis_fr ou synopsis_en"},
+                status=400
+            ))
+        sb = _get_supabase()
+        if not sb:
+            return _with_cors(request, web.json_response({"ok": False, "error": "Supabase non configuré"}, status=500))
+        payload = {"updated_at": datetime.datetime.now(ZoneInfo("UTC")).isoformat()}
+        if synopsis_fr is not None:
+            payload["synopsis_fr"] = synopsis_fr
+        if synopsis_en is not None:
+            payload["synopsis_en"] = synopsis_en
+        res = sb.table("f95_jeux").update(payload).eq("id", jeu_id).execute()
+        if not res.data:
+            return _with_cors(request, web.json_response({"ok": False, "error": "Ligne non trouvée"}, status=404))
+        return _with_cors(request, web.json_response({"ok": True}))
+    except Exception as e:
+        logger.exception("[api] PATCH f95_jeux synopsis : %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+
 async def get_jeux(request):
     """Sert les jeux depuis le cache Supabase (f95_jeux). Fallback sur l'API externe."""
     is_valid, _, _, _ = await _auth_request(request, "/api/jeux")
@@ -986,7 +2157,8 @@ async def get_jeux(request):
             loop = asyncio.get_event_loop()
             data = await loop.run_in_executor(None, _fetch_all_jeux_sync)
             if data:
-                logger.info("[api] %d jeux depuis Supabase (cache)", len(data))
+                data = _dedupe_jeux_by_site(data)
+                logger.info("[api] %d jeux depuis Supabase (cache, dédupliqués)", len(data))
                 return _with_cors(request, web.json_response({
                     "ok": True, "jeux": data, "count": len(data), "source": "cache",
                 }))
@@ -1011,7 +2183,9 @@ async def get_jeux(request):
             loop = asyncio.get_event_loop()
             loop.run_in_executor(None, _sync_jeux_to_supabase, data)
 
-        logger.info("[api] %d jeux depuis API externe (fallback)", len(data) if isinstance(data, list) else "?")
+        if isinstance(data, list):
+            data = _dedupe_jeux_by_site(data)
+        logger.info("[api] %d jeux depuis API externe (fallback, dédupliqués)", len(data) if isinstance(data, list) else "?")
         return _with_cors(request, web.json_response({
             "ok": True, "jeux": data,
             "count": len(data) if isinstance(data, list) else 0,
@@ -1339,6 +2513,178 @@ async def transfer_ownership(request):
     return _with_cors(request, web.json_response({"ok": True, "count": result.get("count", 0)}))
 
 
+async def reset_synopsis(request):
+    """
+    Remet à NULL synopsis_en et synopsis_fr sur toutes les lignes de f95_jeux.
+    POST /api/enrich/reset-synopsis
+    Body: { "confirm": "RESET" }  — confirmation explicite obligatoire
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/enrich/reset-synopsis")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+
+    try:
+        body = await request.json() if request.body_exists else {}
+    except Exception:
+        body = {}
+
+    if (body.get("confirm") or "").strip() != "RESET":
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "Confirmation manquante — envoyez { \"confirm\": \"RESET\" }"},
+            status=400
+        ))
+
+    sb = _get_supabase()
+    if not sb:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Supabase non configuré"}, status=500))
+
+    try:
+        # Mettre synopsis_en et synopsis_fr à NULL sur toutes les lignes
+        # Supabase PostgREST ne supporte pas UPDATE sans filtre → on filtre sur id > 0
+        res = sb.table("f95_jeux").update({
+            "synopsis_en": None,
+            "synopsis_fr": None,
+        }).gt("id", 0).execute()
+
+        affected = len(res.data) if res.data else 0
+        logger.info("[api] reset_synopsis : %d lignes remises à NULL", affected)
+        return _with_cors(request, web.json_response({
+            "ok":      True,
+            "updated": affected,
+            "message": f"{affected} ligne(s) remises à NULL (synopsis_en + synopsis_fr)",
+        }))
+    except Exception as e:
+        logger.exception("[api] reset_synopsis : %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+
+async def get_enrich_synopsis_stats(request):
+    """
+    Retourne les statistiques de synopsis pour f95_jeux + liste des entrées manquantes.
+    GET /api/enrich/synopsis-stats
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/enrich/synopsis-stats")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+
+    sb = _get_supabase()
+    if not sb:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Supabase non configuré"}, status=500))
+
+    try:
+        # Charger tous les jeux avec leurs synopsis (paginations par blocs de 1000)
+        all_rows: list = []
+        offset = 0
+        PAGE_SIZE = 1000
+        while True:
+            res = sb.table("f95_jeux") \
+                .select("id, nom_du_jeu, nom_url, site_id, synopsis_en, synopsis_fr") \
+                .range(offset, offset + PAGE_SIZE - 1) \
+                .execute()
+            batch = res.data or []
+            all_rows.extend(batch)
+            if len(batch) < PAGE_SIZE:
+                break
+            offset += PAGE_SIZE
+
+        if not all_rows:
+            return _with_cors(request, web.json_response({
+                "ok": True,
+                "stats": {"total_groups": 0, "with_synopsis_en": 0, "with_synopsis_fr": 0, "missing_synopsis_fr": 0},
+                "missing_entries": [],
+            }))
+
+        # Grouper par nom_url normalisé (1 groupe = 1 jeu logique)
+        from collections import defaultdict
+        by_norm: dict = defaultdict(list)
+        for row in all_rows:
+            url  = (row.get("nom_url") or "").strip()
+            norm = _norm_nom_url(url) if url else None
+            if norm:
+                by_norm[norm].append(row)
+            else:
+                # Entrées sans URL normalisable : clé unique par id
+                by_norm[f"_noid_{row.get('id', '')}"].append(row)
+
+        total_groups = len(by_norm)
+        with_en  = 0
+        with_fr  = 0
+        missing_fr_entries: list = []
+
+        for _norm, group in by_norm.items():
+            has_en = any(r.get("synopsis_en") for r in group)
+            has_fr = any(r.get("synopsis_fr") for r in group)
+            if has_en:
+                with_en += 1
+            if has_fr:
+                with_fr += 1
+            else:
+                first   = group[0]
+                f95_url = (first.get("nom_url") or "").strip()
+                # N'inclure que les entrées avec une URL F95Zone valide (scraping possible)
+                if f95_url and "f95zone.to" in f95_url.lower():
+                    missing_fr_entries.append({
+                        "id":         first.get("id"),
+                        "nom_du_jeu": first.get("nom_du_jeu") or "Inconnu",
+                        "nom_url":    f95_url,
+                        "site_id":    first.get("site_id"),
+                        "synopsis_en": first.get("synopsis_en") or "",
+                        "group_ids":  [r.get("id") for r in group if r.get("id") is not None],
+                    })
+
+        # Limiter la liste retournée (la suite peut être rechargée avec un filtre)
+        missing_fr_entries = missing_fr_entries[:300]
+
+        return _with_cors(request, web.json_response({
+            "ok": True,
+            "stats": {
+                "total_groups":       total_groups,
+                "with_synopsis_en":   with_en,
+                "with_synopsis_fr":   with_fr,
+                "missing_synopsis_fr": total_groups - with_fr,
+            },
+            "missing_entries": missing_fr_entries,
+        }))
+    except Exception as e:
+        logger.exception("[api] get_enrich_synopsis_stats : %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+
+async def get_journal_logs(request):
+    """
+    Retourne les 300 dernières lignes du journal systemd du service discord-bot-traductions.
+    GET /api/logs/journal
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/logs/journal")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "journalctl", "-u", "discord-bot-traductions", "-n", "300", "--no-pager", "-o", "short",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return _with_cors(request, web.json_response(
+                {"ok": False, "error": "Timeout : journalctl a mis trop de temps à répondre"},
+                status=500
+            ))
+        content = stdout.decode("utf-8", errors="replace")
+        return _with_cors(request, web.json_response({"ok": True, "logs": content}))
+    except FileNotFoundError:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "journalctl non disponible sur ce système"},
+            status=500
+        ))
+    except Exception as e:
+        logger.exception("[api] get_journal_logs : %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+
 # ==================== APP ====================
 
 def make_app() -> web.Application:
@@ -1365,6 +2711,17 @@ def make_app() -> web.Application:
         ("POST",    "/api/transfer-ownership", transfer_ownership),
         ("POST",    "/api/scrape/enrich",     scrape_enrich),
         ("POST",    "/api/translate",         translate_handler),
+        ("POST",    "/api/collection/resolve",       collection_resolve),
+        ("POST",    "/api/collection/nexus-parse-db", nexus_parse_db),
+        ("POST",    "/api/collection/import-batch",   collection_import_batch),
+        ("GET",     "/api/collection/f95-traducteurs", collection_f95_traducteurs),
+        ("POST",    "/api/collection/f95-preview",  collection_f95_preview),
+        ("POST",    "/api/collection/f95-import",   collection_f95_import),
+        ("POST",    "/api/collection/enrich-entries", collection_enrich_entries),
+        ("POST",    "/api/enrich/reset-synopsis",    reset_synopsis),
+        ("GET",     "/api/enrich/synopsis-stats",   get_enrich_synopsis_stats),
+        ("GET",     "/api/logs/journal",            get_journal_logs),
+        ("PATCH",   "/api/f95-jeux/{id}/synopsis",  update_f95_jeu_synopsis),
         # Catch-all en dernier
         ("*",       "/{tail:.*}",             handle_404),
     ]

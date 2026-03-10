@@ -5,13 +5,14 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 
 import AdminSettings from './components/AdminSettings';
+import CollectionSettings from './components/CollectionSettings';
 import EnrichmentSettings from './components/EnrichmentSettings';
 import MyAccountSettings from './components/MyAccountSettings';
 import PreferenceSettings from './components/PreferenceSettings';
 
 const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
 
-type Tab = 'preferences' | 'account' | 'admin' | 'enrichment';
+type Tab = 'preferences' | 'account' | 'admin' | 'enrichment' | 'collection';
 
 interface SettingsModalProps {
   onClose?: () => void;
@@ -38,10 +39,11 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   useModalScrollLock();
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'preferences', label: 'Préférences', icon: '⚙️' },
-    { id: 'account', label: 'Mon compte', icon: '👤' },
-    { id: 'admin', label: 'Administration', icon: '🛡️' },
-    { id: 'enrichment', label: 'Enrichissement', icon: '🤖' },
+    { id: 'preferences',  label: 'Préférences',   icon: '⚙️' },
+    { id: 'account',      label: 'Mon compte',     icon: '👤' },
+    { id: 'collection',   label: 'Ma collection',  icon: '🗂️' },
+    { id: 'admin',        label: 'Administration', icon: '🛡️' },
+    { id: 'enrichment',   label: 'Enrichissement', icon: '🤖' },
   ];
 
   const modalContent = (
@@ -70,8 +72,9 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
 
         <div className="config-content styled-scrollbar">
           {activeTab === 'preferences' && <PreferenceSettings />}
-          {activeTab === 'account' && <MyAccountSettings />}
-          {activeTab === 'admin' && <AdminSettings />}
+          {activeTab === 'account'     && <MyAccountSettings />}
+          {activeTab === 'collection'  && <CollectionSettings />}
+          {activeTab === 'admin'       && <AdminSettings />}
           {activeTab === 'enrichment' && masterAdmin && <EnrichmentSettings />}
           {activeTab === 'enrichment' && !masterAdmin && (
             <div className="settings-master-required">

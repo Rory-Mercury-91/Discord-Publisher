@@ -4,6 +4,8 @@ import { useConfirm } from '../../../hooks/useConfirm';
 import { getSupabase } from '../../../lib/supabase';
 import { useAuth } from '../../../state/authContext';
 import { useToast } from '../../shared/ToastProvider';
+import { tauriAPI } from '../../../lib/tauri-api';
+import scriptTampermonkeyRaw from '../../../assets/DiscordPublisherDataExtractor.js?raw';
 
 interface MyAccountSettingsProps {
   onClose?: () => void;
@@ -26,6 +28,18 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
 
   const [deletePassword, setDeletePassword] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
+  // Configuration Tampermonkey
+  const handleDownloadScript = () => {
+    const blob = new Blob([scriptTampermonkeyRaw], { type: 'text/javascript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'DiscordPublisherDataExtractor.user.js';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Script Tampermonkey téléchargé dans le dossier téléchargements', 'success');
+  };
 
   // Chargement des profils et éditeurs autorisés
   useEffect(() => {
@@ -177,7 +191,7 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
         title: '⚠️ Suppression définitive du compte',
         message:
           `Vous êtes sur le point de supprimer définitivement votre compte.\n\n` +
-          `Seront supprimés :\n• Votre profil\n• Vos instructions\n• Vos templates\n• Vos autorisations d'édition\n\n` +
+          `Seront supprimés :\n• Votre profil\n• Votre collection de jeux\n• Vos instructions\n• Vos templates\n• Vos autorisations d'édition\n\n` +
           `⚠️ Vos publications Discord restent visibles sur le serveur.\n\nCette action est IRRÉVERSIBLE.`,
         confirmText: 'Supprimer mon compte',
         cancelText: 'Annuler',
@@ -265,6 +279,35 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
       )}
 
       <section className="settings-section settings-grid--full">
+        <h4 className="settings-section__title">🐒 Script Tampermonkey</h4>
+        <p className="settings-section__intro settings-section__intro--mb-16">
+          Le script s&apos;installe dans Tampermonkey et vous permet d&apos;importer n&apos;importe quel jeu depuis
+          F95Zone ou LewdCorner en un clic — sans aucune configuration. Il se connecte automatiquement
+          à l&apos;application via <code>localhost:7832</code>.
+        </p>
+        <div className="settings-form-actions__row" style={{ gap: '10px' }}>
+          <button
+            type="button"
+            onClick={handleDownloadScript}
+            className="form-btn form-btn--primary"
+          >
+            📥 Télécharger le script
+          </button>
+          <button
+            type="button"
+            onClick={() => tauriAPI.openUrl('https://www.tampermonkey.net/')}
+            className="form-btn form-btn--ghost"
+          >
+            🌐 Installer Tampermonkey
+          </button>
+        </div>
+        <p className="settings-section__intro" style={{ marginTop: '10px', color: 'var(--color-text-muted, #94a3b8)', fontSize: '12px' }}>
+          Après téléchargement : ouvrez le tableau de bord Tampermonkey → « Créer un nouveau script » → collez le fichier → enregistrez.
+          L&apos;application Discord Publisher doit être ouverte lors de l&apos;import. Consultez l&apos;aide (🐒 Tampermonkey) pour le guide complet.
+        </p>
+      </section>
+
+      <section className="settings-section settings-grid--full">
         <h4 className="settings-section__title">🔐 Sécurité du compte</h4>
         <p className="settings-section__intro settings-section__intro--mb-16">Modifier votre mot de passe de connexion.</p>
 
@@ -321,7 +364,7 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
             <span className="settings-section--danger__sub">Action irréversible</span>
           </div>
           <p className="settings-section--danger__body">
-            Supprime votre profil, instructions, templates et autorisations. Vos publications Discord restent visibles.
+            Supprime votre profil, collection de jeux, instructions, templates et autorisations. Vos publications Discord restent visibles.
           </p>
 
           <div className="settings-section--danger__actions">

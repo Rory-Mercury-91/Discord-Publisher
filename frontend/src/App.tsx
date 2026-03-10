@@ -18,6 +18,16 @@ import { ToastProvider, useToast } from './components/shared/ToastProvider';
 import UpdateNotification from './components/UpdateNotification';
 import { AppProvider, useApp } from './state/appContext';
 import { AuthProvider, useAuth } from './state/authContext';
+import { EnrichmentProvider, useEnrichment } from './state/enrichmentContext';
+import { useEnrichScheduler } from './state/hooks/useEnrichScheduler';
+
+/** Monte le planificateur d'enrichissement auto (nécessite EnrichmentProvider). */
+function EnrichSchedulerGate() {
+  const { profile } = useAuth();
+  const { startEnrich, isRunning } = useEnrichment();
+  useEnrichScheduler(profile?.id, () => startEnrich({ scrapeMissing: false }), isRunning);
+  return null;
+}
 
 function AppContentInner() {
   const { profile, signOut } = useAuth();
@@ -95,6 +105,8 @@ function AppContentInner() {
   const mainImagePath = uploadedImages.find(img => img.isMain)?.url;
 
   return (
+    <EnrichmentProvider>
+      <EnrichSchedulerGate />
     <div className="app" style={{ height: '100vh', minHeight: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* ── Header refactorisé ─────────────────────────────────────────── */}
@@ -181,6 +193,7 @@ function AppContentInner() {
       />
       <UpdateNotification />
     </div>
+    </EnrichmentProvider>
   );
 }
 

@@ -92,10 +92,10 @@ export default function AppHeader({
       </div>
 
       <div className="app-header__row app-header__row--tools">
-        <HeaderToolbar tools={toolItems} />
-        <div className="app-header-sep" />
+        <div className="app-header__tools-left">
+          <HeaderToolbar tools={toolItems} />
+        </div>
         <HeaderModeSwitch mode={mode} options={modeOptions} onModeChange={onModeChange} />
-        <div className="app-header-spacer" />
         <div className="app-header-right">
           <ApiStatusBadge onOpenLogs={onOpenLogs} onOpenServer={onOpenServer} />
           <div className="app-header-sep" />

@@ -3,6 +3,7 @@ import ErrorModal from '../components/Modals/ErrorModal';
 import { useToast } from '../components/shared/ToastProvider';
 import { createApiHeaders } from '../lib/api-helpers';
 import { getSupabase } from '../lib/supabase';
+import { useTampermonkeyListener } from './hooks/useTampermonkeyListener';
 import { tauriAPI } from '../lib/tauri-api';
 import { useAuth } from './authContext';
 import { useImagesState } from './hooks/useImagesState';
@@ -617,8 +618,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await sb.auth.getSession();
       const userId = session?.user?.id;
 
-      // Instructions : saved_instructions (owner_type + owner_id : profil ou traducteur externe)
-      const resInstr = await sb.from('saved_instructions').select('owner_type, owner_id, value');
+      // Instructions : owner_data (data_key = instructions)
+      const resInstr = await sb.from('owner_data').select('owner_type, owner_id, value').eq('data_key', 'instructions');
       if (!resInstr.error && resInstr.data?.length) {
         let localInstructions: Record<string, string> = {};
         let localOwners: Record<string, string> = {};
@@ -638,9 +639,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         instructionsState.setInstructionOwners(owners);
       }
 
-      // Templates + variables personnalisées : saved_templates (un row par owner, value = { templates, customVars })
+      // Templates + variables personnalisées : owner_data (data_key = templates)
       if (userId) {
-        const resTpl = await sb.from('saved_templates').select('value').eq('owner_id', userId).maybeSingle();
+        const resTpl = await sb.from('owner_data').select('value').eq('owner_type', 'profile').eq('owner_id', userId).eq('data_key', 'templates').maybeSingle();
         if (!resTpl.error && resTpl.data?.value) tvState.applySavedTemplatesPayload(resTpl.data.value);
       }
     })();
@@ -852,6 +853,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateAdditionalModLink: linkState.updateAdditionalModLink,
     deleteAdditionalModLink: linkState.deleteAdditionalModLink
   };
+
+  // Écoute les imports Tampermonkey envoyés via le serveur local Tauri (localhost:7832)
+  useTampermonkeyListener();
 
   return (
     <AppContext.Provider value={value}>

@@ -21,10 +21,16 @@ from supabase_client import _revoke_existing_key_sync, _insert_new_key_sync
 
 logger = logging.getLogger("publisher")
 
-# ID du role autorise a utiliser les commandes slash (lu depuis .env)
+# Role Traducteur — accès à toutes les commandes slash
 TRANSLATOR_ROLE_ID = (
     int(os.getenv("TRANSLATOR_ROLE_ID"))
     if os.getenv("TRANSLATOR_ROLE_ID") else 0
+)
+
+# Role Utilisateur — accès uniquement à /generer-cle
+USER_ROLE_ID = (
+    int(os.getenv("USER_ROLE_ID"))
+    if os.getenv("USER_ROLE_ID") else 0
 )
 
 
@@ -72,10 +78,10 @@ def register_commands(bot):
         user_tag = f"{interaction.user} (id={interaction.user.id})"
         logger.info("[publisher] /generer-cle demande par %s", user_tag)
 
-        if not TRANSLATOR_ROLE_ID:
-            logger.error("[publisher] /generer-cle : TRANSLATOR_ROLE_ID non configure")
+        if not TRANSLATOR_ROLE_ID and not USER_ROLE_ID:
+            logger.error("[publisher] /generer-cle : aucun role autorise configure (TRANSLATOR_ROLE_ID / USER_ROLE_ID)")
             await interaction.followup.send(
-                "❌ Le bot n'est pas configure (TRANSLATOR_ROLE_ID manquant). Contactez un administrateur.",
+                "❌ Le bot n'est pas configure (aucun role autorise defini). Contactez un administrateur.",
                 ephemeral=True,
             )
             return
@@ -101,9 +107,10 @@ def register_commands(bot):
             )
             return
 
-        has_role = any(r.id == TRANSLATOR_ROLE_ID for r in member.roles)
-        is_owner = member.id == interaction.guild.owner_id
-        if not (has_role or is_owner):
+        has_translator_role = bool(TRANSLATOR_ROLE_ID and any(r.id == TRANSLATOR_ROLE_ID for r in member.roles))
+        has_user_role       = bool(USER_ROLE_ID       and any(r.id == USER_ROLE_ID       for r in member.roles))
+        is_owner            = member.id == interaction.guild.owner_id
+        if not (has_translator_role or has_user_role or is_owner):
             logger.warning("[publisher] /generer-cle acces refuse pour %s", user_tag)
             await interaction.followup.send(
                 "⛔ Vous n'avez pas le role requis pour generer une cle API.",
@@ -268,7 +275,7 @@ def register_commands(bot):
             "**🧰 Commandes disponibles (Bot Publisher)**\n\n"
             "**🔑 Cle API personnelle**\n"
             "**/generer-cle** — Genere ou renouvelle votre cle API personnelle.\n"
-            "Reserve aux membres ayant le role Traducteur. La cle est envoyee en MP.\n"
+            "Accessible aux roles Traducteur et Utilisateur. La cle est envoyee en MP.\n"
             "A entrer dans l'application → ⚙️ Configuration → Preferences → **Cle d'acces a l'API**.\n"
             "L'ancienne cle est automatiquement revoquee a chaque renouvellement.\n\n"
             "**🔍 Controle des versions**\n"
@@ -282,6 +289,7 @@ def register_commands(bot):
             f"{config.CLEANUP_EMPTY_MESSAGES_HOUR:02d}:{config.CLEANUP_EMPTY_MESSAGES_MINUTE:02d} (Europe/Paris)\n"
             "• Systeme anti-doublon actif (30 jours)\n\n"
             "**ℹ️ Acces**\n"
-            "Toutes les commandes sont reservees aux membres ayant le role Traducteur."
+            "• **/generer-cle** : roles Traducteur et Utilisateur\n"
+            "• Autres commandes : role Traducteur uniquement"
         )
         await interaction.followup.send(help_text, ephemeral=True)

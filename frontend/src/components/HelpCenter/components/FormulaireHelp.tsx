@@ -1,24 +1,5 @@
 // frontend\src\components\HelpCenter\components\FormulaireHelp.tsx
-import { useState } from 'react';
-import scriptTampermonkeyRaw from '../../../assets/DiscordPublisherDataExtractor.js?raw';
-import { tauriAPI } from '../../../lib/tauri-api';
-import { useToast } from '../../shared/ToastProvider';
-
 export default function FormulaireHelp() {
-  const [showGuide, setShowGuide] = useState(false);
-  const { showToast } = useToast();
-
-  const handleDownloadScript = () => {
-    const blob = new Blob([scriptTampermonkeyRaw], { type: 'text/javascript' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'DiscordPublisherDataExtractor.user.js';
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Script Tampermonkey téléchargé avec succès', 'success');
-  };
-
   return (
     <div className="help-content-inner">
       <section className="help-intro">
@@ -43,48 +24,20 @@ export default function FormulaireHelp() {
       </section>
 
       <section className="help-section help-section--success">
-        <h4 className="help-section__title">📥 Importer Data</h4>
+        <h4 className="help-section__title">📥 Importer Data (pré-remplissage formulaire)</h4>
         <p>
-          Si vous utilisez le script Tampermonkey <code>DiscordPublisherDataExtractor.js</code>, vous pouvez coller un JSON depuis le presse-papier : l'app remplit automatiquement le nom du jeu, la version et le lien du jeu. Cherchez le bouton d'import <strong>📥 Importer Data</strong> en bas à gauche du formulaire.
+          Le script Tampermonkey <strong>DiscordPublisherDataExtractor</strong> inclut une option{' '}
+          <strong>📋 Copier JSON</strong> qui copie les données du jeu dans le presse-papier.
+          En cliquant ensuite sur <strong>📥 Importer Data</strong> en bas à gauche du formulaire,
+          l&apos;application lit ce JSON et pré-remplit automatiquement le nom du jeu, la version
+          et le lien — pratique pour préparer une publication sans ressaisie.
         </p>
-        <div style={{ marginTop: 12 }}>
-          <button
-            type="button"
-            onClick={() => setShowGuide(v => !v)}
-            className="help-btn--expand"
-          >
-            {showGuide ? '▼' : '▶'} Installer le script Tampermonkey
-          </button>
-
-          {showGuide && (
-            <div className="help-guide-block">
-              <p>Guide d'installation :</p>
-              <ol>
-                <li>
-                  <strong>Installer Tampermonkey</strong> dans votre navigateur :{' '}
-                  <button
-                    type="button"
-                    onClick={() => tauriAPI.openUrl('https://www.tampermonkey.net/')}
-                    className="help-link-inline"
-                  >
-                    tampermonkey.net
-                  </button>
-                </li>
-                <li>
-                  <strong>Télécharger le script</strong> : cliquez sur le bouton ci-dessous.
-                  <div style={{ marginTop: 8 }}>
-                    <button type="button" onClick={handleDownloadScript} className="help-btn--download">
-                      📥 Télécharger le script
-                    </button>
-                  </div>
-                </li>
-                <li>
-                  <strong>Dans Tampermonkey</strong> : ouvrez le tableau de bord → « Créer un nouveau script » → supprimez le contenu par défaut et collez le fichier → enregistrez.
-                </li>
-              </ol>
-            </div>
-          )}
-        </div>
+        <p style={{ marginTop: 8, color: 'var(--color-text-muted)', fontSize: '13px' }}>
+          Note : cette fonction pré-remplit uniquement le formulaire de publication. Pour ajouter
+          un jeu directement à <em>Ma collection</em>, utilisez plutôt l&apos;option{' '}
+          <strong>📥 Importer</strong> du script (import direct via l&apos;application).
+          Consultez la section <strong>🐒 Tampermonkey</strong> dans l&apos;aide pour le guide complet.
+        </p>
       </section>
 
       <section className="help-section help-section--info">

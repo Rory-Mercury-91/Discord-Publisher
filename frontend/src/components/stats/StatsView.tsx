@@ -6,8 +6,11 @@ import PieCard from './components/PieCard';
 import StatsViewFilter from './components/StatsViewFilter';
 import StatsViewSyncBar from './components/StatsViewSyncBar';
 import StatsViewTranslatorsTable from './components/StatsViewTranslatorsTable';
+import CollectionStatsView from './CollectionStatsView';
 
 export default function StatsView({ jeux }: { jeux: GameF95[] }) {
+  const [activeTab, setActiveTab] = useState<'library' | 'collection'>('library');
+
   const traducteurs = useMemo(
     () => [...new Set(jeux.map((j) => j.traducteur).filter(Boolean))].sort(),
     [jeux]
@@ -90,28 +93,52 @@ export default function StatsView({ jeux }: { jeux: GameF95[] }) {
 
   return (
     <div className="stats-view styled-scrollbar">
-      <StatsViewFilter
-        traducteurs={traducteurs}
-        selectedTrad={selectedTrad}
-        onSelect={setSelectedTrad}
-        onReset={() => setSelectedTrad('')}
-      />
-
-      <div className="stats-view__kpis">
-        <KpiCard icon="📚" label="Total jeux" value={total} color="var(--accent)" />
-        <KpiCard icon="✅" label="À jour" value={kpis.ok} color="#22c55e" sub={pct(kpis.ok)} />
-        <KpiCard icon="⚠️" label="Non à jour" value={kpis.outdated} color="#ef4444" sub={pct(kpis.outdated)} />
+      {/* Onglets Bibliothèque / Ma Collection */}
+      <div className="stats-view__tabs">
+        <button
+          type="button"
+          className={`stats-view__tab${activeTab === 'library' ? ' stats-view__tab--active' : ''}`}
+          onClick={() => setActiveTab('library')}
+        >
+          📚 Bibliothèque
+        </button>
+        <button
+          type="button"
+          className={`stats-view__tab${activeTab === 'collection' ? ' stats-view__tab--active' : ''}`}
+          onClick={() => setActiveTab('collection')}
+        >
+          📦 Ma Collection
+        </button>
       </div>
 
-      <StatsViewSyncBar selectedTrad={selectedTrad || null} kpis={kpis} />
+      {activeTab === 'collection' ? (
+        <CollectionStatsView />
+      ) : (
+        <>
+          <StatsViewFilter
+            traducteurs={traducteurs}
+            selectedTrad={selectedTrad}
+            onSelect={setSelectedTrad}
+            onReset={() => setSelectedTrad('')}
+          />
 
-      <div className="stats-view__pie-grid">
-        <PieCard title="⚙ Type de traduction" data={byTradType} colorFn={chartColor} />
-        <PieCard title="📁 Par statut" data={byStatut} colorFn={chartColor} />
-        <PieCard title="🌐 Par site" data={bySite} colorFn={chartColor} />
-      </div>
+          <div className="stats-view__kpis">
+            <KpiCard icon="📚" label="Total jeux" value={total} color="var(--accent)" />
+            <KpiCard icon="✅" label="À jour" value={kpis.ok} color="#22c55e" sub={pct(kpis.ok)} />
+            <KpiCard icon="⚠️" label="Non à jour" value={kpis.outdated} color="#ef4444" sub={pct(kpis.outdated)} />
+          </div>
 
-      <StatsViewTranslatorsTable rows={tradTable} selectedTrad={selectedTrad} />
+          <StatsViewSyncBar selectedTrad={selectedTrad || null} kpis={kpis} />
+
+          <div className="stats-view__pie-grid">
+            <PieCard title="⚙ Type de traduction" data={byTradType} colorFn={chartColor} />
+            <PieCard title="📁 Par statut" data={byStatut} colorFn={chartColor} />
+            <PieCard title="🌐 Par site" data={bySite} colorFn={chartColor} />
+          </div>
+
+          <StatsViewTranslatorsTable rows={tradTable} selectedTrad={selectedTrad} />
+        </>
+      )}
     </div>
   );
 }

@@ -34,8 +34,7 @@ export function useClearAllAppData(callbacks: ClearAllAppDataCallbacks) {
           }
           if (ownerId) {
             await sb.from('allowed_editors').delete().eq('owner_id', ownerId);
-            await sb.from('saved_instructions').delete().eq('owner_type', 'profile').eq('owner_id', ownerId);
-            await sb.from('saved_templates').delete().eq('owner_id', ownerId);
+            await sb.from('owner_data').delete().eq('owner_type', 'profile').eq('owner_id', ownerId);
           }
         }
         onClearPublishedPosts();

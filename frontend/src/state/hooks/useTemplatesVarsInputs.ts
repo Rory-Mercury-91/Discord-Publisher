@@ -124,10 +124,10 @@ export function useTemplatesVarsInputs() {
       const payload: SavedTemplatesPayload = { templates: list, customVars };
       try {
         const { error } = await sb
-          .from('saved_templates')
+          .from('owner_data')
           .upsert(
-            { owner_id: userId, value: payload, updated_at: new Date().toISOString() },
-            { onConflict: 'owner_id' }
+            { owner_type: 'profile', owner_id: userId, data_key: 'templates', value: payload, updated_at: new Date().toISOString() },
+            { onConflict: 'owner_type,owner_id,data_key' }
           );
         if (error) throw new Error((error as { message?: string })?.message);
         return { ok: true };
@@ -145,9 +145,11 @@ export function useTemplatesVarsInputs() {
     const userId = session?.user?.id;
     if (!userId) return;
     const { data, error } = await sb
-      .from('saved_templates')
+      .from('owner_data')
       .select('value')
+      .eq('owner_type', 'profile')
       .eq('owner_id', userId)
+      .eq('data_key', 'templates')
       .maybeSingle();
     if (error || !data?.value) return;
     try {
@@ -189,10 +191,10 @@ export function useTemplatesVarsInputs() {
       const payload: SavedTemplatesPayload = { templates: templatesToSync, customVars: customVarsToSync };
       try {
         const { error } = await sb
-          .from('saved_templates')
+          .from('owner_data')
           .upsert(
-            { owner_id: ownerId, value: payload, updated_at: new Date().toISOString() },
-            { onConflict: 'owner_id' }
+            { owner_type: 'profile', owner_id: ownerId, data_key: 'templates', value: payload, updated_at: new Date().toISOString() },
+            { onConflict: 'owner_type,owner_id,data_key' }
           );
         if (error) throw new Error((error as { message?: string })?.message);
         return { ok: true };

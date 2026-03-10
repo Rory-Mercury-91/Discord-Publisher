@@ -1,5 +1,157 @@
 use std::fs;
-use tauri::{Manager, AppHandle, WebviewWindow};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tauri::{Emitter, Manager, AppHandle, WebviewWindow};
+use tokio::sync::Mutex;
+
+// ─── Types pour le serveur local Tampermonkey ────────────────────────────────
+
+/// Données envoyées par le script Tampermonkey depuis le navigateur
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+struct TampermonkeyPayload {
+    domain: String,
+    id: Option<serde_json::Value>,
+    name: String,
+    version: Option<String>,
+    status: Option<String>,
+    #[serde(rename = "type")]
+    game_type: Option<String>,
+    tags: Option<String>,
+    link: Option<String>,
+    image: Option<String>,
+    synopsis: Option<String>,
+}
+
+/// Événement émis vers la fenêtre Tauri pour traitement par le frontend
+#[derive(Debug, Clone, serde::Serialize)]
+struct QuickAddEvent {
+    request_id: String,
+    payload: TampermonkeyPayload,
+}
+
+/// Résultat renvoyé par le frontend après écriture dans Supabase
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct QuickAddResult {
+    ok: bool,
+    action: Option<String>,
+    error: Option<String>,
+}
+
+/// Génère un u32 pseudo-aléatoire à partir de l'adresse d'une variable locale (pas de dépendance externe).
+fn rand_u32() -> u32 {
+    let x: u32 = 0;
+    let addr = &x as *const u32 as usize;
+    (addr ^ (addr >> 16)) as u32
+}
+
+/// État partagé entre le serveur axum et les commandes Tauri
+type PendingRequests = Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<QuickAddResult>>>>;
+
+/// État du serveur local passé à chaque handler axum
+#[derive(Clone)]
+struct LocalServerState {
+    app: AppHandle,
+    pending: PendingRequests,
+}
+
+// ─── Handler axum ────────────────────────────────────────────────────────────
+
+async fn handle_quick_add(
+    axum::extract::State(state): axum::extract::State<LocalServerState>,
+    axum::Json(payload): axum::Json<TampermonkeyPayload>,
+) -> axum::Json<QuickAddResult> {
+    // Identifiant unique pour corréler requête ↔ réponse du frontend
+    let request_id = format!(
+        "{}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+        rand_u32()
+    );
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<QuickAddResult>();
+    {
+        let mut pending = state.pending.lock().await;
+        pending.insert(request_id.clone(), tx);
+    }
+
+    // Émettre l'événement vers le WebView (React)
+    let event = QuickAddEvent { request_id: request_id.clone(), payload };
+    if let Err(e) = state.app.emit("tampermonkey:quick-add", &event) {
+        let mut pending = state.pending.lock().await;
+        pending.remove(&request_id);
+        eprintln!("[LocalServer] Erreur emit tampermonkey:quick-add : {}", e);
+        return axum::Json(QuickAddResult {
+            ok: false,
+            action: None,
+            error: Some("L'application n'est pas prête. Réessayez dans quelques secondes.".to_string()),
+        });
+    }
+
+    // Attendre la réponse du frontend (max 15 s)
+    match tokio::time::timeout(std::time::Duration::from_secs(15), rx).await {
+        Ok(Ok(result)) => axum::Json(result),
+        Ok(Err(_)) => axum::Json(QuickAddResult {
+            ok: false,
+            action: None,
+            error: Some("Réponse annulée par l'application.".to_string()),
+        }),
+        Err(_) => {
+            let mut pending = state.pending.lock().await;
+            pending.remove(&request_id);
+            axum::Json(QuickAddResult {
+                ok: false,
+                action: None,
+                error: Some("Délai dépassé — l'application n'a pas répondu dans les 15 s.".to_string()),
+            })
+        }
+    }
+}
+
+// ─── Démarrage du serveur local ──────────────────────────────────────────────
+
+async fn start_local_server(app: AppHandle, pending: PendingRequests) {
+    use axum::{Router, routing::post};
+    use tower_http::cors::CorsLayer;
+
+    let state = LocalServerState { app, pending };
+
+    let router = Router::new()
+        .route("/quick-add", post(handle_quick_add))
+        .layer(CorsLayer::permissive())
+        .with_state(state);
+
+    let addr = "127.0.0.1:7832";
+    match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => {
+            println!("[LocalServer] 🚀 Serveur Tampermonkey démarré sur http://{}", addr);
+            if let Err(e) = axum::serve(listener, router).await {
+                eprintln!("[LocalServer] Arrêt inattendu : {}", e);
+            }
+        }
+        Err(e) => {
+            eprintln!("[LocalServer] ❌ Impossible de démarrer sur {} : {}", addr, e);
+        }
+    }
+}
+
+// ─── Commande Tauri appelée par le frontend après traitement Supabase ─────────
+
+#[tauri::command(rename_all = "camelCase")]
+async fn report_quick_add_result(
+    state: tauri::State<'_, PendingRequests>,
+    request_id: String,
+    ok: bool,
+    action: Option<String>,
+    error: Option<String>,
+) -> Result<(), String> {
+    let mut pending = state.lock().await;
+    if let Some(tx) = pending.remove(&request_id) {
+        let _ = tx.send(QuickAddResult { ok, action, error });
+    }
+    Ok(())
+}
 
 // ✨ NOUVELLE APPROCHE : Télécharger ET installer en une seule commande
 // Cela simplifie le workflow et réduit les erreurs
@@ -428,10 +580,36 @@ fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Lance un exécutable (ou ouvre un fichier avec l’application par défaut).
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        // Ouvrir avec l’application par défaut (exécute .exe, ouvre .txt avec l’éditeur, etc.)
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path])
+            .spawn()
+            .map_err(|e| format!("Impossible de lancer : {}", e))?;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = tauri::shell::open(&path, None)
+            .map_err(|e| format!("Impossible de lancer : {}", e))?;
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                // Masquer les WARN de la boucle d'événements tao sur Windows (ordre d'événements inoffensif)
+                .filter(|metadata| !metadata.target().starts_with("tao::"))
+                .build(),
+        )
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
@@ -455,6 +633,16 @@ pub fn run() {
                 }
             });
 
+            // Serveur local pour le script Tampermonkey (localhost:7832)
+            let pending_requests: PendingRequests = Arc::new(Mutex::new(HashMap::new()));
+            let pending_for_server = pending_requests.clone();
+            app.manage(pending_requests);
+
+            let app_handle_server = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                start_local_server(app_handle_server, pending_for_server).await;
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -464,8 +652,10 @@ pub fn run() {
             has_local_history_archive,
             get_local_history_archive,
             open_url,
+            open_path,
             download_and_install_update,
             cleanup_old_updates,
+            report_quick_add_result,
         ])
         .run(tauri::generate_context!())
         .expect("Erreur Tauri");
