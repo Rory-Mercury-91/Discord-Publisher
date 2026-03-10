@@ -1,10 +1,12 @@
 /**
  * Barre d'outils de la vue Ma collection.
- * Ordre : Tous / À jour / Non à jour → Input recherche → Selects → Filtre tags → Gestion tags → Grille / Liste / Rafraîchir
+ * Ordre : Tous / À jour / Non à jour → Input recherche → Selects → Filtre tags → Filtre labels → Gestion tags → Grille / Liste / Rafraîchir
  */
 import type { RefObject } from 'react';
 import FilterTagsPopover, { type FilterTagState } from './FilterTagsPopover';
+import FilterLabelsPopover, { type FilterLabelState } from './FilterLabelsPopover';
 import type { SyncStatus } from '../library-types';
+import type { CollectionLabel } from '../../../state/hooks/useCollection';
 
 const SYNC_FILTER_BUTTONS: ['' | SyncStatus, string][] = [
   ['', 'Tous'],
@@ -35,12 +37,21 @@ interface CollectionToolbarProps {
   setFilterTradType: (v: string) => void;
   pageSize: number;
   setPageSize: (v: number) => void;
+  // ── Tags ──
   filterTagsByTag: Record<string, FilterTagState>;
   filterTagsOpen: boolean;
   setFilterTagsOpen: (v: boolean) => void;
   filterTagsAnchorRef: RefObject<HTMLButtonElement | null>;
   allUniqueTags: string[];
   cycleFilterTag: (tag: string) => void;
+  // ── Labels ──
+  filterLabelsByLabel: Record<string, FilterLabelState>;
+  filterLabelsOpen: boolean;
+  setFilterLabelsOpen: (v: boolean) => void;
+  filterLabelsAnchorRef: RefObject<HTMLButtonElement | null>;
+  allLabels: CollectionLabel[];
+  cycleFilterLabel: (label: string) => void;
+  // ── Autres ──
   onOpenTagAvoirsModal: () => void;
   view: ViewMode;
   setView: (v: ViewMode) => void;
@@ -51,39 +62,21 @@ interface CollectionToolbarProps {
 }
 
 export default function CollectionToolbar({
-  search,
-  setSearch,
-  filterSync,
-  setFilterSync,
-  syncCounts,
-  gamesCount,
-  statuts,
-  filterStatut,
-  setFilterStatut,
-  traducteurs,
-  filterTrad,
-  setFilterTrad,
-  types,
-  filterType,
-  setFilterType,
-  tradTypes,
-  filterTradType,
-  setFilterTradType,
-  pageSize,
-  setPageSize,
-  filterTagsByTag,
-  filterTagsOpen,
-  setFilterTagsOpen,
-  filterTagsAnchorRef,
-  allUniqueTags,
-  cycleFilterTag,
+  search, setSearch,
+  filterSync, setFilterSync,
+  syncCounts, gamesCount,
+  statuts, filterStatut, setFilterStatut,
+  traducteurs, filterTrad, setFilterTrad,
+  types, filterType, setFilterType,
+  tradTypes, filterTradType, setFilterTradType,
+  pageSize, setPageSize,
+  filterTagsByTag, filterTagsOpen, setFilterTagsOpen, filterTagsAnchorRef, allUniqueTags, cycleFilterTag,
+  filterLabelsByLabel, filterLabelsOpen, setFilterLabelsOpen, filterLabelsAnchorRef, allLabels, cycleFilterLabel,
   onOpenTagAvoirsModal,
-  view,
-  setView,
+  view, setView,
   onResetFiltersAndRefresh,
   loading,
-  deleteMode,
-  onToggleDeleteMode,
+  deleteMode, onToggleDeleteMode,
 }: CollectionToolbarProps) {
   return (
     <div className="library-toolbar library-toolbar--collection">
@@ -111,54 +104,30 @@ export default function CollectionToolbar({
         type="text"
         className="app-input library-toolbar-input library-toolbar-input--collection"
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={e => setSearch(e.target.value)}
         placeholder="Rechercher…"
       />
 
-      <select
-        className="app-select library-toolbar-select--filter-statut"
-        value={filterStatut}
-        onChange={(e) => setFilterStatut(e.target.value)}
-      >
+      <select className="app-select library-toolbar-select--filter-statut" value={filterStatut} onChange={e => setFilterStatut(e.target.value)}>
         <option value="">Tous les statuts</option>
-        {statuts.map((s) => (
-          <option key={s} value={s}>{s}</option>
-        ))}
+        {statuts.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
-      <select
-        className="app-select library-toolbar-select--filter-trad"
-        value={filterTrad}
-        onChange={(e) => setFilterTrad(e.target.value)}
-      >
+      <select className="app-select library-toolbar-select--filter-trad" value={filterTrad} onChange={e => setFilterTrad(e.target.value)}>
         <option value="">Tous les traducteurs</option>
-        {traducteurs.map((t) => (
-          <option key={t} value={t}>{t}</option>
-        ))}
+        {traducteurs.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
-      <select
-        className="app-select library-toolbar-select--filter-type"
-        value={filterType}
-        onChange={(e) => setFilterType(e.target.value)}
-      >
+      <select className="app-select library-toolbar-select--filter-type" value={filterType} onChange={e => setFilterType(e.target.value)}>
         <option value="">Tous les moteurs</option>
-        {types.map((t) => (
-          <option key={t} value={t}>{t}</option>
-        ))}
+        {types.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
-      <select
-        className="app-select library-toolbar-select--filter-trad-type"
-        value={filterTradType}
-        onChange={(e) => setFilterTradType(e.target.value)}
-      >
+      <select className="app-select library-toolbar-select--filter-trad-type" value={filterTradType} onChange={e => setFilterTradType(e.target.value)}>
         <option value="">Tous les types de trad.</option>
-        {tradTypes.map((t) => (
-          <option key={t} value={t}>{t}</option>
-        ))}
+        {tradTypes.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
       <select
         className="app-select library-toolbar-select library-toolbar-select--page-size"
         value={pageSize}
-        onChange={(e) => setPageSize(Number(e.target.value))}
+        onChange={e => setPageSize(Number(e.target.value))}
         title="Nombre d'entrées par page"
       >
         <option value={50}>50 / page</option>
@@ -170,6 +139,8 @@ export default function CollectionToolbar({
       </select>
 
       <div className="library-toolbar-right">
+
+        {/* ── Filtre tags ── */}
         <div className="library-toolbar-filter-tags-wrap">
           <button
             ref={filterTagsAnchorRef}
@@ -194,6 +165,31 @@ export default function CollectionToolbar({
           )}
         </div>
 
+        {/* ── Filtre labels ── */}
+        <div className="library-toolbar-filter-tags-wrap">
+          <button
+            ref={filterLabelsAnchorRef}
+            type="button"
+            className={`library-collection-tag-btn ${Object.keys(filterLabelsByLabel).length > 0 ? 'library-collection-tag-btn--active' : ''}`}
+            onClick={() => setFilterLabelsOpen(!filterLabelsOpen)}
+            title="Filtrer par labels personnalisés (inclure / exclure)"
+          >
+            Filtre labels
+            {Object.keys(filterLabelsByLabel).length > 0 && (
+              <span className="library-toolbar-badge-count">{Object.keys(filterLabelsByLabel).length}</span>
+            )}
+          </button>
+          {filterLabelsOpen && (
+            <FilterLabelsPopover
+              allLabels={allLabels}
+              filterState={filterLabelsByLabel}
+              onCycleLabel={cycleFilterLabel}
+              onClose={() => setFilterLabelsOpen(false)}
+              anchorRef={filterLabelsAnchorRef}
+            />
+          )}
+        </div>
+
         <button
           type="button"
           className="library-collection-tag-btn"
@@ -210,26 +206,20 @@ export default function CollectionToolbar({
           className={`library-toolbar-btn ${view === 'grid' ? 'library-toolbar-btn--active' : ''}`}
           onClick={() => setView('grid')}
           title="Vue grille"
-        >
-          ⊞
-        </button>
+        >⊞</button>
         <button
           type="button"
           className={`library-toolbar-btn ${view === 'list' ? 'library-toolbar-btn--active' : ''}`}
           onClick={() => setView('list')}
           title="Vue liste"
-        >
-          ≡
-        </button>
+        >≡</button>
         <button
           type="button"
           className="library-toolbar-btn"
           onClick={onResetFiltersAndRefresh}
           disabled={loading}
           title="Réinitialiser les filtres et rafraîchir la liste"
-        >
-          ↻
-        </button>
+        >↻</button>
 
         <div className="library-toolbar-spacer" aria-hidden="true" />
 
@@ -238,9 +228,7 @@ export default function CollectionToolbar({
           className={`library-toolbar-btn library-toolbar-btn--delete-mode${deleteMode ? ' library-toolbar-btn--delete-mode-active' : ''}`}
           onClick={onToggleDeleteMode}
           title={deleteMode ? 'Quitter le mode suppression' : 'Activer la sélection multiple pour supprimer'}
-        >
-          🗑️
-        </button>
+        >🗑️</button>
       </div>
     </div>
   );

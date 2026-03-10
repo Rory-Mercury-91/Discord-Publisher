@@ -15,9 +15,10 @@ interface GameRowProps {
   deleteMode?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
+  collectionEntry?: { id: string; labels?: import('../../../state/hooks/useCollection').CollectionLabel[] | null };
 }
 
-export default function GameRow({ game, post, onEdit, onEditEntry, onOpenDetail, onAddToCollection, isInCollection, deleteMode, selected, onToggleSelect }: GameRowProps) {
+export default function GameRow({ game, post, onEdit, onEditEntry, onOpenDetail, onAddToCollection, isInCollection, deleteMode, selected, onToggleSelect, collectionEntry }: GameRowProps) {
   const sync = SYNC_META[game._sync!];
   const tmStyle = typeMajStyle(game.type_maj);
 
@@ -51,6 +52,20 @@ export default function GameRow({ game, post, onEdit, onEditEntry, onOpenDetail,
       <td className="library-table-td library-table-td--title">
         <div className="library-table-cell-title library-table-cell-title--with-type">{game.nom_du_jeu}</div>
         {game.type && <div className="library-version-muted">{game.type}</div>}
+        {collectionEntry?.labels && collectionEntry.labels.length > 0 && (
+          <div className="library-table-labels">
+            {collectionEntry.labels.map(({ label, color }) => (
+              <span
+                key={label}
+                className="library-labels-badge"
+                style={{ background: `${color}22`, borderColor: `${color}66`, color }}
+                title={label}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
       </td>
       <td className="library-table-td library-table-td--version"><code>{game.version || '—'}</code></td>
       <td className={`library-table-td library-table-td--trad-${game._sync ?? 'unknown'}`}><code>{game.trad_ver || '—'}</code></td>

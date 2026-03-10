@@ -14,6 +14,7 @@ import EditGameModal from './components/EditGameModal';
 import TagAvoirsModal from './components/TagAvoirsModal';
 import CollectionToolbar from './components/CollectionToolbar';
 import { type FilterTagState } from './components/FilterTagsPopover';
+import { type FilterLabelState } from './components/FilterLabelsPopover';
 
 /** Construit un GameF95 à partir d'une entrée de collection (données identiques à la bibliothèque si dispo). */
 function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
@@ -65,6 +66,7 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
   const { getAvoir, setAvoir } = useTagAvoirs();
   const { showToast } = useToast();
   const filterTagsAnchorRef = useRef<HTMLButtonElement>(null);
+  const filterLabelsAnchorRef = useRef<HTMLButtonElement>(null);
   const [importInput, setImportInput] = useState('');
   const [importing, setImporting] = useState(false);
   const [selectedGameForDetail, setSelectedGameForDetail] = useState<GameF95 | null>(null);
@@ -75,6 +77,8 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
   const [editEntry, setEditEntry] = useState<UserCollectionEntryEnriched | null>(null);
   const [filterTagsOpen, setFilterTagsOpen] = useState(false);
   const [filterTagsByTag, setFilterTagsByTag] = useState<Record<string, FilterTagState>>({});
+  const [filterLabelsByLabel, setFilterLabelsByLabel] = useState<Record<string, FilterLabelState>>({});
+  const [filterLabelsOpen, setFilterLabelsOpen] = useState(false);
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -207,6 +211,12 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     return c;
   }, [gamesEnriched]);
 
+  const entryById = useMemo(() => {
+    const map = new Map<number, UserCollectionEntryEnriched>();
+    items.forEach((e) => map.set(e.f95_thread_id, e));
+    return map;
+  }, [items]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     let list = gamesEnriched.filter((g) => {
@@ -222,6 +232,12 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
       const excludedTags = Object.entries(filterTagsByTag).filter(([, v]) => v === 'exclude').map(([k]) => k);
       if (excludedTags.length > 0 && excludedTags.some((t) => tagList.includes(t))) return false;
       if (includedTags.length > 0 && !tagList.some((t) => includedTags.includes(t))) return false;
+      const entry = entryById.get(g.site_id);
+      const entryLabels = (entry?.labels ?? []).map(l => l.label);
+      const includedLabels = Object.entries(filterLabelsByLabel).filter(([, v]) => v === 'include').map(([k]) => k);
+      const excludedLabels = Object.entries(filterLabelsByLabel).filter(([, v]) => v === 'exclude').map(([k]) => k);
+      if (excludedLabels.length > 0 && excludedLabels.some(l => entryLabels.includes(l))) return false;
+      if (includedLabels.length > 0 && !entryLabels.some(l => includedLabels.includes(l))) return false;
       return true;
     });
     if (dateSort) {
@@ -239,7 +255,7 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
       const vb = ((b as any)[sortKey] || '').toString().toLowerCase();
       return va < vb ? -sortDir : va > vb ? sortDir : 0;
     });
-  }, [gamesEnriched, search, filterStatut, filterTrad, filterType, filterTradType, filterSync, filterTagsByTag, sortKey, sortDir, dateSort]);
+  }, [gamesEnriched, search, filterStatut, filterTrad, filterType, filterTradType, filterSync, filterTagsByTag, filterLabelsByLabel, entryById, sortKey, sortDir, dateSort]);
 
   const totalPages = pageSize === -1 ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize));
   const effectivePage = Math.min(currentPage, totalPages - 1);
@@ -249,11 +265,6 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     return filtered.slice(start, start + pageSize);
   }, [filtered, pageSize, effectivePage]);
 
-  const entryById = useMemo(() => {
-    const map = new Map<number, UserCollectionEntryEnriched>();
-    items.forEach((e) => map.set(e.f95_thread_id, e));
-    return map;
-  }, [items]);
 
   useEffect(() => {
     setCurrentPage((p) => Math.min(p, Math.max(0, totalPages - 1)));
@@ -267,6 +278,7 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     setFilterTradType('');
     setFilterSync('');
     setFilterTagsByTag({});
+    setFilterLabelsByLabel({});
   };
 
   const cycleFilterTag = useCallback((tag: string) => {
@@ -277,6 +289,17 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
       const nextRec = { ...prev };
       if (next === undefined) delete nextRec[tag];
       else nextRec[tag] = next;
+      return nextRec;
+    });
+  }, []);
+
+  const cycleFilterLabel = useCallback((label: string) => {
+    setFilterLabelsByLabel((prev) => {
+      const current = prev[label];
+      const next = current === undefined ? 'include' : current === 'include' ? 'exclude' : undefined;
+      const nextRec = { ...prev };
+      if (next === undefined) delete nextRec[label];
+      else nextRec[label] = next;
       return nextRec;
     });
   }, []);
@@ -439,6 +462,12 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
         allUniqueTags={allUniqueTags}
         cycleFilterTag={cycleFilterTag}
         onOpenTagAvoirsModal={() => setShowTagAvoirsModal(true)}
+        filterLabelsByLabel={filterLabelsByLabel}
+        filterLabelsOpen={filterLabelsOpen}
+        setFilterLabelsOpen={setFilterLabelsOpen}
+        filterLabelsAnchorRef={filterLabelsAnchorRef}
+        allLabels={allLabels}
+        cycleFilterLabel={cycleFilterLabel}
         view={view}
         setView={setView}
         onResetFiltersAndRefresh={resetFiltersAndRefresh}
@@ -592,6 +621,7 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
                     deleteMode={deleteMode}
                     selected={isSelected}
                     onToggleSelect={() => toggleSelect(entry.id)}
+                    collectionEntry={{ id: entry.id, labels: entry.labels ?? null }}
                   />
                 );
               })}

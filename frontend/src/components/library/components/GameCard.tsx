@@ -87,11 +87,11 @@ export default function GameCard({
             <div className="library-card-labels" onClick={e => e.stopPropagation()}>
               {hasCollectionLabels ? (
                 <>
-                  {collectionLabels.map(({ label, color }) => (
+                    {collectionEntry?.labels && collectionEntry.labels.length > 0 && collectionEntry.labels.map(({ label, color }) => (
                     <span
                       key={label}
-                      className="library-card-label-badge"
-                      style={{ background: color, color: '#fff' }}
+                      className="library-labels-badge"
+                      style={{ background: `${color}22`, borderColor: `${color}66`, color }}
                       title={label}
                     >
                       {label}
