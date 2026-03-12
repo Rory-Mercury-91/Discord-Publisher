@@ -372,19 +372,23 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
   const handleDeleteSelected = useCallback(async () => {
     if (selectedIds.size === 0) return;
     setIsDeleting(true);
+
+    const ids = [...selectedIds];
+    const results = await Promise.allSettled(ids.map(id => remove(id)));
+
     let successCount = 0, errorCount = 0;
-    for (const id of selectedIds) {
-      try {
-        const result = await remove(id);
-        if (result.ok) successCount++; else errorCount++;
-      } catch { errorCount++; }
-    }
+    results.forEach(r => {
+      if (r.status === 'fulfilled' && r.value.ok) successCount++;
+      else errorCount++;
+    });
+
     setIsDeleting(false);
     setSelectedIds(new Set());
     setDeleteMode(false);
+    refresh(); // Un seul refresh à la fin
     if (successCount > 0) showToast(`${successCount} jeu(x) retiré(s) de la collection`, 'success');
     if (errorCount > 0) showToast(`${errorCount} erreur(s) lors de la suppression`, 'error');
-  }, [selectedIds, remove, showToast]);
+  }, [selectedIds, remove, refresh, showToast]);
 
   return (
     <div className="library-collection-view">

@@ -62,7 +62,13 @@ function AppContentInner() {
   const [showServerModal, setShowServerModal] = useState(false);
 
   // ── Mode (traducteur / utilisateur) ──────────────────────────────────────
-  const [mode, setMode] = useState<AppMode>('translator');
+  const [mode, setMode] = useState<AppMode>(() => {
+    try {
+      return (localStorage.getItem('defaultMode') as AppMode) || 'translator';
+    } catch {
+      return 'translator';
+    }
+  });
 
   // ── Thème ─────────────────────────────────────────────────────────────────
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {

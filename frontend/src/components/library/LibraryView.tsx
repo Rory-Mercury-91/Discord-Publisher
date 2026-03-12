@@ -8,15 +8,17 @@ import { useApp } from '../../state/appContext';
 import { useToast } from '../shared/ToastProvider';
 import Toggle from '../shared/Toggle';
 import { StatsView } from '../stats';
-import { useUserPreferences } from '../../state/hooks/useUserPreferences';
 import { useCollection } from '../../state/hooks/useCollection';
+import { useTagAvoirs } from '../../state/hooks/useTagAvoirs';
 import CollectionView from './CollectionView';
+import FilterTagsPopover, { type FilterTagState } from './components/FilterTagsPopover';
+import TagAvoirsModal from './components/TagAvoirsModal';
 
 export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMode) => void }) {
   const { publishedPosts, loadPostForEditing } = useApp();
   const { showToast } = useToast();
-  const { showMaCollection } = useUserPreferences();
   const { items: collectionItems, addByGame, refresh: refreshCollection } = useCollection();
+  const { getAvoir, setAvoir } = useTagAvoirs();
 
   const [games, setGames] = useState<GameF95[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,6 +39,10 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
   const [filterType, setFilterType] = useState('');
   const [filterTradType, setFilterTradType] = useState('');
   const [filterSync, setFilterSync] = useState<'' | SyncStatus>('');
+  const [filterTagsByTag, setFilterTagsByTag] = useState<Record<string, FilterTagState>>({});
+  const [filterTagsOpen, setFilterTagsOpen] = useState(false);
+  const [showTagAvoirsModal, setShowTagAvoirsModal] = useState(false);
+  const filterTagsAnchorRef = useRef<HTMLButtonElement>(null);
   const [sortKey, setSortKey] = useState('nom_du_jeu');
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [lastSync, setLastSync] = useState<Date | null>(null);
@@ -58,26 +64,17 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
   };
 
   useEffect(() => {
-    try {
-      localStorage.setItem('library_page_size', String(pageSize));
-    } catch {
-      /* ignore */
-    }
+    try { localStorage.setItem('library_page_size', String(pageSize)); } catch { /* ignore */ }
   }, [pageSize]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('library_view', view);
-    } catch {
-      /* ignore */
-    }
+    try { localStorage.setItem('library_view', view); } catch { /* ignore */ }
   }, [view]);
 
   useEffect(() => {
     setCurrentPage(0);
-  }, [search, filterStatut, filterTrad, filterType, filterTradType, filterSync]);
+  }, [search, filterStatut, filterTrad, filterType, filterTradType, filterSync, filterTagsByTag]);
 
-  // Rafraîchir la liste collection quand on revient sur l’onglet Bibliothèque (ex. après avoir retiré un jeu de Ma collection)
   const prevTabRef = useRef<'library' | 'stats' | 'collection'>(tab);
   useEffect(() => {
     if (prevTabRef.current === 'collection' && tab === 'library') {
@@ -115,9 +112,7 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     }
   }, [showToast]);
 
-  useEffect(() => {
-    fetchGames();
-  }, [fetchGames]);
+  useEffect(() => { fetchGames(); }, [fetchGames]);
 
   const postByGameLink = useMemo(() => {
     const map = new Map<string, (typeof publishedPosts)[0]>();
@@ -142,7 +137,10 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     [postByGameLink]
   );
 
-  const gamesEnriched = useMemo<GameF95[]>(() => games.map((g) => ({ ...g, _sync: getSyncStatus(g) })), [games]);
+  const gamesEnriched = useMemo<GameF95[]>(
+    () => games.map((g) => ({ ...g, _sync: getSyncStatus(g) })),
+    [games]
+  );
 
   const syncCounts = useMemo(() => {
     const c = { ok: 0, outdated: 0, unknown: 0 };
@@ -150,35 +148,56 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     return c;
   }, [gamesEnriched]);
 
-  const statuts = useMemo(() => [...new Set(games.map((g) => g.statut).filter(Boolean))].sort(), [games]);
+  const statuts    = useMemo(() => [...new Set(games.map((g) => g.statut).filter(Boolean))].sort(), [games]);
   const traducteurs = useMemo(() => [...new Set(games.map((g) => g.traducteur).filter(Boolean))].sort(), [games]);
-  const types = useMemo(() => [...new Set(games.map((g) => g.type).filter(Boolean))].sort(), [games]);
-  const tradTypes = useMemo(
-    () => [...new Set(games.map((g) => g.type_de_traduction).filter(Boolean))].sort(),
-    [games]
-  );
+  const types      = useMemo(() => [...new Set(games.map((g) => g.type).filter(Boolean))].sort(), [games]);
+  const tradTypes  = useMemo(() => [...new Set(games.map((g) => g.type_de_traduction).filter(Boolean))].sort(), [games]);
+
+  /** Tous les tags uniques de la bibliothèque (pour FilterTagsPopover + TagAvoirsModal) */
+  const allUniqueTags = useMemo(() => {
+    const set = new Set<string>();
+    gamesEnriched.forEach((g) => {
+      (g.tags ?? '').split(',').map((t) => t.trim()).filter(Boolean).forEach((t) => set.add(t));
+    });
+    return [...set].sort();
+  }, [gamesEnriched]);
+
+  const cycleFilterTag = useCallback((tag: string) => {
+    setFilterTagsByTag((prev) => {
+      const current = prev[tag];
+      const next = current === undefined ? 'include' : current === 'include' ? 'exclude' : undefined;
+      const nextRec = { ...prev };
+      if (next === undefined) delete nextRec[tag]; else nextRec[tag] = next;
+      return nextRec;
+    });
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
+    const includedTags = Object.entries(filterTagsByTag).filter(([, v]) => v === 'include').map(([k]) => k);
+    const excludedTags = Object.entries(filterTagsByTag).filter(([, v]) => v === 'exclude').map(([k]) => k);
+
     let list = gamesEnriched.filter((g) => {
       if (q && !g.nom_du_jeu.toLowerCase().includes(q) && !(g.traducteur || '').toLowerCase().includes(q))
         return false;
-      if (filterStatut && g.statut !== filterStatut) return false;
-      if (filterTrad && g.traducteur !== filterTrad) return false;
-      if (filterType && g.type !== filterType) return false;
-      if (filterTradType && g.type_de_traduction !== filterTradType) return false;
-      if (filterSync && g._sync !== filterSync) return false;
+      if (filterStatut   && g.statut             !== filterStatut)   return false;
+      if (filterTrad     && g.traducteur          !== filterTrad)     return false;
+      if (filterType     && g.type                !== filterType)     return false;
+      if (filterTradType && g.type_de_traduction  !== filterTradType) return false;
+      if (filterSync     && g._sync               !== filterSync)     return false;
+
+      const tagList = (g.tags ?? '').split(',').map((t) => t.trim()).filter(Boolean);
+      if (excludedTags.length > 0 && excludedTags.some((t) => tagList.includes(t))) return false;
+      if (includedTags.length > 0 && !tagList.some((t) => includedTags.includes(t))) return false;
+
       return true;
     });
 
     if (dateSort) {
       return list.sort((a, b) => {
-        const da = a.date_maj || '';
-        const db = b.date_maj || '';
+        const da = a.date_maj || '', db = b.date_maj || '';
         if (db !== da) return db.localeCompare(da);
-        const ta = (a.type_maj || '').includes('AJOUT') ? 0 : 1;
-        const tb = (b.type_maj || '').includes('AJOUT') ? 0 : 1;
-        return ta - tb;
+        return ((a.type_maj || '').includes('AJOUT') ? 0 : 1) - ((b.type_maj || '').includes('AJOUT') ? 0 : 1);
       });
     }
 
@@ -187,7 +206,7 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
       const vb = ((b as any)[sortKey] || '').toString().toLowerCase();
       return va < vb ? -sortDir : va > vb ? sortDir : 0;
     });
-  }, [gamesEnriched, search, filterStatut, filterTrad, filterType, filterTradType, filterSync, sortKey, sortDir, dateSort]);
+  }, [gamesEnriched, search, filterStatut, filterTrad, filterType, filterTradType, filterSync, filterTagsByTag, sortKey, sortDir, dateSort]);
 
   const totalPages = pageSize === -1 ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize));
   const effectivePage = Math.min(currentPage, totalPages - 1);
@@ -203,21 +222,14 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
   }, [filtered.length, pageSize]);
 
   const resetFilters = () => {
-    setSearch('');
-    setFilterStatut('');
-    setFilterTrad('');
-    setFilterType('');
-    setFilterTradType('');
-    setFilterSync('');
+    setSearch(''); setFilterStatut(''); setFilterTrad(''); setFilterType('');
+    setFilterTradType(''); setFilterSync(''); setFilterTagsByTag({});
   };
 
   const toggleSort = (key: string) => {
     setDateSort(false);
     if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
-    else {
-      setSortKey(key);
-      setSortDir(1);
-    }
+    else { setSortKey(key); setSortDir(1); }
   };
 
   const syncFilterButtons: ['' | SyncStatus, string][] = [
@@ -240,15 +252,17 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     [addByGame, showToast]
   );
 
+  const activeTagFilterCount = Object.keys(filterTagsByTag).length;
+
   return (
     <div className="library-view-root">
       <div className="library-tabs">
         {(
           [
-            ['library', '📚 Bibliothèque'],
-            ...(showMaCollection ? [['collection', '📁 Ma collection'] as const] : []),
-            ['stats', '📊 Statistiques'],
-          ] as readonly (readonly ['library' | 'stats' | 'collection', string])[]
+            ['library',    '📚 Bibliothèque'],
+            ['collection', '📁 Ma collection'],
+            ['stats',      '📊 Statistiques'],
+          ] as const
         ).map(([k, label]) => (
           <button
             key={k}
@@ -264,6 +278,7 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
       {tab === 'library' && (
         <>
           <div className="library-toolbar">
+            {/* ── Sync + Date ── */}
             <div className="library-toolbar-filters">
               {syncFilterButtons.map(([val, label]) => {
                 const isActive = filterSync === val;
@@ -290,15 +305,12 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                 label="📅 Date"
                 checked={dateSort}
                 onChange={handleDateSortChange}
-                title={
-                  dateSort
-                    ? 'Tri par date actif — désactiver pour revenir A→Z'
-                    : 'Trier par date de MAJ (récent en premier)'
-                }
+                title={dateSort ? 'Tri par date actif — désactiver pour revenir A→Z' : 'Trier par date de MAJ (récent en premier)'}
                 size="sm"
               />
             </div>
 
+            {/* ── Recherche ── */}
             <input
               type="text"
               className="app-input library-toolbar-input"
@@ -307,53 +319,22 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
               placeholder="Rechercher dans le catalogue (jeu, traducteur)…"
             />
 
-            <select
-              className="app-select library-toolbar-select--filter-statut"
-              value={filterStatut}
-              onChange={(e) => setFilterStatut(e.target.value)}
-            >
+            {/* ── Selects ── */}
+            <select className="app-select library-toolbar-select--filter-statut" value={filterStatut} onChange={(e) => setFilterStatut(e.target.value)}>
               <option value="">Tous les statuts</option>
-              {statuts.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
+              {statuts.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
-            <select
-              className="app-select library-toolbar-select--filter-trad"
-              value={filterTrad}
-              onChange={(e) => setFilterTrad(e.target.value)}
-            >
+            <select className="app-select library-toolbar-select--filter-trad" value={filterTrad} onChange={(e) => setFilterTrad(e.target.value)}>
               <option value="">Tous les traducteurs</option>
-              {traducteurs.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
+              {traducteurs.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
-            <select
-              className="app-select library-toolbar-select--filter-type"
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-            >
+            <select className="app-select library-toolbar-select--filter-type" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
               <option value="">Tous les moteurs</option>
-              {types.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
+              {types.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
-            <select
-              className="app-select library-toolbar-select--filter-trad-type"
-              value={filterTradType}
-              onChange={(e) => setFilterTradType(e.target.value)}
-            >
+            <select className="app-select library-toolbar-select--filter-trad-type" value={filterTradType} onChange={(e) => setFilterTradType(e.target.value)}>
               <option value="">Tous les types de trad.</option>
-              {tradTypes.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
+              {tradTypes.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
             <select
               className="app-select library-toolbar-select library-toolbar-select--page-size"
@@ -369,7 +350,46 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
               <option value={-1}>Illimité</option>
             </select>
 
+            {/* ── Actions + Filtre tags + Gestion tags ── */}
             <div className="library-toolbar-actions">
+              {/* Filtre tags */}
+              <div className="library-toolbar-filter-tags-wrap">
+                <button
+                  ref={filterTagsAnchorRef}
+                  type="button"
+                  className={`library-collection-tag-btn ${activeTagFilterCount > 0 ? 'library-collection-tag-btn--active' : ''}`}
+                  onClick={() => setFilterTagsOpen((o) => !o)}
+                  title="Filtrer par tags (inclure / exclure)"
+                >
+                  Filtre tags
+                  {activeTagFilterCount > 0 && (
+                    <span className="library-toolbar-badge-count">{activeTagFilterCount}</span>
+                  )}
+                </button>
+                {filterTagsOpen && (
+                  <FilterTagsPopover
+                    allTags={allUniqueTags}
+                    filterState={filterTagsByTag}
+                    onCycleTag={cycleFilterTag}
+                    onClose={() => setFilterTagsOpen(false)}
+                    anchorRef={filterTagsAnchorRef}
+                  />
+                )}
+              </div>
+
+              {/* Gestion tags (avis) */}
+              <button
+                type="button"
+                className="library-collection-tag-btn"
+                onClick={() => setShowTagAvoirsModal(true)}
+                title="Gérer les avis sur les tags (affichés en détail jeu)"
+              >
+                Gestion tags
+              </button>
+
+              <span className="library-toolbar-divider" />
+
+              {/* Vue grille / liste */}
               {(['grid', 'list'] as const).map((v) => (
                 <button
                   key={v}
@@ -381,6 +401,8 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                   {v === 'grid' ? '⊞' : '≡'}
                 </button>
               ))}
+
+              {/* Réinitialiser filtres */}
               <button
                 type="button"
                 className="library-toolbar-btn"
@@ -404,9 +426,7 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
               <div className="library-error">
                 ❌ {error}
                 <br />
-                <button type="button" className="library-retry-btn" onClick={fetchGames}>
-                  Réessayer
-                </button>
+                <button type="button" className="library-retry-btn" onClick={fetchGames}>Réessayer</button>
               </div>
             )}
 
@@ -425,8 +445,8 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                     post={findPost(g)}
                     onEdit={handleEdit}
                     showDateBadge={dateSort}
-                    onAddToCollection={showMaCollection ? handleAddToCollection : undefined}
-                    isInCollection={showMaCollection ? collectionF95Ids.has(g.site_id) : false}
+                    onAddToCollection={handleAddToCollection}
+                    isInCollection={collectionF95Ids.has(g.site_id)}
                   />
                 ))}
               </div>
@@ -457,8 +477,8 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                       post={findPost(g)}
                       onEdit={handleEdit}
                       onOpenDetail={() => setSelectedGameForDetail(g)}
-                      onAddToCollection={showMaCollection ? handleAddToCollection : undefined}
-                      isInCollection={showMaCollection ? collectionF95Ids.has(g.site_id) : false}
+                      onAddToCollection={handleAddToCollection}
+                      isInCollection={collectionF95Ids.has(g.site_id)}
                     />
                   ))}
                 </tbody>
@@ -469,8 +489,8 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
               <GameDetailModal
                 game={selectedGameForDetail}
                 onClose={() => setSelectedGameForDetail(null)}
-                onAddToCollection={showMaCollection ? handleAddToCollection : undefined}
-                isInCollection={showMaCollection ? collectionF95Ids.has(selectedGameForDetail.site_id) : false}
+                onAddToCollection={handleAddToCollection}
+                isInCollection={collectionF95Ids.has(selectedGameForDetail.site_id)}
               />
             )}
 
@@ -480,8 +500,7 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                   Page {effectivePage + 1} sur {totalPages}
                   {pageSize !== -1 && (
                     <span className="library-pagination-detail">
-                      ({effectivePage * pageSize + 1}–
-                      {Math.min((effectivePage + 1) * pageSize, filtered.length)} sur {filtered.length})
+                      ({effectivePage * pageSize + 1}–{Math.min((effectivePage + 1) * pageSize, filtered.length)} sur {filtered.length})
                     </span>
                   )}
                 </span>
@@ -504,12 +523,20 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
               </div>
             )}
           </div>
+
+          {/* ── Modale Gestion tags (avis partagés avec Ma Collection) ── */}
+          {showTagAvoirsModal && (
+            <TagAvoirsModal
+              allTags={allUniqueTags}
+              getAvoir={getAvoir}
+              onSetAvoir={setAvoir}
+              onClose={() => setShowTagAvoirsModal(false)}
+            />
+          )}
         </>
       )}
 
-      {tab === 'collection' && (
-        <CollectionView view={view} setView={setView} />
-      )}
+      {tab === 'collection' && <CollectionView view={view} setView={setView} />}
       {tab === 'stats' && <StatsView jeux={gamesEnriched} />}
     </div>
   );

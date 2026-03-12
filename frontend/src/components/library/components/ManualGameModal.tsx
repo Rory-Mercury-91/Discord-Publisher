@@ -11,7 +11,7 @@ import { useModalScrollLock } from '../../../hooks/useModalScrollLock';
 import { extractThreadIdFromUrl, type ManualGameData } from '../../../state/hooks/useCollection';
 
 const STATUTS = ['En cours', 'Terminé', 'Abandonné', 'En pause', 'En attente'];
-const TYPES   = ['VN', 'RPG', 'RPGM', 'Sandbox', 'Platformer', 'Simulator', 'Strategy', 'Action', 'Puzzle', 'HTML', 'Autre'];
+const ENGINES = ['ADRIFT', 'Flash', 'HTML', 'Java', 'QSP', 'RAGS', 'RPGM', 'Ren\'Py', 'Tads', 'Unity', 'Unreal Engine', 'WebGL', 'Wolf RPG', 'Autre'];
 const SOURCES = ['F95Zone', 'LewdCorner', 'Autre'] as const;
 
 interface ManualGameModalProps {
@@ -275,7 +275,7 @@ export default function ManualGameModal({ onClose, onSubmit }: ManualGameModalPr
                     onChange={(e) => setGameType(e.target.value)}
                   >
                     <option value="">— Non renseigné —</option>
-                    {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    {ENGINES.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
               </div>

@@ -4,14 +4,14 @@ import { useEffect, useState } from 'react';
 type WindowState = 'normal' | 'maximized' | 'fullscreen' | 'minimized';
 
 export default function PreferenceSettings() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('apiKey') || '');
   const [defaultTranslationLabel, setDefaultTranslationLabel] = useState(() => localStorage.getItem('default_translation_label') || 'Traduction');
   const [defaultModLabel, setDefaultModLabel] = useState(() => localStorage.getItem('default_mod_label') || 'Mod');
   const [windowState, setWindowState] = useState<WindowState>(() => (localStorage.getItem('windowState') as WindowState) || 'maximized');
+  const [defaultMode, setDefaultMode] = useState<string>(() => localStorage.getItem('defaultMode') || 'translator');
 
-  useEffect(() => { localStorage.setItem('apiKey', apiKey); }, [apiKey]);
   useEffect(() => { localStorage.setItem('default_translation_label', defaultTranslationLabel); }, [defaultTranslationLabel]);
   useEffect(() => { localStorage.setItem('default_mod_label', defaultModLabel); }, [defaultModLabel]);
+  useEffect(() => { localStorage.setItem('defaultMode', defaultMode); }, [defaultMode]);
 
   const applyWindowStateLive = async (next: WindowState) => {
     try {
@@ -58,16 +58,18 @@ export default function PreferenceSettings() {
   return (
     <div className="settings-grid">
       <section className="settings-section">
-        <h4 className="settings-section__title">🔑 Clé API</h4>
+        <h4 className="settings-section__title">🚀 Onglet au démarrage</h4>
         <div className="form-field">
-          <label className="form-label">Clé d'accès à l'API</label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            placeholder="Votre clé secrète"
-            className="form-input"
-          />
+          <label className="form-label">Vue affichée au lancement</label>
+          <select
+            value={defaultMode}
+            onChange={e => setDefaultMode(e.target.value)}
+            className="form-input settings-select-pointer"
+          >
+            <option value="translator">✍️ Traducteur</option>
+            <option value="library">📚 Bibliothèque</option>
+            <option value="listform">📋 Formulaire liste</option>
+          </select>
         </div>
       </section>
 
