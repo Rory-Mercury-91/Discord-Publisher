@@ -85,6 +85,21 @@ def _message_has_metadata_embed(msg_dict: dict) -> bool:
             return True
     return False
 
+async def _ensure_thread_unarchived(session, thread_id: str) -> bool:
+    """Désarchive un thread si nécessaire. Retourne True si le thread est accessible."""
+    status, data = await _discord_get(session, f"/channels/{thread_id}")
+    if status >= 300:
+        return False
+    if data.get("thread_metadata", {}).get("archived", False):
+        logger.info("[publisher] Thread %s archivé, désarchivage...", thread_id)
+        status, _ = await _discord_patch_json(
+            session, f"/channels/{thread_id}", {"archived": False}
+        )
+        if status >= 300:
+            logger.warning("[publisher] Échec désarchivage thread %s (status=%d)", thread_id, status)
+            return False
+        logger.info("[publisher] Thread %s désarchivé avec succès", thread_id)
+    return True
 
 # ==================== TAGS ====================
 
@@ -576,14 +591,16 @@ async def _update_post_version(thread: discord.Thread, new_version: str) -> bool
         ]
 
         try:
-            await msg.edit(
-                content=new_content,
-                embeds=[discord.Embed.from_dict(e) for e in new_embeds],
-            )
+            # Une seule session pour toutes les opérations HTTP REST
+            async with aiohttp.ClientSession() as session:
+                await _ensure_thread_unarchived(session, str(thread.id))
 
-            # Mettre a jour ou creer le message metadata separe
-            if metadata_b64_new and len(metadata_b64_new) <= 25000:
-                async with aiohttp.ClientSession() as session:
+                await msg.edit(
+                    content=new_content,
+                    embeds=[discord.Embed.from_dict(e) for e in new_embeds],
+                )
+
+                if metadata_b64_new and len(metadata_b64_new) <= 25000:
                     metadata_message = None
                     async for m in thread.history(limit=30):
                         if m.id == msg.id:

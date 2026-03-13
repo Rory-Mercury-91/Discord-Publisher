@@ -37,6 +37,7 @@ from forum_manager import (
     _get_thread_parent_id, _build_metadata_embed,
     _resolve_applied_tag_ids, _delete_old_metadata_messages,
     get_forum_available_tags, sync_forum_fixed_tags,
+    _ensure_thread_unarchived,
 )
 from announcements import _send_announcement, _send_deletion_announcement
 from discord_api import (
@@ -1846,6 +1847,14 @@ async def forum_post_update(request):
 
         # Mise a jour classique
         if not needs_reroute:
+            # ← AJOUT : désarchiver le thread si nécessaire avant toute modification
+            thread_accessible = await _ensure_thread_unarchived(session, thread_id)
+            if not thread_accessible:
+                return _with_cors(request, web.json_response(
+                    {"ok": False, "error": "Thread inaccessible ou impossible à désarchiver"},
+                    status=500
+                ))
+
             import re
             image_exts = r"(?:jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)"
             image_url_pattern = re.compile(
