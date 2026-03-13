@@ -46,11 +46,25 @@ _F95_HEADERS = {
 }
 
 
-async def scrape_f95_synopsis(session, url: str) -> tuple[Optional[str], Optional[int]]:
+async def scrape_f95_synopsis(
+    session,
+    url: str,
+    cookies: Optional[str] = None,
+) -> tuple[Optional[str], Optional[int]]:
     """
     Scrape le synopsis d'un jeu depuis F95Zone.
     Retourne (synopsis, thread_id_extrait_de_l_url_finale).
     thread_id permet à l'appelant de valider la cohérence avec le site_id attendu.
+
+    Corrections v2 :
+    - Utilise les mêmes sélecteurs robustes que scrape_f95_game_data
+      (.message-threadStarterPost, .message--threadStarter…) au lieu de
+      article.message--post qui pouvait tomber sur un post de réponse.
+    - Accepte un paramètre cookies optionnel pour les jeux 18+ nécessitant
+      une session F95Zone authentifiée.
+    - Fallback amélioré : si aucun marqueur Overview/Synopsis n'est trouvé,
+      tente d'extraire les premiers paragraphes significatifs du bbWrapper.
+    - Détection de page de login/age-gate pour ne pas retourner un faux négatif.
     """
     if not url or not url.strip():
         logger.warning("[scraper] URL vide fournie")
@@ -65,31 +79,27 @@ async def scrape_f95_synopsis(session, url: str) -> tuple[Optional[str], Optiona
     scraped_id: Optional[int] = None
 
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "DNT": "1",
-            "Connection": "keep-alive",
+        headers = _f95_headers_with_cookies(cookies)
+        # Headers additionnels pour éviter la détection bot
+        headers.update({
             "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Cache-Control": "max-age=0"
-        }
+            "Sec-Fetch-Dest":  "document",
+            "Sec-Fetch-Mode":  "navigate",
+            "Sec-Fetch-Site":  "none",
+            "Cache-Control":   "max-age=0",
+        })
 
-        logger.info("[scraper] Fetching: %s", url)
+        logger.info("[scraper] scrape_f95_synopsis: %s", url)
 
         async with session.get(url, headers=headers, timeout=30) as response:
             # Extraire l'ID depuis l'URL finale (après redirections éventuelles)
             final_url = str(response.url)
-            id_str = extract_f95_thread_id(final_url)
+            id_str    = extract_f95_thread_id(final_url)
             scraped_id = int(id_str) if id_str else None
 
             if response.status != 200:
                 logger.warning("[scraper] HTTP %d pour %s", response.status, url)
-                return None, None
+                return None, scraped_id
 
             html = await response.text()
 
@@ -99,94 +109,111 @@ async def scrape_f95_synopsis(session, url: str) -> tuple[Optional[str], Optiona
 
         soup = BeautifulSoup(html, "html.parser")
 
-        # ── STRATÉGIE 1 : Chercher .bbWrapper dans le premier post ──
-        first_post = soup.select_one("article.message--post")
+        # ── Détection page de login / age-gate ─────────────────────────────
+        # F95Zone redirige vers /login ou affiche une page sans thread quand
+        # le contenu est protégé et que la session est absente.
+        page_title = (soup.find("title") or object()).__dict__.get("string", "") or ""
+        if (
+            soup.select_one("form.login-form")
+            or soup.select_one("input[name='login']")
+            or "login" in str(response.url).lower()
+            or "Log in" in page_title
+        ):
+            logger.warning("[scraper] Page de login détectée pour %s — cookies requis", url)
+            return None, scraped_id
 
-        if first_post:
-            bb_wrapper = first_post.select_one(".bbWrapper")
+        # ── Sélection du premier post (mêmes sélecteurs que scrape_f95_game_data) ──
+        bb_wrapper = (
+            soup.select_one(".message-threadStarterPost .bbWrapper")
+            or soup.select_one(".message--threadStarter .bbWrapper")
+            or soup.select_one("[class*='threadStarter'] .bbWrapper")
+            or soup.select_one("article.message--post .bbWrapper")
+            or soup.select_one(".block-body .bbWrapper")
+        )
 
-            if bb_wrapper:
-                for unwanted in bb_wrapper.select(".bbCodeSpoiler, .bbCodeCode, .bbCodeQuote"):
-                    unwanted.decompose()
+        # Fallback : premier article, quel que soit le sélecteur
+        if not bb_wrapper:
+            first_article = soup.select_one("article.message--post")
+            if first_article:
+                bb_wrapper = (
+                    first_article.select_one(".bbWrapper")
+                    or first_article.select_one(".message-body")
+                )
 
-                content_html = str(bb_wrapper)
+        if not bb_wrapper:
+            # Dernier recours : meta og:description
+            meta_desc = soup.select_one("meta[property='og:description']")
+            if meta_desc and meta_desc.get("content"):
+                content = meta_desc["content"].strip()
+                if len(content) > 50:
+                    logger.info("[scraper] Synopsis (meta og:description, %d chars) pour %s", len(content), url)
+                    return content, scraped_id
+            logger.warning("[scraper] bbWrapper introuvable pour %s", url)
+            return None, scraped_id
 
-                start_pattern = r'(?:Overview|Synopsis)\s*:?\s*(?:<[^>]+>)*\s*'
-                start_match = re.search(start_pattern, content_html, re.IGNORECASE)
+        # ── Nettoyage du bbWrapper ─────────────────────────────────────────
+        for unwanted in bb_wrapper.select(".bbCodeSpoiler, .bbCodeCode, .bbCodeQuote"):
+            unwanted.decompose()
 
-                if start_match:
-                    content_html = content_html[start_match.end():]
+        content_html = str(bb_wrapper)
 
-                end_pattern = r'(?:Thread Updated|Installation|Changelog|<b>Update|Developer Notes|DOWNLOAD|Genre\s*:|Language\s*:|Version\s*:|OS\s*:|Censored\s*:|Release Date\s*:|Developer\s*:)'
-                end_match = re.search(end_pattern, content_html, re.IGNORECASE)
+        # ── Stratégie 1 : marqueur Overview / Synopsis ─────────────────────
+        start_pattern = r'(?:Overview|Synopsis)\s*:?\s*(?:<[^>]+>)*\s*'
+        start_match   = re.search(start_pattern, content_html, re.IGNORECASE)
 
-                if end_match:
-                    content_html = content_html[:end_match.start()]
+        if start_match:
+            content_html = content_html[start_match.end():]
 
-                content_html = re.sub(r'<br\s*/?>', '\n', content_html, flags=re.IGNORECASE)
-                content_html = re.sub(r'</p>|</div>', '\n', content_html, flags=re.IGNORECASE)
-                content_html = re.sub(r'<[^>]+>', '', content_html)
-                content_html = content_html.replace('&nbsp;', ' ')
-                content_html = content_html.replace('&amp;', '&')
-                content_html = content_html.replace('&lt;', '<')
-                content_html = content_html.replace('&gt;', '>')
-                content_html = content_html.replace('&quot;', '"')
-
-                lines = content_html.split('\n')
-                cleaned_lines = []
-
-                for line in lines:
-                    line = line.strip()
-                    if line and len(line) > 2:
-                        if not re.match(r'^(You must be registered|Thread Updated|Installation|Developer|Version|OS|Language|Censored|Genre|Release Date)', line, re.IGNORECASE):
-                            cleaned_lines.append(line)
-
-                synopsis = '\n\n'.join(cleaned_lines)
-                synopsis = synopsis.strip()
-                synopsis = re.sub(r'\n{3,}', '\n\n', synopsis)
-
-                if synopsis and len(synopsis) > 50:
-                    logger.info("[scraper] ✅ Synopsis nettoyé (%d chars) pour %s", len(synopsis), url)
-                    return synopsis, scraped_id
-                else:
-                    logger.warning("[scraper] Synopsis trop court après nettoyage (%d chars) pour %s",
-                                   len(synopsis) if synopsis else 0, url)
-
-        # ── STRATÉGIE 2 : Fallback sur .message-body ──
-        message_body = soup.select_one(".message-body .bbWrapper")
-
-        if message_body:
-            for unwanted in message_body.select(".bbCodeSpoiler, .bbCodeCode, .bbCodeQuote"):
-                unwanted.decompose()
-
-            content_html = str(message_body)
-
-            start_match = re.search(r'(?:Overview|Synopsis)\s*:?\s*(?:<[^>]+>)*\s*', content_html, re.IGNORECASE)
-            if start_match:
-                content_html = content_html[start_match.end():]
-
-            end_match = re.search(r'(?:Thread Updated|Installation|Changelog|<b>Update|Developer Notes|DOWNLOAD)', content_html, re.IGNORECASE)
+            end_pattern = (
+                r'(?:Thread Updated|Installation|Changelog|<b>Update|Developer Notes'
+                r'|DOWNLOAD|Genre\s*:|Language\s*:|Version\s*:|OS\s*:|Censored\s*:'
+                r'|Release Date\s*:|Developer\s*:|<div class=["\']bbCodeSpoiler|Synopsis\s*:)'
+            )
+            end_match = re.search(end_pattern, content_html, re.IGNORECASE)
             if end_match:
-                content_html = content_html[:end_match.start()]
+                content_html = content_html[: end_match.start()]
 
-            content_html = re.sub(r'<br\s*/?>', '\n', content_html, flags=re.IGNORECASE)
-            content_html = re.sub(r'</p>|</div>', '\n', content_html, flags=re.IGNORECASE)
-            content_html = re.sub(r'<[^>]+>', '', content_html)
-            content_html = content_html.replace('&nbsp;', ' ')
-
-            lines = [l.strip() for l in content_html.split('\n') if l.strip() and len(l.strip()) > 2]
-            synopsis = '\n\n'.join(lines).strip()
-
-            if synopsis and len(synopsis) > 50:
-                logger.info("[scraper] ✅ Synopsis trouvé (fallback, %d chars) pour %s", len(synopsis), url)
+            synopsis = _html_to_text(content_html)
+            if synopsis and len(synopsis) > 30:
+                logger.info("[scraper] ✅ Synopsis (Overview/Synopsis marker, %d chars) pour %s", len(synopsis), url)
                 return synopsis, scraped_id
 
-        # ── STRATÉGIE 3 : Meta description (dernier recours) ──
+        # ── Stratégie 2 : extraction par _extract_synopsis_from_content_html ──
+        synopsis = _extract_synopsis_from_content_html(str(bb_wrapper))
+        if synopsis and len(synopsis) > 30:
+            logger.info("[scraper] ✅ Synopsis (_extract_synopsis, %d chars) pour %s", len(synopsis), url)
+            return synopsis, scraped_id
+
+        # ── Stratégie 3 : premiers paragraphes significatifs du bbWrapper ──
+        # Certains posts n'ont pas de marqueur Overview — on prend les premiers
+        # paragraphes non-techniques (longueur > 60 chars, pas de métadonnées).
+        full_text = _html_to_text(str(bb_wrapper))
+        paragraphs = [p.strip() for p in full_text.split("\n\n") if p.strip()]
+        kept = []
+        meta_re = re.compile(
+            r'^(Version|OS|Language|Censored|Genre|Release Date|Developer'
+            r'|Thread Updated|Installation|Changelog|Download|Tags?)\s*[:\-]',
+            re.IGNORECASE,
+        )
+        for para in paragraphs:
+            if meta_re.match(para):
+                break  # on arrête dès la première ligne de métadonnée
+            if len(para) > 60:
+                kept.append(para)
+            if len("\n\n".join(kept)) > 800:
+                break
+
+        if kept:
+            synopsis = "\n\n".join(kept)
+            logger.info("[scraper] ✅ Synopsis (premiers paragraphes, %d chars) pour %s", len(synopsis), url)
+            return synopsis, scraped_id
+
+        # ── Stratégie 4 : meta og:description ─────────────────────────────
         meta_desc = soup.select_one("meta[property='og:description']")
         if meta_desc and meta_desc.get("content"):
             content = meta_desc["content"].strip()
             if len(content) > 50:
-                logger.info("[scraper] ✅ Synopsis trouvé (meta) pour %s", url)
+                logger.info("[scraper] ✅ Synopsis (meta og, %d chars) pour %s", len(content), url)
                 return content, scraped_id
 
         logger.warning("[scraper] ❌ Aucun synopsis trouvé pour %s", url)
@@ -196,6 +223,22 @@ async def scrape_f95_synopsis(session, url: str) -> tuple[Optional[str], Optiona
         logger.error("[scraper] Exception lors du scraping de %s: %s", url, e, exc_info=True)
         return None, None
 
+def _html_to_text(content_html: str) -> str:
+    """Convertit du HTML bbWrapper en texte brut propre."""
+    content_html = re.sub(r'<br\s*/?>', '\n', content_html, flags=re.IGNORECASE)
+    content_html = re.sub(r'</p>|</div>|</li>', '\n', content_html, flags=re.IGNORECASE)
+    content_html = re.sub(r'<[^>]+>', '', content_html)
+    content_html = (
+        content_html
+        .replace('&nbsp;', ' ')
+        .replace('&amp;', '&')
+        .replace('&lt;', '<')
+        .replace('&gt;', '>')
+        .replace('&quot;', '"')
+    )
+    lines = [l.strip() for l in content_html.split('\n') if l.strip() and len(l.strip()) > 2]
+    text  = '\n\n'.join(lines)
+    return re.sub(r'\n{3,}', '\n\n', text).strip()
 
 async def scrape_f95_title(session, url: str) -> Optional[str]:
     """

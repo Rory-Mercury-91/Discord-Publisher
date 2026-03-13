@@ -154,7 +154,9 @@ async def scrape_enrich(request):
             body_params = json.loads(body.decode("utf-8")) or {}
     except Exception:
         pass
-    force = body_params.get("force", False)
+
+    force          = body_params.get("force", False)
+    f95_cookies    = (body_params.get("f95_cookies") or "").strip() or None  # ← NOUVEAU
     target_ids_raw = body_params.get("target_ids")
     target_set: set = set()
     if target_ids_raw and isinstance(target_ids_raw, list):
@@ -165,9 +167,10 @@ async def scrape_enrich(request):
                 pass
 
     logger.info(
-        "[api] /scrape/enrich lancé par %s (id=%s) force=%s target_ids=%s",
+        "[api] /scrape/enrich lancé par %s (id=%s) force=%s target_ids=%s cookies=%s",
         discord_name or "unknown", discord_user_id or "N/A", force,
-        len(target_set) if target_set else "tous"
+        len(target_set) if target_set else "tous",
+        "oui" if f95_cookies else "non",   # ← NOUVEAU
     )
 
     sb = _get_supabase()
@@ -312,7 +315,7 @@ async def scrape_enrich(request):
                     break
 
                 # ← MODIFIÉ : déballage du tuple (synopsis, scraped_id)
-                synopsis_en, scraped_id = await scrape_f95_synopsis(session, f95_url)
+                synopsis_en, scraped_id = await scrape_f95_synopsis(session, f95_url, cookies=f95_cookies)
 
                 if not synopsis_en:
                     failed.append({

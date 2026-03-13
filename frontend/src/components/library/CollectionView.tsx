@@ -138,6 +138,23 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     }
   }, [items, pendingOpenThreadId]);
 
+  // ── Rafraîchit les données de la modale quand la collection change ────────
+  // Cas typique : enrichissement Tampermonkey reçu PENDANT qu'une modale est
+  // déjà ouverte → sans ce correctif, les champs (synopsis, image…) restent
+  // vides jusqu'à fermeture/réouverture manuelle.
+  useEffect(() => {
+    if (!selectedEntryForDetail) return;
+    const tid     = selectedEntryForDetail.f95_thread_id;
+    const updated = items.find(i => i.f95_thread_id === tid);
+    if (updated) {
+      setSelectedGameForDetail(entryToGameF95(updated));
+      setSelectedEntryForDetail(updated);
+    }
+    // On ne dépend intentionnellement QUE de `items` pour éviter une boucle :
+    // la mise à jour de selectedEntryForDetail ne doit pas re-déclencher l'effet.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
 // ── Enrichissement silencieux après import Tampermonkey ───────────────────
 const triggerSilentEnrichment = useCallback(async (threadId: number) => {
   const sb = getSupabase();
