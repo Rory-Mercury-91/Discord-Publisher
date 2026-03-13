@@ -176,19 +176,20 @@ export function useCollection() {
             'site_id, ac, updated_at, nom_du_jeu, version, nom_url, image, statut, type, traducteur, traducteur_url, type_de_traduction, date_maj, type_maj, trad_ver, lien_trad, tags, synopsis_fr, synopsis_en'
           )
           .in('site_id', siteIds);
-        if (jeux?.length) {
-          // Grouper par nom_url normalisé (même URL = même jeu). Pas nom_du_jeu. Si vide : fallback site_id.
-          const normUrl = (url: string | null | undefined) => {
-            const u = (url ?? '').trim().toLowerCase();
-            return u ? u.replace(/\/+$/, '') : null;
-          };
-          const byKey = new Map<string, any[]>();
+      if (jeux?.length) {
+          // Groupement par site_id (clé F95/LewdCorner fiable et unique par jeu).
+          // L'ancien groupement par nom_url pouvait fusionner deux jeux distincts
+          // si nom_url était incorrect en base, provoquant des synopsis croisés.
+          // Les variantes d'un même jeu partagent toujours le même site_id.
+          const byKey = new Map<number | string, any[]>();
           for (const j of jeux as any[]) {
-            const key = normUrl(j.nom_url) ?? `_sid_${j.site_id}`;
+            const sid = j.site_id as number | null | undefined;
+            // Clé numérique si site_id disponible, sinon clé interne unique
+            const key: number | string = sid != null ? sid : `_id_${j.id}`;
             if (!byKey.has(key)) byKey.set(key, []);
             byKey.get(key)!.push(j);
           }
-          for (const [, group] of byKey) {
+          for (const [key, group] of byKey) {
             const acMain = group.filter((r: any) => String(r.ac ?? '').trim() === '1');
             const acOther = group.filter((r: any) => String(r.ac ?? '').trim() !== '1');
             const byUpdated = (a: any, b: any) => (b.updated_at || '').localeCompare(a.updated_at || '');
@@ -230,10 +231,10 @@ export function useCollection() {
               synopsis_en: synopsisEn || undefined,
               variants: variants.length > 0 ? variants : undefined,
             };
-            // Attacher ce jeu à chaque site_id du groupe (même jeu = même entrée pour tous)
-            for (const row of group) {
-              const sid = row.site_id;
-              if (sid != null) jeuxMap[sid] = gamePayload;
+            // Assignation uniquement pour les clés numériques (site_id réels)
+            // Les entrées sans site_id (jeux "Autre") ne peuvent pas être jointes
+            if (typeof key === 'number') {
+              jeuxMap[key] = gamePayload;
             }
           }
         }

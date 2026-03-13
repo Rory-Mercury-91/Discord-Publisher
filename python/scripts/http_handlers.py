@@ -138,23 +138,6 @@ async def logging_middleware(request, handler):
 # ==================== HANDLERS ====================
 
 async def scrape_enrich(request):
-    """
-    Endpoint d'enrichissement automatique des synopsis.
-    
-    Workflow CORRIGÉ:
-        1. Récupère TOUS les jeux depuis f95_jeux (source de vérité)
-        2. Pour chaque jeu:
-           a. Vérifie si synopsis existe déjà (games OU published_posts)
-           b. Si absent: scrape + traduit + sauvegarde dans games
-        3. Envoie des updates JSON en streaming (SSE)
-    
-    Format de réponse (NDJSON):
-        {"progress": {"current": 5, "total": 100}}
-        {"log": "✅ The Legend of the Goblins enrichi"}
-        {"status": "completed"}
-        {"error": "Message d'erreur"}
-    """
-    # ═══ AUTHENTIFICATION ═══
     is_valid, discord_user_id, discord_name, is_legacy = await _auth_request(
         request, "/api/scrape/enrich"
     )
@@ -163,8 +146,7 @@ async def scrape_enrich(request):
             {"ok": False, "error": "Invalid API key"},
             status=401
         )
-    
-    # Option force : re-traduire tous les synopsis (ignorer les existants)
+
     body_params = {}
     try:
         body = await request.read()
@@ -187,34 +169,29 @@ async def scrape_enrich(request):
         discord_name or "unknown", discord_user_id or "N/A", force,
         len(target_set) if target_set else "tous"
     )
-    
-    # ═══ VÉRIFICATION SUPABASE ═══
+
     sb = _get_supabase()
     if not sb:
         return web.json_response(
             {"ok": False, "error": "Supabase non configuré"},
             status=500
         )
-    
-    # ═══ STREAMING SETUP ═══
+
     response = web.StreamResponse()
     response.headers['Content-Type'] = 'application/x-ndjson'
     response.headers['Cache-Control'] = 'no-cache'
     response.headers['X-Accel-Buffering'] = 'no'
-    
-    # CORS
+
     origin = request.headers.get("Origin", "")
     if origin:
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
-    
+
     await response.prepare(request)
-    
-    # Indique que le client a fermé la connexion (bouton Arrêter) → on arrête la boucle
+
     client_disconnected = [False]
-    
+
     async def send_json(data: dict) -> bool:
-        """Envoie du JSON ligne par ligne (NDJSON). Retourne False si le client s'est déconnecté."""
         try:
             await response.write((json.dumps(data, ensure_ascii=False) + '\n').encode('utf-8'))
             await response.drain()
@@ -226,59 +203,57 @@ async def scrape_enrich(request):
                 return False
             logger.warning("[api] Erreur envoi SSE : %s", e)
             return False
-    
+
     try:
-        # ═══ ÉTAPE 1 : Récupération depuis f95_jeux (source de vérité) ═══
         await send_json({"log": "📥 Récupération des jeux depuis f95_jeux..."})
-        
-        # Récupérer TOUS les jeux de f95_jeux avec pagination
+
         all_jeux = []
         offset = 0
         PAGE_SIZE = 1000
-        
+
         while True:
+            # ← MODIFIÉ : ajout de .order("id") pour garantir une pagination stable
             res = sb.table("f95_jeux") \
                 .select("id, nom_du_jeu, nom_url, site_id") \
+                .order("id") \
                 .range(offset, offset + PAGE_SIZE - 1) \
                 .execute()
-            
+
             batch = res.data or []
             all_jeux.extend(batch)
-            
+
             if len(batch) < PAGE_SIZE:
                 break
             offset += PAGE_SIZE
-        
+
         if not all_jeux:
             await send_json({"log": "⚠️ Aucun jeu trouvé dans f95_jeux"})
             await send_json({"status": "completed"})
             await response.write_eof()
             return response
-        
+
         await send_json({
             "log": f"📊 {len(all_jeux)} jeux récupérés depuis f95_jeux",
             "progress": {"current": 0, "total": len(all_jeux)}
         })
-        
-        # ═══ ÉTAPE 2 : Charger les synopsis existants (f95_jeux uniquement — pas published_posts pour la biblio) ═══
+
         await send_json({"log": "🔍 Vérification des synopsis existants (f95_jeux)..."})
-        
+
         jeux_synopsis_res = sb.table("f95_jeux") \
             .select("nom_url, synopsis_fr") \
             .not_.is_("synopsis_fr", "null") \
             .execute()
-        
+
         existing_by_url = {}
         for g in (jeux_synopsis_res.data or []):
             norm = _norm_nom_url(g.get("nom_url"))
             if norm:
                 existing_by_url[norm] = True
-        
+
         await send_json({
             "log": f"✅ {len(existing_by_url)} URL(s) avec synopsis dans f95_jeux"
         })
-        
-        # ═══ ÉTAPE 3 : Grouper par nom_url (1 traduction = toutes les lignes du même jeu) ═══
+
         from collections import defaultdict
         by_norm_url = defaultdict(list)
         for jeu in all_jeux:
@@ -288,13 +263,12 @@ async def scrape_enrich(request):
             norm = _norm_nom_url(url)
             if norm:
                 by_norm_url[norm].append(jeu)
-        
+
         to_enrich = []
         for norm_url, group in by_norm_url.items():
             if not group:
                 continue
             if target_set:
-                # Retry ciblé : seulement les groupes contenant au moins un ID cible
                 if not any(jeu.get("id") in target_set for jeu in group):
                     continue
             elif not force and existing_by_url.get(norm_url):
@@ -312,17 +286,16 @@ async def scrape_enrich(request):
             await send_json({"status": "completed", "failed_entries": []})
             await response.write_eof()
             return response
-        
+
         total_rows = sum(len(g) for _, g in to_enrich)
         await send_json({
             "log": f"🎮 {total} groupe(s) à enrichir ({total_rows} ligne(s) au total) — 1 scrape + 1 traduction par groupe",
             "progress": {"current": 0, "total": total}
         })
-        
-        # ═══ ÉTAPE 4 : Enrichissement (1 scrape + 1 traduction par groupe, puis update de toutes les lignes) ═══
+
         enriched = 0
-        failed: list = []  # Entrées dont le synopsis n'a pas pu être récupéré
-        
+        failed: list = []
+
         async with aiohttp.ClientSession() as session:
             for idx, (norm_url, group) in enumerate(to_enrich, 1):
                 if client_disconnected[0]:
@@ -330,16 +303,17 @@ async def scrape_enrich(request):
                 first = group[0]
                 nom = first.get("nom_du_jeu", "Sans nom")
                 f95_url = (first.get("nom_url") or "").strip()
-                
+                expected_site_id = first.get("site_id")
+
                 if not await send_json({"progress": {"current": idx, "total": total}}):
                     break
-                
-                # ── SCRAPING (une fois par groupe) ──
+
                 if not await send_json({"log": f"🕷️ [{idx}/{total}] {nom} — Scraping synopsis..."}):
                     break
-                
-                synopsis_en = await scrape_f95_synopsis(session, f95_url)
-                
+
+                # ← MODIFIÉ : déballage du tuple (synopsis, scraped_id)
+                synopsis_en, scraped_id = await scrape_f95_synopsis(session, f95_url)
+
                 if not synopsis_en:
                     failed.append({
                         "id":        first.get("id"),
@@ -352,7 +326,23 @@ async def scrape_enrich(request):
                         break
                     continue
 
-                # ── TRADUCTION (une fois par groupe) ──
+                # ← MODIFIÉ : validation cohérence — l'URL scrappée doit correspondre au site_id attendu
+                if scraped_id and expected_site_id and int(scraped_id) != int(expected_site_id):
+                    failed.append({
+                        "id":        first.get("id"),
+                        "nom_du_jeu": nom,
+                        "nom_url":   f95_url,
+                        "group_ids": [j.get("id") for j in group if j.get("id") is not None],
+                        "raison":    "url_incoherente",
+                    })
+                    if not await send_json({"log": (
+                        f"🚫 [{idx}/{total}] {nom} — Incohérence URL détectée "
+                        f"(site_id attendu={expected_site_id}, ID scrapé={scraped_id}). "
+                        f"Écriture annulée pour éviter toute corruption."
+                    )}):
+                        break
+                    continue
+
                 if not await send_json({"log": f"🌐 [{idx}/{total}] {nom} — Traduction EN → FR..."}):
                     break
 
@@ -369,8 +359,7 @@ async def scrape_enrich(request):
                     if not await send_json({"log": f"❌ [{idx}/{total}] {nom} — Traduction échouée"}):
                         break
                     continue
-                
-                # ── SAUVEGARDE : appliquer le même synopsis à toutes les lignes du groupe ──
+
                 now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
                 try:
                     for jeu in group:
@@ -392,11 +381,10 @@ async def scrape_enrich(request):
                     )
                     if not await send_json({"log": f"❌ [{idx}/{total}] {nom} — Erreur sauvegarde : {e}"}):
                         break
-                
+
                 if idx < total and not client_disconnected[0]:
                     await asyncio.sleep(2.0)
-        
-        # ═══ TERMINÉ ═══
+
         if not client_disconnected[0]:
             failed_count = len(failed)
             summary_parts = [f"{enriched} ligne(s) mise(s) à jour dans {total} groupe(s)"]
@@ -407,17 +395,17 @@ async def scrape_enrich(request):
                 "status":         "completed",
                 "failed_entries": failed,
             })
-    
+
     except Exception as e:
         logger.error("[api] Erreur enrichissement : %s", e, exc_info=True)
         await send_json({
             "error": str(e),
             "status": "error"
         })
-    
+
     finally:
         await response.write_eof()
-    
+
     return response
 
 async def translate_handler(request):
@@ -1394,60 +1382,85 @@ async def collection_enrich_entries(request):
         entries_without_f95 = [e for e in entries if not f95_map.get(e["f95_thread_id"])]
 
         # ─── Phase 1 : enrichissement depuis f95_jeux ───────────────────────────
-        for idx, entry in enumerate(entries_with_f95, 1):
-            if client_disconnected[0]:
-                break
-            if not await send({"progress": {"current": idx, "total": total}}):
-                break
+        # Une session aiohttp pour les traductions à la volée (Bug 2 fix)
+        async with aiohttp.ClientSession() as session_translate:
+            for idx, entry in enumerate(entries_with_f95, 1):
+                if client_disconnected[0]:
+                    break
+                if not await send({"progress": {"current": idx, "total": total}}):
+                    break
 
-            tid   = entry["f95_thread_id"]
-            f95   = f95_map.get(tid)
-            title = entry.get("title") or f"ID {tid}"
+                tid   = entry["f95_thread_id"]
+                f95   = f95_map.get(tid)
+                title = entry.get("title") or f"ID {tid}"
 
-            existing_scraped = entry.get("scraped_data") or {}
-            if isinstance(existing_scraped, str):
-                try:
-                    existing_scraped = json.loads(existing_scraped)
-                except Exception:
-                    existing_scraped = {}
+                existing_scraped = entry.get("scraped_data") or {}
+                if isinstance(existing_scraped, str):
+                    try:
+                        existing_scraped = json.loads(existing_scraped)
+                    except Exception:
+                        existing_scraped = {}
 
-            new_scraped    = dict(existing_scraped)
-            changed_fields = []
+                new_scraped    = dict(existing_scraped)
+                changed_fields = []
 
-            for f95_field, scraped_field in F95_TO_SCRAPED.items():
-                if f95_field not in fields_to_sync:
+                for f95_field, scraped_field in F95_TO_SCRAPED.items():
+                    if f95_field not in fields_to_sync:
+                        continue
+                    f95_val = f95.get(f95_field)
+                    if f95_val is not None and new_scraped.get(scraped_field) != f95_val:
+                        new_scraped[scraped_field] = f95_val
+                        changed_fields.append(scraped_field)
+
+                # ── Bug 2 FIX : synopsis EN présent mais pas de FR → traduire ──
+                # Note : on ne persiste PAS le résultat dans f95_jeux depuis ici.
+                # f95_jeux est alimenté exclusivement par scrape_enrich (source de vérité).
+                # Écrire depuis user_collection vers f95_jeux créerait un risque de
+                # propagation de données corrompues vers la table partagée.
+                synopsis_en_available = new_scraped.get("synopsis") or new_scraped.get("synopsis_en")
+                needs_translation = (
+                    synopsis_en_available
+                    and not new_scraped.get("synopsis_fr")
+                    and not f95.get("synopsis_fr")
+                )
+                if needs_translation:
+                    if not await send({"log": f"🌐 [{idx}/{total}] {title} — Traduction EN→FR du synopsis…"}):
+                        break
+                    try:
+                        synopsis_fr = await translate_text(session_translate, synopsis_en_available, "en", "fr")
+                        if synopsis_fr:
+                            new_scraped["synopsis_fr"] = synopsis_fr
+                            changed_fields.append("synopsis_fr")
+                            # ← MODIFIÉ : write-back vers f95_jeux supprimé intentionnellement
+                    except Exception as te:
+                        logger.warning("[api] enrich-entries phase1 translation %s: %s", title, te)
+
+                new_title   = f95.get("nom_du_jeu") or entry.get("title")
+                new_f95_url = f95.get("nom_url") or entry.get("f95_url")
+                title_changed = bool(new_title and new_title != entry.get("title"))
+
+                if not changed_fields and not title_changed:
+                    if not await send({"log": f"⏭️ [{idx}/{total}] {title} — déjà à jour"}):
+                        break
+                    skipped_count += 1
                     continue
-                f95_val = f95.get(f95_field)
-                if f95_val is not None and new_scraped.get(scraped_field) != f95_val:
-                    new_scraped[scraped_field] = f95_val
-                    changed_fields.append(scraped_field)
 
-            new_title   = f95.get("nom_du_jeu") or entry.get("title")
-            new_f95_url = f95.get("nom_url") or entry.get("f95_url")
-            title_changed = bool(new_title and new_title != entry.get("title"))
-
-            if not changed_fields and not title_changed:
-                if not await send({"log": f"⏭️ [{idx}/{total}] {title} — déjà à jour"}):
-                    break
-                skipped_count += 1
-                continue
-
-            try:
-                update_payload: dict = {"scraped_data": new_scraped, "updated_at": now}
-                if new_title:
-                    update_payload["title"] = new_title
-                if new_f95_url:
-                    update_payload["f95_url"] = new_f95_url
-                sb.table("user_collection").update(update_payload) \
-                    .eq("id", entry["id"]).eq("owner_id", owner_id).execute()
-                fields_str = ", ".join(changed_fields[:4]) + ("…" if len(changed_fields) > 4 else "")
-                if not await send({"log": f"✅ [{idx}/{total}] {new_title or title} — {fields_str or 'titre'}"}):
-                    break
-                updated_count += 1
-            except Exception as e:
-                logger.error("[api] enrich-entries update %s: %s", title, e)
-                if not await send({"log": f"❌ [{idx}/{total}] {title} — erreur: {e}"}):
-                    break
+                try:
+                    update_payload: dict = {"scraped_data": new_scraped, "updated_at": now}
+                    if new_title:
+                        update_payload["title"] = new_title
+                    if new_f95_url:
+                        update_payload["f95_url"] = new_f95_url
+                    sb.table("user_collection").update(update_payload) \
+                        .eq("id", entry["id"]).eq("owner_id", owner_id).execute()
+                    fields_str = ", ".join(changed_fields[:4]) + ("…" if len(changed_fields) > 4 else "")
+                    if not await send({"log": f"✅ [{idx}/{total}] {new_title or title} — {fields_str or 'titre'}"}):
+                        break
+                    updated_count += 1
+                except Exception as e:
+                    logger.error("[api] enrich-entries update %s: %s", title, e)
+                    if not await send({"log": f"❌ [{idx}/{total}] {title} — erreur: {e}"}):
+                        break
 
         # ─── Phase 2 : scraping F95Zone pour les entrées sans f95_jeux ──────────
         if scrape_missing and entries_without_f95 and not client_disconnected[0]:
@@ -1502,7 +1515,6 @@ async def collection_enrich_entries(request):
                             await asyncio.sleep(scrape_delay)
                         continue
 
-# Construire scraped_data depuis les données scrapées
                     existing_scraped = entry.get("scraped_data") or {}
                     if isinstance(existing_scraped, str):
                         try:
@@ -1510,33 +1522,34 @@ async def collection_enrich_entries(request):
                         except Exception:
                             existing_scraped = {}
 
-                    # --- NOUVEAU CODE : Traduction à la volée ---
+                    # ── Bug 4 FIX : préserver synopsis_fr déjà traduit ──────────
+                    # Ne jamais écraser une traduction existante avec None
+                    existing_synopsis_fr = existing_scraped.get("synopsis_fr")
                     synopsis_en = game_data.get("synopsis")
-                    synopsis_fr = existing_scraped.get("synopsis_fr")
+                    synopsis_fr = existing_synopsis_fr  # conserver par défaut
 
                     if synopsis_en and not synopsis_fr:
                         try:
                             synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
                         except Exception as e:
                             logger.warning("[api] enrich-entries translation failed: %s", e)
-                    # --------------------------------------------
 
                     new_scraped = {
                         **existing_scraped,
-                        "name":    game_data.get("name") or game_data.get("title"),
-                        "version": game_data.get("version"),
-                        "status":  game_data.get("status"),
-                        "type":    game_data.get("type"),
-                        "image":   game_data.get("image"),
-                        "tags":    game_data.get("tags"),
-                        "synopsis": synopsis_en,
-                        "synopsis_fr": synopsis_fr, # Ajout de la VF ici
-                        "source":  "f95zone_scraped",
+                        "name":        game_data.get("name") or game_data.get("title"),
+                        "version":     game_data.get("version"),
+                        "status":      game_data.get("status"),
+                        "type":        game_data.get("type"),
+                        "image":       game_data.get("image"),
+                        "tags":        game_data.get("tags"),
+                        "synopsis":    synopsis_en,
+                        "synopsis_fr": synopsis_fr,
+                        "source":      "f95zone_scraped",
                     }
-                    # Nettoyer les None inutiles
+                    # Nettoyer les None sans jamais effacer synopsis_fr si déjà traduit
                     new_scraped = {k: v for k, v in new_scraped.items() if v is not None}
 
-                    new_title   = game_data.get("name") or game_data.get("title") or entry.get("title")
+                    new_title      = game_data.get("name") or game_data.get("title") or entry.get("title")
                     scraped_f95_id = game_data.get("id")
 
                     try:
@@ -1547,7 +1560,6 @@ async def collection_enrich_entries(request):
                         if new_title:
                             update_payload["title"] = new_title
                         if scraped_f95_id:
-                            # Mettre à jour f95_thread_id si le scrape a résolu un id plus précis
                             update_payload["f95_url"] = f95_url
                         sb.table("user_collection").update(update_payload) \
                             .eq("id", entry["id"]).eq("owner_id", owner_id).execute()
@@ -2156,6 +2168,65 @@ async def update_f95_jeu_synopsis(request):
         logger.exception("[api] PATCH f95_jeux synopsis : %s", e)
         return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
 
+async def jeux_sync_force(request):
+    """
+    Force la resynchronisation complete de f95_jeux depuis l'API externe.
+    POST /api/jeux/sync-force
+    Retourne { ok, synced_count, errors }
+    """
+    is_valid, discord_user_id, discord_name, is_legacy = await _auth_request(
+        request, "/api/jeux/sync-force"
+    )
+    if not is_valid:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "Invalid API key"}, status=401
+        ))
+
+    logger.info(
+        "[api] /api/jeux/sync-force declenche par %s (id=%s)",
+        discord_name or "unknown", discord_user_id or "N/A",
+    )
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                F95FR_API_URL,
+                headers={"X-API-KEY": F95FR_API_KEY},
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning("[api] jeux/sync-force : API f95fr HTTP %d", resp.status)
+                    return _with_cors(request, web.json_response(
+                        {"ok": False, "error": f"API upstream HTTP {resp.status}"},
+                        status=502,
+                    ))
+                data = await resp.json()
+
+        if not isinstance(data, list) or not data:
+            return _with_cors(request, web.json_response(
+                {"ok": False, "error": "Reponse API vide ou invalide"}, status=502
+            ))
+
+        synced_count = len(data)
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _sync_jeux_to_supabase, data)
+
+        logger.info(
+            "[api] jeux/sync-force : %d jeux synchronises par %s",
+            synced_count, discord_name or "unknown",
+        )
+        return _with_cors(request, web.json_response({
+            "ok":           True,
+            "synced_count": synced_count,
+            "errors":       None,
+        }))
+
+    except Exception as e:
+        logger.exception("[api] jeux/sync-force erreur : %s", e)
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": str(e)}, status=500
+        ))
+
 
 async def get_jeux(request):
     """Sert les jeux depuis le cache Supabase (f95_jeux). Fallback sur l'API externe."""
@@ -2704,38 +2775,39 @@ def make_app() -> web.Application:
     app = web.Application(middlewares=[logging_middleware])
 
     routes = [
-        ("OPTIONS", "/{tail:.*}",             options_handler),
-        ("GET",     "/",                      health),
-        ("GET",     "/api/status",            health),
-        ("POST",    "/api/configure",         configure),
-        ("POST",    "/api/forum-post",        forum_post),
-        ("POST",    "/api/forum-post/update", forum_post_update),
-        ("POST",    "/api/forum-post/delete", forum_post_delete),
-        ("GET",     "/api/publisher/health",  health),
-        ("GET",     "/api/history",           get_history),
-        ("GET",     "/api/instructions",      get_instructions),
-        ("GET",     "/api/forum-tags",         get_forum_tags),
-        ("POST",    "/api/forum-tags/sync",    sync_forum_tags),
-        ("GET",     "/api/jeux",              get_jeux),
-        ("POST",    "/api/account/delete",    account_delete),
-        ("GET",     "/api/logs",              get_logs),
-        ("POST",    "/api/server/action",     server_action),
-        ("POST",    "/api/transfer-ownership", transfer_ownership),
-        ("POST",    "/api/scrape/enrich",     scrape_enrich),
-        ("POST",    "/api/translate",         translate_handler),
-        ("POST",    "/api/collection/resolve",       collection_resolve),
-        ("POST",    "/api/collection/nexus-parse-db", nexus_parse_db),
-        ("POST",    "/api/collection/import-batch",   collection_import_batch),
-        ("GET",     "/api/collection/f95-traducteurs", collection_f95_traducteurs),
-        ("POST",    "/api/collection/f95-preview",  collection_f95_preview),
-        ("POST",    "/api/collection/f95-import",   collection_f95_import),
-        ("POST",    "/api/collection/enrich-entries", collection_enrich_entries),
-        ("POST",    "/api/enrich/reset-synopsis",    reset_synopsis),
-        ("GET",     "/api/enrich/synopsis-stats",   get_enrich_synopsis_stats),
-        ("GET",     "/api/logs/journal",            get_journal_logs),
-        ("PATCH",   "/api/f95-jeux/{id}/synopsis",  update_f95_jeu_synopsis),
+        ("OPTIONS", "/{tail:.*}",                         options_handler),
+        ("GET",     "/",                                  health),
+        ("GET",     "/api/status",                        health),
+        ("POST",    "/api/configure",                     configure),
+        ("POST",    "/api/forum-post",                    forum_post),
+        ("POST",    "/api/forum-post/update",             forum_post_update),
+        ("POST",    "/api/forum-post/delete",             forum_post_delete),
+        ("GET",     "/api/publisher/health",              health),
+        ("GET",     "/api/history",                       get_history),
+        ("GET",     "/api/instructions",                  get_instructions),
+        ("GET",     "/api/forum-tags",                    get_forum_tags),
+        ("POST",    "/api/forum-tags/sync",               sync_forum_tags),
+        ("GET",     "/api/jeux",                          get_jeux),
+        ("POST",    "/api/account/delete",                account_delete),
+        ("GET",     "/api/logs",                          get_logs),
+        ("POST",    "/api/server/action",                 server_action),
+        ("POST",    "/api/transfer-ownership",            transfer_ownership),
+        ("POST",    "/api/scrape/enrich",                 scrape_enrich),
+        ("POST",    "/api/translate",                     translate_handler),
+        ("POST",    "/api/collection/resolve",            collection_resolve),
+        ("POST",    "/api/collection/nexus-parse-db",     nexus_parse_db),
+        ("POST",    "/api/collection/import-batch",       collection_import_batch),
+        ("GET",     "/api/collection/f95-traducteurs",    collection_f95_traducteurs),
+        ("POST",    "/api/collection/f95-preview",        collection_f95_preview),
+        ("POST",    "/api/collection/f95-import",         collection_f95_import),
+        ("POST",    "/api/collection/enrich-entries",     collection_enrich_entries),
+        ("POST",    "/api/enrich/reset-synopsis",         reset_synopsis),
+        ("GET",     "/api/enrich/synopsis-stats",         get_enrich_synopsis_stats),
+        ("GET",     "/api/logs/journal",                  get_journal_logs),
+        ("POST",    "/api/jeux/sync-force",               jeux_sync_force),
+        ("PATCH",   "/api/f95-jeux/{id}/synopsis",        update_f95_jeu_synopsis),
         # Catch-all en dernier
-        ("*",       "/{tail:.*}",             handle_404),
+        ("*",       "/{tail:.*}",                         handle_404),
     ]
 
     for method, path, handler in routes:

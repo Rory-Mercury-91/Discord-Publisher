@@ -136,149 +136,201 @@ export default function CollectionSettings() {
     : line.startsWith('⏭️') ? 'settings-enrichment-log-line--skip'
     : '';
 
-  const handleCollectionSynopsis = useCallback(async () => {
-    if (!user?.id || collSynopsisRunning) return;
-    const sb = getSupabase();
-    if (!sb) { showToast('Supabase non configuré', 'error'); return; }
-
-    const base = (localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
-    const key = localStorage.getItem('apiKey') || '';
-    if (!base || !key) { showToast('API non configurée (URL et clé manquantes)', 'error'); return; }
-
-    setCollSynopsisRunning(true);
-    setCollSynopsisLogs(['🔍 Recherche des jeux de votre collection…']);
-    setCollSynopsisSummary(null);
-    setCollSynopsisProgress({ current: 0, total: 0 });
-
-    try {
-      const { data: collItems, error: collError } = await sb
-        .from('user_collection')
-        .select('id, f95_thread_id, scraped_data')
-        .eq('owner_id', user.id)
-        .not('f95_thread_id', 'is', null);
-
-      if (collError) throw new Error(collError.message);
-
-      const itemsToProcess = (collItems ?? []).filter((item: any) => {
-        if (collSynopsisForce) return true;
-        return !item.scraped_data || !item.scraped_data.synopsis_fr;
-      });
-
-      if (itemsToProcess.length === 0) {
-        setCollSynopsisLogs(['ℹ️ Votre collection est vide ou tous les jeux ont déjà un synopsis.']);
-        showToast('Tous les synopsis sont déjà traduits ! 🎉', 'success');
-        setCollSynopsisRunning(false);
-        return;
-      }
-
-      const threadIds = itemsToProcess.map((i: any) => i.f95_thread_id);
-      setCollSynopsisLogs(p => [...p, `📚 ${itemsToProcess.length} jeu(x) nécessitent une vérification.`]);
-
-      const { data: f95Items, error: f95Error } = await sb
-        .from('f95_jeux')
-        .select('id, site_id, synopsis_fr')
-        .in('site_id', threadIds);
-
-      if (f95Error) throw new Error(f95Error.message);
-
-      const gamesToCopy: any[] = [];
-      const gamesToScrape: any[] = [];
-
-      for (const item of itemsToProcess) {
-        const f95Data = (f95Items ?? []).find((f: any) => f.site_id === item.f95_thread_id);
-        if (!f95Data) continue;
-        if (f95Data.synopsis_fr && !collSynopsisForce) {
-          gamesToCopy.push({ collId: item.id, f95Data, scrapedData: item.scraped_data });
-        } else {
-          gamesToScrape.push({ collId: item.id, f95Id: f95Data.id, scrapedData: item.scraped_data });
-        }
-      }
-
-      let updatedCount = 0;
-
-      if (gamesToCopy.length > 0) {
-        setCollSynopsisLogs(p => [...p, `⚡ Copie locale de ${gamesToCopy.length} synopsis déjà existants...`]);
-        for (const g of gamesToCopy) {
-          const newData = { ...(g.scrapedData || {}), synopsis_fr: g.f95Data.synopsis_fr };
-          await sb.from('user_collection').update({ scraped_data: newData }).eq('id', g.collId);
-          updatedCount++;
-        }
-      }
-
-      const targetIds = gamesToScrape.map(g => g.f95Id);
-
-      if (targetIds.length > 0) {
-        setCollSynopsisLogs(p => [...p, `🎯 ${targetIds.length} jeu(x) à traduire via l'API. Lancement…`]);
-        collSynopsisAbortRef.current = new AbortController();
-        const res = await fetch(`${base}/api/scrape/enrich`, {
-          method: 'POST',
-          headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ force: collSynopsisForce, target_ids: targetIds }),
-          signal: collSynopsisAbortRef.current.signal,
+    const handleCollectionSynopsis = useCallback(async () => {
+      if (!user?.id || collSynopsisRunning) return;
+      const sb = getSupabase();
+      if (!sb) { showToast('Supabase non configuré', 'error'); return; }
+    
+      const base = (localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
+      const key = localStorage.getItem('apiKey') || '';
+      if (!base || !key) { showToast('API non configurée (URL et clé manquantes)', 'error'); return; }
+    
+      setCollSynopsisRunning(true);
+      setCollSynopsisLogs(['🔍 Recherche des jeux de votre collection…']);
+      setCollSynopsisSummary(null);
+      setCollSynopsisProgress({ current: 0, total: 0 });
+    
+      try {
+        const { data: collItems, error: collError } = await sb
+          .from('user_collection')
+          .select('id, f95_thread_id, scraped_data')
+          .eq('owner_id', user.id)
+          .not('f95_thread_id', 'is', null);
+    
+        if (collError) throw new Error(collError.message);
+    
+        const itemsToProcess = (collItems ?? []).filter((item: any) => {
+          if (collSynopsisForce) return true;
+          return !item.scraped_data || !item.scraped_data.synopsis_fr;
         });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const reader = res.body?.getReader();
-        const decoder = new TextDecoder();
-
-        if (reader) {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            for (const line of decoder.decode(value, { stream: true }).split('\n').filter(Boolean)) {
-              try {
-                const d = JSON.parse(line);
-                if (d.progress) setCollSynopsisProgress(d.progress);
-                if (d.log) setCollSynopsisLogs(p => [...p, d.log]);
-                if (d.status === 'completed') {
-                  setCollSynopsisLogs(p => [...p, '🔄 Resynchronisation vers votre collection...']);
-                  const { data: updatedF95 } = await sb
-                    .from('f95_jeux')
-                    .select('id, synopsis_fr')
-                    .in('id', targetIds);
-                  let apiUpdatedCount = 0;
-                  for (const g of gamesToScrape) {
-                    const freshF95 = (updatedF95 ?? []).find((f: any) => f.id === g.f95Id);
-                    if (freshF95?.synopsis_fr) {
-                      const newData = { ...(g.scrapedData || {}), synopsis_fr: freshF95.synopsis_fr };
-                      await sb.from('user_collection').update({ scraped_data: newData }).eq('id', g.collId);
-                      apiUpdatedCount++;
-                      updatedCount++;
-                    }
-                  }
-                  const errorsCount = d.failed_entries?.length ?? 0;
-                  const skippedCount = targetIds.length - apiUpdatedCount;
-                  setCollSynopsisSummary({ updated: updatedCount, skipped: skippedCount, errors: errorsCount });
-                  setCollSynopsisLogs(p => [...p, '✅ Enrichissement terminé.']);
-                  showToast(
-                    `Synopsis : ${updatedCount} mis à jour, ${skippedCount} ignoré(s)${errorsCount > 0 ? `, ${errorsCount} erreur(s)` : ''}`,
-                    errorsCount > 0 ? 'warning' : 'success'
-                  );
-                }
-                if (d.error) setCollSynopsisLogs(p => [...p, `❌ Erreur : ${d.error}`]);
-              } catch { /* Ligne NDJSON invalide */ }
+    
+        if (itemsToProcess.length === 0) {
+          setCollSynopsisLogs(['ℹ️ Votre collection est vide ou tous les jeux ont déjà un synopsis.']);
+          showToast('Tous les synopsis sont déjà traduits ! 🎉', 'success');
+          setCollSynopsisRunning(false);
+          return;
+        }
+    
+        const threadIds = itemsToProcess.map((i: any) => i.f95_thread_id);
+        setCollSynopsisLogs(p => [...p, `📚 ${itemsToProcess.length} jeu(x) nécessitent une vérification.`]);
+    
+        const { data: f95Items, error: f95Error } = await sb
+          .from('f95_jeux')
+          .select('id, site_id, synopsis_fr')
+          .in('site_id', threadIds);
+    
+        if (f95Error) throw new Error(f95Error.message);
+    
+        const gamesToCopy: any[]   = [];
+        const gamesToScrape: any[] = [];
+        // ── Bug 1 FIX : 3e catégorie pour les jeux sans entrée f95_jeux ──────
+        const gamesToTranslateLocally: any[] = [];
+    
+        for (const item of itemsToProcess) {
+          const f95Data = (f95Items ?? []).find((f: any) => f.site_id === item.f95_thread_id);
+    
+          if (!f95Data) {
+            // Pas dans f95_jeux → vérifier si on a déjà un synopsis EN dans scraped_data
+            const sd = item.scraped_data as Record<string, any> | null;
+            const synopsisEn = sd?.synopsis_en || sd?.synopsis;
+            if (synopsisEn && !sd?.synopsis_fr) {
+              gamesToTranslateLocally.push({ collId: item.id, synopsisEn, scrapedData: sd });
+            }
+            // Si aucun synopsis EN disponible : rien à faire pour ce jeu
+            continue;
+          }
+    
+          if (f95Data.synopsis_fr && !collSynopsisForce) {
+            gamesToCopy.push({ collId: item.id, f95Data, scrapedData: item.scraped_data });
+          } else {
+            gamesToScrape.push({ collId: item.id, f95Id: f95Data.id, scrapedData: item.scraped_data });
+          }
+        }
+    
+        let updatedCount = 0;
+    
+        // ── Copie depuis f95_jeux (déjà traduits) ────────────────────────────
+        if (gamesToCopy.length > 0) {
+          setCollSynopsisLogs(p => [...p, `⚡ Copie locale de ${gamesToCopy.length} synopsis déjà existants...`]);
+          for (const g of gamesToCopy) {
+            const newData = { ...(g.scrapedData || {}), synopsis_fr: g.f95Data.synopsis_fr };
+            await sb.from('user_collection').update({ scraped_data: newData }).eq('id', g.collId);
+            updatedCount++;
+          }
+        }
+    
+        // ── Traduction locale des jeux absents de f95_jeux ───────────────────
+        if (gamesToTranslateLocally.length > 0) {
+          setCollSynopsisLogs(p => [...p,
+            `🌐 Traduction directe de ${gamesToTranslateLocally.length} jeu(x) sans entrée bibliothèque…`
+          ]);
+          setCollSynopsisProgress({ current: 0, total: gamesToTranslateLocally.length });
+    
+          for (let i = 0; i < gamesToTranslateLocally.length; i++) {
+            const g = gamesToTranslateLocally[i];
+            setCollSynopsisProgress({ current: i + 1, total: gamesToTranslateLocally.length });
+    
+            try {
+              const res = await fetch(`${base}/api/translate`, {
+                method: 'POST',
+                headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: g.synopsisEn, source_lang: 'en', target_lang: 'fr' }),
+              });
+    
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              const json = await res.json();
+    
+              if (json.ok && json.translated) {
+                const newData = { ...(g.scrapedData || {}), synopsis_fr: json.translated };
+                await sb.from('user_collection').update({ scraped_data: newData }).eq('id', g.collId);
+                setCollSynopsisLogs(p => [...p, `✅ [${i + 1}/${gamesToTranslateLocally.length}] Traduit (hors bibliothèque)`]);
+                updatedCount++;
+              } else {
+                setCollSynopsisLogs(p => [...p, `⏭️ [${i + 1}/${gamesToTranslateLocally.length}] Traduction échouée`]);
+              }
+            } catch (err) {
+              setCollSynopsisLogs(p => [...p, `❌ [${i + 1}/${gamesToTranslateLocally.length}] Erreur : ${(err as Error).message}`]);
             }
           }
         }
-      } else {
-        setCollSynopsisSummary({ updated: updatedCount, skipped: 0, errors: 0 });
-        setCollSynopsisLogs(p => [...p, '✅ Toutes les copies locales sont terminées.']);
-        showToast(`Synopsis : ${updatedCount} mis à jour localement ! 🎉`, 'success');
+    
+        // ── Scraping + traduction via l'API pour les jeux f95_jeux sans synopsis_fr ──
+        const targetIds = gamesToScrape.map(g => g.f95Id);
+    
+        if (targetIds.length > 0) {
+          setCollSynopsisLogs(p => [...p, `🎯 ${targetIds.length} jeu(x) à traduire via l'API. Lancement…`]);
+          collSynopsisAbortRef.current = new AbortController();
+          const res = await fetch(`${base}/api/scrape/enrich`, {
+            method: 'POST',
+            headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force: collSynopsisForce, target_ids: targetIds }),
+            signal: collSynopsisAbortRef.current.signal,
+          });
+    
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    
+          const reader = res.body?.getReader();
+          const decoder = new TextDecoder();
+    
+          if (reader) {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              for (const line of decoder.decode(value, { stream: true }).split('\n').filter(Boolean)) {
+                try {
+                  const d = JSON.parse(line);
+                  if (d.progress) setCollSynopsisProgress(d.progress);
+                  if (d.log) setCollSynopsisLogs(p => [...p, d.log]);
+                  if (d.status === 'completed') {
+                    setCollSynopsisLogs(p => [...p, '🔄 Resynchronisation vers votre collection...']);
+                    const { data: updatedF95 } = await sb
+                      .from('f95_jeux')
+                      .select('id, synopsis_fr')
+                      .in('id', targetIds);
+                    let apiUpdatedCount = 0;
+                    for (const g of gamesToScrape) {
+                      const freshF95 = (updatedF95 ?? []).find((f: any) => f.id === g.f95Id);
+                      if (freshF95?.synopsis_fr) {
+                        const newData = { ...(g.scrapedData || {}), synopsis_fr: freshF95.synopsis_fr };
+                        await sb.from('user_collection').update({ scraped_data: newData }).eq('id', g.collId);
+                        apiUpdatedCount++;
+                        updatedCount++;
+                      }
+                    }
+                    const errorsCount = d.failed_entries?.length ?? 0;
+                    const skippedCount = targetIds.length - apiUpdatedCount;
+                    setCollSynopsisSummary({ updated: updatedCount, skipped: skippedCount, errors: errorsCount });
+                    setCollSynopsisLogs(p => [...p, '✅ Enrichissement terminé.']);
+                    showToast(
+                      `Synopsis : ${updatedCount} mis à jour, ${skippedCount} ignoré(s)${errorsCount > 0 ? `, ${errorsCount} erreur(s)` : ''}`,
+                      errorsCount > 0 ? 'warning' : 'success'
+                    );
+                  }
+                  if (d.error) setCollSynopsisLogs(p => [...p, `❌ Erreur : ${d.error}`]);
+                } catch { /* Ligne NDJSON invalide */ }
+              }
+            }
+          }
+        } else if (!collSynopsisSummary) {
+          // Pas de scraping API nécessaire — résumé final
+          setCollSynopsisSummary({ updated: updatedCount, skipped: 0, errors: 0 });
+          setCollSynopsisLogs(p => [...p, '✅ Toutes les copies/traductions locales sont terminées.']);
+          showToast(`Synopsis : ${updatedCount} mis à jour ! 🎉`, 'success');
+        }
+    
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError') {
+          setCollSynopsisLogs(p => [...p, '⏸️ Enrichissement annulé.']);
+          showToast('Enrichissement annulé', 'warning');
+        } else {
+          const msg = (err as Error)?.message ?? 'Erreur inconnue';
+          setCollSynopsisLogs(p => [...p, `❌ Erreur : ${msg}`]);
+          showToast(`Erreur : ${msg}`, 'error');
+        }
+      } finally {
+        setCollSynopsisRunning(false);
       }
-    } catch (err: unknown) {
-      if ((err as Error)?.name === 'AbortError') {
-        setCollSynopsisLogs(p => [...p, '⏸️ Enrichissement annulé.']);
-        showToast('Enrichissement annulé', 'warning');
-      } else {
-        const msg = (err as Error)?.message ?? 'Erreur inconnue';
-        setCollSynopsisLogs(p => [...p, `❌ Erreur : ${msg}`]);
-        showToast(`Erreur : ${msg}`, 'error');
-      }
-    } finally {
-      setCollSynopsisRunning(false);
-    }
-  }, [user?.id, collSynopsisRunning, collSynopsisForce, showToast]);
+    }, [user?.id, collSynopsisRunning, collSynopsisForce, showToast]);
 
   const handleStopCollectionSynopsis = () => { collSynopsisAbortRef.current?.abort(); };
   const resetCollectionSynopsis = () => {

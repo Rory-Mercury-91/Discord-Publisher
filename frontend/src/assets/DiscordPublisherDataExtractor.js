@@ -219,13 +219,13 @@
 
   function showNotification(message, type = 'success') {
     document.querySelectorAll('.dp-notification').forEach(n => n.remove());
-
+  
     const el = document.createElement('div');
     el.className = 'dp-notification';
     el.textContent = message;
     el.style.cssText = `
       position: fixed;
-      bottom: 180px;
+      bottom: 210px;           /* ← était 180px */
       right: 20px;
       padding: 12px 18px;
       background: ${type === 'success' ? 'linear-gradient(135deg,#10b981,#059669)'
@@ -294,12 +294,12 @@
 
   function buildMenu() {
     document.getElementById('dp-menu')?.remove();
-
+  
     const menu = document.createElement('div');
     menu.id = 'dp-menu';
     menu.style.cssText = `
       position: fixed;
-      bottom: 180px;
+      bottom: 210px;           /* ← était 180px */
       right: 20px;
       background: #1e2022;
       border: 1px solid rgba(99,102,241,0.3);
@@ -312,7 +312,7 @@
       gap: 6px;
       min-width: 220px;
     `;
-
+  
     // Bouton import
     const importBtn = createMenuBtn('📥 Importer dans Publisher', '', async () => {
       hideMenu();
@@ -320,7 +320,7 @@
       try {
         const data   = extractData();
         const result = await sendToPublisher(data);
-
+  
         if (result.action === 'already_in_collection') {
           showNotification(`⚠️ Déjà dans votre collection !\n${data.name}`, 'warning');
         } else {
@@ -333,7 +333,7 @@
       }
     });
     menu.appendChild(importBtn);
-
+  
     // Bouton copier JSON (debug)
     const copyBtn = createMenuBtn('📋 Copier JSON', '#94a3b8', () => {
       hideMenu();
@@ -343,8 +343,8 @@
         .catch(() => showNotification('❌ Erreur lors de la copie', 'error'));
     });
     menu.appendChild(copyBtn);
-
-    // Bouton port (optionnel, pour changer le port par défaut)
+  
+    // Bouton port
     const portBtn = createMenuBtn(`⚙️ Port : ${LOCAL_PORT}`, '#64748b', () => {
       hideMenu();
       const newPort = prompt(`Port du serveur Discord Publisher (défaut : 7832) :`, String(LOCAL_PORT));
@@ -354,7 +354,7 @@
       }
     });
     menu.appendChild(portBtn);
-
+  
     document.body.appendChild(menu);
   }
 
@@ -397,7 +397,7 @@
     btn.id = 'dp-main-btn';
     btn.style.cssText = `
       position: fixed;
-      bottom: 100px;
+      bottom: 130px;           /* ← était 100px */
       right: 20px;
       background: linear-gradient(135deg, #6366f1, #4f46e5);
       color: white;
@@ -415,7 +415,7 @@
       gap: 8px;
     `;
     btn.innerHTML = '<span>🎮</span><span>Publisher</span>';
-
+  
     btn.addEventListener('mouseover', () => {
       btn.style.transform = 'translateY(-2px)';
       btn.style.boxShadow = '0 6px 20px rgba(99,102,241,0.6)';

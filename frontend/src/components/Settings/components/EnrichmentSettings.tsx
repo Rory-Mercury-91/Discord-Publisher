@@ -1,664 +1,503 @@
-// frontend/src/components/Settings/components/EnrichmentSettings.tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { tauriAPI } from '../../../lib/tauri-api';
+import { useApp } from '../../../state/appContext';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getBase(apiUrl?: string): string {
+  const raw = (apiUrl || '').trim() || 'http://138.2.182.125:8080';
+  try { return new URL(raw).origin; }
+  catch { return raw.split('/api')[0]?.replace(/\/+$/, '') || 'http://138.2.182.125:8080'; }
+}
+
+const getKey = () => localStorage.getItem('apiKey') || '';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type MissingEntry = {
+  id: number;
+  nom_du_jeu: string;
+  nom_url: string;
+  site_id: number;
+  synopsis_en: string;
+  group_ids: number[];
+  raison?: string; // 'synopsis_introuvable' | 'traduction_echouee' | 'url_incoherente'
+};
+
+type FailedEntry = {
+  id: number | null;
+  nom_du_jeu: string;
+  nom_url: string;
+  group_ids: number[];
+  raison: 'synopsis_introuvable' | 'traduction_echouee' | 'url_incoherente';
+};
 
 type SynopsisStats = {
-  total_groups:       number;
-  with_synopsis_en:   number;
-  with_synopsis_fr:   number;
+  total_groups: number;
+  with_synopsis_en: number;
+  with_synopsis_fr: number;
   missing_synopsis_fr: number;
 };
 
-type MissingEntry = {
-  id:          number;
-  nom_du_jeu:  string;
-  nom_url:     string;
-  site_id:     number;
-  synopsis_en: string;
-  group_ids:   number[];
-  raison?:     string;
+// ── Log line colorization ─────────────────────────────────────────────────────
+
+const LOG_STYLES: [string[], React.CSSProperties][] = [
+  [['🚫'],                                  { color: '#ef4444', fontWeight: 700 }],
+  [['❌'],                                  { color: '#ef4444' }],
+  [['🎉'],                                  { color: '#10b981', fontWeight: 700 }],
+  [['✅'],                                  { color: '#10b981' }],
+  [['🕷️', '🌐'],                           { color: '#38bdf8' }],
+  [['⏭️'],                                 { color: 'var(--muted)', fontStyle: 'italic' }],
+  [['📥', '📊', '🔍', '🎮', 'ℹ️', '🔄'], { color: 'var(--muted)', fontStyle: 'italic' }],
+];
+
+function logLineStyle(line: string): React.CSSProperties {
+  for (const [prefixes, style] of LOG_STYLES) {
+    if (prefixes.some(p => line.startsWith(p))) return style;
+  }
+  return {};
+}
+
+// ── Raison badge ─────────────────────────────────────────────────────────────
+
+const RAISON_CFG: Record<string, { bg: string; label: string }> = {
+  synopsis_introuvable: { bg: '#f59e0b', label: 'Synopsis introuvable' },
+  traduction_echouee:   { bg: '#6b7280', label: 'Traduction échouée' },
+  url_incoherente:      { bg: '#ef4444', label: 'URL incorrecte' },
 };
 
+function RaisonBadge({ raison }: { raison?: string }) {
+  if (!raison) return null;
+  const c = RAISON_CFG[raison];
+  const label = c?.label ?? raison;
+  const bg    = c?.bg    ?? '#6b7280';
+  return (
+    <span style={{
+      background: bg, color: '#fff', borderRadius: 4,
+      padding: '1px 7px', fontSize: 11, whiteSpace: 'nowrap', flexShrink: 0,
+    }}>
+      {label}
+    </span>
+  );
+}
+
+// ── Confirmation inline helper ────────────────────────────────────────────────
+
+interface ConfirmInlineProps {
+  step: number;
+  steps: { label: string; btnClass: string; btnLabel: string }[];
+  initialLabel: string;
+  initialBtnClass: string;
+  loading: boolean;
+  loadingLabel: string;
+  onStep: () => void;
+  onCancel: () => void;
+}
+
+function ConfirmInline({
+  step, steps, initialLabel, initialBtnClass,
+  loading, loadingLabel, onStep, onCancel,
+}: ConfirmInlineProps) {
+  if (loading) {
+    return <span style={{ fontSize: 13, color: 'var(--muted)' }}>{loadingLabel}</span>;
+  }
+  if (step === 0) {
+    return (
+      <button className={`server-btn ${initialBtnClass}`} onClick={onStep}>
+        {initialLabel}
+      </button>
+    );
+  }
+  const cfg = steps[step - 1];
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 13 }}>{cfg.label}</span>
+      <button className={`server-btn ${cfg.btnClass}`} onClick={onStep}>{cfg.btnLabel}</button>
+      <button className="server-btn server-btn--default" onClick={onCancel}>Annuler</button>
+    </div>
+  );
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export default function EnrichmentSettings() {
-  // ── Enrichissement global ──────────────────────────────────────────────────
-  const [isEnriching,     setIsEnriching]     = useState(false);
-  const [progress,        setProgress]        = useState({ current: 0, total: 0 });
-  const [logs,            setLogs]            = useState<string[]>([]);
-  const [forceRetranslate, setForceRetranslate] = useState(false);
-  const [failedAfterRun,  setFailedAfterRun]  = useState<MissingEntry[]>([]);
-  const logsContainerRef    = useRef<HTMLDivElement>(null);
-  const logsEndRef          = useRef<HTMLDivElement>(null);
-  const abortControllerRef  = useRef<AbortController | null>(null);
-  const userAtBottomRef     = useRef(true);
+  const { apiUrl } = useApp();
+  const base = getBase(apiUrl);
 
-  // ── Statistiques synopsis ──────────────────────────────────────────────────
-  const [synopsisStats,   setSynopsisStats]   = useState<SynopsisStats | null>(null);
-  const [missingEntries,  setMissingEntries]  = useState<MissingEntry[]>([]);
-  const [statsLoading,    setStatsLoading]    = useState(false);
-  const [statsError,      setStatsError]      = useState<string | null>(null);
-  const [missingFilter,   setMissingFilter]   = useState('');
+  // ── Stats ────────────────────────────────────────────────────────────────────
+  const [stats, setStats]               = useState<SynopsisStats | null>(null);
+  const [missingEntries, setMissing]    = useState<MissingEntry[]>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError]     = useState<string | null>(null);
 
-  // ── Édition manuelle ───────────────────────────────────────────────────────
-  const [editingId,   setEditingId]   = useState<number | null>(null);
-  const [editEn,      setEditEn]      = useState('');
-  const [editFr,      setEditFr]      = useState('');
-  const [editSaving,  setEditSaving]  = useState(false);
-  const [editError,   setEditError]   = useState<string | null>(null);
+  // ── Enrichment streaming ──────────────────────────────────────────────────────
+  const [enrichLogs, setEnrichLogs]         = useState<string[]>([]);
+  const [enrichRunning, setEnrichRunning]   = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState<{ current: number; total: number } | null>(null);
+  const [enrichForce, setEnrichForce]       = useState(false);
+  const [failedEntries, setFailed]          = useState<FailedEntry[]>([]);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const abortRef   = useRef<AbortController | null>(null);
 
-  // ── Retry en cours (IDs) ───────────────────────────────────────────────────
-  const [retryingIds, setRetryingIds] = useState<Set<number>>(new Set());
+  // ── Reset synopsis ────────────────────────────────────────────────────────────
+  const [resetLoading, setResetLoading]   = useState(false);
+  const [resetResult, setResetResult]     = useState<string | null>(null);
+  const [resetStep, setResetStep]         = useState(0);
 
-  // ── Logs journalctl ────────────────────────────────────────────────────────
-  const [journalLogs,    setJournalLogs]    = useState<string>('');
-  const [journalLoading, setJournalLoading] = useState(false);
-  const [journalError,   setJournalError]   = useState<string | null>(null);
+  // ── Force sync ────────────────────────────────────────────────────────────────
+  const [syncLoading, setSyncLoading]   = useState(false);
+  const [syncResult, setSyncResult]     = useState<{ ok: boolean; msg: string } | null>(null);
+  const [syncStep, setSyncStep]         = useState(0);
 
-  // Scroll interne au conteneur de logs uniquement si l'utilisateur est déjà en bas
-  useEffect(() => {
-    const container = logsContainerRef.current;
-    if (!container || !userAtBottomRef.current) return;
-    container.scrollTop = container.scrollHeight;
-  }, [logs]);
-
-  const getApiBase = () =>
-    (localStorage.getItem('apiBase') || 'http://138.2.182.125:8080').replace(/\/+$/, '');
-  const getApiKey = () => localStorage.getItem('apiKey') || '';
-
-  // ── Chargement des statistiques ────────────────────────────────────────────
+  // ── fetchStats ────────────────────────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
     setStatsLoading(true);
     setStatsError(null);
     try {
-      const res = await fetch(`${getApiBase()}/api/enrich/synopsis-stats`, {
-        headers: { 'X-API-KEY': getApiKey() },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res  = await fetch(`${base}/api/enrich/synopsis-stats`, { headers: { 'X-API-KEY': getKey() } });
       const data = await res.json();
-      if (data.ok) {
-        setSynopsisStats(data.stats);
-        setMissingEntries(data.missing_entries || []);
-      } else {
-        throw new Error(data.error || 'Erreur inconnue');
-      }
-    } catch (e: unknown) {
+      if (!data.ok) throw new Error(data.error || 'Erreur stats');
+      setStats(data.stats);
+      setMissing(data.missing_entries ?? []);
+    } catch (e) {
       setStatsError(e instanceof Error ? e.message : String(e));
     } finally {
       setStatsLoading(false);
     }
-  }, []);
+  }, [base]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  // ── Lancement enrichissement (global ou ciblé) ─────────────────────────────
-  const handleStartEnrichment = useCallback(async (targetIds?: number[]) => {
-    if (isEnriching) return;
-    setIsEnriching(true);
-    setProgress({ current: 0, total: 0 });
-    setLogs(
-      targetIds?.length
-        ? [`🎯 Relance pour ${targetIds.length} entrée(s) ciblée(s)…`]
-        : ['🚀 Démarrage de l\'enrichissement…']
-    );
-    setFailedAfterRun([]);
-    abortControllerRef.current = new AbortController();
+  // Auto-scroll logs
+  useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [enrichLogs]);
+
+  // ── Enrichment ────────────────────────────────────────────────────────────────
+  const startEnrichment = useCallback(async () => {
+    if (enrichRunning) return;
+    setEnrichLogs([]);
+    setEnrichProgress(null);
+    setFailed([]);
+    setEnrichRunning(true);
+    abortRef.current = new AbortController();
 
     try {
-      const body: Record<string, unknown> = { force: targetIds?.length ? true : forceRetranslate };
-      if (targetIds?.length) body.target_ids = targetIds;
-
-      const response = await fetch(`${getApiBase()}/api/scrape/enrich`, {
-        method:  'POST',
-        headers: { 'X-API-KEY': getApiKey(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify(body),
-        signal:  abortControllerRef.current.signal,
+      const res = await fetch(`${base}/api/scrape/enrich`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-KEY': getKey() },
+        body: JSON.stringify({ force: enrichForce }),
+        signal: abortRef.current.signal,
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
-      const reader  = response.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) throw new Error('Pas de stream disponible');
+      const reader = res.body.getReader();
+      const dec    = new TextDecoder();
+      let buf      = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        for (const line of decoder.decode(value, { stream: true }).split('\n').filter(Boolean)) {
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+        for (const raw of lines) {
+          const t = raw.trim();
+          if (!t) continue;
           try {
-            const data = JSON.parse(line);
-            if (data.progress) setProgress(data.progress);
-            if (data.log)      setLogs(p => [...p, data.log]);
-            if (data.status === 'completed') {
-              setLogs(p => [...p, '✅ Enrichissement terminé avec succès']);
-              if (data.failed_entries?.length) setFailedAfterRun(data.failed_entries);
-              fetchStats();
+            const msg = JSON.parse(t);
+            if (msg.log)      setEnrichLogs(p => [...p, msg.log]);
+            if (msg.progress) setEnrichProgress(msg.progress);
+            if (msg.status === 'completed') {
+              setFailed(msg.failed_entries ?? []);
+              await fetchStats();
             }
-            if (data.error) setLogs(p => [...p, `❌ Erreur: ${data.error}`]);
-          } catch { /* ligne NDJSON invalide */ }
+          } catch { /* ignore JSON parse errors */ }
         }
       }
-    } catch (err: unknown) {
-      if ((err as Error)?.name === 'AbortError') {
-        setLogs(p => [...p, '⏸️ Enrichissement annulé']);
-      } else {
-        setLogs(p => [...p, `❌ Erreur réseau: ${(err as Error)?.message}`]);
+    } catch (e) {
+      if (e instanceof Error && e.name !== 'AbortError') {
+        setEnrichLogs(p => [...p, `❌ Connexion interrompue : ${e.message}`]);
       }
     } finally {
-      setIsEnriching(false);
-      if (targetIds) {
-        setRetryingIds(prev => {
-          const next = new Set(prev);
-          targetIds.forEach(id => next.delete(id));
-          return next;
-        });
-      }
+      setEnrichRunning(false);
+      abortRef.current = null;
     }
-  }, [isEnriching, forceRetranslate, fetchStats]);
+  }, [enrichRunning, enrichForce, base, fetchStats]);
 
-  const handleStopEnrichment = () => {
-    abortControllerRef.current?.abort();
-    setIsEnriching(false);
-  };
-
-  // ── Remise à zéro des synopsis ────────────────────────────────────────────
-  const [resetConfirmStep, setResetConfirmStep] = useState<0 | 1 | 2>(0);
-  const [resetLoading,     setResetLoading]     = useState(false);
-  const [resetResult,      setResetResult]      = useState<string | null>(null);
-
-  const handleResetSynopsis = async () => {
-    if (resetConfirmStep < 2) {
-      setResetConfirmStep(s => (s + 1) as 1 | 2);
-      return;
-    }
+  // ── Reset synopsis ────────────────────────────────────────────────────────────
+  const handleReset = useCallback(async () => {
+    if (resetStep < 2) { setResetStep(s => s + 1); return; }
     setResetLoading(true);
     setResetResult(null);
+    setResetStep(0);
     try {
-      const res = await fetch(`${getApiBase()}/api/enrich/reset-synopsis`, {
-        method:  'POST',
-        headers: { 'X-API-KEY': getApiKey(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ confirm: 'RESET' }),
+      const res  = await fetch(`${base}/api/enrich/reset-synopsis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-KEY': getKey() },
+        body: JSON.stringify({ confirm: 'RESET' }),
       });
       const data = await res.json();
-      if (data.ok) {
-        setResetResult(`✅ ${data.message}`);
-        setSynopsisStats(null);
-        setMissingEntries([]);
-        fetchStats();
-      } else {
-        setResetResult(`❌ ${data.error}`);
-      }
-    } catch (e: unknown) {
+      if (!data.ok) throw new Error(data.error || 'Erreur reset');
+      setResetResult(`✅ ${data.message}`);
+      await fetchStats();
+    } catch (e) {
       setResetResult(`❌ ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setResetLoading(false);
-      setResetConfirmStep(0);
     }
-  };
+  }, [resetStep, base, fetchStats]);
 
-  // ── Retry d'une entrée spécifique ──────────────────────────────────────────
-  const handleRetryEntry = (entry: MissingEntry) => {
-    if (isEnriching) return;
-    const ids = entry.group_ids?.length ? entry.group_ids : [entry.id];
-    ids.forEach(id => setRetryingIds(prev => new Set(prev).add(id)));
-    handleStartEnrichment(ids);
-  };
-
-  // ── Édition manuelle ───────────────────────────────────────────────────────
-  const handleOpenEdit = (entry: MissingEntry) => {
-    setEditingId(entry.id);
-    setEditEn(entry.synopsis_en || '');
-    setEditFr('');
-    setEditError(null);
-  };
-
-  const handleSaveEdit = async (entry: MissingEntry) => {
-    if (!editEn && !editFr) return;
-    setEditSaving(true);
-    setEditError(null);
+  // ── Force sync ────────────────────────────────────────────────────────────────
+  const handleForceSync = useCallback(async () => {
+    if (syncStep < 2) { setSyncStep(s => s + 1); return; }
+    setSyncLoading(true);
+    setSyncResult(null);
+    setSyncStep(0);
     try {
-      const res = await fetch(`${getApiBase()}/api/f95-jeux/${entry.id}/synopsis`, {
-        method:  'PATCH',
-        headers: { 'X-API-KEY': getApiKey(), 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          ...(editEn ? { synopsis_en: editEn } : {}),
-          ...(editFr ? { synopsis_fr: editFr } : {}),
-        }),
+      const res  = await fetch(`${base}/api/jeux/sync-force`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-KEY': getKey() },
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error((data as { error?: string }).error || `HTTP ${res.status}`);
-      }
-      setEditingId(null);
-      // Retirer l'entrée de la liste si synopsis_fr a été renseigné
-      if (editFr) {
-        setMissingEntries(prev => prev.filter(e => e.id !== entry.id));
-        setFailedAfterRun(prev  => prev.filter(e => e.id !== entry.id));
-        setSynopsisStats(prev => prev ? {
-          ...prev,
-          with_synopsis_fr:   prev.with_synopsis_fr   + 1,
-          missing_synopsis_fr: prev.missing_synopsis_fr - 1,
-        } : null);
-      }
-    } catch (e: unknown) {
-      setEditError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setEditSaving(false);
-    }
-  };
-
-  // ── Chargement des logs journalctl ─────────────────────────────────────────
-  const fetchJournalLogs = async () => {
-    setJournalLoading(true);
-    setJournalError(null);
-    try {
-      const res = await fetch(`${getApiBase()}/api/logs/journal`, {
-        headers: { 'X-API-KEY': getApiKey() },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      if (data.ok) {
-        setJournalLogs(data.logs || '');
-      } else {
-        throw new Error(data.error || 'Erreur inconnue');
-      }
-    } catch (e: unknown) {
-      setJournalError(e instanceof Error ? e.message : String(e));
+      if (!data.ok) throw new Error(data.error || 'Erreur sync');
+      setSyncResult({ ok: true, msg: `✅ ${data.synced_count} jeux synchronisés depuis l'API` });
+      await fetchStats();
+    } catch (e) {
+      setSyncResult({ ok: false, msg: `❌ ${e instanceof Error ? e.message : String(e)}` });
     } finally {
-      setJournalLoading(false);
+      setSyncLoading(false);
     }
-  };
+  }, [syncStep, base, fetchStats]);
 
-  // ── Dérivés ────────────────────────────────────────────────────────────────
-  const progressPercent = progress.total > 0
-    ? Math.round((progress.current / progress.total) * 100)
+  // ── Derived ───────────────────────────────────────────────────────────────────
+  const pct = enrichProgress && enrichProgress.total > 0
+    ? Math.round((enrichProgress.current / enrichProgress.total) * 100)
     : 0;
 
-  const logLineClass = (line: string) =>
-    line.startsWith('✅') ? 'settings-enrichment-log-line--success'
-      : line.startsWith('❌') ? 'settings-enrichment-log-line--error'
-        : line.startsWith('⏭️') ? 'settings-enrichment-log-line--skip'
-          : '';
-
-  // Liste affichée : résultats du dernier run OU liste complète filtrée
-  const filteredMissing = missingFilter.trim()
-    ? missingEntries.filter(e =>
-        e.nom_du_jeu.toLowerCase().includes(missingFilter.toLowerCase()) ||
-        e.nom_url.toLowerCase().includes(missingFilter.toLowerCase())
-      )
-    : missingEntries;
-
-  const displayedMissing = failedAfterRun.length > 0 ? failedAfterRun : filteredMissing;
-  const showMissingSection = missingEntries.length > 0 || failedAfterRun.length > 0;
-
+  // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="settings-enrichment-root">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-      {/* ════════════════ Stats synopsis ════════════════ */}
-      <section className="settings-section">
-        <div className="settings-log-header">
-          <h4 className="settings-section__title">📊 Statistiques synopsis f95_jeux</h4>
-          <button
-            type="button"
-            className="form-btn form-btn--ghost"
-            onClick={fetchStats}
-            disabled={statsLoading}
-          >
-            {statsLoading ? '…' : '↺ Rafraîchir'}
+      {/* ── Stats synopsis ─────────────────────────────────────────────────────── */}
+      <section className="server-section">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <h4 style={{ margin: 0, fontSize: '0.9rem' }}>📊 Statistiques des synopsis</h4>
+          <button className="server-btn server-btn--default" onClick={fetchStats} disabled={statsLoading}>
+            {statsLoading ? '⏳…' : '🔄 Actualiser'}
           </button>
         </div>
 
-        {statsError && <p className="enrich-stats-error">❌ {statsError}</p>}
+        {statsError && <div style={{ color: 'var(--error)', fontSize: 13, marginTop: 8 }}>❌ {statsError}</div>}
 
-        {synopsisStats ? (
-          <div className="enrich-stats-bar">
-            <div className="enrich-stat-item">
-              <span className="enrich-stat-value">{synopsisStats.total_groups}</span>
-              <span className="enrich-stat-label">jeux uniques</span>
-            </div>
-            <div className="enrich-stat-item enrich-stat-item--ok">
-              <span className="enrich-stat-value">{synopsisStats.with_synopsis_en}</span>
-              <span className="enrich-stat-label">avec synopsis EN</span>
-            </div>
-            <div className="enrich-stat-item enrich-stat-item--ok">
-              <span className="enrich-stat-value">{synopsisStats.with_synopsis_fr}</span>
-              <span className="enrich-stat-label">avec synopsis FR</span>
-            </div>
-            <div className={`enrich-stat-item ${synopsisStats.missing_synopsis_fr > 0 ? 'enrich-stat-item--warn' : 'enrich-stat-item--ok'}`}>
-              <span className="enrich-stat-value">{synopsisStats.missing_synopsis_fr}</span>
-              <span className="enrich-stat-label">sans synopsis FR</span>
-            </div>
+        {stats && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 10 }}>
+            {[
+              { label: 'Groupes total',    value: stats.total_groups,       color: 'var(--text)' },
+              { label: 'Avec synopsis EN', value: stats.with_synopsis_en,   color: '#38bdf8' },
+              { label: 'Avec synopsis FR', value: stats.with_synopsis_fr,   color: '#10b981' },
+              { label: 'Sans synopsis FR', value: stats.missing_synopsis_fr, color: '#f59e0b' },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ background: 'var(--bg-secondary, rgba(255,255,255,0.04))', borderRadius: 8, padding: '10px 14px' }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{label}</div>
+              </div>
+            ))}
           </div>
-        ) : !statsLoading && (
-          <div className="settings-enrichment-empty">Chargement des statistiques…</div>
         )}
+      </section>
 
-        {/* Zone de remise à zéro */}
-        <div className="enrich-reset-zone">
-          {resetResult && (
-            <span className={`enrich-reset-result ${resetResult.startsWith('✅') ? 'enrich-reset-result--ok' : 'enrich-reset-result--err'}`}>
-              {resetResult}
-            </span>
-          )}
-          {resetConfirmStep === 0 && (
-            <button
-              type="button"
-              className="form-btn form-btn--ghost form-btn--sm enrich-reset-btn"
-              onClick={handleResetSynopsis}
-              disabled={isEnriching}
-              title="Remettre tous les synopsis à NULL pour repartir de zéro"
-            >
-              🗑️ Réinitialiser tous les synopsis
+      {/* ── Enrichissement ─────────────────────────────────────────────────────── */}
+      <section className="server-section">
+        <h4 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>🕷️ Enrichissement des synopsis</h4>
+        <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)' }}>
+          Scrape F95Zone pour chaque groupe sans synopsis FR et traduit EN → FR.
+          Les synopsis déjà présents sont ignorés sauf avec l'option « Forcer ».
+        </p>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={enrichForce}
+              onChange={e => setEnrichForce(e.target.checked)}
+              disabled={enrichRunning}
+            />
+            Forcer la re-traduction (écraser les synopsis existants)
+          </label>
+
+          {!enrichRunning ? (
+            <button className="server-btn server-btn--default" onClick={startEnrichment}>
+              ▶️ Lancer l'enrichissement
+            </button>
+          ) : (
+            <button className="server-btn server-btn--danger" onClick={() => abortRef.current?.abort()}>
+              ⏹️ Arrêter
             </button>
           )}
-          {resetConfirmStep === 1 && (
-            <div className="enrich-reset-confirm">
-              <span className="enrich-reset-warn">⚠️ Cela effacera <strong>tous</strong> les synopsis_en et synopsis_fr. Confirmer ?</span>
-              <button type="button" className="form-btn form-btn--ghost form-btn--xs" onClick={() => setResetConfirmStep(0)}>Annuler</button>
-              <button type="button" className="form-btn form-btn--danger form-btn--xs" onClick={handleResetSynopsis}>Oui, continuer</button>
-            </div>
-          )}
-          {resetConfirmStep === 2 && (
-            <div className="enrich-reset-confirm">
-              <span className="enrich-reset-warn enrich-reset-warn--final">🚨 Dernière confirmation — action <strong>irréversible</strong></span>
-              <button type="button" className="form-btn form-btn--ghost form-btn--xs" onClick={() => setResetConfirmStep(0)}>Annuler</button>
-              <button
-                type="button"
-                className="form-btn form-btn--danger form-btn--xs"
-                disabled={resetLoading}
-                onClick={handleResetSynopsis}
-              >
-                {resetLoading ? '…' : '🗑️ RÉINITIALISER'}
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ════════════════ Enrichissement ════════════════ */}
-      <section className="settings-section">
-        <div className="settings-log-header">
-          <h4 className="settings-section__title">📜 Logs en temps réel</h4>
-          <div className="settings-enrichment-header-actions">
-            {!isEnriching && (
-              <label className="settings-enrichment-force-wrap">
-                <input
-                  type="checkbox"
-                  checked={forceRetranslate}
-                  onChange={e => setForceRetranslate(e.target.checked)}
-                />
-                <span>Forcer la re-traduction (tous les synopsis)</span>
-              </label>
-            )}
-            {!isEnriching ? (
-              <button
-                type="button"
-                onClick={() => handleStartEnrichment()}
-                className="form-btn form-btn--primary"
-              >
-                <span className="settings-enrichment-btn-icon">▶️</span>
-                Lancer l'enrichissement
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleStopEnrichment}
-                className="form-btn form-btn--danger"
-              >
-                <span className="settings-enrichment-btn-icon">⏹️</span>
-                Arrêter
-              </button>
-            )}
-          </div>
         </div>
 
-        {progress.total > 0 && (
-          <div className="settings-enrichment-progress-row">
-            <div className="settings-enrichment-progress-track">
-              <div
-                className="settings-enrichment-progress-fill"
-                style={{ ['--progress-pct' as string]: `${progressPercent}%` }}
-              />
+        {/* Progress bar */}
+        {enrichProgress && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
+              <span>Progression</span>
+              <span>{enrichProgress.current} / {enrichProgress.total} ({pct}%)</span>
             </div>
-            <span className="settings-enrichment-progress-label">
-              {progress.current} / {progress.total} ({progressPercent}%)
-            </span>
+            <div style={{ height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${pct}%`, background: '#10b981', transition: 'width 0.25s ease' }} />
+            </div>
           </div>
         )}
 
-        <div
-          ref={logsContainerRef}
-          className="settings-logs-box styled-scrollbar"
-          onScroll={() => {
-            const c = logsContainerRef.current;
-            if (!c) return;
-            userAtBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight < 40;
-          }}
-        >
-          {logs.length === 0 ? (
-            <div className="settings-enrichment-empty">Aucune activité pour le moment</div>
-          ) : (
-            logs.map((log, idx) => (
-              <div key={idx} className={`settings-enrichment-log-line ${logLineClass(log)}`}>
-                {log}
-              </div>
-            ))
-          )}
-          <div ref={logsEndRef} />
-        </div>
+        {/* Streaming logs */}
+        {enrichLogs.length > 0 && (
+          <div
+            className="styled-scrollbar"
+            style={{
+              background: 'var(--bg-secondary, rgba(0,0,0,0.18))',
+              borderRadius: 6,
+              padding: '10px 12px',
+              maxHeight: 300,
+              overflowY: 'auto',
+              fontFamily: 'monospace',
+              fontSize: 12,
+              lineHeight: 1.65,
+            }}
+          >
+            {enrichLogs.map((line, i) => (
+              <div key={i} style={logLineStyle(line)}>{line || '\u00A0'}</div>
+            ))}
+            <div ref={logsEndRef} />
+          </div>
+        )}
       </section>
 
-      {/* ════════════════ Entrées manquantes ════════════════ */}
-      {showMissingSection && (
-        <section className="settings-section">
-          <div className="settings-log-header">
-            <h4 className="settings-section__title">
-              ⚠️ Sans synopsis FR
-              <span className="enrich-missing-count">
-                {failedAfterRun.length > 0
-                  ? `${failedAfterRun.length} échoué(s) — dernier run`
-                  : `${filteredMissing.length}${missingFilter ? ` / ${missingEntries.length}` : ''}`}
-              </span>
-            </h4>
-
-            <div className="enrich-missing-toolbar">
-              {failedAfterRun.length === 0 && (
-                <input
-                  type="text"
-                  className="app-input enrich-missing-filter"
-                  placeholder="Filtrer…"
-                  value={missingFilter}
-                  onChange={e => setMissingFilter(e.target.value)}
-                />
-              )}
-
-              {failedAfterRun.length > 0 ? (
-                <>
-                  <button
-                    type="button"
-                    className="form-btn form-btn--primary form-btn--sm"
-                    disabled={isEnriching}
-                    onClick={() => handleStartEnrichment(failedAfterRun.flatMap(e => e.group_ids || [e.id]))}
-                    title="Relancer l'enrichissement pour toutes les entrées ayant échoué"
-                  >
-                    🕷️ Relancer les {failedAfterRun.length} échecs
-                  </button>
-                  <button
-                    type="button"
-                    className="form-btn form-btn--ghost form-btn--sm"
-                    onClick={() => setFailedAfterRun([])}
-                  >
-                    Afficher tout
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="form-btn form-btn--primary form-btn--sm"
-                  disabled={isEnriching || filteredMissing.length === 0}
-                  onClick={() => handleStartEnrichment(filteredMissing.flatMap(e => e.group_ids || [e.id]))}
-                  title="Relancer l'enrichissement pour toutes les entrées filtrées"
+      {/* ── Échecs du dernier enrichissement ───────────────────────────────────── */}
+      {failedEntries.length > 0 && (
+        <section className="server-section" style={{ borderColor: '#ef4444' }}>
+          <h4 style={{ margin: '0 0 8px', fontSize: '0.9rem', color: '#ef4444' }}>
+            ❌ Échecs du dernier enrichissement ({failedEntries.length})
+          </h4>
+          <div className="styled-scrollbar" style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 240, overflowY: 'auto' }}>
+            {failedEntries.map((e, i) => (
+              <div
+                key={i}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 0', borderBottom: '1px solid var(--border)' }}
+              >
+                <RaisonBadge raison={e.raison} />
+                <a
+                  href={e.nom_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--accent)', textDecoration: 'none', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 >
-                  🕷️ Tout relancer ({filteredMissing.length})
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="enrich-missing-list styled-scrollbar">
-            {displayedMissing.slice(0, 100).map(entry => (
-              <div key={entry.id} className="enrich-missing-entry">
-                <div className="enrich-missing-entry-main">
-                  <span className="enrich-missing-name" title={entry.nom_du_jeu}>
-                    {entry.nom_du_jeu}
+                  {e.nom_du_jeu}
+                </a>
+                {e.group_ids.length > 1 && (
+                  <span style={{ color: 'var(--muted)', fontSize: 11, whiteSpace: 'nowrap' }}>
+                    ({e.group_ids.length} lignes)
                   </span>
-                  {entry.raison && (
-                    <span className={`enrich-missing-raison ${entry.raison === 'synopsis_introuvable' ? 'enrich-missing-raison--warn' : 'enrich-missing-raison--err'}`}>
-                      {entry.raison === 'synopsis_introuvable' ? 'introuvable' : 'trad. échouée'}
-                    </span>
-                  )}
-                  {entry.nom_url && (
-                    <button
-                      type="button"
-                      className="enrich-missing-url"
-                      title={entry.nom_url}
-                      onClick={() => tauriAPI.openUrl(entry.nom_url)}
-                    >
-                      F95 ↗
-                    </button>
-                  )}
-                  <div className="enrich-missing-actions">
-                    <button
-                      type="button"
-                      className="form-btn form-btn--ghost form-btn--xs"
-                      disabled={isEnriching || retryingIds.has(entry.id)}
-                      onClick={() => handleRetryEntry(entry)}
-                      title="Relancer le scraping pour cette entrée uniquement"
-                    >
-                      {retryingIds.has(entry.id) ? '…' : '🕷️'}
-                    </button>
-                    <button
-                      type="button"
-                      className="form-btn form-btn--ghost form-btn--xs"
-                      onClick={() => editingId === entry.id ? setEditingId(null) : handleOpenEdit(entry)}
-                      title="Éditer manuellement le synopsis"
-                    >
-                      {editingId === entry.id ? '✕' : '✏️'}
-                    </button>
-                  </div>
-                </div>
-
-                {editingId === entry.id && (
-                  <div className="enrich-inline-editor">
-                    <div className="enrich-inline-editor-field">
-                      <label className="form-label">Synopsis EN <em>(original anglais)</em></label>
-                      <textarea
-                        className="app-input enrich-synopsis-textarea"
-                        value={editEn}
-                        onChange={e => setEditEn(e.target.value)}
-                        placeholder="Synopsis original en anglais…"
-                        rows={3}
-                      />
-                    </div>
-                    <div className="enrich-inline-editor-field">
-                      <label className="form-label">
-                        Synopsis FR <span className="enrich-required">*</span>
-                        <em> (traduction française)</em>
-                      </label>
-                      <textarea
-                        className="app-input enrich-synopsis-textarea"
-                        value={editFr}
-                        onChange={e => setEditFr(e.target.value)}
-                        placeholder="Traduction française…"
-                        rows={3}
-                      />
-                    </div>
-                    {editError && <p className="enrich-edit-error">❌ {editError}</p>}
-                    <div className="enrich-inline-editor-actions">
-                      <button
-                        type="button"
-                        className="form-btn form-btn--ghost form-btn--xs"
-                        onClick={() => setEditingId(null)}
-                      >
-                        Annuler
-                      </button>
-                      <button
-                        type="button"
-                        className="form-btn form-btn--primary form-btn--xs"
-                        disabled={editSaving || (!editEn && !editFr)}
-                        onClick={() => handleSaveEdit(entry)}
-                      >
-                        {editSaving ? '…' : '💾 Sauvegarder'}
-                      </button>
-                    </div>
-                  </div>
                 )}
               </div>
             ))}
-
-            {displayedMissing.length > 100 && (
-              <div className="enrich-missing-more">
-                +{displayedMissing.length - 100} entrées supplémentaires — utilisez le filtre pour affiner
-              </div>
-            )}
-            {displayedMissing.length === 0 && (
-              <div className="settings-enrichment-empty">
-                {missingFilter ? 'Aucun résultat pour ce filtre.' : 'Aucune entrée manquante.'}
-              </div>
-            )}
           </div>
         </section>
       )}
 
-      {/* ════════════════ Logs journalctl ════════════════ */}
-      <section className="settings-section">
-        <div className="settings-log-header">
-          <h4 className="settings-section__title">🖥️ Logs système (journalctl)</h4>
-          <button
-            type="button"
-            className="form-btn form-btn--ghost"
-            onClick={fetchJournalLogs}
-            disabled={journalLoading}
-          >
-            {journalLoading ? '…' : journalLogs ? '↺ Rafraîchir' : '📋 Charger les logs'}
-          </button>
-        </div>
-
-        {journalError && <p className="enrich-stats-error">❌ {journalError}</p>}
-
-        {journalLogs ? (
-          <div className="settings-logs-box settings-logs-box--journal styled-scrollbar">
-            {journalLogs.split('\n').map((line, i) => (
+      {/* ── Sans synopsis FR (depuis stats) ────────────────────────────────────── */}
+      {missingEntries.length > 0 && (
+        <section className="server-section" style={{ borderColor: '#f59e0b' }}>
+          <h4 style={{ margin: '0 0 8px', fontSize: '0.9rem' }}>
+            ⚠️ Sans synopsis FR — {missingEntries.length} entrée(s) affichée(s) (max 300)
+          </h4>
+          <div className="styled-scrollbar" style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 260, overflowY: 'auto' }}>
+            {missingEntries.map((e, i) => (
               <div
                 key={i}
-                className={`settings-enrichment-log-line settings-journal-log-line ${
-                  /\[ERROR\]|\[error\]/.test(line)   ? 'settings-enrichment-log-line--error'   :
-                  /\[WARNING\]|\[WARN\]/.test(line)  ? 'settings-enrichment-log-line--skip'    :
-                  /\[INFO\]/.test(line)              ? 'settings-enrichment-log-line--success'  : ''
-                }`}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 0', borderBottom: '1px solid var(--border)' }}
               >
-                {line}
+                <RaisonBadge raison={e.raison} />
+                <a
+                  href={e.nom_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--accent)', textDecoration: 'none', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {e.nom_du_jeu}
+                </a>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                  {e.synopsis_en && (
+                    <span style={{ color: '#38bdf8', fontSize: 11 }}>EN ✓</span>
+                  )}
+                  {e.group_ids.length > 1 && (
+                    <span style={{ color: 'var(--muted)', fontSize: 11 }}>
+                      ({e.group_ids.length} lignes)
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>
-        ) : !journalLoading && !journalError && (
-          <div className="settings-enrichment-empty">
-            Cliquez sur « Charger les logs » pour afficher les 300 dernières lignes du journal système.
+        </section>
+      )}
+
+      {/* ── Synchronisation catalogue ─────────────────────────────────────────── */}
+      <section className="server-section" style={{ borderColor: 'var(--accent-border)' }}>
+        <h4 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>🔄 Synchronisation catalogue</h4>
+        <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)' }}>
+          Récupère les jeux depuis l'API F95FR et écrase les données{' '}
+          <code style={{ fontSize: 11 }}>f95_jeux</code> dans Supabase.
+          La sync automatique se déclenche toutes les 2 h — utilisez ce bouton uniquement en cas de besoin urgent.
+        </p>
+
+        <ConfirmInline
+          step={syncStep}
+          loading={syncLoading}
+          loadingLabel="⏳ Synchronisation en cours…"
+          initialLabel="🔄 Forcer la resync depuis l'API"
+          initialBtnClass="server-btn--warning"
+          steps={[
+            { label: 'Écraser f95_jeux avec les données de l\'API ?', btnClass: 'server-btn--warning', btnLabel: 'Confirmer' },
+            { label: '⚠️ CONFIRMATION FINALE', btnClass: 'server-btn--danger', btnLabel: '🔄 Lancer la resync' },
+          ]}
+          onStep={handleForceSync}
+          onCancel={() => setSyncStep(0)}
+        />
+
+        {syncResult && (
+          <div style={{ marginTop: 8, fontSize: 13, color: syncResult.ok ? '#10b981' : '#ef4444', fontWeight: syncResult.ok ? 400 : 600 }}>
+            {syncResult.msg}
           </div>
         )}
       </section>
 
-      {/* ════════════════ Fonctionnement ════════════════ */}
-      <section className="settings-section">
-        <h4 className="settings-section__title">ℹ️ Fonctionnement</h4>
-        <div className="settings-fonctionnement">
-          <strong>Étapes :</strong>
-          1. Regroupement par URL (même jeu = 1 scrape + 1 traduction pour toutes les lignes)<br />
-          2. Scraping du synopsis EN depuis F95Zone (<code>.bbWrapper</code>)<br />
-          3. Traduction EN → FR via Google Translate API non-officielle<br />
-          4. Sauvegarde dans Supabase (<code>synopsis_en</code> + <code>synopsis_fr</code>) sur toutes les lignes du groupe<br />
-          <br />
-          <strong>Forcer la re-traduction</strong> : ignore les synopsis déjà présents et refait tout (utile après des erreurs de traduction).<br />
-          <strong>Relancer les échecs</strong> : relance uniquement les entrées dont le synopsis n'a pas pu être récupéré lors du dernier run.
-        </div>
+      {/* ── Zone dangereuse ───────────────────────────────────────────────────── */}
+      <section className="server-section" style={{ borderColor: '#ef4444' }}>
+        <h4 style={{ margin: '0 0 6px', fontSize: '0.9rem', color: '#ef4444' }}>⚠️ Zone dangereuse</h4>
+        <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)' }}>
+          Remet à <code style={{ fontSize: 11 }}>NULL</code> <strong>tous</strong> les synopsis EN et FR
+          de la table <code style={{ fontSize: 11 }}>f95_jeux</code>. Action irréversible.
+        </p>
+
+        <ConfirmInline
+          step={resetStep}
+          loading={resetLoading}
+          loadingLabel="⏳ Réinitialisation…"
+          initialLabel="🗑️ Réinitialiser tous les synopsis"
+          initialBtnClass="server-btn--danger"
+          steps={[
+            { label: 'Effacer TOUS les synopsis EN + FR ?', btnClass: 'server-btn--danger', btnLabel: 'Confirmer' },
+            { label: '⚠️ CONFIRMATION FINALE — irréversible', btnClass: 'server-btn--danger', btnLabel: '🗑️ Confirmer RESET' },
+          ]}
+          onStep={handleReset}
+          onCancel={() => setResetStep(0)}
+        />
+
+        {resetResult && (
+          <div style={{ marginTop: 8, fontSize: 13, color: resetResult.startsWith('✅') ? '#10b981' : '#ef4444' }}>
+            {resetResult}
+          </div>
+        )}
       </section>
+
     </div>
   );
 }

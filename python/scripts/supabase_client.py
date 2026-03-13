@@ -339,19 +339,48 @@ def _dedupe_jeux_by_site(rows: list) -> list:
 
 def _sync_jeux_to_supabase(jeux: list):
     """Upsert des jeux dans la table f95_jeux (sync, appele en arriere-plan)."""
+    import re
+
     sb = _get_supabase()
     if not sb or not jeux:
         return
+
+    def _extract_id_from_url(url: str) -> Optional[int]:
+        """Extrait l'ID numérique d'un thread depuis son URL."""
+        if not url:
+            return None
+        m = re.search(r"/threads/(?:[^/]*\.)?(\d+)", url)
+        return int(m.group(1)) if m else None
+
     try:
         now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
         rows = []
         for j in jeux:
+            site_id = j.get("site_id")
+            nom_url = (j.get("nom_url") or "").strip() or None
+
+            # Validation cohérence site_id ↔ nom_url
+            # Si l'ID contenu dans l'URL ne correspond pas au site_id connu,
+            # on corrige nom_url plutôt que d'enregistrer une donnée incohérente.
+            if site_id and nom_url:
+                url_id = _extract_id_from_url(nom_url)
+                if url_id and url_id != int(site_id):
+                    site = (j.get("site") or "").strip()
+                    base = "https://lewdcorner.com" if site == "LewdCorner" else "https://f95zone.to"
+                    nom_url_corrige = f"{base}/threads/{site_id}"
+                    logger.warning(
+                        "[supabase] Incohérence nom_url/site_id pour '%s' (id=%s) : "
+                        "URL contenait thread %s, site_id=%s → corrigé en %s",
+                        j.get("nom_du_jeu"), j.get("id"), url_id, site_id, nom_url_corrige,
+                    )
+                    nom_url = nom_url_corrige
+
             rows.append({
                 "id":                 j.get("id"),
-                "site_id":            j.get("site_id"),
+                "site_id":            site_id,
                 "site":               j.get("site"),
                 "nom_du_jeu":         j.get("nom_du_jeu") or "",
-                "nom_url":            j.get("nom_url"),
+                "nom_url":            nom_url,
                 "version":            j.get("version"),
                 "trad_ver":           j.get("trad_ver"),
                 "lien_trad":          j.get("lien_trad"),
@@ -369,12 +398,14 @@ def _sync_jeux_to_supabase(jeux: list):
                 "synced_at":          now,
                 "updated_at":         now,
             })
+
         for i in range(0, len(rows), 50):
             sb.table("f95_jeux").upsert(
                 rows[i:i + 50],
                 on_conflict="id",
                 ignore_duplicates=False,
             ).execute()
+
         logger.info("[supabase] sync_jeux : %d jeux synchronises", len(rows))
     except Exception as e:
         logger.warning("[supabase] sync_jeux erreur : %s", e)

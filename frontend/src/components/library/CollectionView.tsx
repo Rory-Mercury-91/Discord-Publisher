@@ -46,11 +46,44 @@ function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
     date_maj: entry.game?.date_maj ?? '',
   };
   g._sync = getSyncStatus(g);
+
+  // ── Priorité 1 : données f95_jeux (bibliothèque traduite) ──────────────
   if (entry.game?.synopsis_fr) g.synopsis_fr = entry.game.synopsis_fr;
   if (entry.game?.synopsis_en) g.synopsis_en = entry.game.synopsis_en;
   if (entry.game?.synopsis && !g.synopsis_en) g.synopsis_en = entry.game.synopsis;
   if (entry.game?.variants?.length) g.variants = entry.game.variants;
   if (entry.game?.f95_jeux_id != null) g.f95_jeux_id = entry.game.f95_jeux_id;
+
+  // ── Priorité 2 : fallback scraped_data (Tampermonkey, imports Nexus,
+  //    ajouts manuels ou jeux sans correspondance f95_jeux) ───────────────
+  const sd = entry.scraped_data as Record<string, unknown> | null;
+  if (sd) {
+    // synopsis_fr : peut venir de triggerSilentEnrichment ou collection_enrich_entries
+    if (!g.synopsis_fr && sd.synopsis_fr)
+      g.synopsis_fr = String(sd.synopsis_fr);
+
+    if (!g.synopsis_en) {
+      // synopsis_en explicite (enrichissement f95-import / enrich-entries)
+      if (sd.synopsis_en)
+        g.synopsis_en = String(sd.synopsis_en);
+      // synopsis (clé utilisée par collection_resolve, Tampermonkey quick-add,
+      //           et le mapping F95_TO_SCRAPED : "synopsis_en" -> "synopsis")
+      else if (sd.synopsis)
+        g.synopsis_en = String(sd.synopsis);
+    }
+
+    // Fallback image : si f95_jeux n'en a pas mais scraped_data en a une
+    if (!g.image && sd.image)
+      g.image = String(sd.image);
+
+    // Fallback tags : idem
+    if (!g.tags && sd.tags) {
+      g.tags = Array.isArray(sd.tags)
+        ? (sd.tags as string[]).join(', ')
+        : String(sd.tags);
+    }
+  }
+
   return g;
 }
 
@@ -110,41 +143,48 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
   const sb = getSupabase();
   if (!sb) return;
 
-  try {
-    // 1. Récupérer l'entrée dans la collection
-    const { data: collData } = await sb
+  const base = (localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
+  const key = localStorage.getItem('apiKey') || '';
+  if (!base || !key) return;
+
+  // ── Bug 3 FIX : retry avec backoff si la ligne n'est pas encore visible ──
+  let collData: { id: string; scraped_data: Record<string, any> } | null = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 800 * attempt)); // 0s, 0.8s, 1.6s, 2.4s
+    const { data } = await sb
       .from('user_collection')
       .select('id, scraped_data')
       .eq('f95_thread_id', threadId)
       .maybeSingle();
+    if (data?.scraped_data) { collData = data; break; }
+  }
 
-    if (!collData || !collData.scraped_data) return;
-    const sd = collData.scraped_data as Record<string, any>;
-    
-    // Si déjà traduit ou s'il n'y a pas de synopsis source, on arrête
-    if (sd.synopsis_fr || !sd.synopsis) return;
+  if (!collData?.scraped_data) return;
+  const sd = collData.scraped_data as Record<string, any>;
 
-    const base = (localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
-    const key = localStorage.getItem('apiKey') || '';
-    if (!base || !key) return;
+  // Déjà traduit → rien à faire
+  if (sd.synopsis_fr) return;
 
-    // 2. Traduire le synopsis existant via l'API
+  // Récupérer le synopsis EN (Tampermonkey stocke sous "synopsis",
+  // collection_resolve peut stocker sous "synopsis" ou "synopsis_en")
+  const synopsisEn = sd.synopsis_en || sd.synopsis;
+  if (!synopsisEn) return;
+
+  try {
     const res = await fetch(`${base}/api/translate`, {
       method: 'POST',
       headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: sd.synopsis, source_lang: 'en', target_lang: 'fr' }),
+      body: JSON.stringify({ text: synopsisEn, source_lang: 'en', target_lang: 'fr' }),
     });
 
     if (!res.ok) return;
     const json = await res.json();
-    
+
     if (json.ok && json.translated) {
-      // 3. Mettre à jour user_collection.scraped_data
       const newSd = { ...sd, synopsis_fr: json.translated };
       await sb.from('user_collection').update({ scraped_data: newSd }).eq('id', collData.id);
-      
       showToast('✅ Synopsis traduit automatiquement', 'success');
-      refresh(); // Met à jour l'affichage de la carte
+      refresh();
     }
   } catch {
     /* enrichissement silencieux — on ignore les erreurs */
