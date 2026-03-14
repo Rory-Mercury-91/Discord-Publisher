@@ -1,6 +1,6 @@
 /**
  * Barre d'outils de la vue Ma collection.
- * Ordre : Tous / À jour / Non à jour → Input recherche → Selects → Filtre tags → Filtre labels → Gestion tags → Grille / Liste / Rafraîchir
+ * Ordre : Tri (A→Z / Z→A / Récents / Anciens) → Tous / À jour / Non à jour → Input recherche → Selects → Filtre tags → Filtre labels → Gestion tags → Grille / Liste / Rafraîchir
  */
 import type { RefObject } from 'react';
 import FilterTagsPopover, { type FilterTagState } from './FilterTagsPopover';
@@ -14,7 +14,15 @@ const SYNC_FILTER_BUTTONS: ['' | SyncStatus, string][] = [
   ['outdated', 'Non à jour'],
 ];
 
+type CollectionSortMode = 'alpha_asc' | 'alpha_desc' | 'date_added_asc' | 'date_added_desc';
 type ViewMode = 'grid' | 'list';
+
+const SORT_BUTTONS: [CollectionSortMode, string][] = [
+  ['alpha_asc',       'A → Z'],
+  ['alpha_desc',      'Z → A'],
+  ['date_added_desc', '🆕 Récents'],
+  ['date_added_asc',  '📅 Anciens'],
+];
 
 interface CollectionToolbarProps {
   search: string;
@@ -23,6 +31,8 @@ interface CollectionToolbarProps {
   setFilterSync: (v: '' | SyncStatus) => void;
   syncCounts: { ok: number; outdated: number; unknown: number };
   gamesCount: number;
+  sortMode: CollectionSortMode;
+  setSortMode: (v: CollectionSortMode) => void;
   statuts: string[];
   filterStatut: string;
   setFilterStatut: (v: string) => void;
@@ -65,6 +75,7 @@ export default function CollectionToolbar({
   search, setSearch,
   filterSync, setFilterSync,
   syncCounts, gamesCount,
+  sortMode, setSortMode,
   statuts, filterStatut, setFilterStatut,
   traducteurs, filterTrad, setFilterTrad,
   types, filterType, setFilterType,
@@ -80,7 +91,29 @@ export default function CollectionToolbar({
 }: CollectionToolbarProps) {
   return (
     <div className="library-toolbar library-toolbar--collection">
+
+      {/* ── Boutons de tri ── */}
       <div className="library-toolbar-filters">
+        {SORT_BUTTONS.map(([val, label]) => (
+          <button
+            key={val}
+            type="button"
+            className={`library-sync-btn ${sortMode === val ? 'library-sync-btn--active-all' : ''}`}
+            onClick={() => setSortMode(val)}
+            title={
+              val === 'alpha_asc'       ? 'Trier par nom A → Z' :
+              val === 'alpha_desc'      ? 'Trier par nom Z → A' :
+              val === 'date_added_desc' ? 'Trier par date d\'ajout (récent en premier)' :
+                                         'Trier par date d\'ajout (ancien en premier)'
+            }
+          >
+            {label}
+          </button>
+        ))}
+
+        <span className="library-toolbar-divider" />
+
+        {/* ── Boutons de filtre sync ── */}
         {SYNC_FILTER_BUTTONS.map(([val, label]) => {
           const isActive = filterSync === val;
           return (
@@ -100,6 +133,7 @@ export default function CollectionToolbar({
         })}
       </div>
 
+      {/* ── Recherche ── */}
       <input
         type="text"
         className="app-input library-toolbar-input library-toolbar-input--collection"
@@ -108,6 +142,7 @@ export default function CollectionToolbar({
         placeholder="Rechercher…"
       />
 
+      {/* ── Selects ── */}
       <select className="app-select library-toolbar-select--filter-statut" value={filterStatut} onChange={e => setFilterStatut(e.target.value)}>
         <option value="">Tous les statuts</option>
         {statuts.map(s => <option key={s} value={s}>{s}</option>)}

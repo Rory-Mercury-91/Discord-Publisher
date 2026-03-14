@@ -42,8 +42,8 @@
       'completed' : 'TERMINÉ',
       'complete'  : 'TERMINÉ',
       'abandoned' : 'ABANDONNÉ',
-      'on hold'   : 'En pause',
-      'onhold'    : 'En pause',
+      'on hold'   : 'EN PAUSE',
+      'onhold'    : 'EN PAUSE',
     };
     const typeMap = {
       "ren'py"       : 'RenPy',

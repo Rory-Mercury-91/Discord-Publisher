@@ -19,8 +19,8 @@ _STATUS_MAP = {
     "Completed": "TERMINÉ",
     "Complete": "TERMINÉ",
     "Abandoned": "ABANDONNÉ",
-    "On hold": "En pause",
-    "On Hold": "En pause",
+    "On hold": "EN PAUSE",
+    "On Hold": "EN PAUSE",
 }
 _TYPE_MAP = {
     "Others": "Autre",
@@ -546,7 +546,7 @@ async def scrape_f95_game_data(session, url: str, cookies: Optional[str] = None)
             elif not status or status == "EN COURS":
                 if re.search(r"Completed?|Abandoned|On hold", text, re.I):
                     status = "TERMINÉ" if re.search(r"Complete", text, re.I) else (
-                        "ABANDONNÉ" if "Abandoned" in text else "En pause"
+                        "ABANDONNÉ" if "Abandoned" in text else "EN PAUSE"
                     )
         if not type_val and soup.find("title"):
             title_str = soup.find("title").get_text() or ""

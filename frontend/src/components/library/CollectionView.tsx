@@ -17,6 +17,14 @@ import CollectionToolbar from './components/CollectionToolbar';
 import { type FilterTagState } from './components/FilterTagsPopover';
 import { type FilterLabelState } from './components/FilterLabelsPopover';
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function normalizeStatut(s: string): string {
+  const t = (s ?? '').trim();
+  if (!t) return '';
+  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
+}
+
 function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
   const nomUrl =
     entry.f95_url ||
@@ -47,36 +55,20 @@ function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
   };
   g._sync = getSyncStatus(g);
 
-  // ── Priorité 1 : données f95_jeux (bibliothèque traduite) ──────────────
   if (entry.game?.synopsis_fr) g.synopsis_fr = entry.game.synopsis_fr;
   if (entry.game?.synopsis_en) g.synopsis_en = entry.game.synopsis_en;
   if (entry.game?.synopsis && !g.synopsis_en) g.synopsis_en = entry.game.synopsis;
   if (entry.game?.variants?.length) g.variants = entry.game.variants;
   if (entry.game?.f95_jeux_id != null) g.f95_jeux_id = entry.game.f95_jeux_id;
 
-  // ── Priorité 2 : fallback scraped_data (Tampermonkey, imports Nexus,
-  //    ajouts manuels ou jeux sans correspondance f95_jeux) ───────────────
   const sd = entry.scraped_data as Record<string, unknown> | null;
   if (sd) {
-    // synopsis_fr : peut venir de triggerSilentEnrichment ou collection_enrich_entries
-    if (!g.synopsis_fr && sd.synopsis_fr)
-      g.synopsis_fr = String(sd.synopsis_fr);
-
+    if (!g.synopsis_fr && sd.synopsis_fr) g.synopsis_fr = String(sd.synopsis_fr);
     if (!g.synopsis_en) {
-      // synopsis_en explicite (enrichissement f95-import / enrich-entries)
-      if (sd.synopsis_en)
-        g.synopsis_en = String(sd.synopsis_en);
-      // synopsis (clé utilisée par collection_resolve, Tampermonkey quick-add,
-      //           et le mapping F95_TO_SCRAPED : "synopsis_en" -> "synopsis")
-      else if (sd.synopsis)
-        g.synopsis_en = String(sd.synopsis);
+      if (sd.synopsis_en) g.synopsis_en = String(sd.synopsis_en);
+      else if (sd.synopsis) g.synopsis_en = String(sd.synopsis);
     }
-
-    // Fallback image : si f95_jeux n'en a pas mais scraped_data en a une
-    if (!g.image && sd.image)
-      g.image = String(sd.image);
-
-    // Fallback tags : idem
+    if (!g.image && sd.image) g.image = String(sd.image);
     if (!g.tags && sd.tags) {
       g.tags = Array.isArray(sd.tags)
         ? (sd.tags as string[]).join(', ')
@@ -87,12 +79,17 @@ function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
   return g;
 }
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 type ViewMode = 'grid' | 'list';
+type CollectionSortMode = 'alpha_asc' | 'alpha_desc' | 'date_added_asc' | 'date_added_desc';
 
 interface CollectionViewProps {
   view: ViewMode;
   setView: (v: ViewMode) => void;
 }
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CollectionView({ view, setView }: CollectionViewProps) {
   const { items, loading, error, addByUrlOrId, addManual, remove, refresh, updateCollectionEntry, updateLabels, updateExecutablePaths, allLabels } = useCollection();
@@ -115,6 +112,7 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+  const [sortMode, setSortMode] = useState<CollectionSortMode>('alpha_asc');
   const [, startTransition] = useTransition();
   const [f95CookieInput, setF95CookieInput] = useState(() => {
     try { return localStorage.getItem('f95_cookies') ?? ''; } catch { return ''; }
@@ -139,74 +137,62 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
   }, [items, pendingOpenThreadId]);
 
   // ── Rafraîchit les données de la modale quand la collection change ────────
-  // Cas typique : enrichissement Tampermonkey reçu PENDANT qu'une modale est
-  // déjà ouverte → sans ce correctif, les champs (synopsis, image…) restent
-  // vides jusqu'à fermeture/réouverture manuelle.
   useEffect(() => {
     if (!selectedEntryForDetail) return;
-    const tid     = selectedEntryForDetail.f95_thread_id;
+    const tid = selectedEntryForDetail.f95_thread_id;
     const updated = items.find(i => i.f95_thread_id === tid);
     if (updated) {
       setSelectedGameForDetail(entryToGameF95(updated));
       setSelectedEntryForDetail(updated);
     }
-    // On ne dépend intentionnellement QUE de `items` pour éviter une boucle :
-    // la mise à jour de selectedEntryForDetail ne doit pas re-déclencher l'effet.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
-// ── Enrichissement silencieux après import Tampermonkey ───────────────────
-const triggerSilentEnrichment = useCallback(async (threadId: number) => {
-  const sb = getSupabase();
-  if (!sb) return;
+  // ── Enrichissement silencieux après import Tampermonkey ───────────────────
+  const triggerSilentEnrichment = useCallback(async (threadId: number) => {
+    const sb = getSupabase();
+    if (!sb) return;
 
-  const base = (localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
-  const key = localStorage.getItem('apiKey') || '';
-  if (!base || !key) return;
+    const base = (localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
+    const key = localStorage.getItem('apiKey') || '';
+    if (!base || !key) return;
 
-  // ── Bug 3 FIX : retry avec backoff si la ligne n'est pas encore visible ──
-  let collData: { id: string; scraped_data: Record<string, any> } | null = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) await new Promise(r => setTimeout(r, 800 * attempt)); // 0s, 0.8s, 1.6s, 2.4s
-    const { data } = await sb
-      .from('user_collection')
-      .select('id, scraped_data')
-      .eq('f95_thread_id', threadId)
-      .maybeSingle();
-    if (data?.scraped_data) { collData = data; break; }
-  }
-
-  if (!collData?.scraped_data) return;
-  const sd = collData.scraped_data as Record<string, any>;
-
-  // Déjà traduit → rien à faire
-  if (sd.synopsis_fr) return;
-
-  // Récupérer le synopsis EN (Tampermonkey stocke sous "synopsis",
-  // collection_resolve peut stocker sous "synopsis" ou "synopsis_en")
-  const synopsisEn = sd.synopsis_en || sd.synopsis;
-  if (!synopsisEn) return;
-
-  try {
-    const res = await fetch(`${base}/api/translate`, {
-      method: 'POST',
-      headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: synopsisEn, source_lang: 'en', target_lang: 'fr' }),
-    });
-
-    if (!res.ok) return;
-    const json = await res.json();
-
-    if (json.ok && json.translated) {
-      const newSd = { ...sd, synopsis_fr: json.translated };
-      await sb.from('user_collection').update({ scraped_data: newSd }).eq('id', collData.id);
-      showToast('✅ Synopsis traduit automatiquement', 'success');
-      refresh();
+    let collData: { id: string; scraped_data: Record<string, any> } | null = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 800 * attempt));
+      const { data } = await sb
+        .from('user_collection')
+        .select('id, scraped_data')
+        .eq('f95_thread_id', threadId)
+        .maybeSingle();
+      if (data?.scraped_data) { collData = data; break; }
     }
-  } catch {
-    /* enrichissement silencieux — on ignore les erreurs */
-  }
-}, [showToast, refresh]);
+
+    if (!collData?.scraped_data) return;
+    const sd = collData.scraped_data as Record<string, any>;
+    if (sd.synopsis_fr) return;
+
+    const synopsisEn = sd.synopsis_en || sd.synopsis;
+    if (!synopsisEn) return;
+
+    try {
+      const res = await fetch(`${base}/api/translate`, {
+        method: 'POST',
+        headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: synopsisEn, source_lang: 'en', target_lang: 'fr' }),
+      });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.ok && json.translated) {
+        const newSd = { ...sd, synopsis_fr: json.translated };
+        await sb.from('user_collection').update({ scraped_data: newSd }).eq('id', collData.id);
+        showToast('✅ Synopsis traduit automatiquement', 'success');
+        refresh();
+      }
+    } catch {
+      /* enrichissement silencieux */
+    }
+  }, [showToast, refresh]);
 
   // ── Écoute des ajouts Tampermonkey ────────────────────────────────────────
   useEffect(() => {
@@ -214,7 +200,6 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
       const { threadId } = (e as CustomEvent<{ threadId: number }>).detail;
       refresh();
       setPendingOpenThreadId(threadId);
-      // Lancer l'enrichissement synopsis en arrière-plan
       triggerSilentEnrichment(threadId);
     };
     window.addEventListener('collection:game-added', handler);
@@ -235,9 +220,6 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
   const [filterType, setFilterType] = useState('');
   const [filterTradType, setFilterTradType] = useState('');
   const [filterSync, setFilterSync] = useState<'' | SyncStatus>('');
-  const [sortKey, setSortKey] = useState('nom_du_jeu');
-  const [sortDir, setSortDir] = useState<1 | -1>(1);
-  const [dateSort, setDateSort] = useState(false);
   const [pageSize, setPageSize] = useState<number>(() => {
     try {
       const v = localStorage.getItem('library_page_size');
@@ -264,7 +246,15 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
 
   const gamesEnriched = useMemo(() => items.map(entry => entryToGameF95(entry)), [items]);
 
-  const statuts  = useMemo(() => [...new Set(gamesEnriched.map(g => g.statut).filter(Boolean))].sort(), [gamesEnriched]);
+  const statuts = useMemo(() =>
+    [...new Map(
+      gamesEnriched
+        .map(g => g.statut)
+        .filter(Boolean)
+        .map(s => [normalizeStatut(s!), s!] as [string, string])
+    ).values()].sort()
+  , [gamesEnriched]);
+
   const traducteurs = useMemo(() => [...new Set(gamesEnriched.map(g => g.traducteur).filter(Boolean))].sort(), [gamesEnriched]);
   const types    = useMemo(() => [...new Set(gamesEnriched.map(g => g.type).filter(Boolean))].sort(), [gamesEnriched]);
   const tradTypes = useMemo(() => [...new Set(gamesEnriched.map(g => g.type_de_traduction).filter(Boolean))].sort(), [gamesEnriched]);
@@ -291,7 +281,7 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
     const q = search.toLowerCase().trim();
     let list = gamesEnriched.filter(g => {
       if (q && !g.nom_du_jeu.toLowerCase().includes(q) && !(g.traducteur || '').toLowerCase().includes(q)) return false;
-      if (filterStatut && g.statut !== filterStatut) return false;
+      if (filterStatut && normalizeStatut(g.statut || '') !== normalizeStatut(filterStatut)) return false;
       if (filterTrad && g.traducteur !== filterTrad) return false;
       if (filterType && g.type !== filterType) return false;
       if (filterTradType && g.type_de_traduction !== filterTradType) return false;
@@ -309,19 +299,25 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
       if (includedLabels.length > 0 && !entryLabels.some(l => includedLabels.includes(l))) return false;
       return true;
     });
-    if (dateSort) {
-      return list.sort((a, b) => {
-        const da = a.date_maj || '', db = b.date_maj || '';
-        if (db !== da) return db.localeCompare(da);
-        return ((a.type_maj || '').includes('AJOUT') ? 0 : 1) - ((b.type_maj || '').includes('AJOUT') ? 0 : 1);
-      });
+
+    switch (sortMode) {
+      case 'alpha_asc':
+        return list.sort((a, b) => a.nom_du_jeu.localeCompare(b.nom_du_jeu, 'fr', { sensitivity: 'base' }));
+      case 'alpha_desc':
+        return list.sort((a, b) => b.nom_du_jeu.localeCompare(a.nom_du_jeu, 'fr', { sensitivity: 'base' }));
+      case 'date_added_asc':
+      case 'date_added_desc': {
+        const dir = sortMode === 'date_added_asc' ? 1 : -1;
+        return list.sort((a, b) => {
+          const da = entryById.get(a.site_id)?.created_at ?? '';
+          const db = entryById.get(b.site_id)?.created_at ?? '';
+          return da < db ? -dir : da > db ? dir : 0;
+        });
+      }
+      default:
+        return list;
     }
-    return list.sort((a, b) => {
-      const va = ((a as any)[sortKey] || '').toString().toLowerCase();
-      const vb = ((b as any)[sortKey] || '').toString().toLowerCase();
-      return va < vb ? -sortDir : va > vb ? sortDir : 0;
-    });
-  }, [gamesEnriched, search, filterStatut, filterTrad, filterType, filterTradType, filterSync, filterTagsByTag, filterLabelsByLabel, entryById, sortKey, sortDir, dateSort]);
+  }, [gamesEnriched, search, filterStatut, filterTrad, filterType, filterTradType, filterSync, filterTagsByTag, filterLabelsByLabel, entryById, sortMode]);
 
   const totalPages = pageSize === -1 ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize));
   const effectivePage = Math.min(currentPage, totalPages - 1);
@@ -362,11 +358,12 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
 
   const resetFiltersAndRefresh = () => { resetFilters(); refresh(); };
 
-  const toggleSort = (key: string) => {
-    setDateSort(false);
-    if (sortKey === key) setSortDir(d => d === 1 ? -1 : 1);
-    else { setSortKey(key); setSortDir(1); }
-  };
+  const toggleSort = useCallback((key: string) => {
+    // Gardé pour la vue liste (colonnes cliquables) — bascule alpha_asc / alpha_desc sur nom_du_jeu
+    if (key === 'nom_du_jeu') {
+      setSortMode(prev => prev === 'alpha_asc' ? 'alpha_desc' : 'alpha_asc');
+    }
+  }, []);
 
   const handleAddByUrlOrId = async () => {
     const raw = importInput.trim();
@@ -379,7 +376,6 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
         setImportInput('');
         if ('f95_thread_id' in result && result.f95_thread_id != null) {
           setPendingOpenThreadId(result.f95_thread_id);
-          // Enrichissement synopsis après ajout manuel
           triggerSilentEnrichment(result.f95_thread_id as number);
         }
       } else {
@@ -429,23 +425,24 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
   const handleDeleteSelected = useCallback(async () => {
     if (selectedIds.size === 0) return;
     setIsDeleting(true);
-
     const ids = [...selectedIds];
     const results = await Promise.allSettled(ids.map(id => remove(id)));
-
     let successCount = 0, errorCount = 0;
     results.forEach(r => {
       if (r.status === 'fulfilled' && r.value.ok) successCount++;
       else errorCount++;
     });
-
     setIsDeleting(false);
     setSelectedIds(new Set());
     setDeleteMode(false);
-    refresh(); // Un seul refresh à la fin
+    refresh();
     if (successCount > 0) showToast(`${successCount} jeu(x) retiré(s) de la collection`, 'success');
     if (errorCount > 0) showToast(`${errorCount} erreur(s) lors de la suppression`, 'error');
   }, [selectedIds, remove, refresh, showToast]);
+
+  // ── Dérivé : active sort indicator pour la vue liste ─────────────────────
+  const sortKey = sortMode === 'alpha_desc' ? 'nom_du_jeu' : sortMode === 'alpha_asc' ? 'nom_du_jeu' : '';
+  const sortDir: 1 | -1 = sortMode === 'alpha_desc' ? -1 : 1;
 
   return (
     <div className="library-collection-view">
@@ -472,6 +469,7 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
         search={search} setSearch={setSearch}
         filterSync={filterSync} setFilterSync={setFilterSync}
         syncCounts={syncCounts} gamesCount={gamesEnriched.length}
+        sortMode={sortMode} setSortMode={setSortMode}
         statuts={statuts} filterStatut={filterStatut} setFilterStatut={setFilterStatut}
         traducteurs={traducteurs} filterTrad={filterTrad} setFilterTrad={setFilterTrad}
         types={types} filterType={filterType} setFilterType={setFilterType}
@@ -543,7 +541,7 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
                     game={game}
                     post={null}
                     onEdit={() => {}}
-                    showDateBadge={dateSort}
+                    showDateBadge={false}
                     isInCollection={true}
                     collectionEntry={{ id: entry.id, labels: entry.labels ?? null, executable_paths: entry.executable_paths ?? null }}
                     allLabels={allLabels}
@@ -575,10 +573,10 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
                 {TABLE_HEADERS.map(([k, h]) => (
                   <th
                     key={h}
-                    className={`library-table-th ${k ? 'library-table-th--sortable' : ''} ${sortKey === k && !dateSort ? 'library-table-th--active' : ''} ${k === '_sync' || k === 'statut' || k === 'type_maj' || k === null ? 'library-table-th--center' : 'library-table-th--left'}`}
+                    className={`library-table-th ${k ? 'library-table-th--sortable' : ''} ${k === sortKey && (sortMode === 'alpha_asc' || sortMode === 'alpha_desc') ? 'library-table-th--active' : ''} ${k === '_sync' || k === 'statut' || k === 'type_maj' || k === null ? 'library-table-th--center' : 'library-table-th--left'}`}
                     onClick={k ? () => toggleSort(k) : undefined}
                   >
-                    {h}{k && sortKey === k && !dateSort ? (sortDir > 0 ? ' ↑' : ' ↓') : ''}
+                    {h}{k === 'nom_du_jeu' && (sortMode === 'alpha_asc' || sortMode === 'alpha_desc') ? (sortDir > 0 ? ' ↑' : ' ↓') : ''}
                   </th>
                 ))}
               </tr>
@@ -626,14 +624,10 @@ const triggerSilentEnrichment = useCallback(async (threadId: number) => {
         )}
 
         {showManualModal && <ManualGameModal onClose={() => setShowManualModal(false)} onSubmit={handleAddManual} />}
-
         {editEntry && <EditGameModal entry={editEntry} onClose={() => setEditEntry(null)} onSubmit={handleEdit} />}
-
         {showTagAvoirsModal && (
           <TagAvoirsModal allTags={allUniqueTags} getAvoir={getAvoir} onSetAvoir={setAvoir} onClose={() => setShowTagAvoirsModal(false)} />
         )}
-
-        {/* Modale détail avec callbacks édition + enrichissement */}
         {selectedGameForDetail && (
           <GameDetailModal
             game={selectedGameForDetail}
