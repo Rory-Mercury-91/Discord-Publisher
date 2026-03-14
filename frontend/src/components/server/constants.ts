@@ -28,26 +28,28 @@ export const ALLOWED_ROUTES = [
 
 // Sources de logs (utilisateur)
 export const USER_SOURCES = [
-  { id: 'publisher' as const, label: 'Publisher', default: true },
-  { id: 'api' as const, label: 'API REST', default: true },
-  { id: 'scheduler' as const, label: 'Planificateur', default: true },
-  { id: 'f95' as const, label: 'Versions F95', default: true },
+  { id: 'publisher'   as const, label: 'Publisher',     default: true  },
+  { id: 'api'         as const, label: 'API REST',       default: true  },
+  { id: 'scheduler'   as const, label: 'Planificateur',  default: true  },
+  { id: 'f95'         as const, label: 'Versions F95',   default: true  },
+  { id: 'scraper'     as const, label: 'Scraper',        default: false },
+  { id: 'translator'  as const, label: 'Traducteur',     default: false },
 ] as const;
 
 // Sources admin (masquées pour non-admins)
 export const ADMIN_SOURCES = [
-  { id: 'frelon' as const, label: 'Bot Frelon', default: false },
-  { id: 'orchestrator' as const, label: 'Orchestrateur', default: false },
+  { id: 'frelon'       as const, label: 'Bot Frelon',     default: false },
+  { id: 'orchestrator' as const, label: 'Orchestrateur',  default: false },
 ] as const;
 
 // Filtres admin
 export const ADMIN_FILTERS = [
-  { id: 'security' as const, label: 'Securite', default: false },
-  { id: 'publisher-requests' as const, label: 'Requetes Publisher', default: false },
-  { id: 'discord-api' as const, label: 'API Discord', default: false },
-  { id: 'supabase-api' as const, label: 'API Supabase', default: false },
-  { id: 'auth' as const, label: 'Auth details', default: false },
-  { id: 'debug' as const, label: 'HTTPS / Debug', default: false },
+  { id: 'security'           as const, label: 'Securite',            default: false },
+  { id: 'publisher-requests' as const, label: 'Requetes internes',   default: false },
+  { id: 'discord-api'        as const, label: 'API Discord',          default: false },
+  { id: 'supabase-api'       as const, label: 'API Supabase',         default: false },
+  { id: 'auth'               as const, label: 'Auth details',         default: false },
+  { id: 'debug'              as const, label: 'HTTPS / Debug',        default: false },
 ] as const;
 
 export type LogCategory =
@@ -57,6 +59,8 @@ export type LogCategory =
   | 'f95'
   | 'frelon'
   | 'orchestrator'
+  | 'scraper'
+  | 'translator'
   | 'security'
   | 'publisher-requests'
   | 'discord-api'

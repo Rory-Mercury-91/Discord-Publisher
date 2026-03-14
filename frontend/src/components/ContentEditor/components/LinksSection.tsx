@@ -25,20 +25,19 @@ interface LinksSectionProps {
     value: string
   ) => void;
   buildFinalLink: (config: LinkConfig) => string;
-
   additionalTranslationLinks: AdditionalLink[];
   addAdditionalTranslationLink: () => void;
   updateAdditionalTranslationLink: (index: number, link: AdditionalLink) => void;
   deleteAdditionalTranslationLink: (index: number) => void;
-
   additionalModLinks: AdditionalLink[];
   addAdditionalModLink: () => void;
   updateAdditionalModLink: (index: number, link: AdditionalLink) => void;
   deleteAdditionalModLink: (index: number) => void;
-
   varsUsedInTemplate: Set<string>;
   inputs: Record<string, string>;
   setInput: (name: string, value: string) => void;
+  showTranslations?: boolean;
+  showMod?: boolean;
 }
 
 // Champ lien principal (select source + input URL ou input seul)
@@ -315,50 +314,58 @@ export default function LinksSection({
   varsUsedInTemplate,
   inputs,
   setInput,
+  showTranslations = true,
+  showMod = true,  
 }: LinksSectionProps) {
+  // Si un seul bloc est visible, pleine largeur ; sinon 2 colonnes.
+  const gridCols = showTranslations && showMod ? '1fr 1fr' : '1fr';
   return (
-    <div className="form-grid form-grid--2col form-grid--start">
-      <AdditionalLinksBlock
-        title="Traductions"
-        links={additionalTranslationLinks}
-        onAdd={addAdditionalTranslationLink}
-        onUpdate={updateAdditionalTranslationLink}
-        onDelete={deleteAdditionalTranslationLink}
-        mainLabelKey="main_translation_label"
-        mainLinkName="Translate_link"
-        placeholderLabel="Traduction"
-        linkConfigs={linkConfigs}
-        setLinkConfig={setLinkConfig}
-        buildFinalLink={buildFinalLink}
-        setInput={setInput}
-        varsUsedInTemplate={varsUsedInTemplate}
-        inputs={inputs}
-      />
+    <div className="form-grid form-grid--start" style={{ gridTemplateColumns: gridCols }}>
+      {showTranslations && (
+        <AdditionalLinksBlock
+          title="Traductions"
+          links={additionalTranslationLinks}
+          onAdd={addAdditionalTranslationLink}
+          onUpdate={updateAdditionalTranslationLink}
+          onDelete={deleteAdditionalTranslationLink}
+          mainLabelKey="main_translation_label"
+          mainLinkName="Translate_link"
+          placeholderLabel="Traduction"
+          linkConfigs={linkConfigs}
+          setLinkConfig={setLinkConfig}
+          buildFinalLink={buildFinalLink}
+          setInput={setInput}
+          varsUsedInTemplate={varsUsedInTemplate}
+          inputs={inputs}
+        />
+      )}
 
-      <AdditionalLinksBlock
-        title="Mod"
-        headerExtra={
-          <Toggle
-            checked={inputs['is_modded_game'] === 'true'}
-            onChange={(v) => setInput('is_modded_game', v ? 'true' : 'false')}
-            label="Mod compatible"
-            disabled={!varsUsedInTemplate.has('is_modded_game')}
-          />
-        }
-        links={additionalModLinks}
-        onAdd={addAdditionalModLink}
-        onUpdate={updateAdditionalModLink}
-        onDelete={deleteAdditionalModLink}
-        mainLabelKey="main_mod_label"
-        mainLinkName="Mod_link"
-        placeholderLabel="Mod"
-        linkConfigs={linkConfigs}
-        setLinkConfig={setLinkConfig}
-        buildFinalLink={buildFinalLink}
-        setInput={setInput}
-        varsUsedInTemplate={varsUsedInTemplate}
-        inputs={inputs}
-      />
+      {showMod && (
+        <AdditionalLinksBlock
+          title="Mod"
+          headerExtra={
+            <Toggle
+              checked={inputs['is_modded_game'] === 'true'}
+              onChange={(v) => setInput('is_modded_game', v ? 'true' : 'false')}
+              label="Mod compatible"
+              disabled={!varsUsedInTemplate.has('is_modded_game')}
+            />
+          }
+          links={additionalModLinks}
+          onAdd={addAdditionalModLink}
+          onUpdate={updateAdditionalModLink}
+          onDelete={deleteAdditionalModLink}
+          mainLabelKey="main_mod_label"
+          mainLinkName="Mod_link"
+          placeholderLabel="Mod"
+          linkConfigs={linkConfigs}
+          setLinkConfig={setLinkConfig}
+          buildFinalLink={buildFinalLink}
+          setInput={setInput}
+          varsUsedInTemplate={varsUsedInTemplate}
+          inputs={inputs}
+        />
+      )}
     </div>
   );
 }

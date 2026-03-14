@@ -10,7 +10,7 @@ import { useAuth } from '../../state/authContext';
 import LogsFilters from './components/LogsFilters';
 import LogsFooter from './components/LogsFooter';
 import LogsViewer from './components/LogsViewer';
-import { USER_SOURCES } from './constants';
+import { USER_SOURCES, ADMIN_SOURCES, ADMIN_FILTERS } from './constants';
 import { exportLogsAsTxt, filterLogs } from './utils/logsUtils';
 
 const DEFAULT_REFRESH_MS = 30000;
@@ -184,6 +184,24 @@ export default function LogsModal({ onClose, inlineMode = false }: LogsModalProp
     });
   }, []);
 
+  const handleActivateAll = useCallback(() => {
+    const all = new Set<string>();
+    USER_SOURCES.forEach((s) => all.add(s.id));
+    ADMIN_SOURCES.forEach((s) => all.add(s.id));
+    ADMIN_FILTERS.forEach((f) => all.add(f.id));
+    setActiveCategories(all);
+  }, []);
+  
+  const handleDeactivateAll = useCallback(() => {
+    setActiveCategories(new Set());
+  }, []);
+  
+  const handleResetDefaults = useCallback(() => {
+    const defaults = new Set<string>();
+    USER_SOURCES.forEach((s) => s.default && defaults.add(s.id));
+    setActiveCategories(defaults);
+  }, []);
+
   const panelStyle = {
     width: inlineMode ? 860 : '95%',
     maxWidth: inlineMode ? 860 : 1000,
@@ -209,6 +227,9 @@ export default function LogsModal({ onClose, inlineMode = false }: LogsModalProp
         isAdmin={isAdmin}
         onExport={() => exportLogsAsTxt(displayedLogs)}
         hasLogs={!!displayedLogs}
+        onActivateAll={handleActivateAll}
+        onDeactivateAll={handleDeactivateAll}
+        onResetDefaults={handleResetDefaults}
       />
 
       <LogsViewer

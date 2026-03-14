@@ -7,27 +7,32 @@ interface LogsFiltersProps {
   isAdmin: boolean;
   onExport: () => void;
   hasLogs: boolean;
+  onActivateAll: () => void;
+  onDeactivateAll: () => void;
+  onResetDefaults: () => void;
 }
 
 const USER_TITLES: Record<string, string> = {
-  publisher: 'Logs du bot Publisher (publications, MAJ, suppressions)',
-  api: 'Logs des requetes REST entrantes (/api/forum-post, /api/history...)',
-  scheduler: 'Logs des taches planifiees (version check, cleanup, sync jeux)',
-  f95: 'Logs du controle des versions F95 (differences detectees, mises a jour)',
+  publisher:  'Logs du bot Publisher (publications, MAJ, suppressions)',
+  api:        'Logs des requetes REST entrantes (/api/forum-post, /api/history...)',
+  scheduler:  'Logs des taches planifiees (version check, cleanup, sync jeux)',
+  f95:        'Logs du controle des versions F95 (differences detectees, mises a jour)',
+  scraper:    'Logs du scraper F95Zone/LewdCorner (synopsis, donnees jeux — enrichissement collection)',
+  translator: 'Logs des traductions EN→FR via Google Translate (synopsis)',
 };
 
 const ADMIN_SOURCE_TITLES: Record<string, string> = {
-  frelon: "Logs du bot Frelon (rappels F95fr)",
-  orchestrator: "Logs de l'orchestrateur (demarrage, supervision des bots)",
+  frelon:      'Logs du bot Frelon (rappels F95fr)',
+  orchestrator:"Logs de l'orchestrateur (demarrage, supervision des bots)",
 };
 
 const ADMIN_FILTER_TITLES: Record<string, string> = {
-  security: "Tentatives d'authentification echouees",
-  'publisher-requests': 'Requetes OPTIONS/GET internes (CORS, health...)',
-  'discord-api': "Appels REST vers l'API Discord (rate limit inclus)",
-  'supabase-api': 'Requetes vers Supabase (lectures/ecritures BDD)',
-  auth: 'Details validation cles API (succes inclus)',
-  debug: 'Requetes HTTP/HTTPS brutes (aiohttp, debug)',
+  security:            "Tentatives d'authentification echouees",
+  'publisher-requests':'Requetes GET internes repetitives (auto-refresh logs, health checks)',
+  'discord-api':       "Appels REST vers l'API Discord — logger [discord] + discord.py (rate limit inclus)",
+  'supabase-api':      'Requetes vers Supabase (lectures/ecritures BDD)',
+  auth:                'Details validation cles API (succes inclus)',
+  debug:               'Requetes HTTP/HTTPS suspectes (hors /api/, erreurs 4xx/5xx, aiohttp)',
 };
 
 export default function LogsFilters({
@@ -36,6 +41,9 @@ export default function LogsFilters({
   isAdmin,
   onExport,
   hasLogs,
+  onActivateAll,
+  onDeactivateAll,
+  onResetDefaults,
 }: LogsFiltersProps) {
   return (
     <div className="logs-filters">
@@ -68,6 +76,43 @@ export default function LogsFilters({
             title={ADMIN_FILTER_TITLES[f.id]}
           />
         ))}
+      {isAdmin && (() => {
+        const allIds = [
+          ...USER_SOURCES.map((s) => s.id),
+          ...ADMIN_SOURCES.map((s) => s.id),
+          ...ADMIN_FILTERS.map((f) => f.id),
+        ];
+        const defaultIds = USER_SOURCES.filter((s) => s.default).map((s) => s.id);
+
+        const allActive  = allIds.every((id) => activeCategories.has(id));
+        const noneActive = activeCategories.size === 0;
+        const isDefault  =
+          defaultIds.every((id) => activeCategories.has(id)) &&
+          activeCategories.size === defaultIds.length;
+
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, width: '100%', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+            <Toggle
+              checked={isDefault}
+              onChange={() => onResetDefaults()}
+              label="Par défaut"
+              title="Revenir aux sources activées par défaut (Publisher, API REST, Planificateur, Versions F95)"
+            />
+            <Toggle
+              checked={allActive}
+              onChange={() => onActivateAll()}
+              label="Tout activer"
+              title="Activer toutes les sources et tous les filtres"
+            />
+            <Toggle
+              checked={noneActive}
+              onChange={() => onDeactivateAll()}
+              label="Tout désactiver"
+              title="Masquer tous les logs"
+            />
+          </div>
+        );
+      })()}
       <div style={{ marginLeft: 'auto' }}>
         <button
           type="button"

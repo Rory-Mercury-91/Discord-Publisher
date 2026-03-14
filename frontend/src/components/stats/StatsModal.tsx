@@ -52,7 +52,9 @@ export default function StatsModal({ onClose }: StatsModalProps) {
         const postTagIds = post.tags.split(',').map(t => t.trim()).filter(Boolean);
         postTagIds.forEach(tagId => {
           const translatorTag = translatorTags.find(t =>
-            (t.id || t.name) === tagId || String(t.discordTagId ?? '') === tagId
+            t.name === tagId ||
+            (t.id != null && t.id === tagId) ||
+            String(t.discordTagId ?? '') === tagId
           );
           if (translatorTag) {
             const translatorName = translatorTag.name;

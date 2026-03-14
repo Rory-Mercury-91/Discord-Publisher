@@ -207,6 +207,20 @@ export default function ContentEditor() {
     return set;
   }, [currentTemplate?.content]);
 
+  const sectionVisibility = useMemo(() => ({
+    versions:     varsUsedInTemplate.has('Game_version') || varsUsedInTemplate.has('Translate_version'),
+    gameLink:     varsUsedInTemplate.has('Game_link'),
+    translations: varsUsedInTemplate.has('Translate_link'),
+    mod:          varsUsedInTemplate.has('Mod_link'),
+    synopsis:     varsUsedInTemplate.has('Overview'),
+    instructions: varsUsedInTemplate.has('instruction'),
+  }), [varsUsedInTemplate]);
+
+  // Raccourcis lisibles dans le JSX
+  const { versions, gameLink, translations, mod, synopsis, instructions } = sectionVisibility;
+  const showLinksSection   = translations || mod;
+  const showEditorTwoCol   = synopsis || instructions;
+
   const visibleVars = useMemo(() => {
     const hardcoded = ['Game_name', 'Game_version', 'Translate_version', 'Game_link', 'Translate_link', 'Mod_link', 'Overview', 'instruction', 'is_modded_game'];
     return allVarsConfig.filter(v => !hardcoded.includes(v.name) && varsUsedInTemplate.has(v.name));
@@ -717,83 +731,99 @@ export default function ContentEditor() {
         onExportListManager={handleExportListManager}
       />
 
-      <div className="editor-content-grid">
+    <div className="editor-content-grid">
 
-        <HeaderGridSection
-          postTitle={postTitle}
-          gameName={inputs['Game_name'] || ''}
-          onGameNameChange={(v) => setInput('Game_name', v)}
-          gameNameDisabled={!varsUsedInTemplate.has('Game_name')}
-          imageUrlInput={imageUrlInput}
-          onImageUrlInputChange={setImageUrlInput}
-          onAddImage={handleAddImage}
-          selectedTagIds={selectedTagIds}
-          savedTags={savedTags}
-          onOpenTagSelector={handleOpenTagSelector}
-          onRemoveTag={handleRemoveTag}
-          uploadedImages={uploadedImages}
-          removeImage={removeImage}
-        />
+    {/* Titre / Tags / Image — toujours visible */}
+    <HeaderGridSection
+      postTitle={postTitle}
+      gameName={inputs['Game_name'] || ''}
+      onGameNameChange={(v) => setInput('Game_name', v)}
+      gameNameDisabled={!varsUsedInTemplate.has('Game_name')}
+      imageUrlInput={imageUrlInput}
+      onImageUrlInputChange={setImageUrlInput}
+      onAddImage={handleAddImage}
+      selectedTagIds={selectedTagIds}
+      savedTags={savedTags}
+      onOpenTagSelector={handleOpenTagSelector}
+      onRemoveTag={handleRemoveTag}
+      uploadedImages={uploadedImages}
+      removeImage={removeImage}
+    />
 
-        {/* Versions */}
-        <VersionsSection
-          gameVersion={inputs['Game_version'] || ''}
-          onGameVersionChange={(v) => setInput('Game_version', v)}
-          translateVersion={inputs['Translate_version'] || ''}
-          onTranslateVersionChange={(v) => setInput('Translate_version', v)}
-          canEditGameVersion={varsUsedInTemplate.has('Game_version')}
-          canEditTranslateVersion={varsUsedInTemplate.has('Translate_version')}
-          onSyncVersion={syncVersion}
-        />
+    {/* Versions — masqué si aucune des deux variables n'est dans le template */}
+    {versions && (
+      <VersionsSection
+        gameVersion={inputs['Game_version'] || ''}
+        onGameVersionChange={(v) => setInput('Game_version', v)}
+        translateVersion={inputs['Translate_version'] || ''}
+        onTranslateVersionChange={(v) => setInput('Translate_version', v)}
+        canEditGameVersion={varsUsedInTemplate.has('Game_version')}
+        canEditTranslateVersion={varsUsedInTemplate.has('Translate_version')}
+        onSyncVersion={syncVersion}
+      />
+    )}
 
-        <GameLinkAndTranslationTypeSection
-          gameLinkConfig={linkConfigs.Game_link}
-          setLinkConfig={setLinkConfig}
-          buildFinalLink={buildFinalLink}
-          gameLinkDisabled={!varsUsedInTemplate.has('Game_link')}
-          translationType={translationType}
-          setTranslationType={setTranslationType}
-          isIntegrated={isIntegrated}
-          setIsIntegrated={setIsIntegrated}
-        />
+    {/* Lien du jeu + Type de traduction
+        Le type de traduction est toujours pertinent ([Translation_Type]),
+        on affiche donc la section entière dès que l'un des deux est présent. */}
+    {(gameLink || varsUsedInTemplate.has('Translation_Type')) && (
+      <GameLinkAndTranslationTypeSection
+        gameLinkConfig={linkConfigs.Game_link}
+        setLinkConfig={setLinkConfig}
+        buildFinalLink={buildFinalLink}
+        gameLinkDisabled={!gameLink}
+        translationType={translationType}
+        setTranslationType={setTranslationType}
+        isIntegrated={isIntegrated}
+        setIsIntegrated={setIsIntegrated}
+      />
+    )}
 
-        {/* Liens Traduction + Mod */}
-        <LinksSection
-          linkConfigs={linkConfigs}
-          setLinkConfig={setLinkConfig}
-          buildFinalLink={buildFinalLink}
-          additionalTranslationLinks={additionalTranslationLinks}
-          addAdditionalTranslationLink={addAdditionalTranslationLink}
-          updateAdditionalTranslationLink={updateAdditionalTranslationLink}
-          deleteAdditionalTranslationLink={deleteAdditionalTranslationLink}
-          additionalModLinks={additionalModLinks}
-          addAdditionalModLink={addAdditionalModLink}
-          updateAdditionalModLink={updateAdditionalModLink}
-          deleteAdditionalModLink={deleteAdditionalModLink}
-          varsUsedInTemplate={varsUsedInTemplate}
-          inputs={inputs}
-          setInput={setInput}
-        />
+    {/* Liens Traduction + Mod — masqué si aucun des deux blocs n'est actif */}
+    {showLinksSection && (
+      <LinksSection
+        linkConfigs={linkConfigs}
+        setLinkConfig={setLinkConfig}
+        buildFinalLink={buildFinalLink}
+        additionalTranslationLinks={additionalTranslationLinks}
+        addAdditionalTranslationLink={addAdditionalTranslationLink}
+        updateAdditionalTranslationLink={updateAdditionalTranslationLink}
+        deleteAdditionalTranslationLink={deleteAdditionalTranslationLink}
+        additionalModLinks={additionalModLinks}
+        addAdditionalModLink={addAdditionalModLink}
+        updateAdditionalModLink={updateAdditionalModLink}
+        deleteAdditionalModLink={deleteAdditionalModLink}
+        varsUsedInTemplate={varsUsedInTemplate}
+        inputs={inputs}
+        setInput={setInput}
+        showTranslations={translations}
+        showMod={mod}
+      />
+    )}
 
-        {/* Variables personnalisées */}
-        <CustomVarsSection
-          visibleVars={visibleVars}
-          inputs={inputs}
-          setInput={setInput}
-          varsUsedInTemplate={varsUsedInTemplate}
-        />
+    {/* Variables personnalisées — déjà filtrées par visibleVars */}
+    <CustomVarsSection
+      visibleVars={visibleVars}
+      inputs={inputs}
+      setInput={setInput}
+      varsUsedInTemplate={varsUsedInTemplate}
+    />
 
-        {/* Synopsis + Instructions */}
-        <div className="editor-two-col">
+    {/* Synopsis + Instructions — masqué si aucun des deux n'est dans le template */}
+    {showEditorTwoCol && (
+      <div className="editor-two-col">
+        {synopsis && (
           <SynopsisSection
             ref={overviewRef}
             value={inputs['Overview'] || ''}
             onChange={(v) => setInput('Overview', v)}
-            disabled={!varsUsedInTemplate.has('Overview')}
+            disabled={false}
             onTranslate={handleTranslateSynopsis}
             translating={translatingOverview}
           />
+        )}
 
+        {instructions && (
           <InstructionsSection
             value={inputs['instruction'] || ''}
             onChange={(v) => setInput('instruction', v)}
@@ -808,35 +838,37 @@ export default function ContentEditor() {
               setInstructionSearchQuery(name);
               setTimeout(() => setShowInstructionSuggestions(false), 100);
             }}
-            disabled={!varsUsedInTemplate.has('instruction')}
+            disabled={false}
             savedInstructions={savedInstructions}
           />
-        </div>
-
-        {/* Overlay pour fermer les suggestions */}
-        {showInstructionSuggestions && (
-          <div
-            className="editor-overlay"
-            onClick={() => setShowInstructionSuggestions(false)}
-            aria-hidden
-          />
         )}
-
-        {/* Footer */}
-        <PublishFooter
-          canPublish={canPublish}
-          publishInProgress={publishInProgress}
-          editingPostId={editingPostId}
-          silentUpdateMode={silentUpdateMode}
-          setSilentUpdateMode={setSilentUpdateMode}
-          skipVersionControlMode={skipVersionControlMode}
-          setSkipVersionControlMode={setSkipVersionControlMode}
-          rateLimitCooldown={rateLimitCooldown}
-          publishTooltipText={publishTooltipText}
-          onPublish={onPublish}
-          confirm={confirm}
-        />
       </div>
+    )}
+
+    {/* Overlay fermeture suggestions */}
+    {showInstructionSuggestions && (
+      <div
+        className="editor-overlay"
+        onClick={() => setShowInstructionSuggestions(false)}
+        aria-hidden
+      />
+    )}
+
+    {/* Footer publication — toujours visible */}
+    <PublishFooter
+      canPublish={canPublish}
+      publishInProgress={publishInProgress}
+      editingPostId={editingPostId}
+      silentUpdateMode={silentUpdateMode}
+      setSilentUpdateMode={setSilentUpdateMode}
+      skipVersionControlMode={skipVersionControlMode}
+      setSkipVersionControlMode={setSkipVersionControlMode}
+      rateLimitCooldown={rateLimitCooldown}
+      publishTooltipText={publishTooltipText}
+      onPublish={onPublish}
+      confirm={confirm}
+    />
+    </div>
 
       <TagSelectorModal
         isOpen={showTagSelector}
