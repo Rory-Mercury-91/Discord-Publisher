@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useDraggableResizable } from '../../../hooks/useDraggableResizable';
 
-const DEFAULT_W = 340;
+const DEFAULT_W = 500;
 const DEFAULT_H = 440;
 
 interface F95CookiesHelpModalProps {
@@ -83,13 +83,6 @@ export default function F95CookiesHelpModal({ onClose }: F95CookiesHelpModalProp
         <p className="f95-cookies-help-note">
           Ce cookie permet à l&apos;application de récupérer des informations non transmises lorsque vous n&apos;êtes pas connecté.
         </p>
-      </div>
-
-      {/* Pied de page */}
-      <div className="f95-help-float__footer">
-        <button type="button" onClick={onClose} className="form-btn form-btn--ghost form-btn--sm">
-          ↩️ Fermer
-        </button>
       </div>
 
       {/* Poignée de redimensionnement */}

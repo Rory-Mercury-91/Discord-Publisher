@@ -1,6 +1,7 @@
 /**
- * Barre d'outils de la vue Ma collection.
- * Ordre : Tri (A→Z / Z→A / Récents / Anciens) → Tous / À jour / Non à jour → Input recherche → Selects → Filtre tags → Filtre labels → Gestion tags → Grille / Liste / Rafraîchir
+ * Barre d'outils de la vue Ma collection — ligne unique.
+ * Ordre : Tri → Sync → Selects → Filtre tags → Filtre labels → Gestion tags → Grille/Liste/↻/🗑️
+ * La recherche est désormais dans F95ImportAndCookiesBar.
  */
 import type { RefObject } from 'react';
 import FilterTagsPopover, { type FilterTagState } from './FilterTagsPopover';
@@ -25,8 +26,6 @@ const SORT_BUTTONS: [CollectionSortMode, string][] = [
 ];
 
 interface CollectionToolbarProps {
-  search: string;
-  setSearch: (v: string) => void;
   filterSync: '' | SyncStatus;
   setFilterSync: (v: '' | SyncStatus) => void;
   syncCounts: { ok: number; outdated: number; unknown: number };
@@ -72,7 +71,6 @@ interface CollectionToolbarProps {
 }
 
 export default function CollectionToolbar({
-  search, setSearch,
   filterSync, setFilterSync,
   syncCounts, gamesCount,
   sortMode, setSortMode,
@@ -92,7 +90,7 @@ export default function CollectionToolbar({
   return (
     <div className="library-toolbar library-toolbar--collection">
 
-      {/* ── Boutons de tri ── */}
+      {/* ── Tri ── */}
       <div className="library-toolbar-filters">
         {SORT_BUTTONS.map(([val, label]) => (
           <button
@@ -103,8 +101,8 @@ export default function CollectionToolbar({
             title={
               val === 'alpha_asc'       ? 'Trier par nom A → Z' :
               val === 'alpha_desc'      ? 'Trier par nom Z → A' :
-              val === 'date_added_desc' ? 'Trier par date d\'ajout (récent en premier)' :
-                                         'Trier par date d\'ajout (ancien en premier)'
+              val === 'date_added_desc' ? "Trier par date d'ajout (récent en premier)" :
+                                         "Trier par date d'ajout (ancien en premier)"
             }
           >
             {label}
@@ -113,7 +111,7 @@ export default function CollectionToolbar({
 
         <span className="library-toolbar-divider" />
 
-        {/* ── Boutons de filtre sync ── */}
+        {/* ── Filtre sync ── */}
         {SYNC_FILTER_BUTTONS.map(([val, label]) => {
           const isActive = filterSync === val;
           return (
@@ -132,15 +130,6 @@ export default function CollectionToolbar({
           );
         })}
       </div>
-
-      {/* ── Recherche ── */}
-      <input
-        type="text"
-        className="app-input library-toolbar-input library-toolbar-input--collection"
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        placeholder="Rechercher…"
-      />
 
       {/* ── Selects ── */}
       <select className="app-select library-toolbar-select--filter-statut" value={filterStatut} onChange={e => setFilterStatut(e.target.value)}>
@@ -173,9 +162,10 @@ export default function CollectionToolbar({
         <option value={-1}>Illimité</option>
       </select>
 
+      {/* ── Actions ── */}
       <div className="library-toolbar-right">
 
-        {/* ── Filtre tags ── */}
+        {/* Filtre tags */}
         <div className="library-toolbar-filter-tags-wrap">
           <button
             ref={filterTagsAnchorRef}
@@ -200,7 +190,7 @@ export default function CollectionToolbar({
           )}
         </div>
 
-        {/* ── Filtre labels ── */}
+        {/* Filtre labels */}
         <div className="library-toolbar-filter-tags-wrap">
           <button
             ref={filterLabelsAnchorRef}
@@ -229,7 +219,7 @@ export default function CollectionToolbar({
           type="button"
           className="library-collection-tag-btn"
           onClick={onOpenTagAvoirsModal}
-          title="Gérer les avis sur les tags (affichés en détail jeu)"
+          title="Gérer les avis sur les tags"
         >
           Gestion tags
         </button>
@@ -253,7 +243,7 @@ export default function CollectionToolbar({
           className="library-toolbar-btn"
           onClick={onResetFiltersAndRefresh}
           disabled={loading}
-          title="Réinitialiser les filtres et rafraîchir la liste"
+          title="Réinitialiser les filtres et rafraîchir"
         >↻</button>
 
         <div className="library-toolbar-spacer" aria-hidden="true" />

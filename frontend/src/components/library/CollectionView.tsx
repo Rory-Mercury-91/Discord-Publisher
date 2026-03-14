@@ -117,13 +117,6 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
   const [f95CookieInput, setF95CookieInput] = useState(() => {
     try { return localStorage.getItem('f95_cookies') ?? ''; } catch { return ''; }
   });
-  const [cookieSectionOpen, setCookieSectionOpen] = useState(() => {
-    try {
-      const stored = localStorage.getItem('collection_f95_cookie_section_open');
-      if (stored !== null) return stored === '1';
-      return !localStorage.getItem('f95_cookies');
-    } catch { return true; }
-  });
 
   // ── Ouvre la modale détail quand l'item en attente est disponible ─────────
   useEffect(() => {
@@ -205,14 +198,6 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     window.addEventListener('collection:game-added', handler);
     return () => window.removeEventListener('collection:game-added', handler);
   }, [refresh, triggerSilentEnrichment]);
-
-  const toggleCookieSection = useCallback(() => {
-    setCookieSectionOpen(prev => {
-      const next = !prev;
-      try { localStorage.setItem('collection_f95_cookie_section_open', next ? '1' : '0'); } catch { }
-      return next;
-    });
-  }, []);
 
   const [search, setSearch] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
@@ -359,7 +344,6 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
   const resetFiltersAndRefresh = () => { resetFilters(); refresh(); };
 
   const toggleSort = useCallback((key: string) => {
-    // Gardé pour la vue liste (colonnes cliquables) — bascule alpha_asc / alpha_desc sur nom_du_jeu
     if (key === 'nom_du_jeu') {
       setSortMode(prev => prev === 'alpha_asc' ? 'alpha_desc' : 'alpha_asc');
     }
@@ -440,12 +424,12 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     if (errorCount > 0) showToast(`${errorCount} erreur(s) lors de la suppression`, 'error');
   }, [selectedIds, remove, refresh, showToast]);
 
-  // ── Dérivé : active sort indicator pour la vue liste ─────────────────────
   const sortKey = sortMode === 'alpha_desc' ? 'nom_du_jeu' : sortMode === 'alpha_asc' ? 'nom_du_jeu' : '';
   const sortDir: 1 | -1 = sortMode === 'alpha_desc' ? -1 : 1;
 
   return (
     <div className="library-collection-view">
+      {/* ── Barre 1 : Import + Recherche ── */}
       <div className="library-toolbar library-toolbar--add-and-cookies">
         <F95ImportAndCookiesBar
           importInput={importInput}
@@ -456,17 +440,17 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
           f95CookieInput={f95CookieInput}
           setF95CookieInput={setF95CookieInput}
           onSaveCookies={saveF95Cookies}
-          cookieSectionOpen={cookieSectionOpen}
-          onToggleCookieSection={toggleCookieSection}
           onOpenF95Login={async () => {
             const res = await tauriAPI.openF95LoginWindow();
             if (!res.ok) showToast(res.error ?? 'Erreur', 'error');
           }}
+          search={search}
+          setSearch={setSearch}
         />
       </div>
 
+      {/* ── Barre 2 : Filtres & actions ── */}
       <CollectionToolbar
-        search={search} setSearch={setSearch}
         filterSync={filterSync} setFilterSync={setFilterSync}
         syncCounts={syncCounts} gamesCount={gamesEnriched.length}
         sortMode={sortMode} setSortMode={setSortMode}

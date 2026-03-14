@@ -7313,98 +7313,215 @@ textarea.form-textarea {
   opacity: 0.88;
 }
 
-/* Bouton mode suppression dans la toolbar */
-.library-toolbar-btn--delete-mode {
-  color: #94a3b8;
-  transition: color 0.15s, background 0.15s;
-}
-.library-toolbar-btn--delete-mode-active {
-  color: #ef4444 !important;
-  background: rgba(239, 68, 68, 0.15) !important;
-}
+/* ========== F95ImportAndCookiesBar ========== */
 
-/* Ma collection : ligne unique Ajouter + Cookies avec chevron afficher/masquer */
-.library-toolbar-filters--add-cookie-row {
-  flex: 1;
-  min-width: 0;
-}
-.library-collection-cookie-label {
-  white-space: nowrap;
-}
-.library-toolbar-btn--cookie-toggle {
-  min-width: 32px;
-  width: 32px;
-  padding: 0;
-  font-size: 14px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-.library-toolbar--cookie-row .library-collection-cookie-input {
-  min-width: 220px;
-  max-width: 400px;
-}
-
-/* Barre F95 : 50% gauche (import) | chevron | 50% droite (cookies, masquable sans repousser) */
 .library-f95-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0;
   width: 100%;
   min-width: 0;
+  height: 36px;
 }
-.library-f95-bar-left {
-  flex: 1;
-  min-width: 0;
+
+/* Zone gauche 60% : label + input URL + boutons + cookie */
+.library-f95-bar__import {
+  flex: 0 0 60%;
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-.library-f95-bar-left .library-collection-import-label {
-  flex-shrink: 0;
-}
-.library-f95-bar-left .library-collection-import-input {
-  flex: 1;
-  min-width: 120px;
-}
-.library-f95-bar-right {
-  flex: 1;
+  gap: 8px;
   min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 34px;
+  height: 36px;
 }
-.library-f95-bar-help-btn {
-  min-width: 28px;
-  width: 28px;
-  padding: 0;
-  font-size: 14px;
-  font-weight: 700;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: rgba(99, 102, 241, 0.12);
-  color: var(--accent);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.library-f95-bar-help-btn:hover {
-  background: rgba(99, 102, 241, 0.22);
-}
-.library-f95-bar .library-collection-cookie-input {
+
+/* Input URL/ID */
+.library-f95-bar__import .library-collection-import-input {
+  height: 34px;
   flex: 1;
-  min-width: 140px;
+  min-width: 100px;
 }
-.library-f95-bar-save-btn {
+
+/* Boutons ➕ Ajouter / ✍️ Ajout manuel / 🍪 Cookies */
+.library-f95-bar__import .library-collection-import-btn,
+.library-f95-bar__import .form-btn {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* Label "Ajouter par URL..." */
+.library-f95-bar__import .library-collection-import-label {
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+/* Bouton Cookies F95 */
+.library-f95-bar__cookies-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+  height: 34px;
+}
+
+/* État actif : cookie enregistré → teinte verte */
+.library-f95-bar__cookies-btn--active {
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  background: rgba(34, 197, 94, 0.1) !important;
+  color: #4ade80 !important;
+}
+
+/* Séparateur vertical */
+.library-toolbar-divider--vertical {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  flex-shrink: 0;
+  margin: 0 12px;
+}
+
+/* Champ de recherche — 40% restants */
+.library-f95-bar__search {
+  flex: 0 0 calc(40% - 26px);
+  height: 34px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* ========== CollectionToolbar — barre 2 sur une ligne ========== */
+
+.library-toolbar--collection {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  gap: 6px;
+  padding: 6px 16px;
+  align-items: center;
+}
+
+.library-toolbar--collection::-webkit-scrollbar {
+  display: none;
+}
+
+.library-toolbar--collection .library-sync-btn {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.library-toolbar--collection .library-toolbar-divider {
+  flex-shrink: 0;
+}
+
+.library-toolbar--collection .app-select {
+  height: 28px;
+  padding: 0 6px;
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.library-toolbar--collection .library-toolbar-select--filter-statut  { min-width: max-content; }
+.library-toolbar--collection .library-toolbar-select--filter-trad    { min-width: max-content; }
+.library-toolbar--collection .library-toolbar-select--filter-type    { min-width: max-content; }
+.library-toolbar--collection .library-toolbar-select--filter-trad-type { min-width: max-content; }
+.library-toolbar--collection .library-toolbar-select--page-size      { min-width: max-content; flex: 0 0 auto; }
+
+.library-toolbar--collection .library-toolbar-right {
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.library-toolbar--collection .library-collection-tag-btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.library-toolbar--collection .library-toolbar-btn {
+  height: 28px;
+  padding: 0 8px;
+}
+
+/* ========== Modale Cookies F95 ========== */
+
+.library-cookies-modal {
+  max-width: 460px;
+  width: 95%;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.library-cookies-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.library-cookies-modal__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.library-cookies-modal__body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.library-cookies-modal__desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.library-cookies-modal__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.library-cookies-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.library-cookies-modal__input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.library-cookies-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.1);
 }
 
 /* Panneau flottant draggable et redimensionnable — aide cookies F95 */
 .f95-help-float {
   position: fixed;
-  z-index: 9999;
+  z-index: 10001;
   display: flex;
   flex-direction: column;
   background: var(--panel);
