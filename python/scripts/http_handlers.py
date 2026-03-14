@@ -2779,7 +2779,74 @@ async def get_journal_logs(request):
         logger.exception("[api] get_journal_logs : %s", e)
         return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
 
+async def get_f95_rss_updates(request):
+    """
+    Proxy le flux RSS F95Zone pour éviter les restrictions CORS en mode web.
+    GET /api/rss/f95-updates
+    Réponse : { ok, entries: [{ threadId, url, title, pubDate }], count }
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/rss/f95-updates")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
 
+    import re
+    import xml.etree.ElementTree as ET
+    from email.utils import parsedate_to_datetime
+
+    RSS_URL = "https://f95zone.to/sam/latest_alpha/latest_data.php?cmd=rss&cat=games&rows=90"
+
+    def _extract_id(url: str):
+        m = re.search(r'/threads/(?:[^/]*\.)?(\d+)', url or '')
+        return int(m.group(1)) if m else None
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                RSS_URL,
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status != 200:
+                    return _with_cors(request, web.json_response(
+                        {"ok": False, "error": f"RSS upstream HTTP {resp.status}"},
+                        status=502,
+                    ))
+                xml_text = await resp.text(encoding="utf-8", errors="replace")
+
+        # Parse RSS 2.0 — xml.etree gère bien le namespace vide
+        root = ET.fromstring(xml_text)
+        entries = []
+        for item in root.iter("item"):
+            link     = (item.findtext("link") or "").strip()
+            title    = (item.findtext("title") or "").strip()
+            pub_raw  = (item.findtext("pubDate") or "").strip()
+            tid = _extract_id(link)
+            if not tid:
+                continue
+            try:
+                pub_iso = parsedate_to_datetime(pub_raw).isoformat() if pub_raw else ""
+            except Exception:
+                pub_iso = ""
+            entries.append({
+                "threadId": tid,
+                "url":      link,
+                "title":    title,
+                "pubDate":  pub_iso,
+            })
+
+        logger.info("[api] RSS F95 : %d entrées récupérées", len(entries))
+        return _with_cors(request, web.json_response({
+            "ok":      True,
+            "entries": entries,
+            "count":   len(entries),
+        }))
+
+    except ET.ParseError as e:
+        logger.warning("[api] RSS parse error : %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": f"Parse XML : {e}"}, status=500))
+    except Exception as e:
+        logger.exception("[api] get_f95_rss_updates : %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
 # ==================== APP ====================
 
 def make_app() -> web.Application:
@@ -2818,6 +2885,7 @@ def make_app() -> web.Application:
         ("GET",     "/api/logs/journal",                  get_journal_logs),
         ("POST",    "/api/jeux/sync-force",               jeux_sync_force),
         ("PATCH",   "/api/f95-jeux/{id}/synopsis",        update_f95_jeu_synopsis),
+        ("GET",     "/api/rss/f95-updates",               get_f95_rss_updates),
         # Catch-all en dernier
         ("*",       "/{tail:.*}",                         handle_404),
     ]

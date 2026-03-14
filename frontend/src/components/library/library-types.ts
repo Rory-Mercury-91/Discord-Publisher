@@ -50,3 +50,30 @@ export type GameF95 = {
 export type SyncStatus = 'ok' | 'outdated' | 'unknown';
 
 export type AppMode = 'translator' | 'user';
+
+// ── Tri de la collection ──────────────────────────────────────────────────────
+
+/**
+ * Modes de tri disponibles dans "Ma Collection".
+ * - alpha_asc / alpha_desc      : alphabétique
+ * - date_added_asc / desc       : date d'ajout à la collection (created_at)
+ * - game_update_desc            : dernière MAJ jeu sur F95Zone (flux RSS pubDate)
+ * - trad_update_desc            : dernière MAJ traduction selon f95_jeux.date_maj
+ */
+export type CollectionSortMode =
+  | 'alpha_asc'
+  | 'alpha_desc'
+  | 'date_added_asc'
+  | 'date_added_desc'
+  | 'game_update_desc'
+  | 'trad_update_desc';
+
+// ── Compteurs de filtres ──────────────────────────────────────────────────────
+
+/** Nombre d'entrées par valeur de filtre (calculé depuis l'ensemble complet). */
+export type FilterCounts = {
+  statuts:     Record<string, number>;
+  traducteurs: Record<string, number>;
+  types:       Record<string, number>;
+  tradTypes:   Record<string, number>;
+};

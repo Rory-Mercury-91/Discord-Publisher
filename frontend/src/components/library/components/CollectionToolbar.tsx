@@ -1,22 +1,24 @@
 /**
  * Barre d'outils de la vue Ma collection — ligne unique.
- * Ordre : Tri → Sync → Selects → Filtre tags → Filtre labels → Gestion tags → Grille/Liste/↻/🗑️
- * La recherche est désormais dans F95ImportAndCookiesBar.
+ * Ordre : Tri → Sync → Selects (avec compteurs) → Filtre tags → Filtre labels → Gestion tags → Grille/Liste/↻/🗑️
  */
 import type { RefObject } from 'react';
-import FilterTagsPopover, { type FilterTagState } from './FilterTagsPopover';
+import FilterTagsPopover,   { type FilterTagState   } from './FilterTagsPopover';
 import FilterLabelsPopover, { type FilterLabelState } from './FilterLabelsPopover';
-import type { SyncStatus } from '../library-types';
+import type { SyncStatus, CollectionSortMode, FilterCounts } from '../library-types';
 import type { CollectionLabel } from '../../../state/hooks/useCollection';
 
-type CollectionSortMode = 'alpha_asc' | 'alpha_desc' | 'date_added_asc' | 'date_added_desc';
 type ViewMode = 'grid' | 'list';
 
-const SORT_OPTIONS: [CollectionSortMode, string][] = [
-  ['alpha_asc',       'A → Z'],
-  ['alpha_desc',      'Z → A'],
-  ['date_added_desc', '🆕 Récents'],
-  ['date_added_asc',  '📅 Anciens'],
+// ── Constante de tri centralisée ──────────────────────────────────────────────
+
+export const SORT_OPTIONS: [CollectionSortMode, string][] = [
+  ['alpha_asc',        'A → Z'],
+  ['alpha_desc',       'Z → A'],
+  ['date_added_desc',  '🆕 Récents'],
+  ['date_added_asc',   '📅 Anciens'],
+  ['game_update_desc', '🕹️ MAJ jeu (RSS F95)'],
+  ['trad_update_desc', '🇫🇷 MAJ traduction'],
 ];
 
 const SYNC_OPTIONS: ['' | SyncStatus, string][] = [
@@ -24,6 +26,8 @@ const SYNC_OPTIONS: ['' | SyncStatus, string][] = [
   ['ok',       'À jour'],
   ['outdated', 'Non à jour'],
 ];
+
+// ── Props ─────────────────────────────────────────────────────────────────────
 
 interface CollectionToolbarProps {
   filterSync: '' | SyncStatus;
@@ -60,6 +64,10 @@ interface CollectionToolbarProps {
   filterLabelsAnchorRef: RefObject<HTMLButtonElement | null>;
   allLabels: CollectionLabel[];
   cycleFilterLabel: (label: string) => void;
+  // ── Compteurs dynamiques ──
+  filterCounts?: FilterCounts;
+  /** Vrai pendant le chargement du flux RSS (mode game_update_desc) */
+  rssLoading?: boolean;
   // ── Autres ──
   onOpenTagAvoirsModal: () => void;
   view: ViewMode;
@@ -69,6 +77,15 @@ interface CollectionToolbarProps {
   deleteMode: boolean;
   onToggleDeleteMode: () => void;
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Formate l'option de filtre avec le compteur entre parenthèses si disponible. */
+function optLabel(label: string, count: number | undefined): string {
+  return count !== undefined ? `${label} (${count})` : label;
+}
+
+// ── Composant ─────────────────────────────────────────────────────────────────
 
 export default function CollectionToolbar({
   filterSync, setFilterSync,
@@ -81,6 +98,8 @@ export default function CollectionToolbar({
   pageSize, setPageSize,
   filterTagsByTag, filterTagsOpen, setFilterTagsOpen, filterTagsAnchorRef, allUniqueTags, cycleFilterTag,
   filterLabelsByLabel, filterLabelsOpen, setFilterLabelsOpen, filterLabelsAnchorRef, allLabels, cycleFilterLabel,
+  filterCounts,
+  rssLoading,
   onOpenTagAvoirsModal,
   view, setView,
   onResetFiltersAndRefresh,
@@ -88,12 +107,18 @@ export default function CollectionToolbar({
   deleteMode, onToggleDeleteMode,
 }: CollectionToolbarProps) {
 
-  /** Libellé du filtre sync avec compteur intégré */
   const syncLabel = (val: '' | SyncStatus) => {
     if (val === '')         return `Tous (${gamesCount})`;
     if (val === 'ok')       return `À jour (${syncCounts.ok ?? 0})`;
     if (val === 'outdated') return `Non à jour (${syncCounts.outdated ?? 0})`;
     return val;
+  };
+
+  const sortLabel = (mode: CollectionSortMode) => {
+    const found = SORT_OPTIONS.find(([v]) => v === mode);
+    const base = found?.[1] ?? mode;
+    if (mode === 'game_update_desc' && rssLoading) return `${base} ⏳`;
+    return base;
   };
 
   return (
@@ -106,8 +131,8 @@ export default function CollectionToolbar({
         onChange={e => setSortMode(e.target.value as CollectionSortMode)}
         title="Ordre de tri"
       >
-        {SORT_OPTIONS.map(([val, label]) => (
-          <option key={val} value={val}>{label}</option>
+        {SORT_OPTIONS.map(([val]) => (
+          <option key={val} value={val}>{sortLabel(val)}</option>
         ))}
       </select>
 
@@ -118,30 +143,64 @@ export default function CollectionToolbar({
         onChange={e => setFilterSync(e.target.value as '' | SyncStatus)}
         title="Filtrer par statut de synchronisation"
       >
-        {SYNC_OPTIONS.map(([val, _label]) => (
-          <option key={val || 'all'} value={val}>
-            {syncLabel(val)}
+        {SYNC_OPTIONS.map(([val]) => (
+          <option key={val || 'all'} value={val}>{syncLabel(val)}</option>
+        ))}
+      </select>
+
+      {/* ── Selects avec compteurs ── */}
+      <select
+        className="app-select library-toolbar-select--filter-statut"
+        value={filterStatut}
+        onChange={e => setFilterStatut(e.target.value)}
+      >
+        <option value="">Tous les statuts</option>
+        {statuts.map(s => (
+          <option key={s} value={s}>
+            {optLabel(s, filterCounts?.statuts[s])}
           </option>
         ))}
       </select>
 
-      {/* ── Selects ── */}
-      <select className="app-select library-toolbar-select--filter-statut" value={filterStatut} onChange={e => setFilterStatut(e.target.value)}>
-        <option value="">Tous les statuts</option>
-        {statuts.map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
-      <select className="app-select library-toolbar-select--filter-trad" value={filterTrad} onChange={e => setFilterTrad(e.target.value)}>
+      <select
+        className="app-select library-toolbar-select--filter-trad"
+        value={filterTrad}
+        onChange={e => setFilterTrad(e.target.value)}
+      >
         <option value="">Tous les traducteurs</option>
-        {traducteurs.map(t => <option key={t} value={t}>{t}</option>)}
+        {traducteurs.map(t => (
+          <option key={t} value={t}>
+            {optLabel(t, filterCounts?.traducteurs[t])}
+          </option>
+        ))}
       </select>
-      <select className="app-select library-toolbar-select--filter-type" value={filterType} onChange={e => setFilterType(e.target.value)}>
+
+      <select
+        className="app-select library-toolbar-select--filter-type"
+        value={filterType}
+        onChange={e => setFilterType(e.target.value)}
+      >
         <option value="">Tous les moteurs</option>
-        {types.map(t => <option key={t} value={t}>{t}</option>)}
+        {types.map(t => (
+          <option key={t} value={t}>
+            {optLabel(t, filterCounts?.types[t])}
+          </option>
+        ))}
       </select>
-      <select className="app-select library-toolbar-select--filter-trad-type" value={filterTradType} onChange={e => setFilterTradType(e.target.value)}>
+
+      <select
+        className="app-select library-toolbar-select--filter-trad-type"
+        value={filterTradType}
+        onChange={e => setFilterTradType(e.target.value)}
+      >
         <option value="">Tous les types de trad.</option>
-        {tradTypes.map(t => <option key={t} value={t}>{t}</option>)}
+        {tradTypes.map(t => (
+          <option key={t} value={t}>
+            {optLabel(t, filterCounts?.tradTypes[t])}
+          </option>
+        ))}
       </select>
+
       <select
         className="app-select library-toolbar-select library-toolbar-select--page-size"
         value={pageSize}

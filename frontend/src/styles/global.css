@@ -7392,6 +7392,27 @@ textarea.form-textarea {
 }
 
 /* ========== CollectionToolbar — barre 2 sur une ligne ========== */
+.library-rss-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--bg-secondary, rgba(255,255,255,0.04));
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.library-rss-bar__label {
+  color: var(--muted);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.library-rss-bar__select {
+  font-size: 12px;
+  padding: 2px 6px;
+  max-width: 120px;
+}
 
 .library-toolbar--collection {
   flex-wrap: nowrap;
