@@ -32,6 +32,7 @@ export type GameF95 = {
   image: string;
   type_maj: string;
   date_maj: string;
+  f95_date_maj?: string;
   published_post_id?: number | null;
   synced_at?: string;
   created_at?: string;
