@@ -76,7 +76,6 @@ export type UserCollectionGameVariant = {
 
 /** Données f95_jeux ou scraped_data pour afficher la même chose que dans la bibliothèque */
 export type UserCollectionGameEnrichment = {
-  /** ID de la ligne f95_jeux (pour édition synopsis) */
   f95_jeux_id?: number;
   nom_du_jeu: string;
   version: string;
@@ -88,17 +87,14 @@ export type UserCollectionGameEnrichment = {
   traducteur_url?: string;
   type_de_traduction?: string;
   date_maj?: string;
+  f95_date_maj?: string;
   type_maj?: string;
   trad_ver?: string;
   lien_trad?: string;
-  /** Tags (ex. depuis f95_jeux) */
   tags?: string;
-  /** Synopsis (ex. depuis scraped_data, ou champ unique) */
   synopsis?: string;
-  /** Synopsis FR/EN depuis f95_jeux (priorité pour affichage détail) */
   synopsis_fr?: string;
   synopsis_en?: string;
-  /** Autres lignes (saisons / traductions) pour le même site_id */
   variants?: UserCollectionGameVariant[];
 };
 
@@ -171,11 +167,11 @@ export function useCollection() {
       let jeuxMap: Record<number, UserCollectionEntryEnriched['game']> = {};
       if (siteIds.length > 0) {
         const { data: jeux } = await sb
-          .from('f95_jeux')
-          .select(
-            'site_id, ac, updated_at, nom_du_jeu, version, nom_url, image, statut, type, traducteur, traducteur_url, type_de_traduction, date_maj, type_maj, trad_ver, lien_trad, tags, synopsis_fr, synopsis_en'
-          )
-          .in('site_id', siteIds);
+        .from('f95_jeux')
+        .select(
+          'site_id, ac, updated_at, nom_du_jeu, version, nom_url, image, statut, type, traducteur, traducteur_url, type_de_traduction, date_maj, f95_date_maj, type_maj, trad_ver, lien_trad, tags, synopsis_fr, synopsis_en'
+        )
+        .in('site_id', siteIds);
       if (jeux?.length) {
           // Groupement par site_id (clé F95/LewdCorner fiable et unique par jeu).
           // L'ancien groupement par nom_url pouvait fusionner deux jeux distincts
@@ -211,25 +207,26 @@ export function useCollection() {
             const synopsisFr = (primary.synopsis_fr ?? '').trim();
             const synopsisEn = (primary.synopsis_en ?? '').trim();
             const gamePayload = {
-              f95_jeux_id: primary.id,
-              nom_du_jeu: primary.nom_du_jeu,
-              version: primary.version,
-              nom_url: primary.nom_url,
-              image: primary.image,
-              statut: primary.statut,
-              type: primary.type,
-              traducteur: primary.traducteur,
-              traducteur_url: primary.traducteur_url,
-              type_de_traduction: primary.type_de_traduction,
-              date_maj: primary.date_maj,
-              type_maj: primary.type_maj,
-              trad_ver: primary.trad_ver,
-              lien_trad: primary.lien_trad,
-              tags: primary.tags ?? '',
-              synopsis: synopsisFr || synopsisEn || undefined,
-              synopsis_fr: synopsisFr || undefined,
-              synopsis_en: synopsisEn || undefined,
-              variants: variants.length > 0 ? variants : undefined,
+              f95_jeux_id:          primary.id,
+              nom_du_jeu:           primary.nom_du_jeu,
+              version:              primary.version,
+              nom_url:              primary.nom_url,
+              image:                primary.image,
+              statut:               primary.statut,
+              type:                 primary.type,
+              traducteur:           primary.traducteur,
+              traducteur_url:       primary.traducteur_url,
+              type_de_traduction:   primary.type_de_traduction,
+              date_maj:             primary.date_maj,
+              f95_date_maj:         primary.f95_date_maj ?? undefined,   // ← AJOUT
+              type_maj:             primary.type_maj,
+              trad_ver:             primary.trad_ver,
+              lien_trad:            primary.lien_trad,
+              tags:                 primary.tags ?? '',
+              synopsis:             synopsisFr || synopsisEn || undefined,
+              synopsis_fr:          synopsisFr || undefined,
+              synopsis_en:          synopsisEn || undefined,
+              variants:             variants.length > 0 ? variants : undefined,
             };
             // Assignation uniquement pour les clés numériques (site_id réels)
             // Les entrées sans site_id (jeux "Autre") ne peuvent pas être jointes

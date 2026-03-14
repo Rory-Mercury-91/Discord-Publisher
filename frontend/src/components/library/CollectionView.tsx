@@ -71,6 +71,7 @@ function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
   if (entry.game?.synopsis && !g.synopsis_en) g.synopsis_en = entry.game.synopsis;
   if (entry.game?.variants?.length)    g.variants    = entry.game.variants;
   if (entry.game?.f95_jeux_id != null) g.f95_jeux_id = entry.game.f95_jeux_id;
+  if (entry.game?.f95_date_maj)        g.f95_date_maj = entry.game.f95_date_maj;
 
   const sd = entry.scraped_data as Record<string, unknown> | null;
   if (sd) {

@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '../../../state/appContext';
 import { tauriAPI } from '../../../lib/tauri-api';
+import { useDateRefreshSettings } from '../../../state/hooks/useDateRefreshSettings';
+import { useDateScraper }          from '../../../state/hooks/useDateScraper';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -20,13 +22,9 @@ type SynopsisStats = {
   with_synopsis_en:    number;
   with_synopsis_fr:    number;
   missing_synopsis_fr: number;
-  enrichable_count:    number; // sous-ensemble de missing scrappable (F95Zone uniquement)
+  enrichable_count:    number;
 };
 
-// MissingEntry couvre à la fois les entrées "sans synopsis FR" ET les échecs du dernier run.
-// can_enrich : présent dans les entrées venant des stats (true = URL F95Zone valide)
-// raison (stats) : url_manquante | lewdcorner | url_non_f95
-// raison (run)   : synopsis_introuvable | traduction_echouee | url_incoherente
 type MissingEntry = {
   id:          number;
   nom_du_jeu:  string;
@@ -37,6 +35,17 @@ type MissingEntry = {
   can_enrich?: boolean;
   raison?:     string;
 };
+
+// ── Fréquences de rafraîchissement ────────────────────────────────────────────
+
+const DATE_REFRESH_OPTIONS: { label: string; value: number }[] = [
+  { label: 'Manuel uniquement',  value: 0   },
+  { label: 'Toutes les heures',  value: 1   },
+  { label: 'Toutes les 6 heures',value: 6   },
+  { label: 'Toutes les 12 heures',value: 12  },
+  { label: 'Une fois par jour',  value: 24  },
+  { label: 'Une fois par semaine',value: 168 },
+];
 
 // ── Log colorization ──────────────────────────────────────────────────────────
 
@@ -60,11 +69,9 @@ function logLineStyle(line: string): React.CSSProperties {
 // ── Raison badge ──────────────────────────────────────────────────────────────
 
 const RAISON_CFG: Record<string, { bg: string; label: string }> = {
-  // Raisons issues du run d'enrichissement
   synopsis_introuvable: { bg: '#f59e0b', label: 'Synopsis introuvable' },
   traduction_echouee:   { bg: '#6b7280', label: 'Traduction échouée'   },
   url_incoherente:      { bg: '#ef4444', label: 'URL incorrecte'        },
-  // Raisons issues des stats (entrées non-enrichissables automatiquement)
   lewdcorner:           { bg: '#8b5cf6', label: 'LewdCorner'            },
   url_manquante:        { bg: '#6b7280', label: 'URL manquante'         },
   url_non_f95:          { bg: '#6b7280', label: 'URL non-F95'           },
@@ -113,6 +120,17 @@ function ConfirmInline({
   );
 }
 
+// ── Helpers date ──────────────────────────────────────────────────────────────
+
+function formatLastRefresh(iso: string | null): string {
+  if (!iso) return 'Jamais';
+  try {
+    return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return iso;
+  }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function EnrichmentSettings() {
@@ -131,40 +149,55 @@ export default function EnrichmentSettings() {
   const [enrichRunning,  setEnrichRunning]  = useState(false);
   const [enrichProgress, setEnrichProgress] = useState<{ current: number; total: number } | null>(null);
   const [enrichForce,    setEnrichForce]    = useState(false);
-  // Échecs du dernier run (même type que MissingEntry pour permettre l'édition inline)
   const [failedEntries,  setFailed]         = useState<MissingEntry[]>([]);
 
-  // ── Scroll logs — conteneur uniquement ───────────────────────────────────
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const userAtBottomRef  = useRef(true);
   const abortRef         = useRef<AbortController | null>(null);
 
-  // ── Per-entry retry ───────────────────────────────────────────────────────
   const [retryingIds, setRetryingIds] = useState<Set<number>>(new Set());
-
-  // ── Inline edit ───────────────────────────────────────────────────────────
   const [editingId,  setEditingId]  = useState<number | null>(null);
   const [editEn,     setEditEn]     = useState('');
   const [editFr,     setEditFr]     = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [editError,  setEditError]  = useState<string | null>(null);
 
-  // ── Reset synopsis ────────────────────────────────────────────────────────
   const [resetLoading, setResetLoading] = useState(false);
   const [resetResult,  setResetResult]  = useState<string | null>(null);
   const [resetStep,    setResetStep]    = useState(0);
 
-  // ── Force sync ────────────────────────────────────────────────────────────
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncResult,  setSyncResult]  = useState<{ ok: boolean; msg: string } | null>(null);
   const [syncStep,    setSyncStep]    = useState(0);
 
-  // ── Scroll interne au conteneur de logs uniquement ────────────────────────
+  // ── Dates F95 ─────────────────────────────────────────────────────────────
+  const {
+    intervalHours, setIntervalHours,
+    lastRefresh, loading: dateSettingsLoading,
+  } = useDateRefreshSettings();
+
+  const {
+    isRunning: dateRunning, progress: dateProgress,
+    logs: dateLogs, summary: dateSummary,
+    startScrape, stopScrape, reset: resetDateScraper,
+  } = useDateScraper();
+
+  const dateLogsRef        = useRef<HTMLDivElement>(null);
+  const dateUserAtBottomRef = useRef(true);
+
+  // ── Scroll logs synopsis ──────────────────────────────────────────────────
   useEffect(() => {
     const c = logsContainerRef.current;
     if (!c || !userAtBottomRef.current) return;
     c.scrollTop = c.scrollHeight;
   }, [enrichLogs]);
+
+  // ── Scroll logs dates ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const c = dateLogsRef.current;
+    if (!c || !dateUserAtBottomRef.current) return;
+    c.scrollTop = c.scrollHeight;
+  }, [dateLogs]);
 
   // ── fetchStats ────────────────────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
@@ -239,7 +272,7 @@ export default function EnrichmentSettings() {
               await fetchStats();
             }
             if (msg.error) setEnrichLogs(p => [...p, `❌ Erreur : ${msg.error}`]);
-          } catch { /* ignore JSON parse errors */ }
+          } catch { /* ignore */ }
         }
       }
     } catch (e) {
@@ -261,7 +294,6 @@ export default function EnrichmentSettings() {
     }
   }, [enrichRunning, enrichForce, base, fetchStats]);
 
-  // ── Retry d'une entrée individuelle ──────────────────────────────────────
   const handleRetryEntry = (entry: MissingEntry) => {
     if (enrichRunning) return;
     const ids = entry.group_ids?.length ? entry.group_ids : [entry.id];
@@ -269,7 +301,6 @@ export default function EnrichmentSettings() {
     startEnrichment(ids);
   };
 
-  // ── Édition inline synopsis ───────────────────────────────────────────────
   const handleOpenEdit = (entry: MissingEntry) => {
     setEditingId(entry.id);
     setEditEn(entry.synopsis_en || '');
@@ -314,7 +345,6 @@ export default function EnrichmentSettings() {
     }
   };
 
-  // ── Reset synopsis ────────────────────────────────────────────────────────
   const handleReset = useCallback(async () => {
     if (resetStep < 2) { setResetStep(s => s + 1); return; }
     setResetLoading(true);
@@ -337,7 +367,6 @@ export default function EnrichmentSettings() {
     }
   }, [resetStep, base, fetchStats]);
 
-  // ── Force sync ────────────────────────────────────────────────────────────
   const handleForceSync = useCallback(async () => {
     if (syncStep < 2) { setSyncStep(s => s + 1); return; }
     setSyncLoading(true);
@@ -359,7 +388,7 @@ export default function EnrichmentSettings() {
     }
   }, [syncStep, base, fetchStats]);
 
-  // ── Dérivés ───────────────────────────────────────────────────────────────
+  // ── Dérivés synopsis ──────────────────────────────────────────────────────
   const pct = enrichProgress && enrichProgress.total > 0
     ? Math.round((enrichProgress.current / enrichProgress.total) * 100)
     : 0;
@@ -371,12 +400,23 @@ export default function EnrichmentSettings() {
       )
     : missingEntries;
 
-  // Entrées enrichissables parmi les filtrées (pour le bouton "Tout relancer")
   const filteredEnrichable = filteredMissing.filter(e => e.can_enrich !== false);
-
-  // Si des échecs existent pour le dernier run, on les affiche en priorité
   const displayedMissing   = failedEntries.length > 0 ? failedEntries : filteredMissing;
   const showMissingSection = missingEntries.length > 0 || failedEntries.length > 0;
+
+  // ── Dérivés dates ─────────────────────────────────────────────────────────
+  const datePct = dateProgress.total > 0
+    ? Math.round((dateProgress.current / dateProgress.total) * 100)
+    : 0;
+
+  const showDateLogs = dateRunning || dateLogs.length > 0;
+
+  // ── Lancer le scraping dates (réutilise le cookie f95_cookies existant) ───
+  const handleStartDateScrape = () => {
+    resetDateScraper();
+    const f95Cookies = (() => { try { return localStorage.getItem('f95_cookies') || ''; } catch { return ''; } })();
+    startScrape({ f95Cookies: f95Cookies || undefined });
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -422,7 +462,6 @@ export default function EnrichmentSettings() {
               ))}
             </div>
 
-            {/* Explication si liste enrichissable < total manquant */}
             {stats.enrichable_count < stats.missing_synopsis_fr && (
               <div style={{
                 marginTop: 10, padding: '8px 12px', borderRadius: 6,
@@ -433,15 +472,14 @@ export default function EnrichmentSettings() {
                 sans synopsis FR, <strong style={{ color: '#10b981' }}>{stats.enrichable_count}</strong> ont
                 une URL F95Zone et peuvent être enrichis automatiquement.
                 Les <strong style={{ color: '#f59e0b' }}>{stats.missing_synopsis_fr - stats.enrichable_count}</strong> restants
-                sont des entrées LewdCorner, sans URL ou avec une URL non reconnue — ils apparaissent dans
-                la liste ci-dessous avec un badge coloré et ne peuvent pas être scrappés automatiquement.
+                sont des entrées LewdCorner, sans URL ou avec une URL non reconnue.
               </div>
             )}
           </>
         )}
       </section>
 
-      {/* ════════════ Enrichissement ════════════ */}
+      {/* ════════════ Enrichissement synopsis ════════════ */}
       <section className="server-section">
         <h4 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>🕷️ Enrichissement des synopsis</h4>
         <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)' }}>
@@ -471,7 +509,6 @@ export default function EnrichmentSettings() {
           )}
         </div>
 
-        {/* Barre de progression */}
         {enrichProgress && (
           <div style={{ marginBottom: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
@@ -484,7 +521,6 @@ export default function EnrichmentSettings() {
           </div>
         )}
 
-        {/* Logs streaming — scroll interne au conteneur uniquement */}
         <div
           ref={logsContainerRef}
           className="styled-scrollbar"
@@ -514,8 +550,6 @@ export default function EnrichmentSettings() {
       {/* ════════════ Entrées sans synopsis FR ════════════ */}
       {showMissingSection && (
         <section className="server-section" style={{ borderColor: failedEntries.length > 0 ? '#ef4444' : '#f59e0b' }}>
-
-          {/* En-tête */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
             <h4 style={{ margin: 0, fontSize: '0.9rem', color: failedEntries.length > 0 ? '#ef4444' : undefined }}>
               {failedEntries.length > 0
@@ -533,7 +567,6 @@ export default function EnrichmentSettings() {
             </h4>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              {/* Filtre texte — masqué en mode "échecs du run" */}
               {failedEntries.length === 0 && (
                 <input
                   type="text"
@@ -547,30 +580,22 @@ export default function EnrichmentSettings() {
 
               {failedEntries.length > 0 ? (
                 <>
-                  {/* Relancer tous les échecs */}
                   <button
                     className="server-btn server-btn--default"
                     disabled={enrichRunning}
                     onClick={() => startEnrichment(failedEntries.flatMap(e => e.group_ids?.length ? e.group_ids : [e.id]))}
-                    title="Relancer l'enrichissement pour toutes les entrées ayant échoué"
                   >
                     🕷️ Relancer les {failedEntries.length} échecs
                   </button>
-                  {/* Revenir à la liste complète */}
-                  <button
-                    className="server-btn server-btn--default"
-                    onClick={() => setFailed([])}
-                  >
+                  <button className="server-btn server-btn--default" onClick={() => setFailed([])}>
                     Afficher tout
                   </button>
                 </>
               ) : (
-                /* Relancer uniquement les entrées enrichissables filtrées */
                 <button
                   className="server-btn server-btn--default"
                   disabled={enrichRunning || filteredEnrichable.length === 0}
                   onClick={() => startEnrichment(filteredEnrichable.flatMap(e => e.group_ids?.length ? e.group_ids : [e.id]))}
-                  title="Relancer l'enrichissement pour toutes les entrées F95Zone enrichissables"
                 >
                   🕷️ Tout relancer ({filteredEnrichable.length}{filteredEnrichable.length < filteredMissing.length ? `/${filteredMissing.length}` : ''})
                 </button>
@@ -578,39 +603,28 @@ export default function EnrichmentSettings() {
             </div>
           </div>
 
-          {/* Liste */}
           <div
             className="styled-scrollbar"
             style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 320, overflowY: 'auto' }}
           >
             {displayedMissing.slice(0, 100).map(entry => (
               <div key={entry.id} style={{ borderBottom: '1px solid var(--border)' }}>
-
-                {/* Ligne principale */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 2px', flexWrap: 'nowrap' }}>
                   <RaisonBadge raison={entry.raison} />
-
-                  {/* Nom */}
                   <span
                     style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }}
                     title={entry.nom_du_jeu}
                   >
                     {entry.nom_du_jeu}
                   </span>
-
-                  {/* Indicateur synopsis EN présent */}
                   {entry.synopsis_en && (
                     <span style={{ color: '#38bdf8', fontSize: 11, flexShrink: 0 }}>EN ✓</span>
                   )}
-
-                  {/* Nb lignes dans le groupe */}
                   {entry.group_ids?.length > 1 && (
                     <span style={{ color: 'var(--muted)', fontSize: 11, flexShrink: 0 }}>
                       ({entry.group_ids.length} lignes)
                     </span>
                   )}
-
-                  {/* Bouton ouvrir URL dans le navigateur — uniquement si URL présente */}
                   {entry.nom_url && (
                     <button
                       type="button"
@@ -622,89 +636,53 @@ export default function EnrichmentSettings() {
                       {entry.raison === 'lewdcorner' ? 'LC ↗' : 'F95 ↗'}
                     </button>
                   )}
-
-                  {/* Retry individuel — uniquement pour les entrées enrichissables */}
                   {entry.can_enrich !== false && (
                     <button
                       type="button"
                       className="server-btn server-btn--default"
                       style={{ padding: '2px 7px', fontSize: 13, flexShrink: 0 }}
                       disabled={enrichRunning || retryingIds.has(entry.id)}
-                      title="Relancer le scraping pour cette entrée uniquement"
                       onClick={() => handleRetryEntry(entry)}
                     >
                       {retryingIds.has(entry.id) ? '…' : '🕷️'}
                     </button>
                   )}
-
-                  {/* Édition manuelle */}
                   <button
                     type="button"
                     className="server-btn server-btn--default"
                     style={{ padding: '2px 7px', fontSize: 13, flexShrink: 0 }}
-                    title="Éditer manuellement le synopsis"
                     onClick={() => editingId === entry.id ? setEditingId(null) : handleOpenEdit(entry)}
                   >
                     {editingId === entry.id ? '✕' : '✏️'}
                   </button>
                 </div>
 
-                {/* Éditeur inline */}
                 {editingId === entry.id && (
                   <div style={{
                     background: 'var(--bg-secondary, rgba(0,0,0,0.15))',
                     borderRadius: 6, padding: '10px 12px', marginBottom: 6,
                     display: 'flex', flexDirection: 'column', gap: 8,
                   }}>
-                    {/* Synopsis EN */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <label style={{ fontSize: 12, color: 'var(--muted)' }}>
-                        Synopsis EN <em>(original anglais)</em>
-                      </label>
-                      <textarea
-                        className="app-input"
-                        style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 12 }}
-                        value={editEn}
-                        onChange={e => setEditEn(e.target.value)}
-                        placeholder="Synopsis original en anglais…"
-                        rows={3}
-                      />
+                      <label style={{ fontSize: 12, color: 'var(--muted)' }}>Synopsis EN <em>(original anglais)</em></label>
+                      <textarea className="app-input" style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 12 }}
+                        value={editEn} onChange={e => setEditEn(e.target.value)}
+                        placeholder="Synopsis original en anglais…" rows={3} />
                     </div>
-
-                    {/* Synopsis FR */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                       <label style={{ fontSize: 12, color: 'var(--muted)' }}>
                         Synopsis FR <span style={{ color: '#ef4444' }}>*</span>{' '}
                         <em>(traduction française)</em>
                       </label>
-                      <textarea
-                        className="app-input"
-                        style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 12 }}
-                        value={editFr}
-                        onChange={e => setEditFr(e.target.value)}
-                        placeholder="Traduction française…"
-                        rows={3}
-                      />
+                      <textarea className="app-input" style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: 12 }}
+                        value={editFr} onChange={e => setEditFr(e.target.value)}
+                        placeholder="Traduction française…" rows={3} />
                     </div>
-
-                    {editError && (
-                      <div style={{ color: '#ef4444', fontSize: 12 }}>❌ {editError}</div>
-                    )}
-
+                    {editError && <div style={{ color: '#ef4444', fontSize: 12 }}>❌ {editError}</div>}
                     <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                      <button
-                        type="button"
-                        className="server-btn server-btn--default"
-                        onClick={() => setEditingId(null)}
-                      >
-                        Annuler
-                      </button>
-                      <button
-                        type="button"
-                        className="server-btn server-btn--default"
-                        disabled={editSaving || (!editEn && !editFr)}
-                        onClick={() => handleSaveEdit(entry)}
-                      >
+                      <button type="button" className="server-btn server-btn--default" onClick={() => setEditingId(null)}>Annuler</button>
+                      <button type="button" className="server-btn server-btn--default"
+                        disabled={editSaving || (!editEn && !editFr)} onClick={() => handleSaveEdit(entry)}>
                         {editSaving ? '…' : '💾 Sauvegarder'}
                       </button>
                     </div>
@@ -718,7 +696,6 @@ export default function EnrichmentSettings() {
                 +{displayedMissing.length - 100} entrées — utilisez le filtre pour affiner
               </div>
             )}
-
             {displayedMissing.length === 0 && (
               <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0', textAlign: 'center' }}>
                 {missingFilter ? 'Aucun résultat pour ce filtre.' : 'Aucune entrée manquante.'}
@@ -727,6 +704,122 @@ export default function EnrichmentSettings() {
           </div>
         </section>
       )}
+
+      {/* ════════════ Dates de mise à jour F95 ════════════ */}
+      <section className="server-section">
+        <h4 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>📅 Dates de mise à jour F95</h4>
+        <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)' }}>
+          Scrape le champ <strong>Thread Updated</strong> sur F95Zone pour alimenter{' '}
+          <code style={{ fontSize: 11 }}>f95_date_maj</code>.
+          Utilisé comme fallback de tri quand un jeu est absent du flux RSS.
+        </p>
+
+        {/* Fréquence automatique */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+          <label style={{ fontSize: 13, color: 'var(--muted)', flexShrink: 0 }}>
+            Fréquence automatique :
+          </label>
+          <select
+            className="app-select"
+            value={intervalHours}
+            disabled={dateSettingsLoading}
+            onChange={e => setIntervalHours(Number(e.target.value))}
+            style={{ fontSize: 13 }}
+          >
+            {DATE_REFRESH_OPTIONS.map(({ label, value }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+
+          {intervalHours === 0 && (
+            <span style={{ fontSize: 12, color: 'var(--muted)', fontStyle: 'italic' }}>
+              Aucune exécution automatique.
+            </span>
+          )}
+        </div>
+
+        {/* Dernier passage automatique */}
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+          Dernier passage automatique :{' '}
+          <strong style={{ color: 'var(--text)' }}>
+            {dateSettingsLoading ? '…' : formatLastRefresh(lastRefresh)}
+          </strong>
+        </div>
+
+        {/* Bouton lancer maintenant */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+          {!dateRunning ? (
+            <button
+              className="server-btn server-btn--default"
+              onClick={handleStartDateScrape}
+              disabled={dateRunning}
+            >
+              ▶️ Lancer maintenant
+            </button>
+          ) : (
+            <button className="server-btn server-btn--danger" onClick={stopScrape}>
+              ⏹️ Arrêter
+            </button>
+          )}
+          {dateLogs.length > 0 && !dateRunning && (
+            <button className="server-btn server-btn--default" onClick={resetDateScraper}>
+              🗑️ Effacer les logs
+            </button>
+          )}
+        </div>
+
+        {/* Barre de progression */}
+        {dateRunning && dateProgress.total > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
+              <span>Progression</span>
+              <span>{dateProgress.current} / {dateProgress.total} ({datePct}%)</span>
+            </div>
+            <div style={{ height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${datePct}%`, background: '#38bdf8', transition: 'width 0.25s ease' }} />
+            </div>
+          </div>
+        )}
+
+        {/* Logs streaming */}
+        {showDateLogs && (
+          <div
+            ref={dateLogsRef}
+            className="styled-scrollbar"
+            style={{
+              background: 'var(--bg-secondary, rgba(0,0,0,0.18))',
+              borderRadius: 6,
+              padding: '10px 12px',
+              maxHeight: 240,
+              overflowY: 'auto',
+              fontFamily: 'monospace',
+              fontSize: 12,
+              lineHeight: 1.65,
+            }}
+            onScroll={() => {
+              const c = dateLogsRef.current;
+              if (!c) return;
+              dateUserAtBottomRef.current = c.scrollHeight - c.scrollTop - c.clientHeight < 40;
+            }}
+          >
+            {dateLogs.map((line, i) => (
+              <div key={i} style={logLineStyle(line)}>{line || '\u00A0'}</div>
+            ))}
+          </div>
+        )}
+
+        {/* Résumé après complétion */}
+        {dateSummary && !dateRunning && (
+          <div style={{
+            marginTop: 10, padding: '8px 12px', borderRadius: 6,
+            background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)',
+            fontSize: 13, color: '#10b981',
+          }}>
+            🎉 {dateSummary.updated} date(s) mise(s) à jour sur{' '}
+            {dateSummary.updated + dateSummary.skipped} jeux traités.
+          </div>
+        )}
+      </section>
 
       {/* ════════════ Synchronisation catalogue ════════════ */}
       <section className="server-section" style={{ borderColor: 'var(--accent-border)' }}>

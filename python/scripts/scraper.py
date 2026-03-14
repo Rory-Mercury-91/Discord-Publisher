@@ -61,12 +61,12 @@ _F95_HEADERS = {
 # ── Regex pour "Thread Updated" ──────────────────────────────────────────────
 
 _RE_UPDATED_HTML = re.compile(
-    r'<b>\s*Thread\s+Updated\s*</b>\s*[:\-]?\s*(?:<[^>]+>)*\s*'
+    r'<b>\s*(?:Thread\s+)?Updated\s*</b>\s*[:\-]?\s*(?:<[^>]+>)*\s*'
     r'(?P<date>\d{4}-\d{2}-\d{2}|\w+\s+\d{1,2},?\s+\d{4}|\d{1,2}/\d{1,2}/\d{4})',
     re.IGNORECASE,
 )
 _RE_UPDATED_TEXT = re.compile(
-    r'Thread\s+Updated\s*[:\-]\s*'
+    r'(?:Thread\s+)?Updated\s*[:\-]\s*'
     r'(?P<date>\d{4}-\d{2}-\d{2}|\w+\s+\d{1,2},?\s+\d{4}|\d{1,2}/\d{1,2}/\d{4})',
     re.IGNORECASE,
 )
