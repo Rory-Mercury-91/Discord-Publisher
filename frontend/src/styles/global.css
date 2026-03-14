@@ -7395,8 +7395,6 @@ textarea.form-textarea {
 
 .library-toolbar--collection {
   flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
   gap: 6px;
   padding: 6px 16px;
   align-items: center;
@@ -7803,7 +7801,7 @@ textarea.form-textarea {
   top: 100%;
   left: 0;
   margin-top: 6px;
-  z-index: 100;
+  z-index: 10000;
   min-width: 280px;
   max-width: 420px;
   max-height: 70vh;

@@ -9,20 +9,20 @@ import FilterLabelsPopover, { type FilterLabelState } from './FilterLabelsPopove
 import type { SyncStatus } from '../library-types';
 import type { CollectionLabel } from '../../../state/hooks/useCollection';
 
-const SYNC_FILTER_BUTTONS: ['' | SyncStatus, string][] = [
-  ['', 'Tous'],
-  ['ok', 'À jour'],
-  ['outdated', 'Non à jour'],
-];
-
 type CollectionSortMode = 'alpha_asc' | 'alpha_desc' | 'date_added_asc' | 'date_added_desc';
 type ViewMode = 'grid' | 'list';
 
-const SORT_BUTTONS: [CollectionSortMode, string][] = [
+const SORT_OPTIONS: [CollectionSortMode, string][] = [
   ['alpha_asc',       'A → Z'],
   ['alpha_desc',      'Z → A'],
   ['date_added_desc', '🆕 Récents'],
   ['date_added_asc',  '📅 Anciens'],
+];
+
+const SYNC_OPTIONS: ['' | SyncStatus, string][] = [
+  ['',         'Tous'],
+  ['ok',       'À jour'],
+  ['outdated', 'Non à jour'],
 ];
 
 interface CollectionToolbarProps {
@@ -87,49 +87,43 @@ export default function CollectionToolbar({
   loading,
   deleteMode, onToggleDeleteMode,
 }: CollectionToolbarProps) {
+
+  /** Libellé du filtre sync avec compteur intégré */
+  const syncLabel = (val: '' | SyncStatus) => {
+    if (val === '')         return `Tous (${gamesCount})`;
+    if (val === 'ok')       return `À jour (${syncCounts.ok ?? 0})`;
+    if (val === 'outdated') return `Non à jour (${syncCounts.outdated ?? 0})`;
+    return val;
+  };
+
   return (
     <div className="library-toolbar library-toolbar--collection">
 
       {/* ── Tri ── */}
-      <div className="library-toolbar-filters">
-        {SORT_BUTTONS.map(([val, label]) => (
-          <button
-            key={val}
-            type="button"
-            className={`library-sync-btn ${sortMode === val ? 'library-sync-btn--active-all' : ''}`}
-            onClick={() => setSortMode(val)}
-            title={
-              val === 'alpha_asc'       ? 'Trier par nom A → Z' :
-              val === 'alpha_desc'      ? 'Trier par nom Z → A' :
-              val === 'date_added_desc' ? "Trier par date d'ajout (récent en premier)" :
-                                         "Trier par date d'ajout (ancien en premier)"
-            }
-          >
-            {label}
-          </button>
+      <select
+        className="app-select library-toolbar-select library-toolbar-select--sort"
+        value={sortMode}
+        onChange={e => setSortMode(e.target.value as CollectionSortMode)}
+        title="Ordre de tri"
+      >
+        {SORT_OPTIONS.map(([val, label]) => (
+          <option key={val} value={val}>{label}</option>
         ))}
+      </select>
 
-        <span className="library-toolbar-divider" />
-
-        {/* ── Filtre sync ── */}
-        {SYNC_FILTER_BUTTONS.map(([val, label]) => {
-          const isActive = filterSync === val;
-          return (
-            <button
-              key={val || 'all'}
-              type="button"
-              className={`library-sync-btn ${isActive ? (val === '' ? 'library-sync-btn--active-all' : 'library-sync-btn--active') : ''}`}
-              data-sync={val || undefined}
-              onClick={() => setFilterSync(val)}
-            >
-              {label}
-              <span className="library-toolbar-badge-count">
-                {val ? syncCounts[val] ?? 0 : gamesCount}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {/* ── Filtre sync ── */}
+      <select
+        className="app-select library-toolbar-select library-toolbar-select--sync"
+        value={filterSync}
+        onChange={e => setFilterSync(e.target.value as '' | SyncStatus)}
+        title="Filtrer par statut de synchronisation"
+      >
+        {SYNC_OPTIONS.map(([val, _label]) => (
+          <option key={val || 'all'} value={val}>
+            {syncLabel(val)}
+          </option>
+        ))}
+      </select>
 
       {/* ── Selects ── */}
       <select className="app-select library-toolbar-select--filter-statut" value={filterStatut} onChange={e => setFilterStatut(e.target.value)}>
