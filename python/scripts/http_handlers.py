@@ -21,7 +21,14 @@ import tempfile
 
 from config import config
 from translator import translate_text
-from scraper import scrape_f95_synopsis, scrape_f95_title, scrape_f95_game_data, extract_f95_thread_id
+from scraper import (
+    scrape_f95_synopsis, scrape_f95_title, scrape_f95_game_data,
+    extract_f95_thread_id,
+    scrape_thread_updated_date, enrich_dates_with_fallback,
+    extract_thread_updated_from_html,
+    enrich_dates_with_fallback,
+)
+from image_utils import convert_image_url, batch_convert_images
 from nexus_export import parse_nexus_db
 from api_key_auth import _auth_request, LEGACY_KEY_WARNING
 from supabase_client import (
@@ -497,16 +504,16 @@ async def collection_resolve(request):
 
         title = game_data.get("name") or game_data.get("title")
         scraped_data = {
-            "name": game_data.get("name"),
-            "version": game_data.get("version"),
-            "image": game_data.get("image"),
-            "status": game_data.get("status"),
-            "tags": game_data.get("tags"),
-            "type": game_data.get("type"),
-            "synopsis": synopsis_en or game_data.get("synopsis"),
+            "name":        game_data.get("name"),
+            "version":     game_data.get("version"),
+            "image":       game_data.get("image"),
+            "status":      game_data.get("status"),
+            "tags":        game_data.get("tags"),
+            "type":        game_data.get("type"),
+            "synopsis":    synopsis_en or game_data.get("synopsis"),
             "synopsis_fr": synopsis_fr,
+            "f95_date_maj": game_data.get("f95_date_maj"),
         }
-
         return _with_cors(request, web.json_response({
             "ok": True,
             "f95_thread_id": game_data.get("id") or f95_thread_id,
@@ -2253,6 +2260,7 @@ async def get_jeux(request):
             data = await loop.run_in_executor(None, _fetch_all_jeux_sync)
             if data:
                 data = _dedupe_jeux_by_site(data)
+                data = batch_convert_images(data)
                 logger.info("[api] %d jeux depuis Supabase (cache, dédupliqués)", len(data))
                 return _with_cors(request, web.json_response({
                     "ok": True, "jeux": data, "count": len(data), "source": "cache",
@@ -2280,6 +2288,7 @@ async def get_jeux(request):
 
         if isinstance(data, list):
             data = _dedupe_jeux_by_site(data)
+            data = batch_convert_images(data)
         logger.info("[api] %d jeux depuis API externe (fallback, dédupliqués)", len(data) if isinstance(data, list) else "?")
         return _with_cors(request, web.json_response({
             "ok": True, "jeux": data,
@@ -2847,6 +2856,255 @@ async def get_f95_rss_updates(request):
     except Exception as e:
         logger.exception("[api] get_f95_rss_updates : %s", e)
         return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+async def scrape_thread_dates(request):
+    """
+    Enrichit date_maj pour les jeux absents du flux RSS.
+    POST /api/scrape/thread-dates
+    Body JSON: {
+        "jeux": [{"site_id": 123, "nom_url": "https://..."}],
+        "rss_date_map": {"123": "2026-03-14T..."},   # optionnel
+        "f95_cookies": "...",                         # optionnel
+        "scrape_delay": 2.0
+    }
+    Réponse streaming NDJSON (même pattern que scrape_enrich).
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/scrape/thread-dates")
+    if not is_valid:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "Invalid API key"}, status=401
+        ))
+
+    try:
+        body = await request.json() or {}
+    except Exception:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "Body JSON invalide"}, status=400
+        ))
+
+    jeux         = body.get("jeux") or []
+    rss_raw      = body.get("rss_date_map") or {}
+    f95_cookies  = (body.get("f95_cookies") or "").strip() or None
+    try:
+        scrape_delay = max(1.0, float(body.get("scrape_delay") or 2.0))
+    except (TypeError, ValueError):
+        scrape_delay = 2.0
+
+    # Normaliser les clés du rss_date_map en int
+    rss_date_map = {int(k): v for k, v in rss_raw.items() if str(k).isdigit()}
+
+    if not jeux:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "Paramètre 'jeux' requis (liste non vide)"}, status=400
+        ))
+
+    response = web.StreamResponse()
+    response.headers["Content-Type"] = "application/x-ndjson"
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    origin = request.headers.get("Origin", "")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    await response.prepare(request)
+
+    client_disconnected = [False]
+
+    async def send(data: dict) -> bool:
+        try:
+            await response.write(
+                (json.dumps(data, ensure_ascii=False) + "\n").encode("utf-8")
+            )
+            await response.drain()
+            return True
+        except Exception as e:
+            if any(k in str(e).lower() for k in ("closing transport", "connection reset", "broken pipe")):
+                client_disconnected[0] = True
+            return False
+
+    try:
+        updated_count = 0
+        sb = _get_supabase()
+
+        async def on_progress(current, total, site_id, date):
+            if client_disconnected[0]:
+                return
+            msg = (
+                f"✅ [{current}/{total}] site_id={site_id} → {date}"
+                if date
+                else f"⏭️ [{current}/{total}] site_id={site_id} — introuvable"
+            )
+            await send({"progress": {"current": current, "total": total}, "log": msg})
+            if date and sb:
+                try:
+                    sb.table("f95_jeux").update({"f95_date_maj": date}).eq("site_id", site_id).execute()
+                    nonlocal updated_count
+                    updated_count += 1
+                except Exception as e:
+                    logger.warning("[api] scrape_thread_dates : erreur Supabase site_id=%s : %s", site_id, e)
+
+        await send({"log": f"🔍 {len(jeux)} jeux à traiter ({len(rss_date_map)} depuis RSS)…"})
+
+        async with aiohttp.ClientSession() as session:
+            await enrich_dates_with_fallback(
+                session,
+                jeux=jeux,
+                rss_date_map=rss_date_map,
+                cookies=f95_cookies,
+                scrape_delay=scrape_delay,
+                progress_callback=on_progress,
+            )
+
+        if not client_disconnected[0]:
+            await send({
+                "log":     f"🎉 Terminé : {updated_count} date(s) mise(s) à jour dans f95_jeux",
+                "status":  "completed",
+                "updated": updated_count,
+            })
+
+    except Exception as e:
+        logger.error("[api] scrape_thread_dates erreur : %s", e, exc_info=True)
+        await send({"error": str(e), "status": "error"})
+    finally:
+        await response.write_eof()
+
+    return response
+
+async def scrape_missing_dates(request):
+    """
+    Enrichit f95_date_maj pour tous les jeux de f95_jeux qui n'en ont pas encore.
+    IMPORTANT : écrit dans f95_date_maj (date MAJ jeu sur F95Zone),
+                PAS dans date_maj (date MAJ traduction).
+    POST /api/scrape/missing-dates
+    Body JSON: {
+        "f95_cookies": "...",    -- optionnel, cookie xf_session pour les jeux 18+
+        "scrape_delay": 2.0,     -- délai entre requêtes en secondes (défaut 2)
+        "limit": 500             -- nb max de jeux à traiter par appel (défaut 500, max 2000)
+    }
+    Réponse : streaming NDJSON (même pattern que scrape_enrich).
+    """
+    is_valid, _, _, _ = await _auth_request(request, "/api/scrape/missing-dates")
+    if not is_valid:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "Invalid API key"}, status=401
+        ))
+
+    try:
+        body = await request.json() or {}
+    except Exception:
+        body = {}
+
+    f95_cookies = (body.get("f95_cookies") or "").strip() or None
+    try:
+        scrape_delay = max(1.0, float(body.get("scrape_delay") or 2.0))
+        limit        = min(int(body.get("limit") or 500), 2000)
+    except (TypeError, ValueError):
+        scrape_delay, limit = 2.0, 500
+
+    sb = _get_supabase()
+    if not sb:
+        return _with_cors(request, web.json_response(
+            {"ok": False, "error": "Supabase non configuré"}, status=500
+        ))
+
+    # Récupérer uniquement les jeux :
+    #   - sans f95_date_maj (jamais scrapé)
+    #   - avec une URL F95Zone valide (scraping possible)
+    #   - site_id non nul (nécessaire pour la mise à jour)
+    res = (
+        sb.table("f95_jeux")
+        .select("site_id, nom_url")
+        .is_("f95_date_maj", "null")
+        .not_.is_("nom_url", "null")
+        .not_.is_("site_id", "null")
+        .limit(limit)
+        .execute()
+    )
+    jeux = [
+        r for r in (res.data or [])
+        if r.get("nom_url") and "f95zone.to" in (r.get("nom_url") or "")
+    ]
+
+    # Streaming NDJSON
+    response = web.StreamResponse()
+    response.headers["Content-Type"]    = "application/x-ndjson"
+    response.headers["Cache-Control"]   = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    origin = request.headers.get("Origin", "")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"]      = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    await response.prepare(request)
+
+    client_disconnected = [False]
+
+    async def send(data: dict) -> bool:
+        try:
+            await response.write(
+                (json.dumps(data, ensure_ascii=False) + "\n").encode("utf-8")
+            )
+            await response.drain()
+            return True
+        except Exception as e:
+            if any(k in str(e).lower() for k in ("closing transport", "connection reset", "broken pipe")):
+                client_disconnected[0] = True
+            return False
+
+    try:
+        updated_count = 0
+        await send({
+            "log":      f"🔍 {len(jeux)} jeux sans f95_date_maj trouvés…",
+            "progress": {"current": 0, "total": len(jeux)},
+        })
+
+        async def on_progress(current, total, site_id, date):
+            if client_disconnected[0]:
+                return
+            msg = (
+                f"✅ [{current}/{total}] site_id={site_id} → {date}"
+                if date
+                else f"⏭️ [{current}/{total}] site_id={site_id} — Thread Updated introuvable"
+            )
+            if not await send({"progress": {"current": current, "total": total}, "log": msg}):
+                return
+            if date:
+                try:
+                    sb.table("f95_jeux").update({
+                        "f95_date_maj": date,
+                        "updated_at":   datetime.datetime.now(ZoneInfo("UTC")).isoformat(),
+                    }).eq("site_id", site_id).execute()
+                    nonlocal updated_count
+                    updated_count += 1
+                except Exception as e:
+                    logger.warning(
+                        "[api] scrape_missing_dates Supabase site_id=%s : %s", site_id, e
+                    )
+
+        async with aiohttp.ClientSession() as session:
+            await enrich_dates_with_fallback(
+                session,
+                jeux=jeux,
+                rss_date_map={},           # pas de RSS ici : on scrape tout ce qui manque
+                cookies=f95_cookies,
+                scrape_delay=scrape_delay,
+                progress_callback=on_progress,
+            )
+
+        if not client_disconnected[0]:
+            await send({
+                "log":     f"🎉 Terminé : {updated_count}/{len(jeux)} date(s) mise(s) à jour dans f95_date_maj",
+                "status":  "completed",
+                "updated": updated_count,
+            })
+
+    except Exception as e:
+        logger.error("[api] scrape_missing_dates erreur : %s", e, exc_info=True)
+        await send({"error": str(e), "status": "error"})
+    finally:
+        await response.write_eof()
+
+    return response
+
 # ==================== APP ====================
 
 def make_app() -> web.Application:
@@ -2886,6 +3144,8 @@ def make_app() -> web.Application:
         ("POST",    "/api/jeux/sync-force",               jeux_sync_force),
         ("PATCH",   "/api/f95-jeux/{id}/synopsis",        update_f95_jeu_synopsis),
         ("GET",     "/api/rss/f95-updates",               get_f95_rss_updates),
+        ("POST",    "/api/scrape/thread-dates",           scrape_thread_dates),
+        ("POST",    "/api/scrape/missing-dates",          scrape_missing_dates),
         # Catch-all en dernier
         ("*",       "/{tail:.*}",                         handle_404),
     ]

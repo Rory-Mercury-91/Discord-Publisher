@@ -411,6 +411,29 @@ def _sync_jeux_to_supabase(jeux: list):
         logger.warning("[supabase] sync_jeux erreur : %s", e)
 
 
+def _update_date_maj_bulk_sync(date_map: dict[int, str]) -> int:
+    """
+    Met à jour le champ date_maj dans f95_jeux pour une liste de jeux.
+    date_map : {site_id: "YYYY-MM-DD"}
+    Retourne le nombre de lignes mises à jour avec succès.
+    """
+    sb = _get_supabase()
+    if not sb or not date_map:
+        return 0
+    ok = 0
+    now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+    for site_id, date_str in date_map.items():
+        try:
+            sb.table("f95_jeux").update({
+                "f95_date_maj":   date_str,
+                "updated_at": now,
+            }).eq("site_id", site_id).execute()
+            ok += 1
+        except Exception as e:
+            logger.warning("[supabase] _update_date_maj_bulk site_id=%s : %s", site_id, e)
+    logger.info("[supabase] _update_date_maj_bulk : %d/%d mis à jour", ok, len(date_map))
+    return ok
+
 # ==================== API KEYS ====================
 
 def _update_key_usage_sync(key_hash: str):

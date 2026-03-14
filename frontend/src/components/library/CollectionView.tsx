@@ -354,14 +354,19 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
       }
 
       case 'game_update_desc':
-        // Tri par date du flux RSS F95 (pubDate). Les jeux absents du flux passent en fin de liste.
         return list.sort((a, b) => {
-          const da = rssDateMap.get(a.site_id) ?? '';
-          const db = rssDateMap.get(b.site_id) ?? '';
+          // Priorité 1 : date RSS (temps réel, ~48h)
+          const da_rss = rssDateMap.get(a.site_id) ?? '';
+          const db_rss = rssDateMap.get(b.site_id) ?? '';
+      
+          // Priorité 2 : f95_date_maj scrapé (historique)
+          const da = da_rss || a.f95_date_maj || '';
+          const db = db_rss || b.f95_date_maj || '';
+      
           if (!da && !db) return a.nom_du_jeu.localeCompare(b.nom_du_jeu, 'fr', { sensitivity: 'base' });
           if (!da) return 1;
           if (!db) return -1;
-          return db.localeCompare(da); // ISO → comparaison lexicographique valide
+          return db.localeCompare(da);
         });
 
       case 'trad_update_desc':
