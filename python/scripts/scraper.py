@@ -58,16 +58,37 @@ _F95_HEADERS = {
     "Connection":      "keep-alive",
 }
 
-# ── Regex pour "Thread Updated" ──────────────────────────────────────────────
+# ── Regex pour "Thread Updated / Thread Update / Updated / Release Date" ──────
+
+# Groupe de capture de date — large pour absorber tous les formats observés
+_DATE_PAT = (
+    r'(?:'
+    r'\d{4}[-/.]\d{1,2}[-/.]\d{1,2}'           # 2024-12-29, 2022/7/2, 2018.02.10
+    r'|\d{1,2}[/.\- ]\d{1,2}[/.\- ]\d{4}'      # 15/09/2018, 02-06-2018, 17.12.2016
+    r'|\d{1,2}[/]\d{1,2}[/]\d{2}'              # 03/01/18, 11/05/17
+    r'|\w{3,9}[-\s]\d{1,2}[,\-\s]+\d{4}'       # Aug-7-2018, July 1- 2018
+    r'|\d{1,2}[-\s]\w{3,9}[,\-\s]+\d{4}'       # 16-May-2018, 02 December, 2016
+    r'|\d{1,2}\s+\w{3,9}[,\s]+\d{4}'           # 31 October 2013
+    r'|\w{3,9}\s+\d{1,2}[,\s\-]+\d{4}'         # March 14, 2026
+    r')'
+)
 
 _RE_UPDATED_HTML = re.compile(
-    r'<b>\s*(?:Thread\s+)?Updated\s*</b>\s*[:\-]?\s*(?:<[^>]+>)*\s*'
-    r'(?P<date>\d{4}-\d{2}-\d{2}|\w+\s+\d{1,2},?\s+\d{4}|\d{1,2}/\d{1,2}/\d{4})',
+    r'<b>\s*(?:Thread\s+)?Updat(?:ed?)\s*</b>\s*[:\-]?\s*(?:<[^>]+>\s*)*'
+    r'(?P<date>' + _DATE_PAT[4:-1] + r')',      # strip outer (?:...)
     re.IGNORECASE,
 )
+
 _RE_UPDATED_TEXT = re.compile(
-    r'(?:Thread\s+)?Updated\s*[:\-]\s*'
-    r'(?P<date>\d{4}-\d{2}-\d{2}|\w+\s+\d{1,2},?\s+\d{4}|\d{1,2}/\d{1,2}/\d{4})',
+    r'(?:Thread\s+)?Updat(?:ed?)\s*[:\-]\s*'
+    r'(?P<date>' + _DATE_PAT[4:-1] + r')',
+    re.IGNORECASE,
+)
+
+# Fallback : Release Date / Published
+_RE_RELEASE_DATE_TEXT = re.compile(
+    r'(?:Release\s+Date|Published)\s*[:\-]\s*'
+    r'(?P<date>' + _DATE_PAT[4:-1] + r')',
     re.IGNORECASE,
 )
 
@@ -79,6 +100,8 @@ _MONTH_NAMES: dict[str, str] = {
     "jun": "06", "jul": "07", "aug": "08", "sep": "09",
     "oct": "10", "nov": "11", "dec": "12",
 }
+
+_PLACEHOLDER_DATE = "2020-01-01"
 
 
 # ── Helpers internes ─────────────────────────────────────────────────────────
@@ -149,26 +172,92 @@ def _extract_synopsis_from_content_html(content_html: str) -> Optional[str]:
 
 def _normalize_date(raw: str) -> Optional[str]:
     """
-    Normalise une date brute extraite vers le format ISO 8601 YYYY-MM-DD.
+    Normalise une date brute vers ISO 8601 YYYY-MM-DD.
+    Gère tous les formats observés sur F95Zone.
     Retourne None si le format n'est pas reconnu.
     """
-    raw = raw.strip()
+    if not raw:
+        return None
+    raw = raw.strip().rstrip('./- ')
+    raw = re.sub(r'\s+', ' ', raw)
 
-    # Format ISO direct : 2026-03-14
-    if re.fullmatch(r'\d{4}-\d{2}-\d{2}', raw):
-        return raw
+    # ── 1. ISO direct : 2024-12-29 ou 2022-7-2 (digit manquant) ─────────────
+    m = re.fullmatch(r'(\d{4})-(\d{1,2})-(\d{1,2})', raw)
+    if m:
+        y, mo, d = m.group(1), int(m.group(2)), int(m.group(3))
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return f"{y}-{str(mo).zfill(2)}-{str(d).zfill(2)}"
 
-    # "March 14, 2026" ou "March 14 2026"
-    m = re.fullmatch(r'(\w+)\s+(\d{1,2}),?\s+(\d{4})', raw)
+    # ── 2. YYYY/MM/DD ou YYYY.MM.DD ──────────────────────────────────────────
+    m = re.fullmatch(r'(\d{4})[/.](\d{1,2})[/.](\d{1,2})', raw)
+    if m:
+        y, mo, d = m.group(1), int(m.group(2)), int(m.group(3))
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return f"{y}-{str(mo).zfill(2)}-{str(d).zfill(2)}"
+
+    # ── 3. MonthName D(, )YYYY  ex: "March 14, 2026" "March 14 2026" ─────────
+    m = re.fullmatch(r'(\w+)\s+(\d{1,2})[,\s\-]+(\d{4})', raw)
     if m:
         month = _MONTH_NAMES.get(m.group(1).lower())
-        if month:
-            return f"{m.group(3)}-{month}-{m.group(2).zfill(2)}"
+        d = int(m.group(2))
+        if month and 1 <= d <= 31:
+            return f"{m.group(3)}-{month}-{str(d).zfill(2)}"
 
-    # "14/03/2026" — convention D/M/Y (usage FR)
-    m = re.fullmatch(r'(\d{1,2})/(\d{1,2})/(\d{4})', raw)
+    # ── 4. D MonthName YYYY  ex: "31 October 2013", "02 December, 2016" ──────
+    m = re.fullmatch(r'(\d{1,2})\s+(\w+)[,\s]+(\d{4})', raw)
     if m:
-        return f"{m.group(3)}-{m.group(2).zfill(2)}-{m.group(1).zfill(2)}"
+        month = _MONTH_NAMES.get(m.group(2).lower())
+        d = int(m.group(1))
+        if month and 1 <= d <= 31:
+            return f"{m.group(3)}-{month}-{str(d).zfill(2)}"
+
+    # ── 5. D-MonthName-YYYY  ex: "16-May-2018", "31-March-2018" ──────────────
+    m = re.fullmatch(r'(\d{1,2})[-\s](\w{3,9})[-\s](\d{4})', raw)
+    if m:
+        month = _MONTH_NAMES.get(m.group(2).lower())
+        d = int(m.group(1))
+        if month and 1 <= d <= 31:
+            return f"{m.group(3)}-{month}-{str(d).zfill(2)}"
+
+    # ── 6. MonthName-D-YYYY  ex: "Aug-7-2018", "July 1- 2018" ───────────────
+    m = re.fullmatch(r'(\w{3,9})[-\s](\d{1,2})[-\s,]+(\d{4})', raw)
+    if m:
+        month = _MONTH_NAMES.get(m.group(1).lower())
+        d = int(m.group(2))
+        if month and 1 <= d <= 31:
+            return f"{m.group(3)}-{month}-{str(d).zfill(2)}"
+
+    # ── 7. DD/MM/YYYY ou DD-MM-YYYY ou DD.MM.YYYY (4-digit year) ─────────────
+    m = re.fullmatch(r'(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})', raw)
+    if m:
+        p1, p2, y = int(m.group(1)), int(m.group(2)), m.group(3)
+        # Si p1 > 12 → forcément DD/MM/YYYY
+        if p1 > 12 and 1 <= p2 <= 12:
+            return f"{y}-{str(p2).zfill(2)}-{str(p1).zfill(2)}"
+        # Sinon convention européenne DD/MM/YYYY (F95 usage courant)
+        if 1 <= p2 <= 12 and 1 <= p1 <= 31:
+            return f"{y}-{str(p2).zfill(2)}-{str(p1).zfill(2)}"
+        # Dernier recours MM/DD/YYYY
+        if 1 <= p1 <= 12 and 1 <= p2 <= 31:
+            return f"{y}-{str(p1).zfill(2)}-{str(p2).zfill(2)}"
+
+    # ── 8. MM/DD/YY ou DD/MM/YY (2-digit year) ───────────────────────────────
+    m = re.fullmatch(r'(\d{1,2})/(\d{1,2})/(\d{2})', raw)
+    if m:
+        p1, p2, y2 = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        year = 2000 + y2 if y2 <= 50 else 1900 + y2
+        # Convention US MM/DD pour F95
+        if 1 <= p1 <= 12 and 1 <= p2 <= 31:
+            return f"{year}-{str(p1).zfill(2)}-{str(p2).zfill(2)}"
+
+    # ── 9. Séparateurs mixtes ex: "3/10-2017", "11/05/17" ────────────────────
+    m = re.fullmatch(r'(\d{1,2})\s*[/\-. ]\s*(\d{1,2})\s*[/\-.]\s*(\d{4})', raw)
+    if m:
+        p1, p2, y = int(m.group(1)), int(m.group(2)), m.group(3)
+        if p1 > 12 and 1 <= p2 <= 12:
+            return f"{y}-{str(p2).zfill(2)}-{str(p1).zfill(2)}"
+        if 1 <= p2 <= 12 and 1 <= p1 <= 31:
+            return f"{y}-{str(p2).zfill(2)}-{str(p1).zfill(2)}"
 
     return None
 
@@ -192,18 +281,19 @@ def extract_f95_thread_id(url: str) -> Optional[str]:
 
 def extract_thread_updated_from_html(html: str) -> Optional[str]:
     """
-    Extrait la date "Thread Updated" depuis le HTML brut d'une page F95Zone.
+    Extrait la date depuis le HTML d'une page F95Zone.
 
-    Stratégies (dans l'ordre) :
-      1. Regex sur le HTML brut — détecte <b>Thread Updated</b>:
-      2. BeautifulSoup sur le texte du bbWrapper — plus robuste si la structure varie.
-
-    Retourne la date au format ISO 8601 (YYYY-MM-DD) ou None si introuvable.
+    Ordre de priorité :
+      1. <b>Thread Updated</b> / <b>Thread Update</b> (regex HTML)
+      2. Texte bbWrapper — Thread Updated / Thread Update
+      3. Texte bbWrapper — Release Date / Published (fallback)
+      4. Retourne None si aucune date valide trouvée.
+         L'appelant est responsable de stocker un placeholder si nécessaire.
     """
     if not html:
         return None
 
-    # Stratégie 1 : regex rapide sur le HTML brut
+    # ── Stratégie 1 : regex rapide sur HTML brut ──────────────────────────────
     m = _RE_UPDATED_HTML.search(html)
     if m:
         normalized = _normalize_date(m.group("date"))
@@ -211,7 +301,7 @@ def extract_thread_updated_from_html(html: str) -> Optional[str]:
             logger.debug("[scraper] Thread Updated (regex HTML) : %s", normalized)
             return normalized
 
-    # Stratégie 2 : BeautifulSoup sur le texte du premier post
+    # ── Stratégie 2 + 3 : BeautifulSoup sur le premier post ──────────────────
     try:
         soup = BeautifulSoup(html, "html.parser")
         bb_wrapper = (
@@ -220,12 +310,23 @@ def extract_thread_updated_from_html(html: str) -> Optional[str]:
             or soup.select_one("[class*='threadStarter'] .bbWrapper")
         )
         content = (bb_wrapper or soup).get_text(separator="\n")
+
+        # Priorité : Thread Updated / Thread Update
         m2 = _RE_UPDATED_TEXT.search(content)
         if m2:
             normalized = _normalize_date(m2.group("date"))
             if normalized:
                 logger.debug("[scraper] Thread Updated (BeautifulSoup) : %s", normalized)
                 return normalized
+
+        # Fallback : Release Date / Published
+        m3 = _RE_RELEASE_DATE_TEXT.search(content)
+        if m3:
+            normalized = _normalize_date(m3.group("date"))
+            if normalized:
+                logger.debug("[scraper] Release Date (fallback) : %s", normalized)
+                return normalized
+
     except Exception as e:
         logger.warning("[scraper] extract_thread_updated_from_html exception : %s", e)
 

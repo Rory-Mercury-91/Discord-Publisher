@@ -12,7 +12,7 @@ import { getSupabase } from '../../lib/supabase';
 
 const KEY_INTERVAL   = 'f95_date_refresh_interval_hours';
 const KEY_LAST       = 'f95_date_last_refresh';
-const DEFAULT_HOURS  = 168;
+const DEFAULT_HOURS  = 0;   // 0 = manuel uniquement, évite tout démarrage automatique
 
 export function useDateRefreshSettings() {
   const [intervalHours, setIntervalHoursState] = useState<number>(DEFAULT_HOURS);

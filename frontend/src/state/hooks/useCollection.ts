@@ -253,11 +253,12 @@ export function useCollection() {
               type: s.type ?? undefined,
               lien_trad: (s as Record<string, unknown>).lien_trad as string | undefined,
               traducteur_url: (s as Record<string, unknown>).traducteur_url as string | undefined,
-              // Normalise en string CSV (peut arriver en tableau depuis l'import Nexus)
               tags: tagsToString(s.tags) || undefined,
               synopsis: synopsisFr || synopsisEn || undefined,
               synopsis_fr: synopsisFr || undefined,
               synopsis_en: synopsisEn || undefined,
+              // ← AJOUT : date de MAJ jeu depuis scraped_data (pour jeux hors catalogue f95_jeux)
+              f95_date_maj: (s as Record<string, unknown>).f95_date_maj as string | undefined,
             };
             return { ...r, game };
           }

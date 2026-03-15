@@ -27,7 +27,7 @@ F95FR_API_KEY = os.getenv("F95FR_API_KEY", "")
 # Clés app_config
 _KEY_INTERVAL   = "f95_date_refresh_interval_hours"
 _KEY_LAST       = "f95_date_last_refresh"
-_DEFAULT_HOURS  = 168   # une semaine
+_DEFAULT_HOURS  = 0   # 0 = manuel uniquement (configurable depuis l'UI d'enrichissement)
 
 
 # ==================== CLEANUP MESSAGES VIDES ====================
@@ -299,27 +299,29 @@ async def configurable_date_refresh():
 
 def start_all_tasks():
     """
-    Demarre toutes les taches planifiees si elles ne sont pas deja en cours.
-    Appele depuis publisher_bot.on_ready().
+    Démarre toutes les tâches planifiées sauf le rafraîchissement des dates F95
+    qui est déclenché manuellement depuis l'interface d'enrichissement.
     """
     if not daily_version_check.is_running():
         daily_version_check.start()
         logger.info(
-            "[scheduler] Controle versions planifie a %02d:%02d Europe/Paris",
+            "[scheduler] Contrôle versions planifié à %02d:%02d Europe/Paris",
             config.VERSION_CHECK_HOUR, config.VERSION_CHECK_MINUTE,
         )
     if not daily_cleanup_empty_messages.is_running():
         daily_cleanup_empty_messages.start()
         logger.info(
-            "[scheduler] Nettoyage messages vides planifie a %02d:%02d Europe/Paris",
+            "[scheduler] Nettoyage messages vides planifié à %02d:%02d Europe/Paris",
             config.CLEANUP_EMPTY_MESSAGES_HOUR, config.CLEANUP_EMPTY_MESSAGES_MINUTE,
         )
     if not sync_jeux_task.is_running():
         sync_jeux_task.start()
-        logger.info("[scheduler] Synchronisation jeux planifiee (toutes les 2h)")
-    if not configurable_date_refresh.is_running():
-        configurable_date_refresh.start()
-        logger.info(
-            "[scheduler] Rafraichissement dates F95 planifie "
-            "(verification toutes les heures, frequence lue depuis app_config)"
-        )
+        logger.info("[scheduler] Synchronisation jeux planifiée (toutes les 2h)")
+
+    # configurable_date_refresh n'est PAS démarré ici.
+    # Il est déclenché manuellement via POST /api/scrape/missing-dates
+    # ou activé depuis l'onglet Enrichissement → Dates de mise à jour F95.
+    logger.info(
+        "[scheduler] Rafraîchissement dates F95 : désactivé au démarrage "
+        "(déclencher manuellement depuis l'UI ou configurer un intervalle > 0)"
+    )

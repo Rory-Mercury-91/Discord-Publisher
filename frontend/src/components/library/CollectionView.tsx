@@ -86,6 +86,8 @@ function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
         ? (sd.tags as string[]).join(', ')
         : String(sd.tags);
     }
+    // ← AJOUT : f95_date_maj depuis scraped_data (jeux absents du catalogue f95_jeux)
+    if (!g.f95_date_maj && sd.f95_date_maj) g.f95_date_maj = String(sd.f95_date_maj);
   }
   return g;
 }
