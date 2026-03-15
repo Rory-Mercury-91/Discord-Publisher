@@ -8,21 +8,22 @@ import { generateManualPseudoId } from './useCollection';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface TampermonkeyPayload {
-  domain: string;
-  id?: number | string | null;
-  name: string;
-  version?: string | null;
-  status?: string | null;
-  game_type?: string | null;
-  tags?: string | null;
-  link?: string | null;
-  image?: string | null;
-  synopsis?: string | null;
+  domain       : string;
+  id?          : number | string | null;
+  name         : string;
+  version?     : string | null;
+  status?      : string | null;
+  game_type?   : string | null;
+  tags?        : string | null;
+  link?        : string | null;
+  image?       : string | null;
+  synopsis?    : string | null;
+  f95_date_maj?: string | null;
 }
 
 interface QuickAddEvent {
   request_id: string;
-  payload: TampermonkeyPayload;
+  payload   : TampermonkeyPayload;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -30,12 +31,17 @@ interface QuickAddEvent {
 /** Envoie le résultat de l'import vers le serveur axum via la commande Tauri. */
 async function reportResult(
   requestId: string,
-  ok: boolean,
-  action?: string | null,
-  error?: string | null,
+  ok       : boolean,
+  action?  : string | null,
+  error?   : string | null,
 ) {
   try {
-    await invoke('report_quick_add_result', { requestId, ok, action: action ?? null, error: error ?? null });
+    await invoke('report_quick_add_result', {
+      requestId,
+      ok,
+      action: action ?? null,
+      error : error  ?? null,
+    });
   } catch (e) {
     console.error('[Tampermonkey] Impossible de reporter le résultat :', e);
   }
@@ -98,31 +104,37 @@ export function useTampermonkeyListener() {
           }
 
           // Construction de scraped_data
+          // L'image est déjà en attachments.* côté Tampermonkey (v4.1+)
           const scrapedData = {
-            name    : payload.name,
-            version : payload.version   ?? null,
-            statut  : payload.status    ?? null,
-            type    : payload.game_type ?? null,
-            tags    : payload.tags      ?? null,
-            image   : payload.image     ?? null,
-            synopsis: payload.synopsis  ?? null,  // lu par useCollection via s.synopsis
-            source  : payload.domain,
-            link    : payload.link      ?? null,
+            name        : payload.name,
+            version     : payload.version    ?? null,
+            statut      : payload.status     ?? null,
+            type        : payload.game_type  ?? null,
+            tags        : payload.tags       ?? null,
+            image       : payload.image      ?? null,
+            synopsis    : payload.synopsis   ?? null,  // synopsis EN
+            synopsis_en : payload.synopsis   ?? null,
+            synopsis_fr : null,                        // sera traduit via enrichissement silencieux
+            f95_date_maj: payload.f95_date_maj || null,
+            source      : payload.domain,
+            link        : payload.link       ?? null,
           };
 
           const { error } = await sb.from('user_collection').insert({
-            owner_id    : profile.id,
+            owner_id     : profile.id,
             f95_thread_id: threadId,
-            f95_url     : payload.link ?? null,
-            title       : payload.name,
-            scraped_data: scrapedData,
+            f95_url      : payload.link ?? null,
+            title        : payload.name,
+            scraped_data : scrapedData,
           });
 
           if (error) throw error;
 
           console.info('[Tampermonkey] ✅ Ajouté :', payload.name);
           await reportResult(request_id, true, 'added');
-          window.dispatchEvent(new CustomEvent('collection:game-added', { detail: { threadId } }));
+          window.dispatchEvent(
+            new CustomEvent('collection:game-added', { detail: { threadId } })
+          );
 
         } catch (err: any) {
           const msg = err?.message || String(err) || 'Erreur inconnue';

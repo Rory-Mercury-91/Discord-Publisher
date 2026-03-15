@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discord Publisher — Import rapide
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      4.1
 // @description  Importe un jeu F95Zone ou LewdCorner dans Discord Publisher en un clic. Aucune configuration requise.
 // @author       Rory Mercury 91
 // @match        https://f95zone.to/threads/*
@@ -141,8 +141,12 @@
     const img = bbWrapper.querySelector('img.bbImage');
     let src = img ? (img.getAttribute('data-src') || img.src) : '';
 
-    if (src.includes('attachments.f95zone.to'))    src = src.replace('attachments.f95zone.to', 'preview.f95zone.to');
-    if (src.includes('attachments.lewdcorner.com')) src = src.replace('attachments.lewdcorner.com', 'preview.lewdcorner.com');
+    // Correction : preview → attachments (pleine taille, cohérent avec le backend)
+    if (src.includes('preview.f95zone.to'))
+      src = src.replace('preview.f95zone.to', 'attachments.f95zone.to');
+    if (src.includes('preview.lewdcorner.com'))
+      src = src.replace('preview.lewdcorner.com', 'attachments.lewdcorner.com');
+
     return src || '';
   }
 
@@ -152,19 +156,78 @@
     return idMatch ? parseInt(idMatch[1], 10) : 0;
   }
 
+  /**
+   * Extrait la date "Thread Updated" depuis le premier post.
+   * Retourne une chaîne YYYY-MM-DD ou '' si non trouvée.
+   */
+  function extractF95DateMaj() {
+    const bbWrapper = document.querySelector('.message-threadStarterPost .bbWrapper');
+    if (!bbWrapper) return '';
+
+    const text = bbWrapper.innerText || bbWrapper.textContent || '';
+
+    // Cherche "Thread Updated: ..." ou "Thread Update: ..."
+    const match = text.match(/Thread\s+Updated?\s*[:\-]\s*([^\n]{4,30})/i);
+    if (!match) return '';
+
+    const raw = match[1].trim().split(/[|(]/)[0].trim();
+    if (!raw || raw.length < 6) return '';
+
+    // Format YYYY-MM-DD ou YYYY/MM/DD ou YYYY.MM.DD
+    let m = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (m) {
+      const [, y, mo, d] = m;
+      if (+mo >= 1 && +mo <= 12 && +d >= 1 && +d <= 31)
+        return `${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    }
+
+    // Format DD/MM/YYYY ou DD-MM-YYYY ou DD.MM.YYYY
+    m = raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (m) {
+      const [, p1, p2, y] = m;
+      if (+p1 > 12 && +p2 <= 12)
+        return `${y}-${p2.padStart(2,'0')}-${p1.padStart(2,'0')}`;
+      if (+p2 <= 12 && +p1 <= 31)
+        return `${y}-${p2.padStart(2,'0')}-${p1.padStart(2,'0')}`;
+    }
+
+    // Format "March 14, 2026" ou "Aug 7, 2018"
+    const MONTHS = {
+      january:'01', february:'02', march:'03', april:'04', may:'05', june:'06',
+      july:'07', august:'08', september:'09', october:'10', november:'11', december:'12',
+      jan:'01', feb:'02', mar:'03', apr:'04', jun:'06', jul:'07',
+      aug:'08', sep:'09', oct:'10', nov:'11', dec:'12',
+    };
+    m = raw.match(/^(\w+)\s+(\d{1,2})[,\s\-]+(\d{4})$/);
+    if (m) {
+      const mo = MONTHS[m[1].toLowerCase()];
+      if (mo) return `${m[3]}-${mo}-${m[2].padStart(2,'0')}`;
+    }
+
+    // Format "16 May 2018" ou "02 December, 2016"
+    m = raw.match(/^(\d{1,2})\s+(\w+)[,\s]+(\d{4})$/);
+    if (m) {
+      const mo = MONTHS[m[2].toLowerCase()];
+      if (mo) return `${m[3]}-${mo}-${m[1].padStart(2,'0')}`;
+    }
+
+    return '';
+  }
+
   function extractData() {
-    const url      = window.location.href;
-    const domain   = isLewdCorner ? 'LewdCorner' : 'F95z';
-    const id       = extractThreadId();
+    const url         = window.location.href;
+    const domain      = isLewdCorner ? 'LewdCorner' : 'F95z';
+    const id          = extractThreadId();
     const { name, version }  = extractTitleAndVersion();
     const { status, type }   = extractStatusAndType();
-    const tags     = extractTags();
-    const image    = extractImage();
-    const synopsis = extractSynopsis();
-    const baseUrl  = isLewdCorner ? 'https://lewdcorner.com' : 'https://f95zone.to';
-    const link     = id ? `${baseUrl}/threads/${id}` : url.split('?')[0];
+    const tags        = extractTags();
+    const image       = extractImage();
+    const synopsis    = extractSynopsis();
+    const f95_date_maj = isF95Zone ? extractF95DateMaj() : '';
+    const baseUrl     = isLewdCorner ? 'https://lewdcorner.com' : 'https://f95zone.to';
+    const link        = id ? `${baseUrl}/threads/${id}` : url.split('?')[0];
 
-    return { domain, id, name, version, status, type, tags, image, synopsis, link };
+    return { domain, id, name, version, status, type, tags, image, synopsis, link, f95_date_maj };
   }
 
   // ========================================
@@ -174,16 +237,17 @@
   function sendToPublisher(gameData) {
     return new Promise((resolve, reject) => {
       const payload = {
-        domain  : gameData.domain,
-        id      : gameData.id,
-        name    : gameData.name,
-        version : gameData.version,
-        status  : gameData.status,
-        type    : gameData.type,
-        tags    : gameData.tags,
-        link    : gameData.link,
-        image   : gameData.image,
-        synopsis: gameData.synopsis,
+        domain      : gameData.domain,
+        id          : gameData.id,
+        name        : gameData.name,
+        version     : gameData.version,
+        status      : gameData.status,
+        type        : gameData.type,
+        tags        : gameData.tags,
+        link        : gameData.link,
+        image       : gameData.image,
+        synopsis    : gameData.synopsis,
+        f95_date_maj: gameData.f95_date_maj || null,
       };
 
       console.info('%c[Discord Publisher]', 'color:#6366f1;font-weight:bold;', 'Envoi :', payload);
@@ -219,13 +283,13 @@
 
   function showNotification(message, type = 'success') {
     document.querySelectorAll('.dp-notification').forEach(n => n.remove());
-  
+
     const el = document.createElement('div');
     el.className = 'dp-notification';
     el.textContent = message;
     el.style.cssText = `
       position: fixed;
-      bottom: 210px;           /* ← était 180px */
+      bottom: 210px;
       right: 20px;
       padding: 12px 18px;
       background: ${type === 'success' ? 'linear-gradient(135deg,#10b981,#059669)'
@@ -294,12 +358,12 @@
 
   function buildMenu() {
     document.getElementById('dp-menu')?.remove();
-  
+
     const menu = document.createElement('div');
     menu.id = 'dp-menu';
     menu.style.cssText = `
       position: fixed;
-      bottom: 210px;           /* ← était 180px */
+      bottom: 210px;
       right: 20px;
       background: #1e2022;
       border: 1px solid rgba(99,102,241,0.3);
@@ -312,7 +376,7 @@
       gap: 6px;
       min-width: 220px;
     `;
-  
+
     // Bouton import
     const importBtn = createMenuBtn('📥 Importer dans Publisher', '', async () => {
       hideMenu();
@@ -320,7 +384,7 @@
       try {
         const data   = extractData();
         const result = await sendToPublisher(data);
-  
+
         if (result.action === 'already_in_collection') {
           showNotification(`⚠️ Déjà dans votre collection !\n${data.name}`, 'warning');
         } else {
@@ -333,7 +397,7 @@
       }
     });
     menu.appendChild(importBtn);
-  
+
     // Bouton copier JSON (debug)
     const copyBtn = createMenuBtn('📋 Copier JSON', '#94a3b8', () => {
       hideMenu();
@@ -343,7 +407,7 @@
         .catch(() => showNotification('❌ Erreur lors de la copie', 'error'));
     });
     menu.appendChild(copyBtn);
-  
+
     // Bouton port
     const portBtn = createMenuBtn(`⚙️ Port : ${LOCAL_PORT}`, '#64748b', () => {
       hideMenu();
@@ -354,7 +418,7 @@
       }
     });
     menu.appendChild(portBtn);
-  
+
     document.body.appendChild(menu);
   }
 
@@ -397,7 +461,7 @@
     btn.id = 'dp-main-btn';
     btn.style.cssText = `
       position: fixed;
-      bottom: 130px;           /* ← était 100px */
+      bottom: 130px;
       right: 20px;
       background: linear-gradient(135deg, #6366f1, #4f46e5);
       color: white;
@@ -415,7 +479,7 @@
       gap: 8px;
     `;
     btn.innerHTML = '<span>🎮</span><span>Publisher</span>';
-  
+
     btn.addEventListener('mouseover', () => {
       btn.style.transform = 'translateY(-2px)';
       btn.style.boxShadow = '0 6px 20px rgba(99,102,241,0.6)';
@@ -473,7 +537,7 @@
     createMainButton();
 
     console.info(
-      '%c[Discord Publisher v4.0]',
+      '%c[Discord Publisher v4.1]',
       'color:#6366f1;font-weight:bold;font-size:13px;',
       `✅ Prêt — connexion via http://127.0.0.1:${LOCAL_PORT}`,
       `| ${isF95Zone ? 'F95Zone' : 'LewdCorner'}`
