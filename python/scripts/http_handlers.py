@@ -27,6 +27,7 @@ from scraper import (
     scrape_thread_updated_date, enrich_dates_with_fallback,
     extract_thread_updated_from_html,
     enrich_dates_with_fallback,
+    _PLACEHOLDER_DATE,
 )
 from image_utils import convert_image_url, batch_convert_images
 from nexus_export import parse_nexus_db
@@ -306,105 +307,100 @@ async def scrape_enrich(request):
 
         enriched = 0
         failed: list = []
+        login_blocked = 0   # compteur threads bloqués (login requis sans cookies)
 
         async with aiohttp.ClientSession() as session:
-            for idx, (norm_url, group) in enumerate(to_enrich, 1):
+            for idx, entry in enumerate(all_entries, 1):
                 if client_disconnected[0]:
                     break
-                first = group[0]
-                nom = first.get("nom_du_jeu", "Sans nom")
-                f95_url = (first.get("nom_url") or "").strip()
-                expected_site_id = first.get("site_id")
 
-                if not await send_json({"progress": {"current": idx, "total": total}}):
+                source   = entry["source"]
+                nom_url  = entry["nom_url"]
+                site_ids = entry["site_ids"]
+
+                if not await send({"progress": {"current": idx, "total": total}}):
                     break
 
-                if not await send_json({"log": f"🕷️ [{idx}/{total}] {nom} — Scraping synopsis..."}):
+                # ── Scraping ─────────────────────────────────────────────────
+                date = await scrape_thread_updated_date(session, nom_url, cookies=f95_cookies)
+
+                # ── Décision de stockage ──────────────────────────────────────
+                # Si date=None ET pas de cookies → probablement login requis, NE PAS stocker
+                # le placeholder (sinon on marque "traité" un thread qu'on n'a pas pu lire)
+                # Si date=None ET cookies fournis → vraiment pas de date, stocker placeholder
+                if date is None and not f95_cookies:
+                    login_blocked += 1
+                    icon = "🔐"
+                    src_label = f"f95_jeux×{len(site_ids)}" if source == "f95_jeux" else "collection"
+                    msg = f"{icon} [{idx}/{total}] {nom_url.split('/')[-1] or nom_url} ({src_label}) → login requis (passez vos cookies)"
+                    if not await send({"log": msg}):
+                        break
+                    if idx < total and not client_disconnected[0]:
+                        await asyncio.sleep(scrape_delay)
+                    continue   # ← ne stocke rien, ce thread sera re-tenté avec cookies
+
+                stored_date = date or _PLACEHOLDER_DATE
+                icon = "✅" if date else "⬜"
+                src_label = f"f95_jeux×{len(site_ids)}" if source == "f95_jeux" else "collection"
+                msg = (
+                    f"{icon} [{idx}/{total}] {nom_url.split('/')[-1] or nom_url} "
+                    f"({src_label}) → "
+                    + (date if date else f"aucune date → placeholder {_PLACEHOLDER_DATE}")
+                )
+                if not await send({"log": msg}):
                     break
 
-                # ← MODIFIÉ : déballage du tuple (synopsis, scraped_id)
-                synopsis_en, scraped_id = await scrape_f95_synopsis(session, f95_url, cookies=f95_cookies)
+                # ── Persistance ──────────────────────────────────────────────
+                if source == "f95_jeux":
+                    try:
+                        for sid in site_ids:
+                            sb.table("f95_jeux").update({
+                                "f95_date_maj": stored_date,
+                                "updated_at":   now_iso,
+                            }).eq("site_id", sid).execute()
+                        if date:
+                            updated_count += 1
+                        else:
+                            placeholder_count += 1
+                    except Exception as e:
+                        logger.warning("[api] scrape_missing_dates f95_jeux site_ids=%s : %s", site_ids, e)
 
-                if not synopsis_en:
-                    failed.append({
-                        "id":        first.get("id"),
-                        "nom_du_jeu": nom,
-                        "nom_url":   f95_url,
-                        "group_ids": [j.get("id") for j in group if j.get("id") is not None],
-                        "raison":    "synopsis_introuvable",
-                    })
-                    if not await send_json({"log": f"⏭️ [{idx}/{total}] {nom} — Synopsis introuvable"}):
-                        break
-                    continue
-
-                # ← MODIFIÉ : validation cohérence — l'URL scrappée doit correspondre au site_id attendu
-                if scraped_id and expected_site_id and int(scraped_id) != int(expected_site_id):
-                    failed.append({
-                        "id":        first.get("id"),
-                        "nom_du_jeu": nom,
-                        "nom_url":   f95_url,
-                        "group_ids": [j.get("id") for j in group if j.get("id") is not None],
-                        "raison":    "url_incoherente",
-                    })
-                    if not await send_json({"log": (
-                        f"🚫 [{idx}/{total}] {nom} — Incohérence URL détectée "
-                        f"(site_id attendu={expected_site_id}, ID scrapé={scraped_id}). "
-                        f"Écriture annulée pour éviter toute corruption."
-                    )}):
-                        break
-                    continue
-
-                if not await send_json({"log": f"🌐 [{idx}/{total}] {nom} — Traduction EN → FR..."}):
-                    break
-
-                synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
-
-                if not synopsis_fr:
-                    failed.append({
-                        "id":        first.get("id"),
-                        "nom_du_jeu": nom,
-                        "nom_url":   f95_url,
-                        "group_ids": [j.get("id") for j in group if j.get("id") is not None],
-                        "raison":    "traduction_echouee",
-                    })
-                    if not await send_json({"log": f"❌ [{idx}/{total}] {nom} — Traduction échouée"}):
-                        break
-                    continue
-
-                now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
-                try:
-                    for jeu in group:
-                        jeu_id = jeu.get("id")
-                        if jeu_id is None:
-                            continue
-                        sb.table("f95_jeux").update({
-                            "synopsis_en": synopsis_en,
-                            "synopsis_fr": synopsis_fr,
-                            "updated_at": now
-                        }).eq("id", jeu_id).execute()
-                    enriched += len(group)
-                    if not await send_json({"log": f"✅ [{idx}/{total}] {nom} — {len(group)} ligne(s) mise(s) à jour"}):
-                        break
-                except Exception as e:
-                    logger.error(
-                        "[api] Erreur sauvegarde f95_jeux synopsis (%s) : %s",
-                        nom, e
-                    )
-                    if not await send_json({"log": f"❌ [{idx}/{total}] {nom} — Erreur sauvegarde : {e}"}):
-                        break
+                else:  # user_collection
+                    try:
+                        sd_new = dict(entry.get("scraped_data") or {})
+                        sd_new["f95_date_maj"] = stored_date
+                        sb.table("user_collection").update({
+                            "scraped_data": sd_new,
+                            "updated_at":   now_iso,
+                        }).eq("id", entry["collection_id"]).execute()
+                        if date:
+                            updated_count += 1
+                        else:
+                            placeholder_count += 1
+                    except Exception as e:
+                        logger.warning("[api] scrape_missing_dates user_collection id=%s : %s",
+                                       entry.get("collection_id"), e)
 
                 if idx < total and not client_disconnected[0]:
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(scrape_delay)
 
         if not client_disconnected[0]:
-            failed_count = len(failed)
-            summary_parts = [f"{enriched} ligne(s) mise(s) à jour dans {total} groupe(s)"]
-            if failed_count:
-                summary_parts.append(f"{failed_count} échec(s)")
-            await send_json({
-                "log":            f"🎉 Enrichissement terminé : {', '.join(summary_parts)}",
-                "status":         "completed",
-                "failed_entries": failed,
+            parts = [f"✅ {updated_count} date(s) trouvée(s)"]
+            if placeholder_count:
+                parts.append(f"⬜ {placeholder_count} placeholder(s)")
+            if login_blocked:
+                parts.append(f"🔐 {login_blocked} bloqué(s) par login (relancer avec cookies F95)")
+            remaining = total - updated_count - placeholder_count - login_blocked
+            if remaining > 0:
+                parts.append(f"⚠️ {remaining} autre(s) erreur(s)")
+
+            await send({
+                "log":             f"🎉 Terminé sur {total} groupe(s) — {' | '.join(parts)}",
+                "status":          "completed",
+                "updated":         updated_count,
+                "skipped":         placeholder_count,
+                "login_blocked":   login_blocked,
+                "total":           total,
             })
 
     except Exception as e:
@@ -975,7 +971,7 @@ async def collection_f95_preview(request):
     statut     = (body.get("statut")     or "").strip()
     search     = (body.get("search")     or "").strip()
     try:
-        limit = min(int(body.get("limit") or 500), 2000)
+        limit = min(int(body.get("limit") or 2000), 5000)
     except (TypeError, ValueError):
         limit = 500
 
@@ -1080,7 +1076,7 @@ async def collection_f95_import(request):
     if selected_site_ids is not None and not isinstance(selected_site_ids, list):
         selected_site_ids = None
     try:
-        limit = min(int(body.get("limit") or 500), 2000)
+        limit = min(int(body.get("limit") or 2000), 5000)
     except (TypeError, ValueError):
         limit = 500
 
@@ -2973,22 +2969,31 @@ async def scrape_thread_dates(request):
 async def scrape_missing_dates(request):
     """
     Enrichit f95_date_maj pour :
-      - les jeux de f95_jeux sans f95_date_maj
-      - les entrées de user_collection absentes de f95_jeux et sans date dans scraped_data
+      - les groupes de f95_jeux sans f95_date_maj (dédupliqués par nom_url)
+      - les entrées user_collection absentes de f95_jeux et sans f95_date_maj dans scraped_data
 
-    Quand aucune date n'est trouvée après scraping, stocke "2020-01-01" comme
-    placeholder pour éviter de re-scraper indéfiniment ces threads.
+    Stratégie :
+      1. Charge le flux RSS F95Zone (~90 dernières MAJ) → zéro requête HTTP pour ces jeux
+      2. Scrape directement les pages pour les jeux absents du RSS
+      3. Si pas de cookies et page login → skip sans stocker (re-tenté avec cookies)
+      4. Si date introuvable même avec cookies → stocke placeholder "2020-01-01"
 
-    IMPORTANT : écrit dans f95_date_maj / scraped_data.f95_date_maj,
-                PAS dans date_maj (date MAJ traduction).
+    Écrit dans :
+      - f95_jeux.f95_date_maj        (date MAJ jeu sur F95Zone)
+      - user_collection.scraped_data['f95_date_maj']
+      NE TOUCHE PAS à date_maj (date MAJ traduction).
 
     POST /api/scrape/missing-dates
     Body JSON: {
-        "f95_cookies": "...",    -- optionnel
-        "scrape_delay": 2.0,     -- défaut 2s
-        "limit": 500             -- défaut 500, max 2000
+        "f95_cookies": "...",    -- optionnel, cookie xf_session
+        "scrape_delay": 2.0,     -- délai entre scrapes (défaut 2s)
+        "limit": 5000            -- nb max de groupes à traiter (défaut 5000)
     }
     """
+    import xml.etree.ElementTree as ET
+    import re as _re
+    from email.utils import parsedate_to_datetime
+
     is_valid, _, _, _ = await _auth_request(request, "/api/scrape/missing-dates")
     if not is_valid:
         return _with_cors(request, web.json_response(
@@ -3003,9 +3008,9 @@ async def scrape_missing_dates(request):
     f95_cookies = (body.get("f95_cookies") or "").strip() or None
     try:
         scrape_delay = max(1.0, float(body.get("scrape_delay") or 2.0))
-        limit        = min(int(body.get("limit") or 500), 2000)
+        limit        = min(int(body.get("limit") or 5000), 10000)
     except (TypeError, ValueError):
-        scrape_delay, limit = 2.0, 500
+        scrape_delay, limit = 2.0, 5000
 
     sb = _get_supabase()
     if not sb:
@@ -3013,72 +3018,93 @@ async def scrape_missing_dates(request):
             {"ok": False, "error": "Supabase non configuré"}, status=500
         ))
 
-    # ── 1. Jeux f95_jeux sans f95_date_maj ────────────────────────────────────
-    res_f95 = (
-        sb.table("f95_jeux")
-        .select("site_id, nom_url")
-        .is_("f95_date_maj", "null")
-        .not_.is_("nom_url", "null")
-        .not_.is_("site_id", "null")
-        .limit(limit)
-        .execute()
-    )
-    jeux_f95 = [
-        {"site_id": r["site_id"], "nom_url": r["nom_url"], "source": "f95_jeux"}
-        for r in (res_f95.data or [])
-        if r.get("nom_url") and "f95zone.to" in r.get("nom_url", "").lower()
-    ]
+    # ── 1. f95_jeux : tous les jeux sans f95_date_maj, dédupliqués par nom_url ──
+    all_f95_rows = []
+    offset, PAGE = 0, 1000
+    while True:
+        res = (
+            sb.table("f95_jeux")
+            .select("id, site_id, nom_url")
+            .is_("f95_date_maj", "null")
+            .not_.is_("nom_url", "null")
+            .not_.is_("site_id", "null")
+            .range(offset, offset + PAGE - 1)
+            .execute()
+        )
+        batch = res.data or []
+        all_f95_rows.extend(batch)
+        if len(batch) < PAGE:
+            break
+        offset += PAGE
 
-    # ── 2. Entrées user_collection absentes de f95_jeux et sans date ──────────
-    # Récupérer tous les site_id connus dans f95_jeux
-    res_known = (
-        sb.table("f95_jeux")
-        .select("site_id")
-        .not_.is_("site_id", "null")
-        .execute()
-    )
+    # Déduplication par nom_url exacte — 1 scrape par URL, date appliquée à tous les site_id du groupe
+    groups_f95: dict[str, dict] = {}
+    for row in all_f95_rows:
+        url = (row.get("nom_url") or "").strip()
+        if not url or "f95zone.to" not in url.lower():
+            continue
+        sid = row.get("site_id")
+        if sid is None:
+            continue
+        if url not in groups_f95:
+            groups_f95[url] = {"nom_url": url, "site_ids": [], "source": "f95_jeux"}
+        groups_f95[url]["site_ids"].append(int(sid))
+
+    f95_groups = list(groups_f95.values())[:limit]
+
+    # ── 2. user_collection : entrées absentes de f95_jeux et sans date ────────
+    res_known = sb.table("f95_jeux").select("site_id").not_.is_("site_id", "null").execute()
     known_f95_ids = {int(r["site_id"]) for r in (res_known.data or []) if r.get("site_id") is not None}
 
-    res_coll = (
-        sb.table("user_collection")
-        .select("id, f95_thread_id, f95_url, scraped_data")
-        .not_.is_("f95_thread_id", "null")
-        .execute()
-    )
+    all_coll_rows = []
+    offset_coll = 0
+    while True:
+        res_c = (
+            sb.table("user_collection")
+            .select("id, f95_thread_id, f95_url, scraped_data")
+            .not_.is_("f95_thread_id", "null")
+            .range(offset_coll, offset_coll + PAGE - 1)
+            .execute()
+        )
+        batch_c = res_c.data or []
+        all_coll_rows.extend(batch_c)
+        if len(batch_c) < PAGE:
+            break
+        offset_coll += PAGE
 
-    seen_coll_ids: set[int] = set()  # pour éviter les doublons si plusieurs entrées user
-    jeux_coll = []
-    for r in (res_coll.data or []):
+    seen_coll_ids: set[int] = set()
+    coll_entries = []
+    for r in all_coll_rows:
         tid = r.get("f95_thread_id")
         if not tid:
             continue
         tid = int(tid)
         if tid in known_f95_ids:
-            continue           # déjà dans f95_jeux → traité ci-dessus
+            continue
         if tid in seen_coll_ids:
-            continue           # doublon collection
+            continue
         sd = r.get("scraped_data") or {}
         if sd.get("f95_date_maj"):
-            continue           # déjà une date
+            continue
         url = (r.get("f95_url") or "").strip() or f"https://f95zone.to/threads/{tid}/"
         if "f95zone.to" not in url.lower():
-            continue           # LewdCorner ou autre → on ne scrape pas
+            continue
         seen_coll_ids.add(tid)
-        jeux_coll.append({
-            "site_id":      tid,
-            "nom_url":      url,
+        coll_entries.append({
+            "nom_url":       url,
+            "site_ids":      [tid],
             "collection_id": r["id"],
-            "scraped_data": sd,
-            "source":       "user_collection",
+            "scraped_data":  sd,
+            "source":        "user_collection",
         })
 
-    all_jeux = jeux_f95 + jeux_coll
-    total    = len(all_jeux)
+    all_entries = f95_groups + coll_entries
+    total       = len(all_entries)
 
     # ── Streaming NDJSON ──────────────────────────────────────────────────────
     response = web.StreamResponse()
-    response.headers["Content-Type"]    = "application/x-ndjson"
-    response.headers["Cache-Control"]   = "no-cache"
+    response.headers["Content-Type"]      = "application/x-ndjson"
+    response.headers["Cache-Control"]     = "no-cache"
     response.headers["X-Accel-Buffering"] = "no"
     origin = request.headers.get("Origin", "")
     if origin:
@@ -3101,83 +3127,162 @@ async def scrape_missing_dates(request):
             return False
 
     try:
-        updated_count   = 0
+        updated_count     = 0
         placeholder_count = 0
+        login_blocked     = 0
+        rss_hits          = 0
         now_iso = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
 
         await send({
             "log": (
-                f"🔍 {len(jeux_f95)} jeux f95_jeux + "
-                f"{len(jeux_coll)} entrées collection sans date (total {total})…"
+                f"🔍 {len(f95_groups)} groupe(s) f95_jeux "
+                f"(dédupliqués depuis {len(all_f95_rows)} lignes) + "
+                f"{len(coll_entries)} entrée(s) collection "
+                f"→ total {total} à scraper"
             ),
             "progress": {"current": 0, "total": total},
         })
 
-        async def on_progress(current: int, total_: int, entry: dict, date: Optional[str]):
-            nonlocal updated_count, placeholder_count
-            site_id = entry["site_id"]
-            source  = entry["source"]
-            stored_date = date or _PLACEHOLDER_DATE
-
-            # ── Stockage ────────────────────────────────────────────────────
-            if source == "f95_jeux":
-                try:
-                    sb.table("f95_jeux").update({
-                        "f95_date_maj": stored_date,
-                        "updated_at":   now_iso,
-                    }).eq("site_id", site_id).execute()
-                    if date:
-                        updated_count += 1
-                    else:
-                        placeholder_count += 1
-                except Exception as e:
-                    logger.warning("[api] scrape_missing_dates f95_jeux site_id=%s : %s", site_id, e)
-
-            else:  # user_collection
-                try:
-                    sd_new = dict(entry.get("scraped_data") or {})
-                    sd_new["f95_date_maj"] = stored_date
-                    sb.table("user_collection").update({
-                        "scraped_data": sd_new,
-                        "updated_at":   now_iso,
-                    }).eq("id", entry["collection_id"]).execute()
-                    if date:
-                        updated_count += 1
-                    else:
-                        placeholder_count += 1
-                except Exception as e:
-                    logger.warning("[api] scrape_missing_dates user_collection id=%s : %s",
-                                   entry.get("collection_id"), e)
-
-            icon = "✅" if date else "⬜"
-            src_label = "f95_jeux" if source == "f95_jeux" else "collection"
-            msg = (
-                f"{icon} [{current}/{total_}] site_id={site_id} ({src_label}) → "
-                f"{date if date else f'aucune date → placeholder {_PLACEHOLDER_DATE}'}"
-            )
-            await send({"progress": {"current": current, "total": total_}, "log": msg})
-
-        # ── Scraping ─────────────────────────────────────────────────────────
         async with aiohttp.ClientSession() as session:
-            for idx, entry in enumerate(all_jeux, 1):
+
+            # ── Étape 1 : Flux RSS F95Zone ─────────────────────────────────────
+            await send({"log": "📡 Chargement du flux RSS F95Zone…"})
+            rss_date_map: dict[int, str] = {}
+            try:
+                RSS_URL = "https://f95zone.to/sam/latest_alpha/latest_data.php?cmd=rss&cat=games&rows=90"
+                async with session.get(
+                    RSS_URL,
+                    headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as rss_resp:
+                    if rss_resp.status == 200:
+                        xml_text = await rss_resp.text(encoding="utf-8", errors="replace")
+                        root = ET.fromstring(xml_text)
+                        for item in root.iter("item"):
+                            # Récupération du lien (nœud texte en RSS 2.0)
+                            link = ""
+                            raw_item = ET.tostring(item, encoding="unicode")
+                            m_link = _re.search(r'<link>([^<]+)</link>', raw_item)
+                            if m_link:
+                                link = m_link.group(1).strip()
+                            if not link:
+                                continue
+                            m_id = _re.search(r'/threads/(?:[^/]*\.)?(\d+)', link)
+                            if not m_id:
+                                continue
+                            tid = int(m_id.group(1))
+                            pub_raw = (item.findtext("pubDate") or "").strip()
+                            try:
+                                pub_date = parsedate_to_datetime(pub_raw).strftime("%Y-%m-%d") if pub_raw else ""
+                            except Exception:
+                                pub_date = ""
+                            if pub_date:
+                                rss_date_map[tid] = pub_date
+
+                await send({"log": f"📡 RSS chargé : {len(rss_date_map)} date(s) disponibles"})
+            except Exception as e:
+                await send({"log": f"⚠️ RSS indisponible ({e}), scraping direct pour tous les jeux"})
+
+            # ── Étape 2 : Traitement de chaque entrée ─────────────────────────
+            for idx, entry in enumerate(all_entries, 1):
                 if client_disconnected[0]:
                     break
-                date = await scrape_thread_updated_date(
-                    session, entry["nom_url"], cookies=f95_cookies
-                )
-                await on_progress(idx, total, entry, date)
-                if idx < total:
+
+                source   = entry["source"]
+                nom_url  = entry["nom_url"]
+                site_ids = entry["site_ids"]
+
+                if not await send({"progress": {"current": idx, "total": total}}):
+                    break
+
+                src_label = f"f95_jeux×{len(site_ids)}" if source == "f95_jeux" else "collection"
+
+                # ── RSS en priorité ────────────────────────────────────────────
+                primary_sid = site_ids[0] if site_ids else None
+                rss_date    = rss_date_map.get(primary_sid) if primary_sid else None
+
+                if rss_date:
+                    date     = rss_date
+                    rss_hits += 1
+                    msg = f"📡 [{idx}/{total}] {nom_url.split('/')[-1] or nom_url} ({src_label}) → {date} (RSS)"
+                    if not await send({"log": msg}):
+                        break
+
+                else:
+                    # ── Scraping HTTP ──────────────────────────────────────────
+                    date = await scrape_thread_updated_date(session, nom_url, cookies=f95_cookies)
+
+                    if date is None and not f95_cookies:
+                        # Page adulte sans cookies → ne pas stocker, re-tenté avec cookies
+                        login_blocked += 1
+                        msg = f"🔐 [{idx}/{total}] {nom_url.split('/')[-1] or nom_url} ({src_label}) → login requis (relancer avec cookies)"
+                        if not await send({"log": msg}):
+                            break
+                        if idx < total and not client_disconnected[0]:
+                            await asyncio.sleep(scrape_delay)
+                        continue
+
+                    icon = "✅" if date else "⬜"
+                    msg  = (
+                        f"{icon} [{idx}/{total}] {nom_url.split('/')[-1] or nom_url} ({src_label}) → "
+                        + (date if date else f"aucune date → placeholder {_PLACEHOLDER_DATE}")
+                    )
+                    if not await send({"log": msg}):
+                        break
+
+                stored_date = date or _PLACEHOLDER_DATE
+
+                # ── Persistance dans f95_jeux ──────────────────────────────────
+                if source == "f95_jeux":
+                    try:
+                        for sid in site_ids:
+                            sb.table("f95_jeux").update({
+                                "f95_date_maj": stored_date,
+                                "updated_at":   now_iso,
+                            }).eq("site_id", sid).execute()
+                        if date:
+                            updated_count += 1
+                        else:
+                            placeholder_count += 1
+                    except Exception as e:
+                        logger.warning("[api] scrape_missing_dates f95_jeux site_ids=%s : %s", site_ids, e)
+
+                # ── Persistance dans user_collection ──────────────────────────
+                else:
+                    try:
+                        sd_new = dict(entry.get("scraped_data") or {})
+                        sd_new["f95_date_maj"] = stored_date
+                        sb.table("user_collection").update({
+                            "scraped_data": sd_new,
+                            "updated_at":   now_iso,
+                        }).eq("id", entry["collection_id"]).execute()
+                        if date:
+                            updated_count += 1
+                        else:
+                            placeholder_count += 1
+                    except Exception as e:
+                        logger.warning("[api] scrape_missing_dates user_collection id=%s : %s",
+                                       entry.get("collection_id"), e)
+
+                # Délai uniquement si scraping réel (pas RSS)
+                if not rss_date and idx < total and not client_disconnected[0]:
                     await asyncio.sleep(scrape_delay)
 
         if not client_disconnected[0]:
+            parts = [f"✅ {updated_count} date(s) (dont 📡 {rss_hits} depuis RSS)"]
+            if placeholder_count:
+                parts.append(f"⬜ {placeholder_count} placeholder(s)")
+            if login_blocked:
+                parts.append(f"🔐 {login_blocked} bloqué(s) par login")
+
             await send({
-                "log": (
-                    f"🎉 Terminé : {updated_count} date(s) trouvée(s), "
-                    f"{placeholder_count} placeholder(s) stocké(s) sur {total} jeu(x)"
-                ),
-                "status":  "completed",
-                "updated": updated_count,
-                "skipped": placeholder_count,
+                "log":           f"🎉 Terminé sur {total} groupe(s) — {' | '.join(parts)}",
+                "status":        "completed",
+                "updated":       updated_count,
+                "skipped":       placeholder_count,
+                "login_blocked": login_blocked,
+                "rss_hits":      rss_hits,
+                "total":         total,
             })
 
     except Exception as e:

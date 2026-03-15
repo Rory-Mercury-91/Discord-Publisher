@@ -9,7 +9,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 export type DateScraperProgress = { current: number; total: number };
-export type DateScraperSummary  = { updated: number; skipped: number };
+export type DateScraperSummary  = { updated: number; skipped: number; loginBlocked?: number;};
 
 export type DateScraperOptions = {
   f95Cookies?:  string;
@@ -44,7 +44,7 @@ export function useDateScraper() {
       const body: Record<string, unknown> = {};
       if (options?.f95Cookies)       body.f95_cookies   = options.f95Cookies;
       if (options?.scrapeDelay != null) body.scrape_delay = options.scrapeDelay;
-      if (options?.limit != null)    body.limit         = options.limit;
+      body.limit = options?.limit ?? 5000;
 
       const res = await fetch(`${base}/api/scrape/missing-dates`, {
         method:  'POST',
@@ -73,9 +73,10 @@ export function useDateScraper() {
             if (msg.log)      setLogs(p => [...p, msg.log]);
             if (msg.progress) setProgress(msg.progress);
             if (msg.status === 'completed') {
-              const total   = msg.total   ?? msg.progress?.total ?? 0;
-              const updated = msg.updated ?? 0;
-              setSummary({ updated, skipped: total - updated });
+              const total        = msg.total   ?? msg.progress?.total ?? 0;
+              const updated      = msg.updated ?? 0;
+              const loginBlocked = msg.login_blocked ?? 0;
+              setSummary({ updated, skipped: total - updated - loginBlocked, loginBlocked });
             }
             if (msg.error) setLogs(p => [...p, `❌ ${msg.error}`]);
           } catch { /* ligne NDJSON partielle */ }

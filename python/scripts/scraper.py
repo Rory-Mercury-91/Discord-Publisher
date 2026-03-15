@@ -74,21 +74,19 @@ _DATE_PAT = (
 )
 
 _RE_UPDATED_HTML = re.compile(
-    r'<b>\s*(?:Thread\s+)?Updat(?:ed?)\s*</b>\s*[:\-]?\s*(?:<[^>]+>\s*)*'
-    r'(?P<date>' + _DATE_PAT[4:-1] + r')',      # strip outer (?:...)
+    r'<b>\s*(?:Thread\s+)?Updat(?:ed?)?\s*</b>\s*[:\-]?\s*(?:<[^>]+>\s*)*'
+    r'(?P<date>[^\n<]{4,30})',
     re.IGNORECASE,
 )
 
 _RE_UPDATED_TEXT = re.compile(
-    r'(?:Thread\s+)?Updat(?:ed?)\s*[:\-]\s*'
-    r'(?P<date>' + _DATE_PAT[4:-1] + r')',
+    r'(?:Thread\s+)?Updat(?:ed?)\s*[:\-]\s*(?P<date>[^\n]{4,30})',
     re.IGNORECASE,
 )
 
 # Fallback : Release Date / Published
-_RE_RELEASE_DATE_TEXT = re.compile(
-    r'(?:Release\s+Date|Published)\s*[:\-]\s*'
-    r'(?P<date>' + _DATE_PAT[4:-1] + r')',
+_RE_RELEASE_TEXT = re.compile(
+    r'(?:Release\s+Date|Published)\s*[:\-]\s*(?P<date>[^\n]{4,20})',
     re.IGNORECASE,
 )
 
@@ -101,7 +99,7 @@ _MONTH_NAMES: dict[str, str] = {
     "oct": "10", "nov": "11", "dec": "12",
 }
 
-_PLACEHOLDER_DATE = "2020-01-01"
+_PLACEHOLDER_DATE = "2020-01-01"   # stocké quand aucune date trouvée (évite re-scrape)_PLACEHOLDER_DATE = "2020-01-01"
 
 
 # ── Helpers internes ─────────────────────────────────────────────────────────
@@ -172,92 +170,99 @@ def _extract_synopsis_from_content_html(content_html: str) -> Optional[str]:
 
 def _normalize_date(raw: str) -> Optional[str]:
     """
-    Normalise une date brute vers ISO 8601 YYYY-MM-DD.
+    Normalise une date brute vers YYYY-MM-DD.
     Gère tous les formats observés sur F95Zone.
-    Retourne None si le format n'est pas reconnu.
+    Retourne None si non reconnu.
     """
     if not raw:
         return None
-    raw = raw.strip().rstrip('./- ')
+    # Nettoyer : enlever tout ce qui suit un pipe / tiret multiple / parenthèse
+    raw = re.split(r'[|(\[]', raw)[0]
+    raw = raw.strip().rstrip('./- ,')
     raw = re.sub(r'\s+', ' ', raw)
 
-    # ── 1. ISO direct : 2024-12-29 ou 2022-7-2 (digit manquant) ─────────────
-    m = re.fullmatch(r'(\d{4})-(\d{1,2})-(\d{1,2})', raw)
+    if not raw or len(raw) < 6:
+        return None
+
+    # ── 1. YYYY-MM-DD (ISO) — éventuellement jour/mois manquant d'un zéro ────
+    m = re.match(r'^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$', raw)
     if m:
-        y, mo, d = m.group(1), int(m.group(2)), int(m.group(3))
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
         if 1 <= mo <= 12 and 1 <= d <= 31:
-            return f"{y}-{str(mo).zfill(2)}-{str(d).zfill(2)}"
+            return f"{y}-{mo:02d}-{d:02d}"
 
-    # ── 2. YYYY/MM/DD ou YYYY.MM.DD ──────────────────────────────────────────
-    m = re.fullmatch(r'(\d{4})[/.](\d{1,2})[/.](\d{1,2})', raw)
-    if m:
-        y, mo, d = m.group(1), int(m.group(2)), int(m.group(3))
-        if 1 <= mo <= 12 and 1 <= d <= 31:
-            return f"{y}-{str(mo).zfill(2)}-{str(d).zfill(2)}"
+    # ── 2. YYYY/MM/DD  YYYY.MM.DD ────────────────────────────────────────────
+    # (couvert par le cas 1)
 
-    # ── 3. MonthName D(, )YYYY  ex: "March 14, 2026" "March 14 2026" ─────────
-    m = re.fullmatch(r'(\w+)\s+(\d{1,2})[,\s\-]+(\d{4})', raw)
-    if m:
-        month = _MONTH_NAMES.get(m.group(1).lower())
-        d = int(m.group(2))
-        if month and 1 <= d <= 31:
-            return f"{m.group(3)}-{month}-{str(d).zfill(2)}"
-
-    # ── 4. D MonthName YYYY  ex: "31 October 2013", "02 December, 2016" ──────
-    m = re.fullmatch(r'(\d{1,2})\s+(\w+)[,\s]+(\d{4})', raw)
-    if m:
-        month = _MONTH_NAMES.get(m.group(2).lower())
-        d = int(m.group(1))
-        if month and 1 <= d <= 31:
-            return f"{m.group(3)}-{month}-{str(d).zfill(2)}"
-
-    # ── 5. D-MonthName-YYYY  ex: "16-May-2018", "31-March-2018" ──────────────
-    m = re.fullmatch(r'(\d{1,2})[-\s](\w{3,9})[-\s](\d{4})', raw)
-    if m:
-        month = _MONTH_NAMES.get(m.group(2).lower())
-        d = int(m.group(1))
-        if month and 1 <= d <= 31:
-            return f"{m.group(3)}-{month}-{str(d).zfill(2)}"
-
-    # ── 6. MonthName-D-YYYY  ex: "Aug-7-2018", "July 1- 2018" ───────────────
-    m = re.fullmatch(r'(\w{3,9})[-\s](\d{1,2})[-\s,]+(\d{4})', raw)
-    if m:
-        month = _MONTH_NAMES.get(m.group(1).lower())
-        d = int(m.group(2))
-        if month and 1 <= d <= 31:
-            return f"{m.group(3)}-{month}-{str(d).zfill(2)}"
-
-    # ── 7. DD/MM/YYYY ou DD-MM-YYYY ou DD.MM.YYYY (4-digit year) ─────────────
-    m = re.fullmatch(r'(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})', raw)
-    if m:
-        p1, p2, y = int(m.group(1)), int(m.group(2)), m.group(3)
-        # Si p1 > 12 → forcément DD/MM/YYYY
-        if p1 > 12 and 1 <= p2 <= 12:
-            return f"{y}-{str(p2).zfill(2)}-{str(p1).zfill(2)}"
-        # Sinon convention européenne DD/MM/YYYY (F95 usage courant)
-        if 1 <= p2 <= 12 and 1 <= p1 <= 31:
-            return f"{y}-{str(p2).zfill(2)}-{str(p1).zfill(2)}"
-        # Dernier recours MM/DD/YYYY
-        if 1 <= p1 <= 12 and 1 <= p2 <= 31:
-            return f"{y}-{str(p1).zfill(2)}-{str(p2).zfill(2)}"
-
-    # ── 8. MM/DD/YY ou DD/MM/YY (2-digit year) ───────────────────────────────
-    m = re.fullmatch(r'(\d{1,2})/(\d{1,2})/(\d{2})', raw)
+    # ── 3. DD/MM/YY  (2-digit year) ──────────────────────────────────────────
+    m = re.match(r'^(\d{1,2})/(\d{1,2})/(\d{2})$', raw)
     if m:
         p1, p2, y2 = int(m.group(1)), int(m.group(2)), int(m.group(3))
         year = 2000 + y2 if y2 <= 50 else 1900 + y2
-        # Convention US MM/DD pour F95
+        # Convention US MM/DD
         if 1 <= p1 <= 12 and 1 <= p2 <= 31:
-            return f"{year}-{str(p1).zfill(2)}-{str(p2).zfill(2)}"
+            return f"{year}-{p1:02d}-{p2:02d}"
 
-    # ── 9. Séparateurs mixtes ex: "3/10-2017", "11/05/17" ────────────────────
-    m = re.fullmatch(r'(\d{1,2})\s*[/\-. ]\s*(\d{1,2})\s*[/\-.]\s*(\d{4})', raw)
+    # ── 4. DD/MM/YYYY  DD-MM-YYYY  DD.MM.YYYY ────────────────────────────────
+    m = re.match(r'^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$', raw)
+    if m:
+        p1, p2, y = int(m.group(1)), int(m.group(2)), m.group(3)
+        if p1 > 12 and 1 <= p2 <= 12:          # DD/MM/YYYY certain
+            return f"{y}-{p2:02d}-{p1:02d}"
+        if 1 <= p2 <= 12 and 1 <= p1 <= 31:    # convention européenne DD/MM
+            return f"{y}-{p2:02d}-{p1:02d}"
+        if 1 <= p1 <= 12 and 1 <= p2 <= 31:    # fallback MM/DD
+            return f"{y}-{p1:02d}-{p2:02d}"
+
+    # ── 5. Séparateurs mixtes : 3/10-2017  11/05/17 ──────────────────────────
+    m = re.match(r'^(\d{1,2})\s*[/\-]\s*(\d{1,2})\s*[-/\.]\s*(\d{4})$', raw)
     if m:
         p1, p2, y = int(m.group(1)), int(m.group(2)), m.group(3)
         if p1 > 12 and 1 <= p2 <= 12:
-            return f"{y}-{str(p2).zfill(2)}-{str(p1).zfill(2)}"
+            return f"{y}-{p2:02d}-{p1:02d}"
         if 1 <= p2 <= 12 and 1 <= p1 <= 31:
-            return f"{y}-{str(p2).zfill(2)}-{str(p1).zfill(2)}"
+            return f"{y}-{p2:02d}-{p1:02d}"
+
+    # ── 6. MonthName D, YYYY  ex: "March 14, 2026"  "July 1, 2018" ───────────
+    m = re.match(r'^(\w+)\s+(\d{1,2})[,\s\-]+(\d{4})$', raw)
+    if m:
+        month = _MONTH_NAMES.get(m.group(1).lower())
+        d = int(m.group(2))
+        if month and 1 <= d <= 31:
+            return f"{m.group(3)}-{month}-{d:02d}"
+
+    # ── 7. D MonthName YYYY  ex: "31 October 2013"  "02 December, 2016" ──────
+    m = re.match(r'^(\d{1,2})\s+(\w+)[,\s]+(\d{4})$', raw)
+    if m:
+        month = _MONTH_NAMES.get(m.group(2).lower())
+        d = int(m.group(1))
+        if month and 1 <= d <= 31:
+            return f"{m.group(3)}-{month}-{d:02d}"
+
+    # ── 8. D-MonthName-YYYY  ex: "16-May-2018"  "31-March-2018" ─────────────
+    m = re.match(r'^(\d{1,2})[-\s](\w{3,9})[-\s](\d{4})$', raw)
+    if m:
+        month = _MONTH_NAMES.get(m.group(2).lower())
+        d = int(m.group(1))
+        if month and 1 <= d <= 31:
+            return f"{m.group(3)}-{month}-{d:02d}"
+
+    # ── 9. MonthName-D-YYYY  ex: "Aug-7-2018"  "July 1- 2018" ───────────────
+    m = re.match(r'^(\w{3,9})[-\s](\d{1,2})[-\s,]+(\d{4})$', raw)
+    if m:
+        month = _MONTH_NAMES.get(m.group(1).lower())
+        d = int(m.group(2))
+        if month and 1 <= d <= 31:
+            return f"{m.group(3)}-{month}-{d:02d}"
+
+    # ── 10. "16-5-2018" (D-M-YYYY sans nom de mois) ──────────────────────────
+    m = re.match(r'^(\d{1,2})[-](\d{1,2})[-](\d{4})$', raw)
+    if m:
+        p1, p2, y = int(m.group(1)), int(m.group(2)), m.group(3)
+        if p1 > 12 and 1 <= p2 <= 12:
+            return f"{y}-{p2:02d}-{p1:02d}"
+        if 1 <= p2 <= 12 and 1 <= p1 <= 31:
+            return f"{y}-{p2:02d}-{p1:02d}"
 
     return None
 
@@ -281,19 +286,20 @@ def extract_f95_thread_id(url: str) -> Optional[str]:
 
 def extract_thread_updated_from_html(html: str) -> Optional[str]:
     """
-    Extrait la date depuis le HTML d'une page F95Zone.
+    Extrait la date de mise à jour depuis le HTML d'une page F95Zone.
 
     Ordre de priorité :
-      1. <b>Thread Updated</b> / <b>Thread Update</b> (regex HTML)
+      1. <b>Thread Updated</b> / <b>Thread Update</b> (regex HTML brut)
       2. Texte bbWrapper — Thread Updated / Thread Update
       3. Texte bbWrapper — Release Date / Published (fallback)
-      4. Retourne None si aucune date valide trouvée.
-         L'appelant est responsable de stocker un placeholder si nécessaire.
+
+    Retourne YYYY-MM-DD ou None si aucune date valide trouvée.
+    L'appelant est responsable de stocker _PLACEHOLDER_DATE si None.
     """
     if not html:
         return None
 
-    # ── Stratégie 1 : regex rapide sur HTML brut ──────────────────────────────
+    # ── Stratégie 1 : regex sur HTML brut ─────────────────────────────────────
     m = _RE_UPDATED_HTML.search(html)
     if m:
         normalized = _normalize_date(m.group("date"))
@@ -301,7 +307,7 @@ def extract_thread_updated_from_html(html: str) -> Optional[str]:
             logger.debug("[scraper] Thread Updated (regex HTML) : %s", normalized)
             return normalized
 
-    # ── Stratégie 2 + 3 : BeautifulSoup sur le premier post ──────────────────
+    # ── Stratégie 2 + 3 : BeautifulSoup ──────────────────────────────────────
     try:
         soup = BeautifulSoup(html, "html.parser")
         bb_wrapper = (
@@ -311,24 +317,24 @@ def extract_thread_updated_from_html(html: str) -> Optional[str]:
         )
         content = (bb_wrapper or soup).get_text(separator="\n")
 
-        # Priorité : Thread Updated / Thread Update
+        # Thread Updated / Thread Update
         m2 = _RE_UPDATED_TEXT.search(content)
         if m2:
             normalized = _normalize_date(m2.group("date"))
             if normalized:
-                logger.debug("[scraper] Thread Updated (BeautifulSoup) : %s", normalized)
+                logger.debug("[scraper] Thread Updated (BS4) : %s", normalized)
                 return normalized
 
-        # Fallback : Release Date / Published
-        m3 = _RE_RELEASE_DATE_TEXT.search(content)
+        # Fallback Release Date / Published
+        m3 = _RE_RELEASE_TEXT.search(content)
         if m3:
             normalized = _normalize_date(m3.group("date"))
             if normalized:
-                logger.debug("[scraper] Release Date (fallback) : %s", normalized)
+                logger.debug("[scraper] Release Date (fallback BS4) : %s", normalized)
                 return normalized
 
     except Exception as e:
-        logger.warning("[scraper] extract_thread_updated_from_html exception : %s", e)
+        logger.warning("[scraper] extract_thread_updated_from_html : %s", e)
 
     return None
 
@@ -340,24 +346,55 @@ async def scrape_thread_updated_date(
 ) -> Optional[str]:
     """
     Récupère la date "Thread Updated" depuis la page d'un thread F95Zone.
-    À utiliser pour les jeux absents du flux RSS (au-delà des 90 dernières entrées).
 
-    Retourne la date au format YYYY-MM-DD, ou None si non trouvée / erreur réseau.
+    Retourne la date YYYY-MM-DD, ou None si :
+      - la page est une page de login (cookies requis)
+      - la date est introuvable dans le HTML
+      - erreur réseau
     """
     if not url or "f95zone.to" not in url.lower():
-        logger.warning("[scraper] scrape_thread_updated_date : URL invalide (%s)", url)
         return None
 
     headers = _f95_headers_with_cookies(cookies)
     try:
         logger.info("[scraper] Scraping Thread Updated : %s", url)
-        async with session.get(url, headers=headers, timeout=30) as response:
+        async with session.get(
+            url,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=30),
+            allow_redirects=True,
+        ) as response:
+            final_url = str(response.url)
+
+            # ── Détection login / accès refusé ───────────────────────────────
+            if response.status == 403:
+                logger.debug("[scraper] 403 pour %s — page restreinte", url)
+                return None
             if response.status != 200:
                 logger.warning("[scraper] HTTP %d pour %s", response.status, url)
                 return None
-            html = await response.text()
 
-        if not html or len(html) < 200:
+            # Redirection vers login (URL change)
+            if "login" in final_url.lower() or "log-in" in final_url.lower():
+                logger.debug("[scraper] Redirection login pour %s", url)
+                return None
+
+            html = await response.text(errors="replace")
+
+        if not html or len(html) < 500:
+            return None
+
+        # ── Détection page de login dans le contenu ───────────────────────────
+        # F95Zone renvoie parfois 200 avec la page login pour le contenu adulte
+        if any(marker in html for marker in (
+            'action="/login"',
+            'name="login"',
+            'class="login-form"',
+            '<title>Log in',
+            'You must be logged-in',
+            'you must be registered',
+        )):
+            logger.debug("[scraper] Page login détectée pour %s (cookies requis)", url)
             return None
 
         date = extract_thread_updated_from_html(html)
@@ -367,6 +404,9 @@ async def scrape_thread_updated_date(
             logger.info("[scraper] ❌ Thread Updated introuvable : %s", url[:60])
         return date
 
+    except asyncio.TimeoutError:
+        logger.warning("[scraper] Timeout pour %s", url)
+        return None
     except Exception as e:
         logger.error("[scraper] Exception scrape_thread_updated_date (%s) : %s", url, e)
         return None

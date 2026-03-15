@@ -813,10 +813,24 @@ export default function EnrichmentSettings() {
           <div style={{
             marginTop: 10, padding: '8px 12px', borderRadius: 6,
             background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)',
-            fontSize: 13, color: '#10b981',
+            fontSize: 13,
           }}>
-            🎉 {dateSummary.updated} date(s) mise(s) à jour sur{' '}
-            {dateSummary.updated + dateSummary.skipped} jeux traités.
+            <span style={{ color: '#10b981' }}>
+              🎉 {dateSummary.updated} date(s) trouvée(s) sur{' '}
+              {dateSummary.updated + (dateSummary.skipped ?? 0) + (dateSummary.loginBlocked ?? 0)} jeux traités.
+            </span>
+            {(dateSummary.skipped ?? 0) > 0 && (
+              <span style={{ color: 'var(--muted)', marginLeft: 8 }}>
+                ⬜ {dateSummary.skipped} placeholder(s).
+              </span>
+            )}
+            {(dateSummary.loginBlocked ?? 0) > 0 && (
+              <div style={{ marginTop: 6, color: '#f59e0b' }}>
+                🔐 {dateSummary.loginBlocked} thread(s) bloqué(s) par login F95Zone.{' '}
+                <strong>Renseignez votre cookie F95 dans « Ma Collection → Cookies F95 »</strong>{' '}
+                puis relancez pour les récupérer.
+              </div>
+            )}
           </div>
         )}
       </section>
