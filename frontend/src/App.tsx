@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AppHeader, type AppMode } from './components/header';
 import AuthModal from './components/AuthModal';
+import PasswordRecoveryModal from './components/AuthModal/PasswordRecoveryModal';
 import SettingsModal from './components/Settings';
 import ConfirmModal from './components/Modals/ConfirmModal';
 import ContentEditor from './components/ContentEditor';
@@ -204,11 +205,12 @@ function AppContentInner() {
 }
 
 function AppWithAuth() {
-  const { user, loading } = useAuth();
+  const { user, loading, recoveryMode } = useAuth();
   const needAuth = loading || !user;
   return (
     <>
       {needAuth && <AuthModal />}
+      {user && recoveryMode && <PasswordRecoveryModal />}
       <AppContentInner />
     </>
   );

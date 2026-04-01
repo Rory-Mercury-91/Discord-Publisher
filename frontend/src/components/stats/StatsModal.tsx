@@ -100,7 +100,7 @@ export default function StatsModal({ onClose }: StatsModalProps) {
   }, [stats.monthlyDataRaw, chartYear]);
 
   return (
-    <div className="modal">
+    <div className="modal" onClick={() => onClose?.()}>
       <div className="panel modal-panel--stats" onClick={e => e.stopPropagation()}>
         <div className="stats-modal__header">
           <h3>📈 Statistiques</h3>

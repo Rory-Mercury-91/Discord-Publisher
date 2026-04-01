@@ -60,8 +60,8 @@ export type UserCollectionEntry = {
   title          : string | null;
   scraped_data?  : ScrapedData | null;
   labels?        : CollectionLabel[] | null;
-  /** Chemins d'exécutables avec dernière session (ex. .exe), style Nexus */
   executable_paths?: ExecutablePathEntry[] | string[] | null;
+  f95_date_maj?  : string | null;   // vraie colonne SQL YYYY-MM-DD
   created_at     : string;
   updated_at     : string | null;
 };
@@ -145,15 +145,19 @@ export function generateManualPseudoId(): number {
   return -(raw === 0 ? 1 : raw);
 }
 
-export function useCollection() {
+export function useCollection(overrideProfileId?: string) {
   const { profile } = useAuth();
+
+  const effectiveProfileId = overrideProfileId ?? profile?.id;
+  const isReadOnly = !!overrideProfileId && overrideProfileId !== profile?.id;
+
   const [items,   setItems]   = useState<UserCollectionEntryEnriched[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
 
   const fetchItems = useCallback(async () => {
     const sb = getSupabase();
-    if (!sb || !profile?.id) {
+    if (!sb || !effectiveProfileId) {
       setItems([]);
       setLoading(false);
       return;
@@ -163,17 +167,17 @@ export function useCollection() {
     try {
       const { data, error: err } = await sb
         .from('user_collection')
-        .select('*')
-        .eq('owner_id', profile.id)
+        .select('*, f95_date_maj')          // ← ajout de la colonne dédiée
+        .eq('owner_id', effectiveProfileId)
         .order('created_at', { ascending: false });
+
       if (err) {
         setError(err.message);
         setItems([]);
         return;
       }
-      const rows = (data ?? []) as UserCollectionEntry[];
 
-      // Enrichir avec f95_jeux (site_id = f95_thread_id)
+      const rows = (data ?? []) as UserCollectionEntry[];
       const siteIds = [...new Set(rows.map((r) => r.f95_thread_id))];
       let jeuxMap: Record<number, UserCollectionEntryEnriched['game']> = {};
 
@@ -186,7 +190,6 @@ export function useCollection() {
           .in('site_id', siteIds);
 
         if (jeux?.length) {
-          // Groupement par site_id
           const byKey = new Map<number | string, any[]>();
           for (const j of jeux as any[]) {
             const sid  = j.site_id as number | null | undefined;
@@ -249,8 +252,22 @@ export function useCollection() {
 
       setItems(
         rows.map((r) => {
+          // Résolution de f95_date_maj : colonne réelle > scraped_data (rétrocompat)
+          const colDate = r.f95_date_maj;
+          const sdDate  = (r.scraped_data as Record<string, unknown> | null)
+            ?.f95_date_maj as string | null;
+          const resolvedF95DateMaj =
+            (colDate && colDate !== '2020-01-01') ? colDate :
+            (sdDate  && sdDate  !== '2020-01-01') ? sdDate  : null;
+
           const fromCatalogue = jeuxMap[r.f95_thread_id];
-          if (fromCatalogue) return { ...r, game: fromCatalogue };
+          if (fromCatalogue) {
+            return {
+              ...r,
+              f95_date_maj: resolvedF95DateMaj,
+              game: fromCatalogue,
+            };
+          }
 
           if (r.scraped_data) {
             const s = r.scraped_data;
@@ -269,12 +286,12 @@ export function useCollection() {
               synopsis      : synopsisFr || synopsisEn || undefined,
               synopsis_fr   : synopsisFr || undefined,
               synopsis_en   : synopsisEn || undefined,
-              f95_date_maj  : (s as Record<string, unknown>).f95_date_maj as string | undefined,
+              f95_date_maj  : resolvedF95DateMaj || undefined,
             };
-            return { ...r, game };
+            return { ...r, f95_date_maj: resolvedF95DateMaj, game };
           }
 
-          return { ...r };
+          return { ...r, f95_date_maj: resolvedF95DateMaj };
         })
       );
     } catch (e: any) {
@@ -283,7 +300,7 @@ export function useCollection() {
     } finally {
       setLoading(false);
     }
-  }, [profile?.id]);
+  }, [effectiveProfileId]);
 
   useEffect(() => {
     fetchItems();
@@ -296,17 +313,25 @@ export function useCollection() {
       f95Url?     : string | null,
       scrapedData?: ScrapedData | null
     ) => {
+      if (isReadOnly) return { ok: false, error: 'Mode lecture seule (vue admin)' };
       const sb = getSupabase();
-      if (!sb || !profile?.id) return { ok: false, error: 'Non connecté' };
+      if (!sb || !effectiveProfileId) return { ok: false, error: 'Non connecté' };
       try {
         const row: Record<string, unknown> = {
-          owner_id     : profile.id,
+          owner_id     : effectiveProfileId,
           f95_thread_id: f95ThreadId,
           title        : title ?? null,
           f95_url      : f95Url ?? null,
           updated_at   : new Date().toISOString(),
         };
         if (scrapedData != null) row.scraped_data = scrapedData;
+
+        // Écrire f95_date_maj dans la colonne dédiée si disponible et non-placeholder
+        const dateMaj = scrapedData?.f95_date_maj;
+        if (dateMaj && dateMaj !== '2020-01-01') {
+          row.f95_date_maj = dateMaj;
+        }
+
         const { error: err } = await sb.from('user_collection').upsert(row, {
           onConflict: 'owner_id,f95_thread_id',
         });
@@ -317,7 +342,7 @@ export function useCollection() {
         return { ok: false, error: e?.message || 'Erreur ajout' };
       }
     },
-    [profile?.id, fetchItems]
+    [effectiveProfileId, isReadOnly, fetchItems]
   );
 
   const resolveF95 = useCallback(
@@ -329,6 +354,7 @@ export function useCollection() {
       title?        : string;
       f95_url?      : string;
       scraped_data? : ScrapedData | null;
+      f95_date_maj? : string | null;
       error?        : string;
     }> => {
       const base = (localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
@@ -362,6 +388,7 @@ export function useCollection() {
           title        : data.title,
           f95_url      : data.f95_url,
           scraped_data : data.scraped_data ?? null,
+          f95_date_maj : data.f95_date_maj ?? null,   // ← nouvelle propriété retournée par l'API
         };
       } catch (e: any) {
         return { ok: false, error: e?.message || 'Erreur réseau' };
@@ -375,11 +402,18 @@ export function useCollection() {
       const resolved = await resolveF95(urlOrId);
       if (!resolved.ok || resolved.f95_thread_id == null)
         return { ok: false, error: resolved.error };
+
+      // Injecter f95_date_maj dans scraped_data pour rétrocompatibilité
+      const scrapedData = resolved.scraped_data ?? null;
+      if (scrapedData && resolved.f95_date_maj && !scrapedData.f95_date_maj) {
+        (scrapedData as Record<string, unknown>).f95_date_maj = resolved.f95_date_maj;
+      }
+
       const result = await addByGame(
         resolved.f95_thread_id,
         resolved.title    ?? null,
         resolved.f95_url  ?? null,
-        resolved.scraped_data ?? null
+        scrapedData
       );
       return { ...result, f95_thread_id: resolved.f95_thread_id };
     },
@@ -388,10 +422,10 @@ export function useCollection() {
 
   const addManual = useCallback(
     async (data: ManualGameData) => {
+      if (isReadOnly) return { ok: false, error: 'Mode lecture seule (vue admin)' };
       const sb = getSupabase();
-      if (!sb || !profile?.id) return { ok: false, error: 'Non connecté' };
+      if (!sb || !effectiveProfileId) return { ok: false, error: 'Non connecté' };
 
-      // Résolution du thread_id
       let threadId: number | null = data.manualThreadId ?? null;
       if (!threadId && data.externalUrl?.trim()) {
         threadId = extractThreadIdFromUrl(data.externalUrl.trim());
@@ -400,11 +434,9 @@ export function useCollection() {
         threadId = generateManualPseudoId();
       }
 
-      // Normalisation des synopsis : on accepte synopsis_en, synopsis et synopsis_fr
       const synopsisEn = (data.synopsis_en ?? data.synopsis ?? '').trim() || null;
       const synopsisFr = (data.synopsis_fr ?? '').trim() || null;
 
-      // Construction de scraped_data
       const scrapedData: ScrapedData & Record<string, unknown> = {
         name        : data.title,
         version     : data.version   ?? null,
@@ -412,7 +444,7 @@ export function useCollection() {
         status      : data.status    ?? null,
         tags        : data.tags      ?? null,
         type        : data.gameType  ?? null,
-        synopsis    : synopsisEn,        // EN (compatibilité)
+        synopsis    : synopsisEn,
         synopsis_en : synopsisEn,
         synopsis_fr : synopsisFr,
         is_manual   : true,
@@ -426,7 +458,7 @@ export function useCollection() {
 
       return addByGame(threadId, data.title, f95Url, scrapedData as ScrapedData);
     },
-    [profile?.id, addByGame]
+    [effectiveProfileId, isReadOnly, addByGame]
   );
 
   const updateCollectionEntry = useCallback(
@@ -437,14 +469,24 @@ export function useCollection() {
         scraped_data? : Record<string, unknown> | null;
       }
     ) => {
+      if (isReadOnly) return { ok: false, error: 'Mode lecture seule (vue admin)' };
       const sb = getSupabase();
-      if (!sb || !profile?.id) return { ok: false, error: 'Non connecté' };
+      if (!sb || !effectiveProfileId) return { ok: false, error: 'Non connecté' };
       try {
+        const payload: Record<string, unknown> = {
+          ...updates,
+          updated_at: new Date().toISOString(),
+        };
+        // Propager f95_date_maj dans la colonne si présent dans scraped_data
+        const dateMaj = (updates.scraped_data as Record<string, unknown> | null)?.f95_date_maj as string | null;
+        if (dateMaj && dateMaj !== '2020-01-01') {
+          payload.f95_date_maj = dateMaj;
+        }
         const { error: err } = await sb
           .from('user_collection')
-          .update({ ...updates, updated_at: new Date().toISOString() })
+          .update(payload)
           .eq('id', entryId)
-          .eq('owner_id', profile.id);
+          .eq('owner_id', effectiveProfileId);
         if (err) return { ok: false, error: err.message };
         await fetchItems();
         return { ok: true };
@@ -452,19 +494,20 @@ export function useCollection() {
         return { ok: false, error: e?.message || 'Erreur mise à jour' };
       }
     },
-    [profile?.id, fetchItems]
+    [effectiveProfileId, isReadOnly, fetchItems]
   );
 
   const remove = useCallback(
     async (id: string) => {
+      if (isReadOnly) return { ok: false, error: 'Mode lecture seule (vue admin)' };
       const sb = getSupabase();
-      if (!sb || !profile?.id) return { ok: false, error: 'Non connecté' };
+      if (!sb || !effectiveProfileId) return { ok: false, error: 'Non connecté' };
       try {
         const { error: err } = await sb
           .from('user_collection')
           .delete()
           .eq('id', id)
-          .eq('owner_id', profile.id);
+          .eq('owner_id', effectiveProfileId);
         if (err) return { ok: false, error: err.message };
         await fetchItems();
         return { ok: true };
@@ -472,19 +515,20 @@ export function useCollection() {
         return { ok: false, error: e?.message || 'Erreur suppression' };
       }
     },
-    [profile?.id, fetchItems]
+    [effectiveProfileId, isReadOnly, fetchItems]
   );
 
   const updateLabels = useCallback(
     async (entryId: string, labels: CollectionLabel[]) => {
+      if (isReadOnly) return { ok: false, error: 'Mode lecture seule (vue admin)' };
       const sb = getSupabase();
-      if (!sb || !profile?.id) return { ok: false, error: 'Non connecté' };
+      if (!sb || !effectiveProfileId) return { ok: false, error: 'Non connecté' };
       try {
         const { error: err } = await sb
           .from('user_collection')
           .update({ labels, updated_at: new Date().toISOString() })
           .eq('id', entryId)
-          .eq('owner_id', profile.id);
+          .eq('owner_id', effectiveProfileId);
         if (err) return { ok: false, error: err.message };
         setItems((prev) =>
           prev.map((r) => (r.id === entryId ? { ...r, labels } : r))
@@ -494,13 +538,14 @@ export function useCollection() {
         return { ok: false, error: e?.message || 'Erreur mise à jour labels' };
       }
     },
-    [profile?.id]
+    [effectiveProfileId, isReadOnly]
   );
 
   const updateExecutablePaths = useCallback(
     async (entryId: string, executablePaths: ExecutablePathEntry[]) => {
+      if (isReadOnly) return { ok: false, error: 'Mode lecture seule (vue admin)' };
       const sb = getSupabase();
-      if (!sb || !profile?.id) return { ok: false, error: 'Non connecté' };
+      if (!sb || !effectiveProfileId) return { ok: false, error: 'Non connecté' };
       try {
         const { error: err } = await sb
           .from('user_collection')
@@ -509,7 +554,7 @@ export function useCollection() {
             updated_at      : new Date().toISOString(),
           })
           .eq('id', entryId)
-          .eq('owner_id', profile.id);
+          .eq('owner_id', effectiveProfileId);
         if (err) return { ok: false, error: err.message };
         setItems((prev) =>
           prev.map((r) =>
@@ -524,7 +569,7 @@ export function useCollection() {
         };
       }
     },
-    [profile?.id]
+    [effectiveProfileId, isReadOnly]
   );
 
   const allLabels = useMemo(() => {
@@ -552,5 +597,6 @@ export function useCollection() {
     updateLabels,
     updateExecutablePaths,
     allLabels,
+    isReadOnly,
   };
 }

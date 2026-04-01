@@ -47,7 +47,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   ];
 
   const modalContent = (
-    <div className="modal">
+    <div className="modal" onClick={() => onClose?.()}>
       <div
         className="panel modal-panel modal-panel--config"
         onClick={e => e.stopPropagation()}

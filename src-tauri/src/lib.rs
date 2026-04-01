@@ -603,7 +603,15 @@ fn open_path(path: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    // single-instance doit être enregistré en premier (deep-link Windows/Linux + app unique)
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}));
+    }
+
+    builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 // Masquer les WARN de la boucle d'événements tao sur Windows (ordre d'événements inoffensif)
@@ -614,7 +622,19 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
+            // Traiter le lien en ligne de commande au 1er lancement (app fermée puis clic e-mail).
+            // Sans cela, seul un 2e processus (single-instance) remplissait l’URL — getCurrent() restait vide.
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                app.deep_link().handle_cli_arguments(std::env::args());
+                if let Err(e) = app.deep_link().register_all() {
+                    eprintln!("⚠️  [deep-link] register_all: {:?}", e);
+                }
+            }
+
             let window = app
                 .get_webview_window("main")
                 .ok_or("Fenêtre principale introuvable")?;

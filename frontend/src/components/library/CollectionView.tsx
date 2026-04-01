@@ -27,7 +27,18 @@ const RSS_INTERVALS: { label: string; value: number }[] = [
   { label: '30 min',   value: 30 * 60_000   },
   { label: '1 heure',  value: 60 * 60_000   },
 ];
+const PLACEHOLDER_DATE = '2020-01-01';
 
+/**
+ * Normalise n'importe quelle date vers YYYY-MM-DD pour tri lexicographique fiable.
+ * - Tronque les ISO complets "2026-03-14T12:30:00+00:00" → "2026-03-14"
+ * - Retourne '' pour null, undefined, ou le placeholder (2020-01-01)
+ */
+function normalizeDateForSort(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const s = String(raw).trim().substring(0, 10);
+  return s === PLACEHOLDER_DATE ? '' : s;
+}
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function normalizeStatut(s: string): string {
@@ -41,28 +52,29 @@ function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
     entry.f95_url ||
     entry.game?.nom_url ||
     `https://f95zone.to/threads/thread.${entry.f95_thread_id}/`;
+
   const g: GameF95 = {
-    id:                entry.f95_thread_id,
-    site_id:           entry.f95_thread_id,
-    site:              '',
-    nom_du_jeu:        entry.game?.nom_du_jeu ?? entry.title ?? `Jeu #${entry.f95_thread_id}`,
-    nom_url:           nomUrl,
-    version:           entry.game?.version ?? '',
-    trad_ver:          entry.game?.trad_ver ?? '',
-    lien_trad:         (typeof (entry.scraped_data as Record<string, unknown>)?.lien_trad === 'string'
+    id                : entry.f95_thread_id,
+    site_id           : entry.f95_thread_id,
+    site              : '',
+    nom_du_jeu        : entry.game?.nom_du_jeu ?? entry.title ?? `Jeu #${entry.f95_thread_id}`,
+    nom_url           : nomUrl,
+    version           : entry.game?.version ?? '',
+    trad_ver          : entry.game?.trad_ver ?? '',
+    lien_trad         : (typeof (entry.scraped_data as Record<string, unknown>)?.lien_trad === 'string'
       ? (entry.scraped_data as Record<string, unknown>).lien_trad as string
       : (entry.game?.lien_trad ?? '')),
-    statut:            entry.game?.statut ?? '',
-    tags:              entry.game?.tags ?? '',
-    type:              entry.game?.type ?? '',
-    traducteur:        entry.game?.traducteur ?? '',
-    traducteur_url:    entry.game?.traducteur_url ?? '',
-    relecture:         '',
+    statut            : entry.game?.statut ?? '',
+    tags              : entry.game?.tags ?? '',
+    type              : entry.game?.type ?? '',
+    traducteur        : entry.game?.traducteur ?? '',
+    traducteur_url    : entry.game?.traducteur_url ?? '',
+    relecture         : '',
     type_de_traduction: entry.game?.type_de_traduction ?? '',
-    ac:                '',
-    image:             entry.game?.image ?? '',
-    type_maj:          entry.game?.type_maj ?? '',
-    date_maj:          entry.game?.date_maj ?? '',
+    ac                : '',
+    image             : entry.game?.image ?? '',
+    type_maj          : entry.game?.type_maj ?? '',
+    date_maj          : entry.game?.date_maj ?? '',
   };
   g._sync = getSyncStatus(g);
 
@@ -71,7 +83,16 @@ function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
   if (entry.game?.synopsis && !g.synopsis_en) g.synopsis_en = entry.game.synopsis;
   if (entry.game?.variants?.length)    g.variants    = entry.game.variants;
   if (entry.game?.f95_jeux_id != null) g.f95_jeux_id = entry.game.f95_jeux_id;
-  if (entry.game?.f95_date_maj)        g.f95_date_maj = entry.game.f95_date_maj;
+
+  // f95_date_maj : priorité colonne SQL > game (f95_jeux) > scraped_data
+  const colDate  = entry.f95_date_maj;
+  const gameDate = entry.game?.f95_date_maj;
+
+  const resolvedDate =
+    (colDate  && colDate  !== PLACEHOLDER_DATE) ? colDate  :
+    (gameDate && gameDate !== PLACEHOLDER_DATE) ? gameDate : null;
+
+  if (resolvedDate) g.f95_date_maj = resolvedDate;
 
   const sd = entry.scraped_data as Record<string, unknown> | null;
   if (sd) {
@@ -86,9 +107,15 @@ function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
         ? (sd.tags as string[]).join(', ')
         : String(sd.tags);
     }
-    // ← AJOUT : f95_date_maj depuis scraped_data (jeux absents du catalogue f95_jeux)
-    if (!g.f95_date_maj && sd.f95_date_maj) g.f95_date_maj = String(sd.f95_date_maj);
+    // Fallback scraped_data pour les entrées pas encore migrées vers la colonne
+    if (!g.f95_date_maj) {
+      const sdDate = sd.f95_date_maj as string | undefined;
+      if (sdDate && sdDate !== PLACEHOLDER_DATE) {
+        g.f95_date_maj = sdDate;
+      }
+    }
   }
+
   return g;
 }
 
@@ -315,74 +342,86 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
   // ── Tri + filtrage ────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
+  
     let list = gamesEnriched.filter(g => {
-      if (q && !g.nom_du_jeu.toLowerCase().includes(q) && !(g.traducteur || '').toLowerCase().includes(q)) return false;
-      if (filterStatut  && normalizeStatut(g.statut || '') !== normalizeStatut(filterStatut)) return false;
-      if (filterTrad    && g.traducteur          !== filterTrad)     return false;
-      if (filterType    && g.type                !== filterType)     return false;
-      if (filterTradType && g.type_de_traduction !== filterTradType) return false;
-      if (filterSync    && g._sync               !== filterSync)     return false;
-
-      const tagList       = (g.tags ?? '').split(',').map(t => t.trim()).filter(Boolean);
-      const inclTags      = Object.entries(filterTagsByTag).filter(([, v]) => v === 'include').map(([k]) => k);
-      const exclTags      = Object.entries(filterTagsByTag).filter(([, v]) => v === 'exclude').map(([k]) => k);
+      if (q && !g.nom_du_jeu.toLowerCase().includes(q) && !(g.traducteur || '').toLowerCase().includes(q))
+        return false;
+      if (filterStatut   && normalizeStatut(g.statut || '') !== normalizeStatut(filterStatut)) return false;
+      if (filterTrad     && g.traducteur          !== filterTrad)     return false;
+      if (filterType     && g.type                !== filterType)     return false;
+      if (filterTradType && g.type_de_traduction  !== filterTradType) return false;
+      if (filterSync     && g._sync               !== filterSync)     return false;
+  
+      const tagList  = (g.tags ?? '').split(',').map(t => t.trim()).filter(Boolean);
+      const inclTags = Object.entries(filterTagsByTag).filter(([, v]) => v === 'include').map(([k]) => k);
+      const exclTags = Object.entries(filterTagsByTag).filter(([, v]) => v === 'exclude').map(([k]) => k);
       if (exclTags.length > 0 && exclTags.some(t => tagList.includes(t))) return false;
       if (inclTags.length > 0 && !tagList.some(t => inclTags.includes(t))) return false;
-
-      const entry         = entryById.get(g.site_id);
-      const entryLabels   = (entry?.labels ?? []).map(l => l.label);
-      const inclLabels    = Object.entries(filterLabelsByLabel).filter(([, v]) => v === 'include').map(([k]) => k);
-      const exclLabels    = Object.entries(filterLabelsByLabel).filter(([, v]) => v === 'exclude').map(([k]) => k);
+  
+      const entry       = entryById.get(g.site_id);
+      const entryLabels = (entry?.labels ?? []).map(l => l.label);
+      const inclLabels  = Object.entries(filterLabelsByLabel).filter(([, v]) => v === 'include').map(([k]) => k);
+      const exclLabels  = Object.entries(filterLabelsByLabel).filter(([, v]) => v === 'exclude').map(([k]) => k);
       if (exclLabels.length > 0 && exclLabels.some(l => entryLabels.includes(l))) return false;
       if (inclLabels.length > 0 && !entryLabels.some(l => inclLabels.includes(l))) return false;
-
+  
       return true;
     });
-
+  
     switch (sortMode) {
+  
       case 'alpha_asc':
-        return list.sort((a, b) => a.nom_du_jeu.localeCompare(b.nom_du_jeu, 'fr', { sensitivity: 'base' }));
-
+        return list.sort((a, b) =>
+          a.nom_du_jeu.localeCompare(b.nom_du_jeu, 'fr', { sensitivity: 'base' })
+        );
+  
       case 'alpha_desc':
-        return list.sort((a, b) => b.nom_du_jeu.localeCompare(a.nom_du_jeu, 'fr', { sensitivity: 'base' }));
-
+        return list.sort((a, b) =>
+          b.nom_du_jeu.localeCompare(a.nom_du_jeu, 'fr', { sensitivity: 'base' })
+        );
+  
       case 'date_added_asc':
       case 'date_added_desc': {
         const dir = sortMode === 'date_added_asc' ? 1 : -1;
         return list.sort((a, b) => {
           const da = entryById.get(a.site_id)?.created_at ?? '';
           const db = entryById.get(b.site_id)?.created_at ?? '';
+          if (!da && !db) return 0;
+          if (!da) return dir;
+          if (!db) return -dir;
           return da < db ? -dir : da > db ? dir : 0;
         });
       }
-
+  
       case 'game_update_desc':
         return list.sort((a, b) => {
-          // Priorité 1 : date RSS (temps réel, ~48h)
-          const da_rss = rssDateMap.get(a.site_id) ?? '';
-          const db_rss = rssDateMap.get(b.site_id) ?? '';
-      
-          // Priorité 2 : f95_date_maj scrapé (historique)
-          const da = da_rss || a.f95_date_maj || '';
-          const db = db_rss || b.f95_date_maj || '';
-      
+          // RSS : toujours tronquer à YYYY-MM-DD avant comparaison
+          const da_rss = normalizeDateForSort(rssDateMap.get(a.site_id) ?? '');
+          const db_rss = normalizeDateForSort(rssDateMap.get(b.site_id) ?? '');
+  
+          // Priorité : RSS (temps réel ~48h) > f95_date_maj colonne (historique)
+          const da = da_rss || normalizeDateForSort(a.f95_date_maj);
+          const db = db_rss || normalizeDateForSort(b.f95_date_maj);
+  
+          // Jeux sans aucune date → en bas, classés alphabétiquement entre eux
+          if (!da && !db) return a.nom_du_jeu.localeCompare(b.nom_du_jeu, 'fr', { sensitivity: 'base' });
+          if (!da) return 1;
+          if (!db) return -1;
+  
+          // YYYY-MM-DD : comparaison lexicographique = tri chronologique fiable
+          return db.localeCompare(da);
+        });
+  
+      case 'trad_update_desc':
+        return list.sort((a, b) => {
+          const da = normalizeDateForSort(entryById.get(a.site_id)?.game?.date_maj);
+          const db = normalizeDateForSort(entryById.get(b.site_id)?.game?.date_maj);
           if (!da && !db) return a.nom_du_jeu.localeCompare(b.nom_du_jeu, 'fr', { sensitivity: 'base' });
           if (!da) return 1;
           if (!db) return -1;
           return db.localeCompare(da);
         });
-
-      case 'trad_update_desc':
-        // Tri par date de MAJ de la traduction (f95_jeux.date_maj)
-        return list.sort((a, b) => {
-          const da = entryById.get(a.site_id)?.game?.date_maj ?? '';
-          const db = entryById.get(b.site_id)?.game?.date_maj ?? '';
-          if (!da && !db) return 0;
-          if (!da) return 1;
-          if (!db) return -1;
-          return db.localeCompare(da);
-        });
-
+  
       default:
         return list;
     }

@@ -187,7 +187,7 @@ export default function InstructionsManagerModal({ onClose }: { onClose?: () => 
     .sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
-    <div className="modal">
+    <div className="modal" onClick={() => onClose?.()}>
       <div
         className="panel instructions-panel"
         onClick={e => e.stopPropagation()}

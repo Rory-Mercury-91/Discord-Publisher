@@ -75,7 +75,7 @@ Des scripts PowerShell sont disponibles dans le dossier **`outils_serveur/`** po
 ## 📌 Connexion SSH Manuelle (Optionnel)
 
 ```powershell
-ssh -i "D:\Projet GitHub\Discord Publisher\python\_ignored\ssh-key-2026-02-07.key" ubuntu@138.2.182.125
+ssh -i "F:\Projet GitHub\Discord Publisher\python\_ignored\ssh-key-2026-02-07.key" ubuntu@138.2.182.125
 ```
 
 ---

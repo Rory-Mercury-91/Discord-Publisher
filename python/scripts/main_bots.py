@@ -55,7 +55,7 @@ logger = logging.getLogger("orchestrator")
 from bot_lifecycle import start_bot_with_backoff, wait_ready
 from bot_frelon import bot as bot_frelon
 from publisher_bot import bot as publisher_bot
-from http_handlers import make_app
+from api_server import make_app
 from supabase_client import _init_supabase, _get_supabase
 from config import config
 

@@ -394,7 +394,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   const currentTemplate = templatesToShow[selectedTemplateIdx];
 
   return (
-    <div className="modal">
+    <div className="modal" onClick={handleEscape}>
       <div className="panel templates-panel" onClick={e => e.stopPropagation()}>
         <TemplatesModalHeader />
         <input

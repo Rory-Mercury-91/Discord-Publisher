@@ -650,7 +650,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Admin : charger toutes les instructions via l'API (contourne la RLS Supabase)
   useEffect(() => {
     if (!profile?.is_master_admin || !apiConfig.apiUrl?.trim()) return;
-    const baseUrl = apiConfig.apiUrl.replace(/\/+$/, '');
+    // apiConfig.apiUrl contient déjà "/api/forum-post", il faut revenir à l'URL de base.
+    const baseUrl = apiConfig.apiUrl.replace(/\/api\/forum-post\/?$/, '').replace(/\/+$/, '');
     const apiKey = localStorage.getItem('apiKey') || '';
     if (!apiKey) return;
     (async () => {

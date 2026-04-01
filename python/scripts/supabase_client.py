@@ -596,3 +596,114 @@ def _delete_account_data_sync(user_id: str) -> dict:
         "fully_cleared": fully_deleted,
         "details":      results,
     }
+
+
+def _transfer_profile_data_sync(old_profile_id: str, new_profile_id: str) -> Dict:
+    """
+    Transfère les données applicatives d'un profil vers un autre.
+    ATTENTION: opération administrative sensible, à appeler uniquement côté serveur.
+    """
+    sb = _get_supabase()
+    if not sb:
+        return {"ok": False, "error": "Client Supabase non initialise"}
+
+    old_id = (old_profile_id or "").strip()
+    new_id = (new_profile_id or "").strip()
+    if not old_id or not new_id:
+        return {"ok": False, "error": "old_profile_id et new_profile_id requis"}
+    if old_id == new_id:
+        return {"ok": False, "error": "old_profile_id et new_profile_id doivent etre differents"}
+
+    try:
+        old_prof = sb.table("profiles").select("id").eq("id", old_id).limit(1).execute()
+        if not old_prof.data:
+            return {"ok": False, "error": f"Profil source introuvable: {old_id}"}
+        new_prof = sb.table("profiles").select("id").eq("id", new_id).limit(1).execute()
+        if not new_prof.data:
+            return {"ok": False, "error": f"Profil cible introuvable: {new_id}"}
+    except Exception as e:
+        return {"ok": False, "error": f"Verification profils impossible: {e}"}
+
+    details: Dict[str, str] = {}
+    now_iso = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
+    try:
+        # user_collection (conflits sur owner_id + f95_thread_id)
+        sb.table("user_collection").delete().eq("owner_id", new_id).execute()
+        sb.table("user_collection").update({"owner_id": new_id}).eq("owner_id", old_id).execute()
+        details["user_collection"] = "ok"
+    except Exception as e:
+        details["user_collection"] = f"erreur: {e}"
+
+    try:
+        # owner_data (conflits potentiels sur owner_type/owner_id/data_key)
+        sb.table("owner_data").delete().eq("owner_type", "profile").eq("owner_id", new_id).execute()
+        sb.table("owner_data").update({"owner_id": new_id}).eq("owner_type", "profile").eq("owner_id", old_id).execute()
+        details["owner_data"] = "ok"
+    except Exception as e:
+        details["owner_data"] = f"erreur: {e}"
+
+    try:
+        # allowed_editors (owner_id)
+        sb.table("allowed_editors").delete().eq("owner_id", new_id).execute()
+        sb.table("allowed_editors").update({"owner_id": new_id}).eq("owner_id", old_id).execute()
+        details["allowed_editors_owner"] = "ok"
+    except Exception as e:
+        details["allowed_editors_owner"] = f"erreur: {e}"
+
+    try:
+        # allowed_editors (editor_id)
+        sb.table("allowed_editors").delete().eq("editor_id", new_id).execute()
+        sb.table("allowed_editors").update({"editor_id": new_id}).eq("editor_id", old_id).execute()
+        details["allowed_editors_editor"] = "ok"
+    except Exception as e:
+        details["allowed_editors_editor"] = f"erreur: {e}"
+
+    try:
+        # translator_forum_mappings
+        sb.table("translator_forum_mappings").delete().eq("profile_id", new_id).execute()
+        sb.table("translator_forum_mappings").update({"profile_id": new_id}).eq("profile_id", old_id).execute()
+        details["translator_forum_mappings"] = "ok"
+    except Exception as e:
+        details["translator_forum_mappings"] = f"erreur: {e}"
+
+    try:
+        # tags
+        sb.table("tags").update({"profile_id": new_id}).eq("profile_id", old_id).execute()
+        details["tags"] = "ok"
+    except Exception as e:
+        details["tags"] = f"erreur: {e}"
+
+    try:
+        old_row = sb.table("profiles").select("pseudo, discord_id, is_master_admin, list_manager").eq("id", old_id).limit(1).execute()
+        new_row = sb.table("profiles").select("pseudo, discord_id, is_master_admin, list_manager").eq("id", new_id).limit(1).execute()
+        old_data = (old_row.data or [{}])[0]
+        new_data = (new_row.data or [{}])[0]
+
+        def _pick(current, fallback):
+            cur = (current or "").strip() if isinstance(current, str) else current
+            if isinstance(cur, str) and cur:
+                return cur
+            return fallback
+
+        profile_payload = {
+            "pseudo": _pick(new_data.get("pseudo"), old_data.get("pseudo")),
+            "discord_id": _pick(new_data.get("discord_id"), old_data.get("discord_id")),
+            "is_master_admin": bool(new_data.get("is_master_admin")) or bool(old_data.get("is_master_admin")),
+            "list_manager": bool(new_data.get("list_manager")) or bool(old_data.get("list_manager")),
+            "updated_at": now_iso,
+        }
+        sb.table("profiles").update(profile_payload).eq("id", new_id).execute()
+        details["profiles_merge"] = "ok"
+    except Exception as e:
+        details["profiles_merge"] = f"erreur: {e}"
+
+    try:
+        sb.table("profiles").delete().eq("id", old_id).execute()
+        details["profiles_delete_old"] = "ok"
+    except Exception as e:
+        details["profiles_delete_old"] = f"erreur: {e}"
+
+    has_error = any(str(v).startswith("erreur:") for v in details.values())
+    if has_error:
+        return {"ok": False, "error": "Migration partiellement appliquee", "details": details}
+    return {"ok": True, "details": details}

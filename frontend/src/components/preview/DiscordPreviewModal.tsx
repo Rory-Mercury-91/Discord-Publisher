@@ -35,7 +35,7 @@ export default function DiscordPreviewModal({
   const isOverLimit = characterCount > 2000;
 
   return (
-    <div className="modal" style={{ zIndex: 1000 }}>
+    <div className="modal" style={{ zIndex: 1000 }} onClick={onClose}>
       <div
         className="panel"
         onClick={(e) => e.stopPropagation()}

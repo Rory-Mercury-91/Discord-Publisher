@@ -26,7 +26,7 @@ export default function DeleteConfirmModal({
   };
 
   return (
-    <div className="modal modal--top">
+    <div className="modal modal--top" onClick={onCancel}>
       <div
         className="panel modal-panel--delete"
         onClick={e => e.stopPropagation()}

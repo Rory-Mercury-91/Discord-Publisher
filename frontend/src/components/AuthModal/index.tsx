@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useModalScrollLock } from '../../hooks/useModalScrollLock';
+import { getPasswordResetRedirectTo } from '../../lib/publicAppUrl';
 import { getSupabase } from '../../lib/supabase';
+import { translateSupabaseAuthError } from '../../lib/supabaseAuthMessages';
 import { useAuth } from '../../state/authContext';
 import { useToast } from '../shared/ToastProvider';
 import AuthSignIn from './components/AuthSignIn';
@@ -94,19 +96,20 @@ export default function AuthModal() {
         showToast('Supabase non configuré', 'error');
         return;
       }
-      const apiBase = localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || 'http://138.2.182.125:8080';
+      const redirectTo = getPasswordResetRedirectTo();
       const { error } = await sb.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${apiBase}/reset-password`
+        redirectTo
       });
       if (error) {
-        showToast(error.message || "Erreur lors de l'envoi", 'error');
+        showToast(translateSupabaseAuthError(error.message) || "Erreur lors de l'envoi", 'error');
         return;
       }
       showToast('Email de réinitialisation envoyé ! Consultez votre boîte mail.', 'success');
       setMode('signin');
       setEmail('');
     } catch (err: unknown) {
-      showToast((err as Error)?.message || 'Erreur inconnue', 'error');
+      const m = (err as Error)?.message || 'Erreur inconnue';
+      showToast(translateSupabaseAuthError(m), 'error');
     } finally {
       setBusy(false);
     }

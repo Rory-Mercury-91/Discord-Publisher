@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useConfirm } from '../../../hooks/useConfirm';
 import { getSupabase } from '../../../lib/supabase';
+import { translateSupabaseAuthError } from '../../../lib/supabaseAuthMessages';
 import { useAuth } from '../../../state/authContext';
 import { useToast } from '../../shared/ToastProvider';
 
@@ -130,13 +131,13 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
         password: oldPassword,
       });
       if (signInError) {
-        showToast('Ancien mot de passe incorrect', 'error');
+        showToast(translateSupabaseAuthError(signInError.message) || 'Ancien mot de passe incorrect', 'error');
         return;
       }
 
       const { error: updateError } = await sb.auth.updateUser({ password: newPassword });
       if (updateError) {
-        showToast(`Erreur : ${updateError.message}`, 'error');
+        showToast(translateSupabaseAuthError(updateError.message), 'error');
         return;
       }
 
@@ -145,7 +146,7 @@ export default function MyAccountSettings({ onClose }: MyAccountSettingsProps) {
       setNewPassword('');
       setConfirmPassword('');
     } catch (e: any) {
-      showToast(`Erreur : ${e.message || 'Inconnue'}`, 'error');
+      showToast(translateSupabaseAuthError(e?.message || 'Inconnue'), 'error');
     } finally {
       setIsChangingPassword(false);
     }

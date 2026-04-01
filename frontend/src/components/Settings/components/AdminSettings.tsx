@@ -1,8 +1,11 @@
 // frontend/src/components/Settings/components/AdminSettings.tsx
 import { useEffect, useRef, useState } from 'react';
 import { getSupabase } from '../../../lib/supabase';
+import { generateProfileTransferSql } from '../../../lib/profileTransferSql';
+import { createApiHeaders } from '../../../lib/api-helpers';
 import { useApp } from '../../../state/appContext';
 import { useToast } from '../../shared/ToastProvider';
+import { useAdminView } from '../../../state/adminViewContext';
 
 const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
 
@@ -184,7 +187,280 @@ export default function AdminSettings({ onClose: _onClose }: AdminSettingsProps)
   };
 
   const handleSaveConfig = () => saveConfig(false);
+// ── Composant complet ─────────────────────────────────────────────────────────
 
+function AdminViewAsSection() {
+  const { setViewAs, viewAsProfileName, isViewingAsOther } = useAdminView();
+  const [profiles, setProfiles] = useState<{ id: string; pseudo: string; discord_id: string }[]>([]);
+  const [loading,  setLoading]  = useState(false);
+  const [selectedId, setSelectedId] = useState('');
+
+  useEffect(() => {
+    const sb = getSupabase();
+    if (!sb) return;
+    setLoading(true);
+    sb.from('profiles')
+      .select('id, pseudo, discord_id')
+      .order('pseudo')
+      .then(({ data }) => {
+        setProfiles(data ?? []);
+        setLoading(false);
+      });
+  }, []);
+
+  const handleApply = () => {
+    const found = profiles.find(p => p.id === selectedId);
+    if (found) setViewAs(found.id, found.pseudo || found.discord_id || found.id);
+  };
+
+  const handleReset = () => {
+    setViewAs(null, null);
+    setSelectedId('');
+  };
+
+  return (
+    <section className="settings-section">
+      <h4 className="settings-section__title">👁️ Voir la collection d'un utilisateur</h4>
+      <p className="settings-section__intro">
+        Prévisualise la collection en lecture seule depuis le point de vue d'un autre profil.
+        Aucune modification ni ajout n'est possible dans ce mode.
+      </p>
+
+      {isViewingAsOther && (
+        <div style={{
+          background: 'rgba(245,158,11,0.12)',
+          border: '1px solid #f59e0b',
+          borderRadius: 6,
+          padding: '8px 12px',
+          marginBottom: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          fontSize: 13,
+        }}>
+          <span>👁️ Vous visualisez la collection de <strong>{viewAsProfileName}</strong> — lecture seule</span>
+          <button
+            type="button"
+            className="form-btn form-btn--ghost"
+            onClick={handleReset}
+            style={{ marginLeft: 'auto' }}
+          >
+            ✕ Quitter ce mode
+          </button>
+        </div>
+      )}
+
+      <div className="settings-config-fields">
+        <div className="settings-config-field">
+          <label>Profil à visualiser</label>
+          <select
+            className="form-input"
+            value={selectedId}
+            onChange={e => setSelectedId(e.target.value)}
+            disabled={loading}
+          >
+            <option value="">— Choisir un profil —</option>
+            {profiles.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.pseudo || '(sans pseudo)'} {p.discord_id ? `· ${p.discord_id}` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="settings-config-actions">
+          <button
+            type="button"
+            className="form-btn form-btn--primary"
+            onClick={handleApply}
+            disabled={!selectedId || loading}
+          >
+            👁️ Voir sa collection
+          </button>
+          {isViewingAsOther && (
+            <button
+              type="button"
+              className="form-btn form-btn--ghost"
+              onClick={handleReset}
+            >
+              ↩️ Revenir à ma collection
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+type AdminProfileRow = {
+  id: string;
+  pseudo: string | null;
+  discord_id: string | null;
+};
+
+function AdminAccountMigrationSection() {
+  const { showToast } = useToast();
+  const [profiles, setProfiles] = useState<AdminProfileRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [sourceId, setSourceId] = useState('');
+  const [targetId, setTargetId] = useState('');
+  const [runningMigration, setRunningMigration] = useState(false);
+
+  const loadProfiles = async () => {
+    const sb = getSupabase();
+    if (!sb) return;
+    setLoading(true);
+    try {
+      const { data, error } = await sb
+        .from('profiles')
+        .select('id, pseudo, discord_id')
+        .order('pseudo', { ascending: true });
+      if (error) {
+        showToast('Erreur chargement des profils actifs', 'error');
+        setProfiles([]);
+        return;
+      }
+      setProfiles((data ?? []) as AdminProfileRow[]);
+    } catch {
+      setProfiles([]);
+      showToast('Erreur chargement des profils actifs', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadProfiles();
+  }, []);
+
+  const canGenerate = Boolean(sourceId && targetId && sourceId !== targetId);
+
+  const handleCopySql = async () => {
+    if (!canGenerate) return;
+    try {
+      const sql = generateProfileTransferSql(sourceId, targetId);
+      await navigator.clipboard.writeText(sql);
+      showToast('Script SQL copié dans le presse-papiers', 'success');
+    } catch {
+      showToast('Impossible de copier le script SQL', 'error');
+    }
+  };
+
+  const handleRunMigration = async () => {
+    if (!canGenerate || runningMigration) return;
+    const confirmed = window.confirm(
+      "Cette opération est sensible et potentiellement irréversible. Confirmer la migration du profil source vers le profil cible ?"
+    );
+    if (!confirmed) return;
+
+    const baseUrl = (localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
+    const apiKey = (localStorage.getItem('apiKey') || '').trim();
+    if (!baseUrl || !apiKey) {
+      showToast('URL API ou clé API manquante', 'error');
+      return;
+    }
+
+    setRunningMigration(true);
+    try {
+      const headers = await createApiHeaders(apiKey, { 'Content-Type': 'application/json' });
+      const res = await fetch(`${baseUrl}/api/admin/profile-transfer`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          old_profile_id: sourceId,
+          new_profile_id: targetId,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        showToast(data?.error || `Erreur ${res.status}`, 'error');
+        return;
+      }
+      showToast('Migration de profil exécutée avec succès', 'success');
+      await loadProfiles();
+    } catch (error) {
+      showToast(`Erreur migration: ${(error as Error)?.message || 'inconnue'}`, 'error');
+    } finally {
+      setRunningMigration(false);
+    }
+  };
+
+  return (
+    <section className="settings-section">
+      <h4 className="settings-section__title">🔁 Migration de compte (assistée)</h4>
+      <p className="settings-section__intro">
+        Sélectionnez l&apos;ancien profil et le nouveau profil, puis copiez le script SQL prêt à exécuter.
+        La liste ci-dessous affiche les profils actuellement présents dans la table <code>profiles</code>.
+      </p>
+
+      <div className="settings-config-actions" style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          className="form-btn form-btn--ghost"
+          onClick={() => void loadProfiles()}
+          disabled={loading}
+        >
+          {loading ? 'Chargement…' : 'Rafraîchir la liste des comptes'}
+        </button>
+      </div>
+
+      <div className="settings-config-fields">
+        <div className="settings-config-field">
+          <label>Ancien profil (source)</label>
+          <select
+            className="form-input"
+            value={sourceId}
+            onChange={e => setSourceId(e.target.value)}
+            disabled={loading}
+          >
+            <option value="">— Sélectionner —</option>
+            {profiles.map(profile => (
+              <option key={profile.id} value={profile.id}>
+                {(profile.pseudo || '(sans pseudo)')} {profile.discord_id ? `· ${profile.discord_id}` : ''} · {profile.id}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="settings-config-field">
+          <label>Nouveau profil (cible)</label>
+          <select
+            className="form-input"
+            value={targetId}
+            onChange={e => setTargetId(e.target.value)}
+            disabled={loading}
+          >
+            <option value="">— Sélectionner —</option>
+            {profiles.map(profile => (
+              <option key={profile.id} value={profile.id}>
+                {(profile.pseudo || '(sans pseudo)')} {profile.discord_id ? `· ${profile.discord_id}` : ''} · {profile.id}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="settings-config-actions" style={{ marginTop: 12 }}>
+        <button
+          type="button"
+          className="form-btn form-btn--primary"
+          onClick={() => void handleCopySql()}
+          disabled={!canGenerate}
+        >
+          📋 Copier le script SQL de migration
+        </button>
+        <button
+          type="button"
+          className="form-btn form-btn--warning"
+          onClick={() => void handleRunMigration()}
+          disabled={!canGenerate || runningMigration}
+          style={{ marginLeft: 8 }}
+        >
+          {runningMigration ? 'Migration en cours…' : '🚀 Exécuter la migration depuis l’app'}
+        </button>
+      </div>
+    </section>
+  );
+}
   // Refs pour lire les dernières valeurs au démontage (sauvegarde auto à la fermeture)
   const apiUrlRef = useRef(apiUrl);
   const listFormUrlLocalRef = useRef(listFormUrlLocal);
@@ -274,6 +550,8 @@ export default function AdminSettings({ onClose: _onClose }: AdminSettingsProps)
             </div>
           </section>
 
+          <AdminViewAsSection />
+          <AdminAccountMigrationSection />
         </>
       ) : (
         /* Écran de verrouillage */

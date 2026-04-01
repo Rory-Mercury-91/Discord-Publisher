@@ -33,7 +33,7 @@ export default function ConfirmModal({
         : 'form-btn form-btn--primary';
 
   return (
-    <div className="modal modal--top">
+    <div className="modal modal--top" onClick={onCancel}>
       <div
         className="panel modal-panel--confirm"
         onClick={e => e.stopPropagation()}

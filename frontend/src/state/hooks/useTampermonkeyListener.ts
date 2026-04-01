@@ -1,3 +1,8 @@
+/**
+ * useTampermonkeyListener.ts — version complète avec lookup RSS après insertion.
+ * Remplace entièrement le fichier existant.
+ */
+
 import { useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -26,9 +31,8 @@ interface QuickAddEvent {
   payload   : TampermonkeyPayload;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helper : reporter le résultat au serveur Tauri ──────────────────────────
 
-/** Envoie le résultat de l'import vers le serveur axum via la commande Tauri. */
 async function reportResult(
   requestId: string,
   ok       : boolean,
@@ -47,25 +51,52 @@ async function reportResult(
   }
 }
 
-/** Résout l'ID de thread F95/LewdCorner depuis un ID brut (peut être string ou number). */
+// ─── Helper : résoudre le thread_id ──────────────────────────────────────────
+
 function resolveThreadId(domain: string, rawId?: number | string | null): number {
   if (rawId !== undefined && rawId !== null) {
     const n = typeof rawId === 'number' ? rawId : parseInt(String(rawId), 10);
     if (!isNaN(n) && n > 0) {
-      // Pour LewdCorner, on utilise un ID négatif pour éviter les collisions avec F95
       return domain === 'LewdCorner' ? -n : n;
     }
   }
   return generateManualPseudoId();
 }
 
+// ─── Helper : chercher la date dans le flux RSS backend ──────────────────────
+
+async function fetchRssDateForThread(threadId: number): Promise<string | null> {
+  const base = (
+    localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || ''
+  ).replace(/\/+$/, '');
+  const key = localStorage.getItem('apiKey') || '';
+
+  if (!base || !key) return null;
+
+  try {
+    const res = await fetch(`${base}/api/rss/f95-updates`, {
+      headers: { 'X-API-KEY': key },
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const entry = (data.entries ?? []).find(
+      (e: { threadId: number; pubDate: string }) => e.threadId === threadId
+    );
+
+    if (!entry?.pubDate) return null;
+
+    // Tronquer "2026-03-14T12:30:00+00:00" → "2026-03-14"
+    const normalized = String(entry.pubDate).substring(0, 10);
+    return normalized === '2020-01-01' ? null : normalized;
+
+  } catch {
+    return null;
+  }
+}
+
 // ─── Hook principal ───────────────────────────────────────────────────────────
 
-/**
- * Écoute les événements Tampermonkey émis par le serveur local Tauri (localhost:7832)
- * et les traite directement via le client Supabase déjà authentifié.
- * L'utilisateur n'a rien à configurer — son owner_id vient de la session active.
- */
 export function useTampermonkeyListener() {
   const { profile } = useAuth();
 
@@ -103,34 +134,85 @@ export function useTampermonkeyListener() {
             return;
           }
 
-          // Construction de scraped_data
-          // L'image est déjà en attachments.* côté Tampermonkey (v4.1+)
-          const scrapedData = {
+          // Construction de scraped_data depuis les données du script
+          const scrapedData: Record<string, unknown> = {
             name        : payload.name,
             version     : payload.version    ?? null,
             statut      : payload.status     ?? null,
             type        : payload.game_type  ?? null,
             tags        : payload.tags       ?? null,
             image       : payload.image      ?? null,
-            synopsis    : payload.synopsis   ?? null,  // synopsis EN
+            synopsis    : payload.synopsis   ?? null,
             synopsis_en : payload.synopsis   ?? null,
-            synopsis_fr : null,                        // sera traduit via enrichissement silencieux
-            f95_date_maj: payload.f95_date_maj || null,
+            synopsis_fr : null,              // sera traduit via enrichissement silencieux
             source      : payload.domain,
             link        : payload.link       ?? null,
           };
 
-          const { error } = await sb.from('user_collection').insert({
+          // Si le script a fourni une date, l'inclure
+          if (payload.f95_date_maj && payload.f95_date_maj !== '2020-01-01') {
+            scrapedData.f95_date_maj = payload.f95_date_maj;
+          }
+
+          // ── Insertion dans user_collection ────────────────────────────────
+          const insertRow: Record<string, unknown> = {
             owner_id     : profile.id,
             f95_thread_id: threadId,
             f95_url      : payload.link ?? null,
             title        : payload.name,
             scraped_data : scrapedData,
-          });
+          };
 
+          // Écrire f95_date_maj dans la colonne si on l'a déjà
+          if (payload.f95_date_maj && payload.f95_date_maj !== '2020-01-01') {
+            insertRow.f95_date_maj = payload.f95_date_maj;
+          }
+
+          const { error } = await sb.from('user_collection').insert(insertRow);
           if (error) throw error;
 
           console.info('[Tampermonkey] ✅ Ajouté :', payload.name);
+
+          // ── Lookup RSS pour récupérer la date si pas encore connue ─────────
+          // Fait en asynchrone après l'insertion pour ne pas bloquer la réponse
+          if (!payload.f95_date_maj || payload.f95_date_maj === '2020-01-01') {
+            // On ne bloque pas : fire-and-forget avec gestion d'erreur
+            (async () => {
+              const rssDate = await fetchRssDateForThread(threadId);
+              if (!rssDate) return;
+
+              try {
+                // Récupérer l'entrée fraîchement insérée
+                const { data: inserted } = await sb
+                  .from('user_collection')
+                  .select('id, scraped_data')
+                  .eq('owner_id', profile.id)
+                  .eq('f95_thread_id', threadId)
+                  .maybeSingle();
+
+                if (!inserted) return;
+
+                const sdUpdate = {
+                  ...(inserted.scraped_data ?? {}),
+                  f95_date_maj: rssDate,
+                };
+
+                await sb.from('user_collection').update({
+                  f95_date_maj: rssDate,   // colonne SQL dédiée
+                  scraped_data: sdUpdate,  // JSONB (rétrocompat)
+                }).eq('id', inserted.id);
+
+                console.info(
+                  '[Tampermonkey] 📅 f95_date_maj depuis RSS :',
+                  payload.name, '→', rssDate,
+                );
+              } catch (err) {
+                // Non bloquant
+                console.warn('[Tampermonkey] Impossible d\'écrire f95_date_maj RSS :', err);
+              }
+            })();
+          }
+
           await reportResult(request_id, true, 'added');
           window.dispatchEvent(
             new CustomEvent('collection:game-added', { detail: { threadId } })

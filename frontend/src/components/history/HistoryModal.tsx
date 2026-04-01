@@ -397,7 +397,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
   }
 
   return (
-    <div className="modal">
+    <div className="modal" onClick={() => onClose?.()}>
       <div
         className="panel history-panel"
         onClick={(e) => e.stopPropagation()}

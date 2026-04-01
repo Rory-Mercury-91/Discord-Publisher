@@ -1,6 +1,13 @@
 import type { User } from '@supabase/supabase-js';
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import {
+  clearPendingPasswordRecovery,
+  hasPendingPasswordRecovery,
+  initTauriDeepLinkRecovery,
+  PENDING_PASSWORD_RECOVERY_KEY
+} from '../lib/authDeepLink';
 import { getSupabase } from '../lib/supabase';
+import { translateSupabaseAuthError } from '../lib/supabaseAuthMessages';
 
 export type Profile = {
   id: string;
@@ -16,20 +23,33 @@ type AuthContextValue = {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
+  /** Session ouverte via lien e-mail « mot de passe oublié » — afficher le formulaire de nouveau mot de passe */
+  recoveryMode: boolean;
   // 🆕 signUp accepte maintenant des métadonnées optionnelles
   signUp: (email: string, password: string, metadata?: { pseudo?: string; discord_id?: string }) => Promise<{ error?: { message: string } }>;
   signIn: (email: string, password: string) => Promise<{ error?: { message: string } }>;
   signOut: () => Promise<void>;
   updateProfile: (data: { pseudo?: string; discord_id?: string }) => Promise<{ error?: { message: string } }>;
   refreshProfile: () => Promise<void>;
+  completePasswordRecovery: (
+    newPassword: string
+  ) => Promise<{ error?: { message: string }; recoveredSamePassword?: boolean }>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+/** True si l’utilisateur arrive d’un lien e-mail Supabase (réinitialisation / recovery). */
+function isPasswordRecoveryContext(): boolean {
+  if (typeof window === 'undefined') return false;
+  const { pathname, hash } = window.location;
+  return pathname.includes('reset-password') || hash.includes('type=recovery');
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recoveryMode, setRecoveryMode] = useState(false);
 
   const sb = getSupabase();
 
@@ -69,45 +89,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    sb.auth.getSession()
-      .then(async ({ data: { session } }) => {
-        const currentUser = session?.user ?? null;
+    let deepUnsub: (() => void) | undefined;
+    let cancelled = false;
 
-        // 🆕 Vérification "Maintenir la connexion"
-        // Si rememberMe=false et que sessionStorage ne contient pas le flag (onglet fermé/rouvert),
-        // on force la déconnexion pour respecter le choix de l'utilisateur.
-        if (currentUser) {
-          const rememberMe = localStorage.getItem('rememberMe');
-          const sessionActive = sessionStorage.getItem('sessionActive');
-
-          if (rememberMe === 'false' && !sessionActive) {
-            console.info('ℹ️ [Auth] Session non persistante détectée (onglet fermé) → déconnexion automatique');
-            await sb.auth.signOut();
-            setUser(null);
-            setProfile(null);
-            setLoading(false);
-            return;
-          }
-        }
-
-        setUser(currentUser);
-        if (currentUser?.id) {
-          console.info('ℹ️ [Auth] Session active détectée au démarrage:', currentUser.email);
-          fetchProfile(currentUser.id).then(p => {
-            setProfile(p ?? null);
-          });
-        } else {
-          console.info('ℹ️ [Auth] Aucune session active au démarrage');
-        }
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error('❌ [Auth] Erreur lors de la récupération de la session:', err);
-        setLoading(false);
-      });
+    // Lien « mot de passe oublié » : pas de sessionActive au premier chargement → ne pas confondre avec « onglet fermé »
+    if (typeof window !== 'undefined') {
+      if (isPasswordRecoveryContext()) {
+        sessionStorage.setItem('sessionActive', '1');
+      }
+      const h = window.location.hash;
+      if (h.includes('type=recovery') || h.includes('type%3Drecovery')) {
+        sessionStorage.setItem(PENDING_PASSWORD_RECOVERY_KEY, '1');
+      }
+    }
 
     const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
       console.info('ℹ️ [Auth] Changement d\'état:', _event, session?.user?.email || 'déconnecté');
+      if (_event === 'PASSWORD_RECOVERY' && session) {
+        sessionStorage.setItem('sessionActive', '1');
+        setRecoveryMode(true);
+      }
+      // Souvent Supabase n’émet que SIGNED_IN sur le lien de reset — le flag sessionStorage est posé dans authDeepLink
+      if (_event === 'SIGNED_IN' && session && hasPendingPasswordRecovery()) {
+        sessionStorage.setItem('sessionActive', '1');
+        setRecoveryMode(true);
+      }
+      if (_event === 'SIGNED_OUT') {
+        setRecoveryMode(false);
+        clearPendingPasswordRecovery();
+      }
       setUser(session?.user ?? null);
       if (session?.user?.id) {
         fetchProfile(session.user.id).then(p => setProfile(p ?? null));
@@ -116,7 +126,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    (async () => {
+      try {
+        deepUnsub = await initTauriDeepLinkRecovery(sb);
+      } catch (e) {
+        console.warn('⚠️ [Auth] Deep link recovery:', e);
+      }
+      if (cancelled) return;
+
+      try {
+        const { data: { session } } = await sb.auth.getSession();
+        if (cancelled) return;
+
+        const currentUser = session?.user ?? null;
+
+        if (currentUser) {
+          const rememberMe = localStorage.getItem('rememberMe');
+          const sessionActive = sessionStorage.getItem('sessionActive');
+
+          if (rememberMe === 'false' && !sessionActive && !isPasswordRecoveryContext()) {
+            console.info('ℹ️ [Auth] Session non persistante détectée (onglet fermé) → déconnexion automatique');
+            await sb.auth.signOut();
+            setUser(null);
+            setProfile(null);
+            setRecoveryMode(false);
+            setLoading(false);
+            return;
+          }
+        }
+
+        setUser(currentUser);
+        if (currentUser?.id) {
+          console.info('ℹ️ [Auth] Session active détectée au démarrage:', currentUser.email);
+          if (hasPendingPasswordRecovery()) {
+            setRecoveryMode(true);
+            sessionStorage.setItem('sessionActive', '1');
+          }
+          fetchProfile(currentUser.id).then(p => {
+            if (!cancelled) setProfile(p ?? null);
+          });
+        } else {
+          console.info('ℹ️ [Auth] Aucune session active au démarrage');
+        }
+      } catch (err) {
+        console.error('❌ [Auth] Erreur lors de la récupération de la session:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      deepUnsub?.();
+      subscription.unsubscribe();
+    };
   }, [sb]);
 
   // ─── INSCRIPTION ──────────────────────────────────────────────────────────────
@@ -137,7 +200,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         options: metadata ? { data: metadata } : undefined
       });
 
-      if (error) return { error: { message: error.message } };
+      if (error) return { error: { message: translateSupabaseAuthError(error.message) } };
 
       // 🆕 Si l'utilisateur est directement disponible (pas de confirmation email requise),
       // on upsert son profil immédiatement avec le pseudo et l'ID Discord fournis.
@@ -173,7 +236,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { error: undefined };
     } catch (err: any) {
-      return { error: { message: err?.message || 'Erreur inattendue' } };
+      const m = err?.message || 'Erreur inattendue';
+      return { error: { message: translateSupabaseAuthError(typeof m === 'string' ? m : String(m)) } };
     }
   };
 
@@ -196,7 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error.status === 0 || error.message.includes('network') || error.message.includes('fetch')) {
           return { error: { message: 'Erreur réseau. Vérifiez votre connexion Internet.' } };
         }
-        return { error: { message: error.message } };
+        return { error: { message: translateSupabaseAuthError(error.message) } };
       }
       console.info('✅ [Auth] Connexion réussie pour:', data.user?.email);
       return { error: undefined };
@@ -207,8 +271,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ─── DÉCONNEXION ─────────────────────────────────────────────────────────────
+  const completePasswordRecovery = async (newPassword: string) => {
+    if (!sb || !user) return { error: { message: 'Non connecté' } };
+    if (newPassword.length < 6) return { error: { message: 'Minimum 6 caractères' } };
+    const { error } = await sb.auth.updateUser({ password: newPassword });
+    if (!error) {
+      setRecoveryMode(false);
+      clearPendingPasswordRecovery();
+      return { error: undefined };
+    }
+    const lower = error.message.toLowerCase();
+    const samePassword =
+      lower.includes('new password should be different') ||
+      lower.includes('different from the old password') ||
+      lower.includes('same as the old');
+    if (samePassword) {
+      setRecoveryMode(false);
+      clearPendingPasswordRecovery();
+      return { recoveredSamePassword: true };
+    }
+    return { error: { message: translateSupabaseAuthError(error.message) } };
+  };
+
   const signOut = async () => {
     if (sb) await sb.auth.signOut();
+    setRecoveryMode(false);
+    clearPendingPasswordRecovery();
     // Nettoyer les flags de session
     sessionStorage.removeItem('sessionActive');
     localStorage.removeItem('rememberMe');
@@ -227,18 +315,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.discord_id !== undefined) row.discord_id = data.discord_id;
     const { error } = await sb.from('profiles').upsert({ id: user.id, ...row }, { onConflict: 'id' });
     if (!error) await refreshProfile();
-    return { error: error ? { message: error.message } : undefined };
+    return { error: error ? { message: translateSupabaseAuthError(error.message) } : undefined };
   };
 
   const value: AuthContextValue = {
     user,
     profile,
     loading,
+    recoveryMode,
     signUp,
     signIn,
     signOut,
     updateProfile,
-    refreshProfile
+    refreshProfile,
+    completePasswordRecovery
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
