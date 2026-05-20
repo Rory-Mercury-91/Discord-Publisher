@@ -10,10 +10,12 @@ import { useEscapeKey } from '../../../hooks/useEscapeKey';
 import { useModalScrollLock } from '../../../hooks/useModalScrollLock';
 import { extractThreadIdFromUrl, type ManualGameData } from '../../../state/hooks/useCollection';
 import { createApiHeaders } from '../../../lib/api-helpers';
-
-const STATUTS = ['En cours', 'Terminé', 'Abandonné', 'En pause', 'En attente'];
-const ENGINES = ['ADRIFT', 'Flash', 'HTML', 'Java', 'QSP', 'RAGS', 'RPGM', 'Ren\'Py', 'Tads', 'Unity', 'Unreal Engine', 'WebGL', 'Wolf RPG', 'Autre'];
-const SOURCES = ['F95Zone', 'LewdCorner', 'Autre'] as const;
+import {
+  MANUAL_GAME_ENGINES as ENGINES,
+  MANUAL_GAME_SOURCES as SOURCES,
+  MANUAL_GAME_STATUTS as STATUTS,
+  manualGameSourceIcon as sourceIcon,
+} from '../manual-game-form-constants';
 
 interface ManualGameModalProps {
   onClose:  () => void;
@@ -31,6 +33,7 @@ export default function ManualGameModal({ onClose, onSubmit }: ManualGameModalPr
   const [status,       setStatus]       = useState('');
   const [gameType,     setGameType]     = useState('');
   const [tags,         setTags]         = useState('');
+  const [lienTrad,     setLienTrad]     = useState('');
   const [synopsisEn,   setSynopsisEn]   = useState('');
   const [synopsisFr,   setSynopsisFr]   = useState('');
   const [imageMode,    setImageMode]    = useState<'url' | 'file'>('url');
@@ -116,6 +119,8 @@ export default function ManualGameModal({ onClose, onSubmit }: ManualGameModalPr
       if (sd.synopsis_en) setSynopsisEn(sd.synopsis_en);
       else if (sd.synopsis) setSynopsisEn(sd.synopsis);
       if (sd.synopsis_fr) setSynopsisFr(sd.synopsis_fr);
+      const lt = (sd as Record<string, unknown>).lien_trad;
+      if (lt != null && String(lt).trim()) setLienTrad(String(lt).trim());
 
       // Mettre à jour l'URL canonique si on avait saisi un ID
       if (data.f95_url && isNumeric) setExternalUrl(data.f95_url);
@@ -162,6 +167,7 @@ export default function ManualGameModal({ onClose, onSubmit }: ManualGameModalPr
         status     : status || null,
         gameType   : gameType || null,
         tags       : tags.trim() || null,
+        lien_trad  : lienTrad.trim() || null,
         image,
         synopsis   : synopsisEn.trim() || null,
         synopsis_en: synopsisEn.trim() || null,
@@ -171,8 +177,6 @@ export default function ManualGameModal({ onClose, onSubmit }: ManualGameModalPr
       else { setError(result.error || 'Erreur lors de l\'ajout.'); }
     } finally { setSubmitting(false); }
   };
-
-  const sourceIcon = (s: string) => s === 'F95Zone' ? '🔵' : s === 'LewdCorner' ? '🟣' : '🔘';
 
   const modal = (
     <div className="modal" onClick={onClose}>
@@ -404,6 +408,21 @@ export default function ManualGameModal({ onClose, onSubmit }: ManualGameModalPr
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
                   placeholder="2D, Fantaisie, NTR, Romance…"
+                />
+              </div>
+
+              {/* Lien de traduction */}
+              <div className="form-field">
+                <label className="form-label">
+                  Lien de traduction
+                  <span className="manual-game-hint"> (optionnel — si absent du tableur ou autre source)</span>
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={lienTrad}
+                  onChange={(e) => setLienTrad(e.target.value)}
+                  placeholder="https://… (page, fichier ou lien forum de la traduction)"
                 />
               </div>
 

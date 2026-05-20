@@ -118,6 +118,8 @@ export type ManualGameData = {
   status?         : string | null;
   gameType?       : string | null;
   tags?           : string | null;
+  /** Lien vers la page / fichier de traduction (hors tableur si besoin) */
+  lien_trad?      : string | null;
   image?          : string | null;
   /** Synopsis EN (champ principal, compatibilité) */
   synopsis?       : string | null;
@@ -437,6 +439,8 @@ export function useCollection(overrideProfileId?: string) {
       const synopsisEn = (data.synopsis_en ?? data.synopsis ?? '').trim() || null;
       const synopsisFr = (data.synopsis_fr ?? '').trim() || null;
 
+      const lienTrad = (data.lien_trad ?? '').trim() || null;
+
       const scrapedData: ScrapedData & Record<string, unknown> = {
         name        : data.title,
         version     : data.version   ?? null,
@@ -447,6 +451,7 @@ export function useCollection(overrideProfileId?: string) {
         synopsis    : synopsisEn,
         synopsis_en : synopsisEn,
         synopsis_fr : synopsisFr,
+        lien_trad   : lienTrad,
         is_manual   : true,
         source      : data.source,
       };
@@ -465,8 +470,11 @@ export function useCollection(overrideProfileId?: string) {
     async (
       entryId: string,
       updates: {
-        title?        : string | null;
-        scraped_data? : Record<string, unknown> | null;
+        title?            : string | null;
+        scraped_data?     : Record<string, unknown> | null;
+        /** Mise à jour du lien thread (ajouts manuels, changement d’URL) */
+        f95_url?          : string | null;
+        f95_thread_id?    : number | null;
       }
     ) => {
       if (isReadOnly) return { ok: false, error: 'Mode lecture seule (vue admin)' };

@@ -3,6 +3,12 @@ import { useEffect, useState } from 'react';
 
 type WindowState = 'normal' | 'maximized' | 'fullscreen' | 'minimized';
 
+const VALID_WINDOW_STATES: WindowState[] = ['normal', 'maximized', 'fullscreen', 'minimized'];
+
+function isWindowState(v: string): v is WindowState {
+  return VALID_WINDOW_STATES.includes(v as WindowState);
+}
+
 export default function PreferenceSettings() {
   const [defaultTranslationLabel, setDefaultTranslationLabel] = useState(() => localStorage.getItem('default_translation_label') || 'Traduction');
   const [defaultModLabel, setDefaultModLabel] = useState(() => localStorage.getItem('default_mod_label') || 'Mod');
@@ -12,6 +18,24 @@ export default function PreferenceSettings() {
   useEffect(() => { localStorage.setItem('default_translation_label', defaultTranslationLabel); }, [defaultTranslationLabel]);
   useEffect(() => { localStorage.setItem('default_mod_label', defaultModLabel); }, [defaultModLabel]);
   useEffect(() => { localStorage.setItem('defaultMode', defaultMode); }, [defaultMode]);
+
+  // Aligner le sélecteur avec le fichier lu par Tauri au démarrage (window_state.txt)
+  useEffect(() => {
+    if (!(window as unknown as { __TAURI__?: unknown }).__TAURI__) return;
+    void (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const saved = await invoke<string>('get_saved_window_state');
+        const normalized = (saved || '').trim().toLowerCase();
+        if (isWindowState(normalized)) {
+          setWindowState(normalized);
+          localStorage.setItem('windowState', normalized);
+        }
+      } catch {
+        /* ignoré : navigateur ou ancienne build */
+      }
+    })();
+  }, []);
 
   const applyWindowStateLive = async (next: WindowState) => {
     try {
@@ -53,6 +77,14 @@ export default function PreferenceSettings() {
     setWindowState(state);
     await applyWindowStateLive(state);
     localStorage.setItem('windowState', state);
+    if ((window as unknown as { __TAURI__?: unknown }).__TAURI__) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('save_window_state', { state });
+      } catch (e) {
+        console.error('Erreur sauvegarde état fenêtre (Tauri):', e);
+      }
+    }
   };
 
   return (

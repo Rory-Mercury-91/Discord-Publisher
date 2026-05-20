@@ -5,7 +5,6 @@ import { generateProfileTransferSql } from '../../../lib/profileTransferSql';
 import { createApiHeaders } from '../../../lib/api-helpers';
 import { useApp } from '../../../state/appContext';
 import { useToast } from '../../shared/ToastProvider';
-import { useAdminView } from '../../../state/adminViewContext';
 
 const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
 
@@ -187,111 +186,6 @@ export default function AdminSettings({ onClose: _onClose }: AdminSettingsProps)
   };
 
   const handleSaveConfig = () => saveConfig(false);
-// ── Composant complet ─────────────────────────────────────────────────────────
-
-function AdminViewAsSection() {
-  const { setViewAs, viewAsProfileName, isViewingAsOther } = useAdminView();
-  const [profiles, setProfiles] = useState<{ id: string; pseudo: string; discord_id: string }[]>([]);
-  const [loading,  setLoading]  = useState(false);
-  const [selectedId, setSelectedId] = useState('');
-
-  useEffect(() => {
-    const sb = getSupabase();
-    if (!sb) return;
-    setLoading(true);
-    sb.from('profiles')
-      .select('id, pseudo, discord_id')
-      .order('pseudo')
-      .then(({ data }) => {
-        setProfiles(data ?? []);
-        setLoading(false);
-      });
-  }, []);
-
-  const handleApply = () => {
-    const found = profiles.find(p => p.id === selectedId);
-    if (found) setViewAs(found.id, found.pseudo || found.discord_id || found.id);
-  };
-
-  const handleReset = () => {
-    setViewAs(null, null);
-    setSelectedId('');
-  };
-
-  return (
-    <section className="settings-section">
-      <h4 className="settings-section__title">👁️ Voir la collection d'un utilisateur</h4>
-      <p className="settings-section__intro">
-        Prévisualise la collection en lecture seule depuis le point de vue d'un autre profil.
-        Aucune modification ni ajout n'est possible dans ce mode.
-      </p>
-
-      {isViewingAsOther && (
-        <div style={{
-          background: 'rgba(245,158,11,0.12)',
-          border: '1px solid #f59e0b',
-          borderRadius: 6,
-          padding: '8px 12px',
-          marginBottom: 12,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          fontSize: 13,
-        }}>
-          <span>👁️ Vous visualisez la collection de <strong>{viewAsProfileName}</strong> — lecture seule</span>
-          <button
-            type="button"
-            className="form-btn form-btn--ghost"
-            onClick={handleReset}
-            style={{ marginLeft: 'auto' }}
-          >
-            ✕ Quitter ce mode
-          </button>
-        </div>
-      )}
-
-      <div className="settings-config-fields">
-        <div className="settings-config-field">
-          <label>Profil à visualiser</label>
-          <select
-            className="form-input"
-            value={selectedId}
-            onChange={e => setSelectedId(e.target.value)}
-            disabled={loading}
-          >
-            <option value="">— Choisir un profil —</option>
-            {profiles.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.pseudo || '(sans pseudo)'} {p.discord_id ? `· ${p.discord_id}` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="settings-config-actions">
-          <button
-            type="button"
-            className="form-btn form-btn--primary"
-            onClick={handleApply}
-            disabled={!selectedId || loading}
-          >
-            👁️ Voir sa collection
-          </button>
-          {isViewingAsOther && (
-            <button
-              type="button"
-              className="form-btn form-btn--ghost"
-              onClick={handleReset}
-            >
-              ↩️ Revenir à ma collection
-            </button>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 type AdminProfileRow = {
   id: string;
   pseudo: string | null;
@@ -550,7 +444,6 @@ function AdminAccountMigrationSection() {
             </div>
           </section>
 
-          <AdminViewAsSection />
           <AdminAccountMigrationSection />
         </>
       ) : (

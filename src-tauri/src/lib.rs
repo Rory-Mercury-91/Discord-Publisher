@@ -434,9 +434,24 @@ async fn save_window_state(app: AppHandle, state: String) -> Result<(), String> 
     fs::create_dir_all(&config_dir).ok();
 
     let config_file = config_dir.join("window_state.txt");
-    fs::write(&config_file, state.trim()).ok();
+    fs::write(&config_file, state.trim()).map_err(|e| format!("Écriture window_state : {}", e))?;
 
     Ok(())
+}
+
+/// Lit l'état fenêtre persisté (même fichier que `apply_window_state` au démarrage).
+#[tauri::command]
+fn get_saved_window_state(app: AppHandle) -> Result<String, String> {
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("Config dir : {:?}", e))?;
+    let config_file = config_dir.join("window_state.txt");
+    if !config_file.exists() {
+        return Ok("maximized".to_string());
+    }
+    let raw = fs::read_to_string(&config_file).unwrap_or_else(|_| "maximized".to_string());
+    Ok(raw.trim().to_lowercase())
 }
 
 #[tauri::command]
@@ -668,6 +683,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             test_api_connection,
             save_window_state,
+            get_saved_window_state,
             save_local_history_post,
             has_local_history_archive,
             get_local_history_archive,
