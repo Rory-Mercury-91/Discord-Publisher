@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCallback } from 'react';
 import { useConfirm } from '../../hooks/useConfirm';
 import { apiFetch } from '../../lib/api-helpers';
-import { getSupabase } from '../../lib/supabase';
 import { useApp } from '../../state/appContext';
 import { useAuth } from '../../state/authContext';
 import { useTranslatorSelector } from '../../state/hooks/useTranslatorSelector';

@@ -41,12 +41,6 @@ function normalizeDateForSort(raw: string | null | undefined): string {
 }
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function normalizeStatut(s: string): string {
-  const t = (s ?? '').trim();
-  if (!t) return '';
-  return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase();
-}
-
 function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
   const nomUrl =
     entry.f95_url ||

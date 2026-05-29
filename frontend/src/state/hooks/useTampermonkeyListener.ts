@@ -150,13 +150,14 @@ export function useTampermonkeyListener() {
 
             if (catalogueRows && catalogueRows.length > 0) {
               // Sélectionner la ligne principale : ac='1' en priorité, puis plus récente
-              const sorted = [...catalogueRows].sort((a, b) => {
-                const aAc = String(a.ac ?? '') === '1';
-                const bAc = String(b.ac ?? '') === '1';
+              const rows = catalogueRows as unknown as Record<string, unknown>[];
+              const sorted = [...rows].sort((a, b) => {
+                const aAc = String(a['ac'] ?? '') === '1';
+                const bAc = String(b['ac'] ?? '') === '1';
                 if (aAc !== bAc) return aAc ? -1 : 1;
-                return (b.updated_at ?? '') > (a.updated_at ?? '') ? 1 : -1;
+                return (String(b['updated_at'] ?? '') > String(a['updated_at'] ?? '')) ? 1 : -1;
               });
-              catalogueRow = sorted[0] as Record<string, unknown>;
+              catalogueRow = sorted[0];
               console.info(
                 '[Tampermonkey] 📚 Jeu trouvé dans f95_jeux, données catalogue utilisées :',
                 catalogueRow.nom_du_jeu,
