@@ -1,7 +1,51 @@
 import type { GameF95, SyncStatus } from './library-types';
 
+const INVALID_TRANSLATOR_NAMES = new Set([
+  'integrated',
+  'no_translation',
+  'translation',
+  'translation_with_mods',
+]);
+
 function normalizeVersion(v: string) {
   return (v || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
+/** Évite d'afficher des valeurs techniques dans le filtre traducteur. */
+export function isValidTranslatorName(value: string | null | undefined): boolean {
+  const normalized = (value ?? '').trim();
+  if (!normalized) return false;
+  return !INVALID_TRANSLATOR_NAMES.has(normalized.toLowerCase());
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  in_progress: 'EN COURS',
+  completed: 'TERMINÉ',
+  abandoned: 'ABANDONNÉ',
+};
+
+const TRAD_TYPE_LABELS: Record<string, string> = {
+  auto: 'Traduction Automatique',
+  manual: 'Traduction Humaine',
+  'semi-auto': 'Traduction Semi-Automatique',
+  semi_auto: 'Traduction Semi-Automatique',
+  hs: 'Lien de traduction HS',
+  vf: 'Version française',
+  to_tested: 'À tester',
+};
+
+/** Valeur d'affichage des statuts dans les filtres. */
+export function normalizeStatusLabel(value: string | null | undefined): string {
+  const raw = (value ?? '').trim();
+  if (!raw) return '';
+  return STATUS_LABELS[raw.toLowerCase()] ?? raw.toUpperCase();
+}
+
+/** Valeur d'affichage des types de traduction dans les filtres. */
+export function normalizeTradTypeLabel(value: string | null | undefined): string {
+  const raw = (value ?? '').trim();
+  if (!raw) return '';
+  return TRAD_TYPE_LABELS[raw.toLowerCase()] ?? raw;
 }
 
 /** Formate une chaîne date (ISO ou autre) en français pour l'affichage. */

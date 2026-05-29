@@ -51,6 +51,47 @@ async def _get_date_from_rss(
         return None
 
 
+def _pick_primary_jeu(rows: list[dict]) -> dict:
+    """
+    Sélectionne la ligne principale parmi plusieurs lignes f95_jeux pour un même site_id.
+    Priorité : ac='1' > updated_at décroissant.
+    """
+    if not rows:
+        return {}
+    ac_main  = [r for r in rows if str(r.get("ac") or "").strip() == "1"]
+    ac_other = [r for r in rows if str(r.get("ac") or "").strip() != "1"]
+    key_upd  = lambda r: r.get("updated_at") or ""
+    ac_main.sort(key=key_upd, reverse=True)
+    ac_other.sort(key=key_upd, reverse=True)
+    return (ac_main + ac_other)[0]
+
+
+def _scraped_data_from_f95_jeux(row: dict, f95_date_override: str | None = None) -> dict:
+    """
+    Construit un dict scraped_data cohérent depuis une ligne f95_jeux.
+    Utilisé quand le jeu est déjà dans le catalogue — aucun scraping nécessaire.
+    """
+    f95_date = f95_date_override or row.get("f95_date_maj") or None
+    return {
+        "name"              : row.get("nom_du_jeu"),
+        "version"           : row.get("version"),
+        "image"             : row.get("image"),
+        "status"            : row.get("statut"),
+        "tags"              : row.get("tags"),
+        "type"              : row.get("type"),
+        "synopsis"          : row.get("synopsis_en"),
+        "synopsis_en"       : row.get("synopsis_en"),
+        "synopsis_fr"       : row.get("synopsis_fr"),
+        "trad_ver"          : row.get("trad_ver"),
+        "lien_trad"         : row.get("lien_trad"),
+        "traducteur"        : row.get("traducteur"),
+        "traducteur_url"    : row.get("traducteur_url"),
+        "type_de_traduction": row.get("type_de_traduction"),
+        "f95_date_maj"      : f95_date,
+        "source"            : "f95_jeux",
+    }
+
+
 async def collection_resolve(request):
     is_valid, _, _, _ = await _auth_request(request, "/api/collection/resolve")
     if not is_valid:
@@ -80,6 +121,46 @@ async def collection_resolve(request):
         else:
             url = f"https://f95zone.to/threads/thread.{f95_thread_id}/"
 
+        # ── Priorité 1 : jeu présent dans f95_jeux (catalogue) ───────────────
+        # Evite tout scraping et garantit des données cohérentes avec la Bibliothèque.
+        sb = _get_supabase()
+        if sb and f95_thread_id:
+            try:
+                res = sb.table("f95_jeux") \
+                    .select(
+                        "nom_du_jeu, nom_url, version, trad_ver, lien_trad, statut, tags, "
+                        "type, traducteur, traducteur_url, type_de_traduction, ac, image, "
+                        "synopsis_en, synopsis_fr, f95_date_maj, updated_at"
+                    ) \
+                    .eq("site_id", f95_thread_id) \
+                    .execute()
+                jeux_rows = res.data or []
+                if jeux_rows:
+                    primary = _pick_primary_jeu(jeux_rows)
+                    f95_date = primary.get("f95_date_maj") or None
+                    nom_url  = primary.get("nom_url") or url
+                    title    = primary.get("nom_du_jeu")
+                    scraped_data = _scraped_data_from_f95_jeux(primary, f95_date_override=f95_date)
+                    logger.info(
+                        "[api] collection_resolve : thread %d trouvé dans f95_jeux ('%s') — scraping ignoré",
+                        f95_thread_id, title,
+                    )
+                    return with_cors(request, web.json_response({
+                        "ok"           : True,
+                        "f95_thread_id": f95_thread_id,
+                        "title"        : title,
+                        "f95_url"      : nom_url,
+                        "scraped_data" : scraped_data,
+                        "f95_date_maj" : f95_date,
+                        "from_catalogue": True,
+                    }))
+            except Exception as catalogue_err:
+                logger.warning(
+                    "[api] collection_resolve : erreur lecture f95_jeux (fallback scraping) : %s",
+                    catalogue_err,
+                )
+
+        # ── Priorité 2 : scraping (jeu absent du catalogue) ──────────────────
         cookies = (data.get("cookies") or "").strip() or None
         translate_synopsis = data.get("translate_synopsis", True)
         synopsis_en = None
@@ -95,6 +176,7 @@ async def collection_resolve(request):
                 return with_cors(request, web.json_response({
                     "ok": True, "f95_thread_id": f95_thread_id, "title": None,
                     "f95_url": url, "scraped_data": None, "f95_date_maj": rss_date,
+                    "from_catalogue": False,
                 }))
             synopsis_en = (game_data.get("synopsis") or "").strip()
             if synopsis_en and translate_synopsis:
@@ -107,24 +189,26 @@ async def collection_resolve(request):
         final_date = rss_date or (scraped_page_date if scraped_page_date and scraped_page_date != _PLACEHOLDER_DATE else None)
         title = game_data.get("name") or game_data.get("title")
         scraped_data = {
-            "name": game_data.get("name"),
-            "version": game_data.get("version"),
-            "image": game_data.get("image"),
-            "status": game_data.get("status"),
-            "tags": game_data.get("tags"),
-            "type": game_data.get("type"),
-            "synopsis": synopsis_en or game_data.get("synopsis"),
+            "name"       : game_data.get("name"),
+            "version"    : game_data.get("version"),
+            "image"      : game_data.get("image"),
+            "status"     : game_data.get("status"),
+            "tags"       : game_data.get("tags"),
+            "type"       : game_data.get("type"),
+            "synopsis"   : synopsis_en or game_data.get("synopsis"),
             "synopsis_en": synopsis_en or game_data.get("synopsis"),
             "synopsis_fr": synopsis_fr,
             "f95_date_maj": final_date,
+            "source"     : "scraping",
         }
         return with_cors(request, web.json_response({
-            "ok": True,
+            "ok"           : True,
             "f95_thread_id": game_data.get("id") or f95_thread_id,
-            "title": title,
-            "f95_url": url,
-            "scraped_data": scraped_data,
-            "f95_date_maj": final_date,
+            "title"        : title,
+            "f95_url"      : url,
+            "scraped_data" : scraped_data,
+            "f95_date_maj" : final_date,
+            "from_catalogue": False,
         }))
     except ValueError:
         return with_cors(request, web.json_response({"ok": False, "error": "f95_thread_id invalide"}, status=400))

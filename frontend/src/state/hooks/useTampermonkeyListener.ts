@@ -134,38 +134,92 @@ export function useTampermonkeyListener() {
             return;
           }
 
-          // Construction de scraped_data depuis les données du script
-          const scrapedData: Record<string, unknown> = {
-            name        : payload.name,
-            version     : payload.version    ?? null,
-            statut      : payload.status     ?? null,
-            type        : payload.game_type  ?? null,
-            tags        : payload.tags       ?? null,
-            image       : payload.image      ?? null,
-            synopsis    : payload.synopsis   ?? null,
-            synopsis_en : payload.synopsis   ?? null,
-            synopsis_fr : null,              // sera traduit via enrichissement silencieux
-            source      : payload.domain,
-            link        : payload.link       ?? null,
-          };
+          // ── Priorité : vérifier si le jeu est dans f95_jeux (catalogue) ──────
+          // Si oui, on utilise les données du catalogue plutôt que le scraping
+          // Tampermonkey pour garantir la cohérence avec la Bibliothèque.
+          let catalogueRow: Record<string, unknown> | null = null;
+          if (threadId > 0) {
+            const { data: catalogueRows } = await sb
+              .from('f95_jeux')
+              .select(
+                'nom_du_jeu, nom_url, version, trad_ver, lien_trad, statut, tags, ' +
+                'type, traducteur, traducteur_url, type_de_traduction, ac, image, ' +
+                'synopsis_en, synopsis_fr, f95_date_maj, updated_at'
+              )
+              .eq('site_id', threadId);
 
-          // Si le script a fourni une date, l'inclure
-          if (payload.f95_date_maj && payload.f95_date_maj !== '2020-01-01') {
+            if (catalogueRows && catalogueRows.length > 0) {
+              // Sélectionner la ligne principale : ac='1' en priorité, puis plus récente
+              const sorted = [...catalogueRows].sort((a, b) => {
+                const aAc = String(a.ac ?? '') === '1';
+                const bAc = String(b.ac ?? '') === '1';
+                if (aAc !== bAc) return aAc ? -1 : 1;
+                return (b.updated_at ?? '') > (a.updated_at ?? '') ? 1 : -1;
+              });
+              catalogueRow = sorted[0] as Record<string, unknown>;
+              console.info(
+                '[Tampermonkey] 📚 Jeu trouvé dans f95_jeux, données catalogue utilisées :',
+                catalogueRow.nom_du_jeu,
+              );
+            }
+          }
+
+          // Construction de scraped_data : catalogue > scraping Tampermonkey
+          const scrapedData: Record<string, unknown> = catalogueRow
+            ? {
+                name              : catalogueRow.nom_du_jeu,
+                version           : catalogueRow.version      ?? null,
+                statut            : catalogueRow.statut        ?? null,
+                type              : catalogueRow.type          ?? null,
+                tags              : catalogueRow.tags          ?? null,
+                image             : catalogueRow.image         ?? null,
+                synopsis          : catalogueRow.synopsis_en   ?? null,
+                synopsis_en       : catalogueRow.synopsis_en   ?? null,
+                synopsis_fr       : catalogueRow.synopsis_fr   ?? null,
+                trad_ver          : catalogueRow.trad_ver      ?? null,
+                lien_trad         : catalogueRow.lien_trad     ?? null,
+                traducteur        : catalogueRow.traducteur    ?? null,
+                traducteur_url    : catalogueRow.traducteur_url ?? null,
+                type_de_traduction: catalogueRow.type_de_traduction ?? null,
+                f95_date_maj      : catalogueRow.f95_date_maj  ?? null,
+                source            : 'f95_jeux',
+              }
+            : {
+                name        : payload.name,
+                version     : payload.version    ?? null,
+                statut      : payload.status     ?? null,
+                type        : payload.game_type  ?? null,
+                tags        : payload.tags       ?? null,
+                image       : payload.image      ?? null,
+                synopsis    : payload.synopsis   ?? null,
+                synopsis_en : payload.synopsis   ?? null,
+                synopsis_fr : null,              // sera traduit via enrichissement silencieux
+                source      : payload.domain,
+                link        : payload.link       ?? null,
+              };
+
+          // Si le script a fourni une date et qu'on est en mode scraping, l'inclure
+          if (!catalogueRow && payload.f95_date_maj && payload.f95_date_maj !== '2020-01-01') {
             scrapedData.f95_date_maj = payload.f95_date_maj;
           }
 
           // ── Insertion dans user_collection ────────────────────────────────
+          const resolvedName    = (catalogueRow?.nom_du_jeu as string | null) ?? payload.name;
+          const resolvedUrl     = (catalogueRow?.nom_url    as string | null) ?? payload.link ?? null;
+          const resolvedDateMaj = (catalogueRow?.f95_date_maj as string | null)
+            ?? (payload.f95_date_maj !== '2020-01-01' ? payload.f95_date_maj : null)
+            ?? null;
+
           const insertRow: Record<string, unknown> = {
             owner_id     : profile.id,
             f95_thread_id: threadId,
-            f95_url      : payload.link ?? null,
-            title        : payload.name,
+            f95_url      : resolvedUrl,
+            title        : resolvedName,
             scraped_data : scrapedData,
           };
 
-          // Écrire f95_date_maj dans la colonne si on l'a déjà
-          if (payload.f95_date_maj && payload.f95_date_maj !== '2020-01-01') {
-            insertRow.f95_date_maj = payload.f95_date_maj;
+          if (resolvedDateMaj) {
+            insertRow.f95_date_maj = resolvedDateMaj;
           }
 
           const { error } = await sb.from('user_collection').insert(insertRow);
@@ -174,8 +228,9 @@ export function useTampermonkeyListener() {
           console.info('[Tampermonkey] ✅ Ajouté :', payload.name);
 
           // ── Lookup RSS pour récupérer la date si pas encore connue ─────────
-          // Fait en asynchrone après l'insertion pour ne pas bloquer la réponse
-          if (!payload.f95_date_maj || payload.f95_date_maj === '2020-01-01') {
+          // Inutile si le jeu vient du catalogue (f95_date_maj déjà présente).
+          // Fait en asynchrone après l'insertion pour ne pas bloquer la réponse.
+          if (!catalogueRow && (!payload.f95_date_maj || payload.f95_date_maj === '2020-01-01')) {
             // On ne bloque pas : fire-and-forget avec gestion d'erreur
             (async () => {
               const rssDate = await fetchRssDateForThread(threadId);

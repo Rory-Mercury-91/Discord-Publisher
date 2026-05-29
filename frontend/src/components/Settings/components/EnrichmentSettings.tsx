@@ -49,12 +49,12 @@ const DATE_REFRESH_OPTIONS: { label: string; value: number }[] = [
 
 // ── Log colorization ──────────────────────────────────────────────────────────
 
-const LOG_STYLES: [string[], React.CSSProperties][] = [
+  const LOG_STYLES: [string[], React.CSSProperties][] = [
   [['🚫'],                                   { color: '#ef4444', fontWeight: 700 }],
   [['❌'],                                   { color: '#ef4444' }],
   [['🎉'],                                   { color: '#10b981', fontWeight: 700 }],
   [['✅'],                                   { color: '#10b981' }],
-  [['🕷️', '🌐'],                            { color: '#38bdf8' }],
+  [['🌐'],                                   { color: '#38bdf8' }],
   [['⏭️'],                                  { color: 'var(--muted)', fontStyle: 'italic' }],
   [['📥', '📊', '🔍', '🎮', 'ℹ️', '🔄'],  { color: 'var(--muted)', fontStyle: 'italic' }],
 ];
@@ -481,9 +481,13 @@ export default function EnrichmentSettings() {
 
       {/* ════════════ Enrichissement synopsis ════════════ */}
       <section className="server-section">
-        <h4 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>🕷️ Enrichissement des synopsis</h4>
+        <h4 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>🌐 Traduction des synopsis</h4>
         <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)' }}>
-          Scrape F95Zone pour chaque groupe sans synopsis FR et traduit EN → FR.
+          Traduit les synopsis anglais (EN → FR) via Google Translate pour les jeux
+          qui en sont dépourvus. Les synopsis EN proviennent du catalogue{' '}
+          <code style={{ fontSize: 11 }}>f95_jeux</code> alimenté par l'API publique —
+          aucun scraping F95Zone n'est effectué. Si un jeu n'a pas encore de synopsis EN,
+          lancez d'abord une synchronisation catalogue (bouton ci-dessous).
           Les synopsis déjà présents sont ignorés sauf avec l'option « Forcer ».
         </p>
 
@@ -500,7 +504,7 @@ export default function EnrichmentSettings() {
 
           {!enrichRunning ? (
             <button className="server-btn server-btn--default" onClick={() => startEnrichment()}>
-              ▶️ Lancer l'enrichissement
+              🌐 Lancer la traduction
             </button>
           ) : (
             <button className="server-btn server-btn--danger" onClick={() => abortRef.current?.abort()}>
@@ -585,7 +589,7 @@ export default function EnrichmentSettings() {
                     disabled={enrichRunning}
                     onClick={() => startEnrichment(failedEntries.flatMap(e => e.group_ids?.length ? e.group_ids : [e.id]))}
                   >
-                    🕷️ Relancer les {failedEntries.length} échecs
+                    🌐 Relancer les {failedEntries.length} échecs
                   </button>
                   <button className="server-btn server-btn--default" onClick={() => setFailed([])}>
                     Afficher tout
@@ -597,7 +601,7 @@ export default function EnrichmentSettings() {
                   disabled={enrichRunning || filteredEnrichable.length === 0}
                   onClick={() => startEnrichment(filteredEnrichable.flatMap(e => e.group_ids?.length ? e.group_ids : [e.id]))}
                 >
-                  🕷️ Tout relancer ({filteredEnrichable.length}{filteredEnrichable.length < filteredMissing.length ? `/${filteredMissing.length}` : ''})
+                  🌐 Tout traduire ({filteredEnrichable.length}{filteredEnrichable.length < filteredMissing.length ? `/${filteredMissing.length}` : ''})
                 </button>
               )}
             </div>
@@ -644,7 +648,7 @@ export default function EnrichmentSettings() {
                       disabled={enrichRunning || retryingIds.has(entry.id)}
                       onClick={() => handleRetryEntry(entry)}
                     >
-                      {retryingIds.has(entry.id) ? '…' : '🕷️'}
+                      {retryingIds.has(entry.id) ? '…' : '🌐'}
                     </button>
                   )}
                   <button

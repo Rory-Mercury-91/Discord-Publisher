@@ -203,9 +203,24 @@ export function useCollection(overrideProfileId?: string) {
           for (const [key, group] of byKey) {
             const acMain  = group.filter((r: any) => String(r.ac ?? '').trim() === '1');
             const acOther = group.filter((r: any) => String(r.ac ?? '').trim() !== '1');
-            const byUpdated = (a: any, b: any) => (b.updated_at || '').localeCompare(a.updated_at || '');
-            acMain.sort(byUpdated);
-            acOther.sort(byUpdated);
+
+            const gameVersion = ((acMain[0] ?? group[0])?.version ?? '').trim();
+            const sortKey = (r: any): [number, string, string] => {
+              const trad = (r.trad_ver ?? '').trim();
+              // trad_ver == version → complète (2), non vide → partielle (1), vide → 0
+              const completeness = gameVersion && trad === gameVersion ? 2 : trad ? 1 : 0;
+              return [completeness, r.date_maj ?? '0', r.updated_at ?? '0'];
+            };
+            const cmpDesc = (a: any, b: any) => {
+              const ka = sortKey(a); const kb = sortKey(b);
+              for (let i = 0; i < ka.length; i++) {
+                if (kb[i] > ka[i]) return 1;
+                if (kb[i] < ka[i]) return -1;
+              }
+              return 0;
+            };
+            acMain.sort(cmpDesc);
+            acOther.sort(cmpDesc);
             const sorted  = [...acMain, ...acOther];
             const primary = sorted[0];
             const variants = sorted.slice(1).map((v: any) => ({

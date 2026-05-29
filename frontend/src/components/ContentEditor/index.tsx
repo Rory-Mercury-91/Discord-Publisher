@@ -98,7 +98,7 @@ export default function ContentEditor() {
   const [translatingOverview, setTranslatingOverview] = useState(false);
 
   const overviewRef = useRef<HTMLTextAreaElement>(null);
-  /** Données F95 importées (tags, status, type) pour les réutiliser dans l'export formulaire liste */
+  /** Données F95 importées (tags, status, type) pour la logique d'édition locale */
   const lastImportedF95Ref = useRef<{ tags: string[]; status: string; type: string }>({ tags: [], status: '', type: '' });
 
   // Restaurer lastImportedF95Ref depuis saved_inputs quand on charge un post pour édition
@@ -619,89 +619,6 @@ export default function ContentEditor() {
     setImageUrlInput('');
   };
 
-  /** Export des données au format formulaire liste : id, domain, name, version, status, tags (string), type, ac, link (court), image (preview). */
-  const handleExportListManager = async () => {
-    const gameLink = buildFinalLink(linkConfigs.Game_link);
-    const translateLink = buildFinalLink(linkConfigs.Translate_link);
-    const lower = (gameLink || '').toLowerCase();
-    let domain = 'Autre';
-    if (lower.includes('f95zone.to')) domain = 'F95z';
-    else if (lower.includes('lewdcorner.com')) domain = 'LewdCorner';
-    const idMatch = gameLink?.match(/threads\/(?:[^/]*\.)?(\d+)/);
-    const id = idMatch ? parseInt(idMatch[1], 10) : 0;
-    const baseUrl = lower.includes('lewdcorner.com') ? 'https://lewdcorner.com' : 'https://f95zone.to';
-    const linkShort = id ? `${baseUrl}/threads/${id}` : gameLink || '';
-
-    const f95 = lastImportedF95Ref.current;
-    let statusVal = (f95.status || (inputs['_f95_status'] ?? '')).trim();
-    if (statusVal) statusVal = statusVal.toUpperCase();
-    let tagsVal = Array.isArray(f95.tags) ? f95.tags.join(', ') : '';
-    if (!tagsVal && typeof inputs['_f95_tags'] === 'string' && inputs['_f95_tags']) {
-      try {
-        const arr = JSON.parse(inputs['_f95_tags']);
-        tagsVal = Array.isArray(arr) ? arr.join(', ') : '';
-      } catch { /* ignore */ }
-    }
-    const typeVal = (f95.type || (inputs['_f95_type'] ?? '')).trim();
-
-    let versionVal = (inputs['Game_version'] ?? '').trim();
-    if (versionVal && !versionVal.startsWith('[')) versionVal = '[' + versionVal + ']';
-
-    let imageVal = uploadedImages.find(img => img.isMain)?.url ?? uploadedImages[0]?.url ?? '';
-    if (imageVal && imageVal.includes('attachments.f95zone.to')) imageVal = imageVal.replace('attachments.f95zone.to', 'preview.f95zone.to');
-    if (imageVal && imageVal.includes('attachments.lewdcorner.com')) imageVal = imageVal.replace('attachments.lewdcorner.com', 'preview.lewdcorner.com');
-
-    const translatorTag = savedTags.find(t =>
-      t.tagType === 'translator' && selectedTagIds.some(id => (t.id || t.name) === id || String(t.discordTagId ?? '') === id)
-    );
-    const translationTypeTag = savedTags.find(t =>
-      t.tagType === 'translationType' && selectedTagIds.some(id => (t.id || t.name) === id || String(t.discordTagId ?? '') === id)
-    );
-
-    const payload: Record<string, unknown> = {
-      id,
-      domain,
-      name: (inputs['Game_name'] ?? '').trim(),
-      version: versionVal,
-      status: statusVal,
-      tags: tagsVal,
-      type: typeVal,
-      ac: false,
-      link: linkShort,
-      image: imageVal,
-    };
-
-    // Traducteur : concordance formulaire du profil (valeur f95_jeux.traducteur) si définie, sinon nom du tag
-    let traducteurName: string | undefined;
-    if (profile?.id) {
-      const sb = getSupabase();
-      if (sb) {
-        const { data: row } = await sb.from('translator_forum_mappings').select('list_form_traducteur').eq('profile_id', profile.id).maybeSingle();
-        const listFormTraducteur = (row as { list_form_traducteur?: string | null } | null)?.list_form_traducteur;
-        if (listFormTraducteur?.trim()) traducteurName = listFormTraducteur.trim();
-      }
-    }
-    if (traducteurName === undefined && translatorTag?.name) traducteurName = (translatorTag.listFormName && translatorTag.listFormName.trim()) ? translatorTag.listFormName.trim() : translatorTag.name;
-    if (traducteurName) payload.traducteur = traducteurName;
-
-    // Type de traduction : tri automatique selon le type (🤖 Auto → Traduction Automatique, etc.)
-    if (translationTypeTag?.name) {
-      const labelKey = (translationTypeTag as { labelKey?: string }).labelKey;
-      if (labelKey === 'manual') payload.type_de_traduction = 'Traduction Humaine';
-      else if (labelKey === 'semi_auto') payload.type_de_traduction = 'Traduction Semi-Automatique';
-      else if (labelKey === 'auto') payload.type_de_traduction = 'Traduction Automatique';
-      else payload.type_de_traduction = (translationTypeTag.listFormName && translationTypeTag.listFormName.trim()) ? translationTypeTag.listFormName.trim() : translationTypeTag.name;
-    }
-    if (inputs['Translate_version']) payload.tversion = inputs['Translate_version'].trim();
-    if (translateLink) payload.tlink = translateLink;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(payload));
-      showToast('Données exportées dans le presse-papier. Collez-les dans « Insérer les données du jeu ».', 'success');
-    } catch {
-      showToast('Erreur lors de la copie', 'error');
-    }
-  };
-
   const onPublish = async (silentUpdate = false, skipVersionControl = false) => {
     const externalIdForHistory =
       selectedTranslatorKind === 'external' ? selectedTranslatorId : undefined;
@@ -727,8 +644,6 @@ export default function ContentEditor() {
         onResetForm={handleResetForm}
         onExitEditMode={() => { setEditingPostId(null); setEditingPostData(null); }}
         confirm={confirm}
-        showExportListManager={profile?.list_manager}
-        onExportListManager={handleExportListManager}
       />
 
     <div className="editor-content-grid">

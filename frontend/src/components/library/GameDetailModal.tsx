@@ -27,6 +27,9 @@ interface GameDetailModalProps {
   onLabelsUpdated?: () => void;
   /** Ouvre la modale d'édition de l'entrée collection (footer) */
   onOpenEdit?: () => void;
+  /** Appelé après un resync ou une mise à jour réussie (pour rafraîchir la liste parente).
+   *  Reçoit le site_id du jeu resynced pour permettre la ré-ouverture de la modale. */
+  onGameUpdated?: (siteId?: number) => void;
 }
 
 export default function GameDetailModal({
@@ -40,6 +43,7 @@ export default function GameDetailModal({
   onUpdateExecutablePaths,
   onLabelsUpdated,
   onOpenEdit,
+  onGameUpdated,
 }: GameDetailModalProps) {
   const { showToast } = useToast();
   const [showLabelsModal, setShowLabelsModal] = useState(false);
@@ -66,8 +70,12 @@ export default function GameDetailModal({
   // Enrichissement synopsis depuis la modale
   const [enrichingSynopsis, setEnrichingSynopsis] = useState(false);
 
+  // Resync depuis l'API publique
+  const [syncingFromApi, setSyncingFromApi] = useState(false);
+
   const f95JeuId = game.f95_jeux_id ?? game.id;
   const canEditSynopsis = typeof f95JeuId === 'number' && f95JeuId > 0;
+  const canSyncFromApi  = typeof game.site_id === 'number' && game.site_id > 0;
 
   // ── Chargement synopsis Supabase ──────────────────────────────────────────
   const loadSynopsisData = useCallback(async () => {
@@ -180,6 +188,42 @@ export default function GameDetailModal({
     }
   };
 
+  // ── Resync depuis l'API publique F95FR ───────────────────────────────────
+  const handleSyncFromApi = async () => {
+    if (!canSyncFromApi || syncingFromApi) return;
+    const base = (localStorage.getItem('apiBase') || localStorage.getItem('apiUrl') || '').replace(/\/+$/, '');
+    const key  = localStorage.getItem('apiKey') || '';
+    if (!base || !key) { showToast('API non configurée (URL et clé)', 'error'); return; }
+
+    setSyncingFromApi(true);
+    try {
+      const headers = await createApiHeaders(key);
+      const res = await fetch(`${base}/api/jeux/sync-game`, {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body   : JSON.stringify({ site_id: game.site_id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        showToast(data.error || `Erreur HTTP ${res.status}`, 'error');
+        return;
+      }
+      // Recharger le synopsis depuis Supabase après la resync
+      await loadSynopsisData();
+      // Rafraîchir la liste parente (Bibliothèque ou Collection) pour refléter les nouvelles données
+      // On passe le site_id pour permettre la ré-ouverture automatique de la modale
+      onGameUpdated?.(game.site_id);
+      showToast(
+        `Jeu resynchronisé depuis l'API (${data.synced_count} entrée${data.synced_count > 1 ? 's' : ''})`,
+        'success',
+      );
+    } catch (err: unknown) {
+      showToast(`Erreur resync : ${(err as Error)?.message}`, 'error');
+    } finally {
+      setSyncingFromApi(false);
+    }
+  };
+
   const openLink = (url: string) => { if (url) tauriAPI.openUrl(url); };
   const isCollectionView = !!collectionEntry;
 
@@ -200,14 +244,36 @@ export default function GameDetailModal({
           onClick={game.image ? () => setLightboxOpen(true) : undefined}
           title={game.image ? "Cliquer pour voir l'image en plein écran" : undefined}
         >
-          <div>
-            <h2 className="library-detail-title">{game.nom_du_jeu || 'Sans titre'}</h2>
+          <div style={{ width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <h2 className="library-detail-title" style={{ margin: 0 }}>{game.nom_du_jeu || 'Sans titre'}</h2>
             <div className="library-detail-versions">
               <span className="library-detail-version-badge">🎮 {game.version || 'v?'}</span>
               <span>→</span>
-              <span className="library-detail-version-badge library-detail-version-badge--trad">🇫🇷 {game.trad_ver || 'N/A'}</span>
+              <span className="library-detail-version-badge library-detail-version-badge--trad">
+                🇫🇷 {game.trad_ver === 'Intégrée' ? game.version || 'v?' : game.trad_ver || 'N/A'}
+                {game.trad_ver === 'Intégrée' && <span style={{ fontSize: '0.8em', opacity: 0.7, marginLeft: 4 }}>(Intégrée)</span>}
+              </span>
             </div>
           </div>
+
+              {/* Lien vers le thread du jeu — juste après le titre */}
+              {game.nom_url && (
+                <button
+                  type="button"
+                  className="library-detail-header-link-btn"
+                  onClick={e => { e.stopPropagation(); tauriAPI.openUrl(game.nom_url!); }}
+                  title={`Ouvrir le thread F95Zone — ${game.nom_url}`}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                    <polyline points="15 3 21 3 21 9"/>
+                    <line x1="10" y1="14" x2="21" y2="3"/>
+                  </svg>
+                  Lien du jeu
+                </button>
+              )}
+            </div>
         </div>
 
         {/* ── Body ── */}
@@ -218,7 +284,48 @@ export default function GameDetailModal({
               <div className="library-detail-grid">
                 <InfoRow label="Statut" value={game.statut} />
                 <InfoRow label="Type de trad" value={game.type_de_traduction} />
-                <InfoRow label="Traducteur" value={game.traducteur} showWhenEmpty />
+                {/* Traducteurs : primary + variantes avec traducteurs différents */}
+                {(() => {
+                  // Construire la liste dédupliquée des traducteurs (primary + variantes)
+                  const seen = new Set<string>();
+                  const trad_list: { name: string; url?: string }[] = [];
+                  const addTrad = (name?: string, url?: string) => {
+                    if (!name || name === 'N/A') return;
+                    if (seen.has(name)) return;
+                    seen.add(name);
+                    trad_list.push({ name, url: url || undefined });
+                  };
+                  addTrad(game.traducteur, game.traducteur_url);
+                  game.variants?.forEach(v => addTrad(v.traducteur, v.traducteur_url));
+                  if (trad_list.length === 0) return <InfoRow label="Traducteur" showWhenEmpty />;
+                  return (
+                    <div className="library-detail-info-row">
+                      <span className="library-detail-info-label">Traducteur{trad_list.length > 1 ? 's' : ''}</span>
+                      <span className="library-detail-info-value" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        {trad_list.map(({ name, url }, i) => (
+                          <span key={name} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            {i > 0 && <span style={{ opacity: 0.4, marginRight: 2 }}>·</span>}
+                            {name}
+                            {url && (
+                              <button
+                                type="button"
+                                className="library-detail-inline-link-btn"
+                                onClick={() => tauriAPI.openUrl(url)}
+                                title={url}
+                              >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                  <polyline points="15 3 21 3 21 9"/>
+                                  <line x1="10" y1="14" x2="21" y2="3"/>
+                                </svg>
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                      </span>
+                    </div>
+                  );
+                })()}
                 <InfoRow label="Type de jeu" value={game.type} />
               </div>
             </div>
@@ -276,49 +383,72 @@ export default function GameDetailModal({
             )}
 
             <div className="library-detail-block library-detail-block--links">
-              <h3 className="library-detail-block-title library-detail-block-title--yellow">🔗 Liens utiles</h3>
+              <h3 className="library-detail-block-title library-detail-block-title--yellow">🇫🇷 Traductions</h3>
               <div className="library-detail-links-row">
-                {game.lien_trad && (
-                  <LinkButton
-                    href={game.lien_trad}
-                    label={game.trad_ver ? `Traduction — ${game.trad_ver}` : 'Lien de la traduction'}
-                    icon="🇫🇷" variant="trad"
-                    onBeforeOpen={async () => {
-                      if (game.nom_url) {
-                        await trackTranslationClick({ f95Url: game.nom_url, translationUrl: game.lien_trad, source: 'detail_modal' });
-                        setDownloadCount(c => (c ?? 0) + 1);
-                      }
-                    }}
-                  />
-                )}
-                {game.variants?.map((v, i) => v.lien_trad && (
-                  <LinkButton
-                    key={v.id ?? i}
-                    href={v.lien_trad}
-                    label={v.trad_ver ? `Traduction — ${v.trad_ver}` : 'Traduction'}
-                    icon="🇫🇷" variant="trad"
-                    onBeforeOpen={async () => {
-                      if (game.nom_url) {
-                        await trackTranslationClick({ f95Url: game.nom_url, translationUrl: v.lien_trad!, source: 'detail_modal' });
-                        setDownloadCount(c => (c ?? 0) + 1);
-                      }
-                    }}
-                  />
-                ))}
-                {game.nom_url && (
-                  <LinkButton href={game.nom_url} label="Lien du jeu original" icon="🎮" variant="game" />
-                )}
-                {game.traducteur_url && (
-                  <LinkButton href={game.traducteur_url} label="Page du traducteur" icon="👤" variant="traducteur" />
-                )}
-                {onAddToCollection && !isInCollection && (
-                  <button type="button" className="library-detail-link-btn library-detail-link-btn--collection" onClick={() => onAddToCollection(game)} title="Ajouter à ma collection">
-                    <span>➕</span><span>Ma collection</span>
-                  </button>
-                )}
-                {onAddToCollection && isInCollection && (
-                  <span className="library-detail-in-collection-info" title="Ce jeu est déjà dans votre collection">📁 Déjà dans la collection</span>
-                )}
+                {(() => {
+                  // Détecter si plusieurs traducteurs distincts existent (primary + variantes)
+                  const allTrads = [
+                    game.traducteur,
+                    ...(game.variants?.map(v => v.traducteur) ?? []),
+                  ].filter(Boolean);
+                  const uniqueTrads = new Set(allTrads);
+                  const multiTrad = uniqueTrads.size > 1;
+
+                  // Construit le label d'un bouton de traduction
+                  const makeLabel = (trad_ver?: string, traducteur?: string, version?: string) => {
+                    const ver = trad_ver === 'Intégrée'
+                      ? `Intégrée — ${version || 'v?'}`
+                      : trad_ver;
+                    // Plusieurs traducteurs : préfixer par le nom du traducteur
+                    if (multiTrad && traducteur) return traducteur + (ver ? ` — ${ver}` : '');
+                    // Un seul traducteur : juste la version (section déjà titrée "Traductions")
+                    return ver || 'Voir la traduction';
+                  };
+
+                  return (
+                    <>
+                      {/* Traduction principale */}
+                      {(game.lien_trad || game.trad_ver) && (() => {
+                        const href  = game.lien_trad || game.nom_url || '';
+                        const label = makeLabel(game.trad_ver, game.traducteur, game.version);
+                        if (!href) return null;
+                        return (
+                          <LinkButton
+                            href={href}
+                            label={label}
+                            icon="🇫🇷" variant="trad"
+                            onBeforeOpen={async () => {
+                              if (game.nom_url && game.lien_trad) {
+                                await trackTranslationClick({ f95Url: game.nom_url, translationUrl: game.lien_trad, source: 'detail_modal' });
+                                setDownloadCount(c => (c ?? 0) + 1);
+                              }
+                            }}
+                          />
+                        );
+                      })()}
+                      {/* Variantes de traduction */}
+                      {game.variants?.map((v, i) => {
+                        const href  = v.lien_trad || game.nom_url || '';
+                        const label = makeLabel(v.trad_ver, v.traducteur, v.version || game.version);
+                        if (!href || !(v.trad_ver || v.lien_trad)) return null;
+                        return (
+                          <LinkButton
+                            key={v.id ?? i}
+                            href={href}
+                            label={label}
+                            icon="🇫🇷" variant="trad"
+                            onBeforeOpen={async () => {
+                              if (game.nom_url && v.lien_trad) {
+                                await trackTranslationClick({ f95Url: game.nom_url, translationUrl: v.lien_trad!, source: 'detail_modal' });
+                                setDownloadCount(c => (c ?? 0) + 1);
+                              }
+                            }}
+                          />
+                        );
+                      })}
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
@@ -426,7 +556,24 @@ export default function GameDetailModal({
             </p>
           </div>
 
-          <div className="library-detail-footer-actions">
+          <div className="library-detail-footer-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {/* Bouton Ma collection — vue Bibliothèque uniquement */}
+            {onAddToCollection && !isInCollection && (
+              <button
+                type="button"
+                className="form-btn form-btn--secondary"
+                onClick={() => onAddToCollection(game)}
+                title="Ajouter à ma collection"
+              >
+                ➕ Ma collection
+              </button>
+            )}
+            {onAddToCollection && isInCollection && (
+              <span className="form-btn form-btn--ghost" style={{ cursor: 'default', opacity: 0.6 }} title="Ce jeu est déjà dans votre collection">
+                📁 Dans la collection
+              </span>
+            )}
+
             {/* Bouton modifier — seulement en vue collection avec callback */}
             {isCollectionView && onOpenEdit && (
               <button
@@ -439,16 +586,29 @@ export default function GameDetailModal({
               </button>
             )}
 
-            {/* Bouton enrichir synopsis — disponible si API configurée */}
+            {/* Resync depuis l'API publique F95FR */}
+            {canSyncFromApi && (
+              <button
+                type="button"
+                className="form-btn form-btn--secondary"
+                onClick={handleSyncFromApi}
+                disabled={syncingFromApi || enrichingSynopsis}
+                title="Resynchroniser ce jeu depuis l'API publique F95FR (version, statut, traductions, synopsis…)"
+              >
+                {syncingFromApi ? '⏳ Resync…' : '🔄 Resync catalogue'}
+              </button>
+            )}
+
+            {/* Bouton traduire le synopsis — disponible si API configurée */}
             {canEditSynopsis && (
               <button
                 type="button"
                 className="form-btn form-btn--secondary"
                 onClick={handleEnrichSynopsis}
-                disabled={enrichingSynopsis || editingSynopsis}
-                title="Relancer l'enrichissement (scraping + traduction du synopsis) pour ce jeu"
+                disabled={enrichingSynopsis || editingSynopsis || syncingFromApi}
+                title="Traduire le synopsis EN → FR pour ce jeu"
               >
-                {enrichingSynopsis ? '⏳ Enrichissement…' : '🔄 Enrichir le synopsis'}
+                {enrichingSynopsis ? '⏳ Traduction…' : '🌐 Traduire synopsis'}
               </button>
             )}
 
@@ -487,13 +647,37 @@ export default function GameDetailModal({
 
 // ── Sous-composants ───────────────────────────────────────────────────────────
 
-function InfoRow({ label, value, showWhenEmpty }: { label: string; value?: string; showWhenEmpty?: boolean }) {
+function InfoRow({
+  label, value, showWhenEmpty, href, onLinkClick,
+}: {
+  label: string;
+  value?: string;
+  showWhenEmpty?: boolean;
+  href?: string;
+  onLinkClick?: () => void;
+}) {
   const display = value && value !== 'N/A' ? value : (showWhenEmpty ? '—' : null);
   if (display === null) return null;
   return (
     <div className="library-detail-info-row">
       <span className="library-detail-info-label">{label}</span>
-      <span className="library-detail-info-value">{display}</span>
+      <span className="library-detail-info-value" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        {display}
+        {href && (
+          <button
+            type="button"
+            className="library-detail-inline-link-btn"
+            onClick={onLinkClick ?? (() => tauriAPI.openUrl(href))}
+            title={href}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15 3 21 3 21 9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+          </button>
+        )}
+      </span>
     </div>
   );
 }

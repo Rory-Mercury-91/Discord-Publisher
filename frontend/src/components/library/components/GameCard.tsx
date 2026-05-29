@@ -23,6 +23,9 @@ interface GameCardProps {
   clickDisabled?: boolean;
   /** Callback pour ouvrir la modale d'édition depuis le footer de la modale détail */
   onOpenEdit?: () => void;
+  /** Callback pour rafraîchir la liste parente après un resync depuis le modal détail.
+   *  Reçoit le site_id du jeu pour permettre la ré-ouverture automatique de la modale. */
+  onRefreshGames?: (siteId?: number) => void;
 }
 
 export default function GameCard({
@@ -32,12 +35,21 @@ export default function GameCard({
   onUpdateLabels, onUpdateExecutablePaths, onLabelsUpdated,
   clickDisabled = false,
   onOpenEdit,
+  onRefreshGames,
 }: GameCardProps) {
   const sync = SYNC_META[game._sync!];
   const [imgErr, setImgErr] = useState(false);
   const tmStyle = typeMajStyle(game.type_maj);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showLabelsModal, setShowLabelsModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyTitle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(game.nom_du_jeu || '').catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
   const collectionLabels = collectionEntry?.labels ?? [];
   const hasCollectionLabels = !!collectionEntry && collectionLabels.length > 0;
 
@@ -68,7 +80,13 @@ export default function GameCard({
           )}
         </div>
         <div className="library-card-body">
-          <div className="library-card-title">{game.nom_du_jeu}</div>
+          <div
+            className={`library-card-title library-card-title--copyable${copied ? ' library-card-title--copied' : ''}`}
+            onClick={handleCopyTitle}
+            title={copied ? '✓ Copié !' : 'Cliquer pour copier le nom'}
+          >
+            {copied ? <span className="library-copy-feedback">✓ Copié !</span> : game.nom_du_jeu}
+          </div>
           <VersionBadge game={game.version} trad={game.trad_ver} sync={game._sync!} />
           {game.traducteur && <div className="library-version-text library-version-text--sm">👤 <span>{game.traducteur}</span></div>}
           {game.type_de_traduction && <div className="library-card-trad-type" data-trad-type={getTradTypeData(game.type_de_traduction)}>⚙ {game.type_de_traduction}</div>}
@@ -134,6 +152,7 @@ export default function GameCard({
           onUpdateLabels={onUpdateLabels}
           onUpdateExecutablePaths={onUpdateExecutablePaths}
           onLabelsUpdated={onLabelsUpdated}
+          onGameUpdated={onRefreshGames}
           // Ferme la modale détail ET déclenche l'édition dans le parent
           onOpenEdit={onOpenEdit ? () => {
             setShowDetailModal(false);

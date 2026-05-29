@@ -5,8 +5,7 @@ interface MappingRowItemProps {
   hasMapping: boolean;
   edit: EditRow;
   tags: { id?: string; name: string }[];
-  traducteurOptions: string[];
-  onEditChange: (field: 'tag_id' | 'forum_channel_id' | 'list_form_traducteur', val: string) => void;
+  onEditChange: (field: 'tag_id' | 'forum_channel_id', val: string) => void;
   onSave: () => void;
   onDelete: () => void;
   isExternal?: boolean;
@@ -17,7 +16,6 @@ export default function MappingRowItem({
   hasMapping,
   edit,
   tags,
-  traducteurOptions,
   onEditChange,
   onSave,
   onDelete,
@@ -52,19 +50,6 @@ export default function MappingRowItem({
         onChange={(e) => onEditChange('forum_channel_id', e.target.value)}
         placeholder="ID salon forum"
       />
-      <select
-        className="tags-modal-mapping-input"
-        value={edit.list_form_traducteur ?? ''}
-        onChange={(e) => onEditChange('list_form_traducteur', e.target.value)}
-        title="Valeur du champ traducteur à l'export (liste issue de f95_jeux.traducteur)"
-      >
-        <option value="">— Aucune concordance —</option>
-        {traducteurOptions.map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
-      </select>
       <button type="button" className="tags-modal-mapping-btn tags-modal-mapping-btn--save" onClick={onSave}>
         💾 Sauver
       </button>

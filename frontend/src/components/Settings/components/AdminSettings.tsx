@@ -22,10 +22,9 @@ interface AdminSettingsProps {
 
 export default function AdminSettings({ onClose: _onClose }: AdminSettingsProps) {
   const { showToast } = useToast();
-  const { setApiBaseFromSupabase, listFormUrl } = useApp();
+  const { setApiBaseFromSupabase } = useApp();
 
   const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('apiUrl') || localStorage.getItem('apiBase') || 'http://138.2.182.125:8080');
-  const [listFormUrlLocal, setListFormUrlLocal] = useState('');
   const [adminUnlocked, setAdminUnlocked] = useState(() => !!localStorage.getItem(STORAGE_KEY_MASTER_ADMIN));
   const [adminCode, setAdminCode] = useState('');
   const [adminCodeError, setAdminCodeError] = useState<string | null>(null);
@@ -150,12 +149,7 @@ export default function AdminSettings({ onClose: _onClose }: AdminSettingsProps)
     }
   };
 
-  // Synchroniser l'URL formulaire liste depuis le contexte (chargée depuis app_config)
-  useEffect(() => {
-    setListFormUrlLocal(listFormUrl ?? '');
-  }, [listFormUrl]);
-
-  // ─── Sauvegarde config (API URL + URL formulaire liste) ─────────────────
+  // ─── Sauvegarde config (API URL) ─────────────────
   const saveConfig = (silent = false) => {
     if (!adminUnlocked) return;
     const sb = getSupabase();
@@ -167,11 +161,8 @@ export default function AdminSettings({ onClose: _onClose }: AdminSettingsProps)
       localStorage.setItem('apiBase', base);
       setApiBaseFromSupabase(base);
     }
-    const listForm = listFormUrlLocal.trim() || '';
-
     const rows = [
       ...(base ? [{ key: 'api_base_url', value: base, updated_at: new Date().toISOString() }] : []),
-      { key: 'list_form_url', value: listForm, updated_at: new Date().toISOString() },
     ];
     if (rows.length === 0) return;
     sb.from('app_config')
@@ -180,7 +171,7 @@ export default function AdminSettings({ onClose: _onClose }: AdminSettingsProps)
         if (r?.error) {
           if (!silent) showToast('Erreur enregistrement config', 'error');
         } else if (!silent) {
-          showToast('Config enregistrée (API + URL formulaire liste)', 'success');
+          showToast('Config API enregistrée', 'success');
         }
       });
   };
@@ -357,9 +348,7 @@ function AdminAccountMigrationSection() {
 }
   // Refs pour lire les dernières valeurs au démontage (sauvegarde auto à la fermeture)
   const apiUrlRef = useRef(apiUrl);
-  const listFormUrlLocalRef = useRef(listFormUrlLocal);
   apiUrlRef.current = apiUrl;
-  listFormUrlLocalRef.current = listFormUrlLocal;
 
   useEffect(() => {
     return () => {
@@ -367,7 +356,6 @@ function AdminAccountMigrationSection() {
       const sb = getSupabase();
       if (!sb) return;
       const base = (apiUrlRef.current ?? '').trim().replace(/\/+$/, '');
-      const listForm = (listFormUrlLocalRef.current ?? '').trim() || '';
       if (base) {
         localStorage.setItem('apiUrl', base);
         localStorage.setItem('apiBase', base);
@@ -375,7 +363,6 @@ function AdminAccountMigrationSection() {
       }
       const rows = [
         ...(base ? [{ key: 'api_base_url', value: base, updated_at: new Date().toISOString() }] : []),
-        { key: 'list_form_url', value: listForm, updated_at: new Date().toISOString() },
       ];
       if (rows.length > 0) {
         sb.from('app_config').upsert(rows, { onConflict: 'key' }).then(() => {});
@@ -409,11 +396,11 @@ function AdminAccountMigrationSection() {
             </div>
           </section>
 
-          {/* Config globale : URL API + URL formulaire liste */}
+          {/* Config globale : URL API */}
           <section className="settings-section">
             <h4 className="settings-section__title">🌐 Configuration globale</h4>
             <p className="settings-section__intro">
-              URL de l&apos;API et URL du formulaire liste (script/tableur). Propagées via Supabase pour tous les utilisateurs.
+              URL de l&apos;API propagée via Supabase pour tous les utilisateurs.
             </p>
             <div className="settings-config-fields">
               <div className="settings-config-field">
@@ -423,16 +410,6 @@ function AdminAccountMigrationSection() {
                   value={apiUrl}
                   onChange={e => setApiUrl(e.target.value)}
                   placeholder="http://138.2.182.125:8080"
-                  className="form-input"
-                />
-              </div>
-              <div className="settings-config-field">
-                <label>URL du formulaire liste (script / tableur)</label>
-                <input
-                  type="url"
-                  value={listFormUrlLocal}
-                  onChange={e => setListFormUrlLocal(e.target.value)}
-                  placeholder="https://script.google.com/... ou page du formulaire"
                   className="form-input"
                 />
               </div>

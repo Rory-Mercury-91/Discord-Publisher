@@ -5,7 +5,7 @@ export const APP_VERSION = (rootPkg as { version?: string }).version ?? '0.0.0';
 export const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
 export const DEFAULT_API_BASE = 'http://138.2.182.125:8080';
 
-export type AppMode = 'translator' | 'user' | 'listform';
+export type AppMode = 'translator' | 'user';
 
 export function getBaseUrl(apiUrl?: string): string {
   const toParse = (apiUrl || '').trim() || `${DEFAULT_API_BASE}/api/forum-post`;

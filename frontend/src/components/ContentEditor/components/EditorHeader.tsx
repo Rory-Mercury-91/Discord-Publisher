@@ -9,9 +9,6 @@ interface EditorHeaderProps {
   onResetForm: () => void;
   onExitEditMode: () => void;
   confirm: (options: ConfirmOptions) => Promise<boolean>;
-  /** Afficher le bouton Exporter (formulaire liste) — visible uniquement si List_manager */
-  showExportListManager?: boolean;
-  onExportListManager?: () => void;
 }
 
 export default function EditorHeader({
@@ -23,8 +20,6 @@ export default function EditorHeader({
   onResetForm,
   onExitEditMode,
   confirm,
-  showExportListManager,
-  onExportListManager,
 }: EditorHeaderProps) {
   const handleExitEditMode = async () => {
     const ok = await confirm({
@@ -70,16 +65,6 @@ export default function EditorHeader({
       </h4>
 
       <div className="editor-toolbar__actions">
-        {showExportListManager && onExportListManager && (
-          <button
-            type="button"
-            onClick={onExportListManager}
-            className="form-btn form-btn--toolbar form-btn--export"
-            title="Copier les données du formulaire au format attendu par « Insérer les données du jeu »"
-          >
-            📤 Copier Données
-          </button>
-        )}
         <button type="button" onClick={onImportData} className="form-btn form-btn--toolbar form-btn--import">
           📥 Importer Données
         </button>

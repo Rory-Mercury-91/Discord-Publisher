@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AppMode, GameF95, SyncStatus } from './library-types';
-import { getSyncStatus, TABLE_HEADERS } from './library-constants';
+import { getSyncStatus, isValidTranslatorName, normalizeStatusLabel, normalizeTradTypeLabel, TABLE_HEADERS } from './library-constants';
 import GameCard from './components/GameCard';
 import GameRow from './components/GameRow';
 import GameDetailModal from './GameDetailModal';
@@ -33,6 +33,8 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     }
   });
   const [selectedGameForDetail, setSelectedGameForDetail] = useState<GameF95 | null>(null);
+  // Mémorise le site_id d'un jeu resynced depuis la vue grille pour ré-ouvrir sa modale après refresh
+  const resyncTargetSiteIdRef = useRef<number | null>(null);
   const [search, setSearch] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
   const [filterTrad, setFilterTrad] = useState('');
@@ -148,10 +150,41 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     return c;
   }, [gamesEnriched]);
 
-  const statuts    = useMemo(() => [...new Set(games.map((g) => g.statut).filter(Boolean))].sort(), [games]);
-  const traducteurs = useMemo(() => [...new Set(games.map((g) => g.traducteur).filter(Boolean))].sort(), [games]);
+  // Après un fetchGames : ré-ouvre la modale du jeu resynced (vue grille) ou met à jour (vue liste)
+  useEffect(() => {
+    // Vue grille : resync depuis GameCard → ré-ouvre la modale via selectedGameForDetail
+    if (resyncTargetSiteIdRef.current !== null) {
+      const latest = gamesEnriched.find(g => g.site_id === resyncTargetSiteIdRef.current);
+      if (latest) {
+        setSelectedGameForDetail(latest);
+        resyncTargetSiteIdRef.current = null;
+      }
+      return;
+    }
+    // Vue liste : modale déjà ouverte → mise à jour avec les données fraîches
+    if (selectedGameForDetail) {
+      const latest = gamesEnriched.find(g => g.site_id === selectedGameForDetail.site_id);
+      if (latest && latest !== selectedGameForDetail) {
+        setSelectedGameForDetail(latest);
+      }
+    }
+    // Uniquement quand gamesEnriched change (après fetchGames)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gamesEnriched]);
+
+  const statuts = useMemo(
+    () => [...new Set(games.map((g) => normalizeStatusLabel(g.statut)).filter(Boolean))].sort(),
+    [games]
+  );
+  const traducteurs = useMemo(
+    () => [...new Set(games.map((g) => g.traducteur).filter((name): name is string => isValidTranslatorName(name)))].sort(),
+    [games]
+  );
   const types      = useMemo(() => [...new Set(games.map((g) => g.type).filter(Boolean))].sort(), [games]);
-  const tradTypes  = useMemo(() => [...new Set(games.map((g) => g.type_de_traduction).filter(Boolean))].sort(), [games]);
+  const tradTypes = useMemo(
+    () => [...new Set(games.map((g) => normalizeTradTypeLabel(g.type_de_traduction)).filter(Boolean))].sort(),
+    [games]
+  );
 
   /** Tous les tags uniques de la bibliothèque (pour FilterTagsPopover + TagAvoirsModal) */
   const allUniqueTags = useMemo(() => {
@@ -180,10 +213,10 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
     let list = gamesEnriched.filter((g) => {
       if (q && !g.nom_du_jeu.toLowerCase().includes(q) && !(g.traducteur || '').toLowerCase().includes(q))
         return false;
-      if (filterStatut   && g.statut             !== filterStatut)   return false;
+      if (filterStatut   && normalizeStatusLabel(g.statut) !== filterStatut)   return false;
       if (filterTrad     && g.traducteur          !== filterTrad)     return false;
       if (filterType     && g.type                !== filterType)     return false;
-      if (filterTradType && g.type_de_traduction  !== filterTradType) return false;
+      if (filterTradType && normalizeTradTypeLabel(g.type_de_traduction) !== filterTradType) return false;
       if (filterSync     && g._sync               !== filterSync)     return false;
 
       const tagList = (g.tags ?? '').split(',').map((t) => t.trim()).filter(Boolean);
@@ -447,6 +480,10 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                     showDateBadge={dateSort}
                     onAddToCollection={handleAddToCollection}
                     isInCollection={collectionF95Ids.has(g.site_id)}
+                    onRefreshGames={(siteId) => {
+                      if (siteId != null) resyncTargetSiteIdRef.current = siteId;
+                      fetchGames();
+                    }}
                   />
                 ))}
               </div>
@@ -491,6 +528,7 @@ export default function LibraryView({ onModeChange }: { onModeChange: (m: AppMod
                 onClose={() => setSelectedGameForDetail(null)}
                 onAddToCollection={handleAddToCollection}
                 isInCollection={collectionF95Ids.has(selectedGameForDetail.site_id)}
+                onGameUpdated={() => fetchGames()}
               />
             )}
 

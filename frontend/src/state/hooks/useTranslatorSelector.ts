@@ -31,6 +31,15 @@ export function useTranslatorSelector(profileId: string | undefined) {
     (async () => {
       const opts: TranslatorOption[] = [];
       const map: Record<string, string> = {};
+      const { data: translatorTagRows } = await sb
+        .from('tags')
+        .select('id')
+        .eq('tag_type', 'translator');
+      const validTranslatorTagIds = new Set(
+        ((translatorTagRows ?? []) as Array<{ id?: string | null }>)
+          .map((r) => r.id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0)
+      );
 
       if (isMasterAdmin) {
         const [{ data: profiles }, { data: externals }, { data: mappings }] = await Promise.all([
@@ -42,10 +51,10 @@ export function useTranslatorSelector(profileId: string | undefined) {
           opts.push({ id: p.id, name: p.pseudo || '(sans nom)', kind: 'profile', discordId: p.discord_id ?? undefined });
         for (const e of (externals ?? []) as any[]) {
           opts.push({ id: e.id, name: e.name || '(sans nom)', kind: 'external' });
-          if (e.tag_id) map[e.id] = e.tag_id;
+          if (e.tag_id && validTranslatorTagIds.has(e.tag_id)) map[e.id] = e.tag_id;
         }
         for (const m of (mappings ?? []) as any[])
-          if (m.tag_id) map[m.profile_id] = m.tag_id;
+          if (m.tag_id && validTranslatorTagIds.has(m.tag_id)) map[m.profile_id] = m.tag_id;
       } else {
         // Propre profil
         const { data: me } = await sb.from('profiles').select('id, pseudo, discord_id').eq('id', profileId).single();
@@ -68,7 +77,7 @@ export function useTranslatorSelector(profileId: string | undefined) {
             .select('profile_id, tag_id')
             .in('profile_id', profileIds);
           for (const m of (mappings ?? []) as any[])
-            if (m.tag_id) map[m.profile_id] = m.tag_id;
+            if (m.tag_id && validTranslatorTagIds.has(m.tag_id)) map[m.profile_id] = m.tag_id;
         }
       }
 

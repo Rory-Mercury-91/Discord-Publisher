@@ -6,7 +6,7 @@ import { tauriAPI }       from '../../lib/tauri-api';
 import { getSupabase }    from '../../lib/supabase';
 import { useF95Rss }      from '../../state/hooks/useF95Rss';
 import type { GameF95, SyncStatus, CollectionSortMode, FilterCounts } from './library-types';
-import { TABLE_HEADERS, getSyncStatus } from './library-constants';
+import { TABLE_HEADERS, getSyncStatus, isValidTranslatorName, normalizeStatusLabel, normalizeTradTypeLabel } from './library-constants';
 import GameCard            from './components/GameCard';
 import GameRow             from './components/GameRow';
 import GameDetailModal     from './GameDetailModal';
@@ -69,7 +69,6 @@ function entryToGameF95(entry: UserCollectionEntryEnriched): GameF95 {
     type              : entry.game?.type ?? '',
     traducteur        : entry.game?.traducteur ?? '',
     traducteur_url    : entry.game?.traducteur_url ?? '',
-    relecture         : '',
     type_de_traduction: entry.game?.type_de_traduction ?? '',
     ac                : '',
     image             : entry.game?.image ?? '',
@@ -300,24 +299,36 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     const ty: Record<string, number> = {};
     const tt: Record<string, number> = {};
     for (const g of gamesEnriched) {
-      if (g.statut)              st[g.statut]              = (st[g.statut]              ?? 0) + 1;
-      if (g.traducteur)          tr[g.traducteur]          = (tr[g.traducteur]          ?? 0) + 1;
+      if (g.statut) {
+        const k = normalizeStatusLabel(g.statut);
+        if (k) st[k] = (st[k] ?? 0) + 1;
+      }
+      if (isValidTranslatorName(g.traducteur)) tr[g.traducteur] = (tr[g.traducteur] ?? 0) + 1;
       if (g.type)                ty[g.type]                = (ty[g.type]                ?? 0) + 1;
-      if (g.type_de_traduction)  tt[g.type_de_traduction]  = (tt[g.type_de_traduction]  ?? 0) + 1;
+      if (g.type_de_traduction) {
+        const k = normalizeTradTypeLabel(g.type_de_traduction);
+        if (k) tt[k] = (tt[k] ?? 0) + 1;
+      }
     }
     return { statuts: st, traducteurs: tr, types: ty, tradTypes: tt };
   }, [gamesEnriched]);
 
   const statuts    = useMemo(() =>
     [...new Map(
-      gamesEnriched.map(g => g.statut).filter(Boolean)
-        .map(s => [normalizeStatut(s!), s!] as [string, string])
+      gamesEnriched.map(g => normalizeStatusLabel(g.statut)).filter(Boolean)
+        .map(s => [normalizeStatusLabel(s), normalizeStatusLabel(s)] as [string, string])
     ).values()].sort()
   , [gamesEnriched]);
 
-  const traducteurs = useMemo(() => [...new Set(gamesEnriched.map(g => g.traducteur).filter(Boolean))].sort(), [gamesEnriched]);
+  const traducteurs = useMemo(
+    () => [...new Set(gamesEnriched.map(g => g.traducteur).filter((name): name is string => isValidTranslatorName(name)))].sort(),
+    [gamesEnriched]
+  );
   const types       = useMemo(() => [...new Set(gamesEnriched.map(g => g.type).filter(Boolean))].sort(), [gamesEnriched]);
-  const tradTypes   = useMemo(() => [...new Set(gamesEnriched.map(g => g.type_de_traduction).filter(Boolean))].sort(), [gamesEnriched]);
+  const tradTypes = useMemo(
+    () => [...new Set(gamesEnriched.map(g => normalizeTradTypeLabel(g.type_de_traduction)).filter(Boolean))].sort(),
+    [gamesEnriched]
+  );
 
   const allUniqueTags = useMemo(() => {
     const set = new Set<string>();
@@ -346,10 +357,10 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     let list = gamesEnriched.filter(g => {
       if (q && !g.nom_du_jeu.toLowerCase().includes(q) && !(g.traducteur || '').toLowerCase().includes(q))
         return false;
-      if (filterStatut   && normalizeStatut(g.statut || '') !== normalizeStatut(filterStatut)) return false;
+      if (filterStatut   && normalizeStatusLabel(g.statut || '') !== normalizeStatusLabel(filterStatut)) return false;
       if (filterTrad     && g.traducteur          !== filterTrad)     return false;
       if (filterType     && g.type                !== filterType)     return false;
-      if (filterTradType && g.type_de_traduction  !== filterTradType) return false;
+      if (filterTradType && normalizeTradTypeLabel(g.type_de_traduction) !== normalizeTradTypeLabel(filterTradType)) return false;
       if (filterSync     && g._sync               !== filterSync)     return false;
   
       const tagList  = (g.tags ?? '').split(',').map(t => t.trim()).filter(Boolean);
@@ -683,6 +694,7 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
                     onUpdateLabels={updateLabels} onUpdateExecutablePaths={updateExecutablePaths}
                     onLabelsUpdated={refresh} clickDisabled={deleteMode}
                     onOpenEdit={deleteMode ? undefined : () => setEditEntry(entry)}
+                    onRefreshGames={() => refresh()}
                   />
                   {!deleteMode && (
                     <button type="button" className="library-collection-card-edit"
@@ -768,6 +780,7 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
             allLabels={allLabels}
             onUpdateLabels={updateLabels} onUpdateExecutablePaths={updateExecutablePaths}
             onLabelsUpdated={refresh}
+            onGameUpdated={() => refresh()}
             onOpenEdit={selectedEntryForDetail ? () => {
               setSelectedGameForDetail(null);
               setSelectedEntryForDetail(null);

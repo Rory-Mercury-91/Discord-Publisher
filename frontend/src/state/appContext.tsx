@@ -140,8 +140,6 @@ export type {
   loadPostForDuplication: (post: PublishedPost) => void;
 
   setApiBaseFromSupabase: (url: string | null) => void;
-  /** URL du formulaire liste (tableur), configurée par l'admin dans app_config. */
-  listFormUrl: string;
   apiStatus: string;
   setApiStatus: React.Dispatch<React.SetStateAction<string>>;
   discordConfig: any;
@@ -586,21 +584,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('tagsUpdated', handler);
   }, []);
 
-  // Charger la config globale (URL API + URL formulaire liste) depuis Supabase au montage
+  // Charger la config globale (URL API) depuis Supabase au montage
   useEffect(() => {
     const sb = getSupabase();
     if (!sb) return;
     sb.from('app_config')
       .select('key, value')
-      .in('key', ['api_base_url', 'list_form_url'])
+      .in('key', ['api_base_url'])
       .then((res: { data?: Array<{ key: string; value: string }> | null; error?: unknown }) => {
         if (res.error || !res.data?.length) return;
         for (const row of res.data) {
           if (row.key === 'api_base_url' && row.value?.trim()) {
             const url = row.value.trim().replace(/\/+$/, '');
             apiConfig.setApiBaseFromSupabase(url);
-          } else if (row.key === 'list_form_url') {
-            apiConfig.setListFormUrl((row.value ?? '').trim());
           }
         }
       });
@@ -684,7 +680,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useRealtimeSync({
     setSavedTags: tagsState.setSavedTags,
     setApiBaseFromSupabase: apiConfig.setApiBaseFromSupabase,
-    setListFormUrl: apiConfig.setListFormUrl,
     setPublishedPosts: pubState.setPublishedPosts,
     setSavedInstructions: instructionsState.setSavedInstructions,
     setInstructionOwners: instructionsState.setInstructionOwners,
@@ -827,7 +822,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     rateLimitCooldown: pubState.rateLimitCooldown,
 
     setApiBaseFromSupabase: apiConfig.setApiBaseFromSupabase,
-    listFormUrl: apiConfig.listFormUrl,
 
     // Edit mode
     editingPostId: pubState.editingPostId,

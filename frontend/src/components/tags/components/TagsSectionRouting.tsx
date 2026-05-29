@@ -3,7 +3,7 @@ import type { ExternalTranslator } from '../tags-modal-constants';
 import type { MappingRow } from '../tags-modal-constants';
 import MappingRowItem from './MappingRowItem';
 
-const ROUTING_HEADERS = ['Traducteur', 'Tag', 'Salon Discord (ID)', 'Concordance Formulaire', 'Action', ''];
+const ROUTING_HEADERS = ['Traducteur', 'Tag', 'Salon Discord (ID)', 'Action', ''];
 
 interface TagsSectionRoutingProps {
   loadingAll: boolean;
@@ -13,13 +13,12 @@ interface TagsSectionRoutingProps {
   editMappings: Record<string, EditRow>;
   editExternals: Record<string, EditRow>;
   translatorTags: { id: string; name: string }[];
-  f95TraducteurOptions: string[];
   newExtName: string;
   addingExternal: boolean;
   setNewExtName: (v: string) => void;
   setAddingExternal: (v: boolean | ((prev: boolean) => boolean)) => void;
-  onEditMapping: (profileId: string, field: 'tag_id' | 'forum_channel_id' | 'list_form_traducteur', val: string) => void;
-  onEditExternal: (extId: string, field: 'tag_id' | 'forum_channel_id' | 'list_form_traducteur', val: string) => void;
+  onEditMapping: (profileId: string, field: 'tag_id' | 'forum_channel_id', val: string) => void;
+  onEditExternal: (extId: string, field: 'tag_id' | 'forum_channel_id', val: string) => void;
   saveMapping: (profileId: string) => void;
   deleteMapping: (profileId: string) => void;
   saveExternal: (extId: string) => void;
@@ -27,7 +26,7 @@ interface TagsSectionRoutingProps {
   handleAddExternal: () => void;
 }
 
-const emptyEdit: EditRow = { tag_id: '', forum_channel_id: '', list_form_traducteur: '' };
+const emptyEdit: EditRow = { tag_id: '', forum_channel_id: '' };
 
 export default function TagsSectionRouting({
   loadingAll,
@@ -37,7 +36,6 @@ export default function TagsSectionRouting({
   editMappings,
   editExternals,
   translatorTags,
-  f95TraducteurOptions,
   newExtName,
   addingExternal,
   setNewExtName,
@@ -80,7 +78,6 @@ export default function TagsSectionRouting({
                 hasMapping={mappings.some((m) => m.profile_id === p.id)}
                 edit={editMappings[p.id] ?? emptyEdit}
                 tags={tagsForSelect}
-                traducteurOptions={f95TraducteurOptions}
                 onEditChange={(field, val) => onEditMapping(p.id, field, val)}
                 onSave={() => saveMapping(p.id)}
                 onDelete={() => deleteMapping(p.id)}
@@ -141,7 +138,6 @@ export default function TagsSectionRouting({
             hasMapping={!!editExternals[ext.id]?.forum_channel_id?.trim()}
             edit={editExternals[ext.id] ?? emptyEdit}
             tags={tagsForSelect}
-            traducteurOptions={f95TraducteurOptions}
             onEditChange={(field, val) => onEditExternal(ext.id, field, val)}
             onSave={() => saveExternal(ext.id)}
             onDelete={() => deleteExternal(ext.id)}

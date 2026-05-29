@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { isTauri } from '../components/list-form-view/constants';
+import { isTauri } from './runtime';
 
 /** URL complète utilisée comme redirectTo Supabase (mot de passe oublié) pour l’app Tauri. */
 export const DEFAULT_AUTH_DEEP_LINK_RESET_URL = 'discordpublisher://reset-password';

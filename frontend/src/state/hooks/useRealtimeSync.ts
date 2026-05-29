@@ -7,7 +7,6 @@ import type { PublishedPost, Tag, TagType } from '../types';
 type RealtimeSyncDeps = {
   setSavedTags: React.Dispatch<React.SetStateAction<Tag[]>>;
   setApiBaseFromSupabase: (url: string | null) => void;
-  setListFormUrl: (url: string) => void;
   setPublishedPosts: React.Dispatch<React.SetStateAction<PublishedPost[]>>;
   setSavedInstructions: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setInstructionOwners: React.Dispatch<React.SetStateAction<Record<string, string>>>;
@@ -30,7 +29,6 @@ export function useRealtimeSync(deps: RealtimeSyncDeps) {
   const {
     setSavedTags,
     setApiBaseFromSupabase,
-    setListFormUrl,
     setPublishedPosts,
     setSavedInstructions,
     setInstructionOwners,
@@ -112,8 +110,6 @@ export function useRealtimeSync(deps: RealtimeSyncDeps) {
         const r = (p.eventType === 'DELETE' ? p.old : p.new) as { key: string; value: string };
         if (r?.key === 'api_base_url' && r?.value?.trim()) {
           setApiBaseFromSupabase(r.value.trim().replace(/\/+$/, ''));
-        } else if (r?.key === 'list_form_url') {
-          setListFormUrl((r?.value ?? '').trim());
         }
       }
     );
@@ -148,7 +144,6 @@ export function useRealtimeSync(deps: RealtimeSyncDeps) {
   }, [
     setSavedTags,
     setApiBaseFromSupabase,
-    setListFormUrl,
     setPublishedPosts,
     setSavedInstructions,
     setInstructionOwners,

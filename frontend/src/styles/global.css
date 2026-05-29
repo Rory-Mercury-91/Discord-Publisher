@@ -1987,7 +1987,7 @@ textarea.form-textarea {
   margin: 0;
 }
 
-/* Bloc config (champs API, formulaire liste) */
+/* Bloc config */
 .settings-config-fields {
   display: flex;
   flex-direction: column;
@@ -2758,13 +2758,13 @@ textarea.form-textarea {
 }
 
 .form-btn--ghost {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--muted);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border);
-  padding: 4px 10px;
-  height: auto;
+  padding: 0 16px;
+  height: 40px;
 }
 
 /* ========== Gestion serveur (ServerModal, LogsModal) ========== */
@@ -3907,210 +3907,6 @@ textarea.form-textarea {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
-}
-
-/* ========== List Form View (formulaire liste) ========== */
-.list-form-view {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  box-sizing: border-box;
-}
-
-.list-form-bar {
-  flex-shrink: 0;
-  padding: 12px 16px;
-  background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.list-form-bar--google {
-  background: rgba(251, 191, 36, 0.12);
-  border-bottom-color: rgba(251, 191, 36, 0.3);
-}
-
-.list-form-bar__content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.list-form-bar__hint {
-  font-size: 13px;
-  color: var(--text);
-}
-
-.list-form-bar__actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.list-form-bar__btn {
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-weight: 500;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.list-form-bar__btn--secondary {
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-}
-
-.list-form-bar__btn--secondary.list-form-bar__btn--active {
-  background: var(--bg-elevated);
-}
-
-.list-form-bar__btn--primary {
-  border: none;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-
-.list-form-bar__btn--accent {
-  border: 1px solid var(--accent);
-  background: rgba(74, 158, 255, 0.15);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.list-form-bar__toggle-strip {
-  display: flex;
-  justify-content: center;
-}
-
-.list-form-bar__toggle-btn {
-  padding: 2px 12px;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-/* Bouton unique visible quand la barre est réduite (barre entièrement cachée) */
-.list-form-bar-reopen {
-  flex-shrink: 0;
-  align-self: center;
-  margin: 8px 16px;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-elevated);
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.list-form-bar-reopen:hover {
-  color: var(--text);
-  border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.08);
-}
-
-.list-form-iframe {
-  flex: 1;
-  width: 100%;
-  min-height: 0;
-  border: none;
-  background: #fff;
-}
-
-.list-form-placeholder {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 16px;
-  padding: 24px;
-  color: var(--muted);
-  text-align: center;
-}
-
-.list-form-placeholder__icon {
-  font-size: 48px;
-}
-
-.list-form-placeholder__text {
-  margin: 0;
-  font-size: 16px;
-  max-width: 400px;
-}
-
-.list-form-steps {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 32px;
-  padding: 32px;
-  color: var(--text);
-  text-align: center;
-  max-width: 480px;
-  margin: 0 auto;
-}
-
-.list-form-steps__title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.list-form-steps__cards {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  width: 100%;
-  text-align: left;
-}
-
-.list-form-steps__card {
-  padding: 16px;
-  background: var(--bg-elevated);
-  border-radius: 12px;
-  border: 1px solid var(--border);
-}
-
-.list-form-steps__card-title {
-  margin: 0 0 8px 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.list-form-steps__card-desc {
-  margin: 0;
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.45;
-}
-
-.list-form-steps__btn {
-  margin-top: 12px;
-  padding: 10px 18px;
-  border-radius: 8px;
-  border: none;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
 }
 
 /* Modale de transfert de propriété (imbriquée) */
@@ -6417,6 +6213,52 @@ textarea.form-textarea {
   margin: 0;
 }
 
+/* Bouton "Lien" compact dans le header du modal */
+.library-detail-header-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s, border-color 0.15s;
+}
+.library-detail-header-link-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #fff;
+}
+
+/* Bouton icône lien inline dans les lignes InfoRow */
+.library-detail-inline-link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.library-detail-inline-link-btn:hover {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .library-detail-versions {
   margin-top: 8px;
   display: flex;
@@ -8329,6 +8171,20 @@ textarea.form-textarea {
   line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+.library-card-title--copyable {
+  cursor: copy;
+  border-radius: 4px;
+  transition: background 0.12s, color 0.12s;
+}
+.library-card-title--copyable:hover {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent);
+}
+.library-card-title--copied {
+  color: #10b981 !important;
+  background: rgba(16, 185, 129, 0.1) !important;
+  -webkit-line-clamp: unset;
+}
 
 .library-card-footer {
   padding: 8px 12px;
@@ -8539,6 +8395,21 @@ textarea.form-textarea {
 .library-table-td--traducteur { font-size: 13px; }
 .library-table-td--date { font-size: 13px; white-space: nowrap; }
 .library-table-cell-title--with-type .library-version-muted { font-size: 12px; }
+
+.library-table-cell-title--copyable {
+  cursor: copy;
+  border-radius: 4px;
+  transition: background 0.12s, color 0.12s;
+}
+.library-table-cell-title--copyable:hover {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent);
+}
+.library-table-cell-title--copied {
+  color: #10b981 !important;
+  background: rgba(16, 185, 129, 0.1) !important;
+}
+
 .library-row-btn-emoji { font-family: "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", sans-serif; }
 
 .library-table-row:hover {
@@ -8678,6 +8549,28 @@ textarea.form-textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.library-item-card-title--copyable {
+  cursor: copy;
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  transition: background 0.12s, color 0.12s;
+}
+.library-item-card-title--copyable:hover {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent);
+}
+.library-item-card-title--copied {
+  color: #10b981 !important;
+  background: rgba(16, 185, 129, 0.1) !important;
+}
+
+/* Texte de feedback copie (commun aux deux vues) */
+.library-copy-feedback {
+  font-size: inherit;
+  font-weight: 600;
+  color: #10b981;
 }
 
 .library-item-card-meta {

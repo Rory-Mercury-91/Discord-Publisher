@@ -26,7 +26,6 @@ export type GameF95 = {
   type: string;
   traducteur: string;
   traducteur_url: string;
-  relecture: string;
   type_de_traduction: string;
   ac: string;
   image: string;

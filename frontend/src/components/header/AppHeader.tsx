@@ -73,9 +73,6 @@ export default function AppHeader({
   const modeOptions = [
     { id: 'translator' as const, label: '✏️ Traducteur', title: 'Mode traducteur' },
     { id: 'user' as const, label: '📚 Bibliothèque', title: 'Mode utilisateur – Bibliothèque des jeux' },
-    ...(profile?.list_manager
-      ? [{ id: 'listform' as const, label: '📋 Formulaire liste', title: 'Formulaire liste (page web)' }]
-      : []),
   ];
 
   return (

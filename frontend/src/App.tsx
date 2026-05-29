@@ -10,7 +10,6 @@ import HelpCenterModal from './components/HelpCenter';
 import { HistoryModal } from './components/history';
 import { InstructionsManagerModal } from './components/instructions';
 import { LibraryView } from './components/library';
-import { ListFormView } from './components/list-form-view';
 import { LogsModal, ServerModal } from './components/server';
 import { StatsModal } from './components/stats';
 import { TagsModal } from './components/tags';
@@ -65,7 +64,10 @@ function AppContentInner() {
   // ── Mode (traducteur / utilisateur) ──────────────────────────────────────
   const [mode, setMode] = useState<AppMode>(() => {
     try {
-      return (localStorage.getItem('defaultMode') as AppMode) || 'translator';
+      const stored = localStorage.getItem('defaultMode');
+      if (stored === 'translator') return 'translator';
+      if (stored === 'user' || stored === 'library') return 'user';
+      return 'translator';
     } catch {
       return 'translator';
     }
@@ -135,9 +137,7 @@ function AppContentInner() {
       />
 
       {/* ── Contenu principal ─────────────────────────────────────────────── */}
-      {mode === 'listform' ? (
-        <ListFormView />
-      ) : mode === 'translator' ? (
+      {mode === 'translator' ? (
         <main style={{ display: 'grid', gridTemplateRows: 'auto 1fr', flex: 1, minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '65% 35%', height: '100%', minHeight: 0, overflow: 'hidden', boxSizing: 'border-box' }}>
             <div className="styled-scrollbar" style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', borderRight: '1px solid var(--border)', boxSizing: 'border-box' }}>

@@ -16,6 +16,7 @@ def get_collection_routes():
     return [
         ("GET", "/api/jeux", legacy.get_jeux),
         ("POST", "/api/jeux/sync-force", legacy.jeux_sync_force),
+        ("POST", "/api/jeux/sync-game",  legacy.jeux_sync_game),
         ("PATCH", "/api/f95-jeux/{id}/synopsis", legacy.update_f95_jeu_synopsis),
         ("POST", "/api/collection/resolve", collection_resolve),
         ("POST", "/api/collection/nexus-parse-db", nexus_parse_db),

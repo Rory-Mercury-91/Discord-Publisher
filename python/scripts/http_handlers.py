@@ -5,7 +5,6 @@ Dependances : config, api_key_auth, supabase_client, discord_api,
 Logger       : [api]
 """
 
-import os
 import json
 import time
 import asyncio
@@ -32,13 +31,14 @@ from scraper import (
 from image_utils import convert_image_url, batch_convert_images
 from nexus_export import parse_nexus_db
 from api_key_auth import _auth_request, LEGACY_KEY_WARNING
+from f95_public_api_client import fetch_public_games, fetch_public_translators, map_public_games_to_legacy_rows
 from supabase_client import (
     _get_supabase, _fetch_post_by_thread_id_sync,
     _delete_from_supabase_sync, _normalize_history_row,
     _fetch_all_jeux_sync, _dedupe_jeux_by_site, _sync_jeux_to_supabase,
     _norm_nom_url,
     _delete_account_data_sync, _transfer_post_ownership_sync,
-    _transfer_profile_data_sync,
+    _transfer_profile_data_sync, _relink_scraped_entries_to_catalogue,
 )
 from discord_api import rate_limiter
 from forum_manager import (
@@ -58,9 +58,7 @@ from forum_manager import _fetch_image_from_url, _strip_image_url_from_content
 LOG_FILE = Path(__file__).resolve().parent.parent / "logs" / "bot.log"
 logger = logging.getLogger("api")
 
-# API externe jeux
-F95FR_API_URL = "https://f95fr.duckdns.org/api/jeux"
-F95FR_API_KEY = os.getenv("F95FR_API_KEY", "")
+# API externe jeux (source publique F95 France)
 _PLACEHOLDER_DATE = "2020-01-01"
 # Cache IP -> UUID pour les requetes OPTIONS sans UUID
 _ip_user_cache: dict = {}
@@ -419,7 +417,7 @@ async def update_f95_jeu_synopsis(request):
 
 async def jeux_sync_force(request):
     """
-    Force la resynchronisation complete de f95_jeux depuis l'API externe.
+    Force la resynchronisation complete de f95_jeux depuis l'API publique.
     POST /api/jeux/sync-force
     Retourne { ok, synced_count, errors }
     """
@@ -438,18 +436,9 @@ async def jeux_sync_force(request):
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                F95FR_API_URL,
-                headers={"X-API-KEY": F95FR_API_KEY},
-                timeout=aiohttp.ClientTimeout(total=60),
-            ) as resp:
-                if resp.status != 200:
-                    logger.warning("[api] jeux/sync-force : API f95fr HTTP %d", resp.status)
-                    return _with_cors(request, web.json_response(
-                        {"ok": False, "error": f"API upstream HTTP {resp.status}"},
-                        status=502,
-                    ))
-                data = await resp.json()
+            public_games   = await fetch_public_games(session, timeout_seconds=60)
+            translator_map = await fetch_public_translators(session, timeout_seconds=60)
+            data = map_public_games_to_legacy_rows(public_games, translator_map)
 
         if not isinstance(data, list) or not data:
             return _with_cors(request, web.json_response(
@@ -458,10 +447,10 @@ async def jeux_sync_force(request):
 
         synced_count = len(data)
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _sync_jeux_to_supabase, data)
+        await loop.run_in_executor(None, _sync_jeux_to_supabase, public_games, translator_map)
 
         logger.info(
-            "[api] jeux/sync-force : %d jeux synchronises par %s",
+            "[api] jeux/sync-force : %d lignes synchronisees depuis API publique par %s",
             synced_count, discord_name or "unknown",
         )
         return _with_cors(request, web.json_response({
@@ -477,8 +466,73 @@ async def jeux_sync_force(request):
         ))
 
 
+async def jeux_sync_game(request):
+    """
+    Resynchronise un jeu spécifique depuis l'API publique F95FR.
+    POST /api/jeux/sync-game
+    Body : { "site_id": <int> }
+    Retourne { ok, synced_count, from_catalogue }
+    """
+    is_valid, _, discord_name, _ = await _auth_request(request, "/api/jeux/sync-game")
+    if not is_valid:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
+
+    try:
+        body = await request.json() or {}
+    except Exception:
+        return _with_cors(request, web.json_response({"ok": False, "error": "Body JSON invalide"}, status=400))
+
+    site_id_raw = body.get("site_id")
+    try:
+        site_id = int(site_id_raw)
+    except (TypeError, ValueError):
+        return _with_cors(request, web.json_response({"ok": False, "error": "site_id invalide (entier requis)"}, status=400))
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            public_games   = await fetch_public_games(session, timeout_seconds=60)
+            translator_map = await fetch_public_translators(session, timeout_seconds=60)
+
+        # Chercher le jeu par site_id (threadId dans l'API publique)
+        matching = [g for g in public_games if g.get("threadId") == site_id]
+
+        # Si trouvé, inclure toutes les variantes du même jeu via game_uuid
+        if matching:
+            game_uuid = matching[0].get("id")
+            if game_uuid:
+                matching = [g for g in public_games if g.get("id") == game_uuid]
+
+        if not matching:
+            return _with_cors(request, web.json_response({
+                "ok": False,
+                "error": f"Jeu site_id={site_id} introuvable dans l'API publique",
+            }, status=404))
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _sync_jeux_to_supabase, matching, translator_map)
+
+        # Relier les entrées user_collection scrapées à ces nouvelles données
+        synced_site_ids = [g.get("threadId") for g in matching if g.get("threadId")]
+        if synced_site_ids:
+            await loop.run_in_executor(None, _relink_scraped_entries_to_catalogue, synced_site_ids)
+
+        logger.info(
+            "[api] jeux/sync-game : site_id=%d → %d entrée(s) synchronisée(s) par %s",
+            site_id, len(matching), discord_name or "unknown",
+        )
+        return _with_cors(request, web.json_response({
+            "ok"           : True,
+            "synced_count" : len(matching),
+            "from_catalogue": True,
+        }))
+
+    except Exception as e:
+        logger.exception("[api] jeux/sync-game erreur : %s", e)
+        return _with_cors(request, web.json_response({"ok": False, "error": str(e)}, status=500))
+
+
 async def get_jeux(request):
-    """Sert les jeux depuis le cache Supabase (f95_jeux). Fallback sur l'API externe."""
+    """Sert les jeux depuis le cache Supabase (f95_jeux). Fallback sur l'API publique."""
     is_valid, _, _, _ = await _auth_request(request, "/api/jeux")
     if not is_valid:
         return _with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
@@ -496,30 +550,22 @@ async def get_jeux(request):
                     "ok": True, "jeux": data, "count": len(data), "source": "cache",
                 }))
         except Exception as e:
-            logger.warning("[api] Supabase indisponible pour jeux, fallback API externe : %s", e)
+            logger.warning("[api] Supabase indisponible pour jeux, fallback API publique : %s", e)
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                F95FR_API_URL,
-                headers={"X-API-KEY": F95FR_API_KEY},
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                if resp.status != 200:
-                    logger.warning("[api] API f95fr erreur %d", resp.status)
-                    return _with_cors(request, web.json_response(
-                        {"ok": False, "error": f"API upstream {resp.status}"}, status=502
-                    ))
-                data = await resp.json()
+            public_games   = await fetch_public_games(session, timeout_seconds=30)
+            translator_map = await fetch_public_translators(session, timeout_seconds=30)
+            data = map_public_games_to_legacy_rows(public_games, translator_map)
 
         if sb and isinstance(data, list):
             loop = asyncio.get_event_loop()
-            loop.run_in_executor(None, _sync_jeux_to_supabase, data)
+            loop.run_in_executor(None, _sync_jeux_to_supabase, public_games, translator_map)
 
         if isinstance(data, list):
             data = _dedupe_jeux_by_site(data)
             data = batch_convert_images(data)
-        logger.info("[api] %d jeux depuis API externe (fallback, dédupliqués)", len(data) if isinstance(data, list) else "?")
+        logger.info("[api] %d jeux depuis API publique (fallback, dédupliqués)", len(data) if isinstance(data, list) else "?")
         return _with_cors(request, web.json_response({
             "ok": True, "jeux": data,
             "count": len(data) if isinstance(data, list) else 0,

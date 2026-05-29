@@ -349,39 +349,6 @@ export const tauriAPI = {
   },
 
   /**
-   * Ouvrir le formulaire liste dans une fenêtre secondaire de l'app (évite 403 iframe Google).
-   * Réutilise la fenêtre "formulaire-liste" si elle existe déjà (focus), sinon en crée une nouvelle.
-   */
-  async openListFormInAppWindow(url: string): Promise<{ ok: boolean; error?: string }> {
-    try {
-      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-      const label = 'formulaire-liste';
-      const existing = await WebviewWindow.getByLabel(label);
-      if (existing) {
-        await existing.setFocus();
-        return { ok: true };
-      }
-      const win = new WebviewWindow(label, {
-        url,
-        title: 'Formulaire liste',
-        width: 1000,
-        height: 700,
-      });
-      return new Promise((resolve) => {
-        win.once('tauri://error', (e: { payload?: { message?: string } }) => {
-          resolve({ ok: false, error: e?.payload?.message ?? 'Erreur création fenêtre' });
-        });
-        win.once('tauri://created', () => {
-          resolve({ ok: true });
-        });
-      });
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
-      return { ok: false, error: msg };
-    }
-  },
-
-  /**
    * Historique local : sauvegarde un post (tous les champs) dans le dossier de l'app, par utilisateur.
    * Dossier : app_data_dir / history / {author_discord_id ou "default"} / posts.json
    * À appeler après publication ou mise à jour (row = format Supabase snake_case).

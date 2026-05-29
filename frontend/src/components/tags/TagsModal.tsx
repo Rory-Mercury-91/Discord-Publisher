@@ -50,10 +50,9 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
   const [showTagModal, setShowTagModal] = useState(false);
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
 
-  // ── Section 2 : routing (list_form_traducteur = valeur f95_jeux.traducteur pour l'export)
-  const [editMappings, setEditMappings] = useState<Record<string, { tag_id: string; forum_channel_id: string; list_form_traducteur: string }>>({});
-  const [editExternals, setEditExternals] = useState<Record<string, { tag_id: string; forum_channel_id: string; list_form_traducteur: string }>>({});
-  const [f95TraducteurOptions, setF95TraducteurOptions] = useState<string[]>([]);
+  // ── Section 2 : routing tags ↔ salons Discord
+  const [editMappings, setEditMappings] = useState<Record<string, { tag_id: string; forum_channel_id: string }>>({});
+  const [editExternals, setEditExternals] = useState<Record<string, { tag_id: string; forum_channel_id: string }>>({});
   const [newExtName, setNewExtName] = useState('');
   const [addingExternal, setAddingExternal] = useState(false);
 
@@ -82,8 +81,8 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
         { data: mapsData },
       ] = await Promise.all([
         sb.from('profiles').select('id, pseudo'),
-        sb.from('external_translators').select('id, name, tag_id, forum_channel_id, list_form_traducteur').order('created_at', { ascending: true }),
-        sb.from('translator_forum_mappings').select('id, profile_id, tag_id, forum_channel_id, list_form_traducteur'),
+        sb.from('external_translators').select('id, name, tag_id, forum_channel_id').order('created_at', { ascending: true }),
+        sb.from('translator_forum_mappings').select('id, profile_id, tag_id, forum_channel_id'),
       ]);
 
       const profiles = (profilesData ?? []) as { id: string; pseudo: string }[];
@@ -100,32 +99,16 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
       setExternals(exts);
       setMappings(maps);
 
-      const initMaps: Record<string, { tag_id: string; forum_channel_id: string; list_form_traducteur: string }> = {};
-      maps.forEach(m => { initMaps[m.profile_id] = { tag_id: m.tag_id ?? '', forum_channel_id: m.forum_channel_id ?? '', list_form_traducteur: m.list_form_traducteur ?? '' }; });
+      const initMaps: Record<string, { tag_id: string; forum_channel_id: string }> = {};
+      maps.forEach(m => { initMaps[m.profile_id] = { tag_id: m.tag_id ?? '', forum_channel_id: m.forum_channel_id ?? '' }; });
       setEditMappings(initMaps);
 
-      const initExts: Record<string, { tag_id: string; forum_channel_id: string; list_form_traducteur: string }> = {};
-      exts.forEach(e => { initExts[e.id] = { tag_id: e.tag_id ?? '', forum_channel_id: e.forum_channel_id ?? '', list_form_traducteur: e.list_form_traducteur ?? '' }; });
+      const initExts: Record<string, { tag_id: string; forum_channel_id: string }> = {};
+      exts.forEach(e => { initExts[e.id] = { tag_id: e.tag_id ?? '', forum_channel_id: e.forum_channel_id ?? '' }; });
       setEditExternals(initExts);
 
       if (list.length > 0) { setSelId(list[0].id); setSelKind(list[0].kind); }
 
-      // Récupérer tous les traducteurs distincts de f95_jeux (pagination pour tout charger)
-      const traducteurSet = new Set<string>();
-      const pageSize = 1000;
-      let offset = 0;
-      let hasMore = true;
-      while (hasMore) {
-        const { data: page } = await sb.from('f95_jeux').select('traducteur').range(offset, offset + pageSize - 1);
-        const rows = page ?? [];
-        rows.forEach((r: { traducteur?: string | null }) => {
-          const v = (r.traducteur ?? '').trim();
-          if (v) traducteurSet.add(v);
-        });
-        hasMore = rows.length === pageSize;
-        offset += pageSize;
-      }
-      setF95TraducteurOptions(Array.from(traducteurSet).sort());
     } catch {
       showToast('Erreur chargement des données', 'error');
     } finally {
@@ -194,7 +177,6 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
     const payload = {
       tag_id: (edit.tag_id || '').trim() || null,
       forum_channel_id: (edit.forum_channel_id || '').trim() || null,
-      list_form_traducteur: (edit.list_form_traducteur || '').trim() || null,
     };
     try {
       const existing = mappings.find(m => m.profile_id === profileId);
@@ -238,12 +220,11 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
         name,
         tag_id: null,
         forum_channel_id: null,
-        list_form_traducteur: null,
       }).select().single();
       if (error) throw error;
       const newExt = data as ExternalTranslator;
       setExternals(prev => [...prev, newExt]);
-      setEditExternals(prev => ({ ...prev, [newExt.id]: { tag_id: '', forum_channel_id: '', list_form_traducteur: '' } }));
+      setEditExternals(prev => ({ ...prev, [newExt.id]: { tag_id: '', forum_channel_id: '' } }));
       setTranslators(prev => [...prev, { id: newExt.id, name: newExt.name || '(sans nom)', kind: 'external' as const }]);
       setSelId(newExt.id);
       setSelKind('external');
@@ -263,12 +244,11 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
     const payload = {
       tag_id: (edit.tag_id || '').trim() || null,
       forum_channel_id: (edit.forum_channel_id || '').trim() || null,
-      list_form_traducteur: (edit.list_form_traducteur || '').trim() || null,
     };
     try {
       const { error } = await sb.from('external_translators').update(payload).eq('id', extId);
       if (error) throw error;
-      setExternals(prev => prev.map(e => e.id === extId ? { ...e, tag_id: payload.tag_id ?? '', forum_channel_id: payload.forum_channel_id ?? '', list_form_traducteur: payload.list_form_traducteur ?? undefined } : e));
+      setExternals(prev => prev.map(e => e.id === extId ? { ...e, tag_id: payload.tag_id ?? '', forum_channel_id: payload.forum_channel_id ?? '' } : e));
       showToast('Routing sauvegardé', 'success');
     } catch (e: any) {
       showToast(`Erreur : ${e?.message || 'Inconnue'}`, 'error');
@@ -583,7 +563,6 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
               editMappings={editMappings}
               editExternals={editExternals}
               translatorTags={translatorTags}
-              f95TraducteurOptions={f95TraducteurOptions}
               newExtName={newExtName}
               addingExternal={addingExternal}
               setNewExtName={setNewExtName}
@@ -591,13 +570,13 @@ export default function TagsModal({ onClose }: { onClose?: () => void }) {
               onEditMapping={(profileId, field, val) =>
                 setEditMappings((prev) => ({
                   ...prev,
-                  [profileId]: { ...(prev[profileId] ?? { tag_id: '', forum_channel_id: '', list_form_traducteur: '' }), [field]: val },
+                  [profileId]: { ...(prev[profileId] ?? { tag_id: '', forum_channel_id: '' }), [field]: val },
                 }))
               }
               onEditExternal={(extId, field, val) =>
                 setEditExternals((prev) => ({
                   ...prev,
-                  [extId]: { ...(prev[extId] ?? { tag_id: '', forum_channel_id: '', list_form_traducteur: '' }), [field]: val },
+                  [extId]: { ...(prev[extId] ?? { tag_id: '', forum_channel_id: '' }), [field]: val },
                 }))
               }
               saveMapping={saveMapping}

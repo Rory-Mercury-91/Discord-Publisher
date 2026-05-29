@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { tauriAPI } from '../../../lib/tauri-api';
 import { trackTranslationClick } from '../../../lib/api-helpers';
 import type { GameF95 } from '../library-types';
@@ -21,6 +22,15 @@ interface GameRowProps {
 export default function GameRow({ game, post, onEdit, onEditEntry, onOpenDetail, onAddToCollection, isInCollection, deleteMode, selected, onToggleSelect, collectionEntry }: GameRowProps) {
   const sync = SYNC_META[game._sync!];
   const tmStyle = typeMajStyle(game.type_maj);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyTitle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const name = game.nom_du_jeu || '';
+    navigator.clipboard.writeText(name).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   return (
     <tr
@@ -50,7 +60,13 @@ export default function GameRow({ game, post, onEdit, onEditEntry, onOpenDetail,
         </td>
       )}
       <td className="library-table-td library-table-td--title">
-        <div className="library-table-cell-title library-table-cell-title--with-type">{game.nom_du_jeu}</div>
+        <div
+          className={`library-table-cell-title library-table-cell-title--with-type library-table-cell-title--copyable${copied ? ' library-table-cell-title--copied' : ''}`}
+          onClick={handleCopyTitle}
+          title={copied ? '✓ Copié !' : 'Cliquer pour copier le nom'}
+        >
+          {copied ? <span className="library-copy-feedback">✓ Copié !</span> : game.nom_du_jeu}
+        </div>
         {game.type && <div className="library-version-muted">{game.type}</div>}
         {collectionEntry?.labels && collectionEntry.labels.length > 0 && (
           <div className="library-table-labels">

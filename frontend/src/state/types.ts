@@ -47,8 +47,6 @@ export type Tag = {
   profileId?: string;               // FK vers profiles.id
   externalTranslatorId?: string;    // FK vers external_translators.id
   labelKey?: string;                // ex: 'auto', 'f95', 'abandoned'…
-  /** Nom utilisé à l'export formulaire liste (tableur) ; si vide, le nom du tag est utilisé. */
-  listFormName?: string;
 };
 
 export type PublishedPost = {

@@ -8,21 +8,20 @@ import asyncio
 import logging
 import datetime
 import random
-import os
 from zoneinfo import ZoneInfo
 
 import aiohttp
 from discord.ext import tasks
 
 from config import config
-from supabase_client import _get_supabase, _sync_jeux_to_supabase, _update_date_maj_bulk_sync
+from f95_public_api_client import fetch_public_games, fetch_public_translators, map_public_games_to_legacy_rows
+from supabase_client import (
+    _get_supabase, _sync_jeux_to_supabase,
+    _update_date_maj_bulk_sync, _relink_scraped_entries_to_catalogue,
+)
 from scraper import enrich_dates_with_fallback
 
 logger = logging.getLogger("scheduler")
-
-# URL et cle de l'API externe jeux
-F95FR_API_URL = "https://f95fr.duckdns.org/api/jeux"
-F95FR_API_KEY = os.getenv("F95FR_API_KEY", "")
 
 # Clés app_config
 _KEY_INTERVAL   = "f95_date_refresh_interval_hours"
@@ -351,25 +350,34 @@ async def daily_cleanup_empty_messages():
     datetime.time(hour=22, minute=30, tzinfo=ZoneInfo("Europe/Paris")),
 ])
 async def sync_jeux_task():
-    """Synchronise les jeux depuis f95fr vers Supabase (toutes les 2h a :30 Europe/Paris)."""
-    logger.info("[scheduler] Synchronisation jeux f95fr -> Supabase")
+    """Synchronise les jeux depuis l'API publique vers Supabase (toutes les 2h a :30 Europe/Paris)."""
+    logger.info("[scheduler] Synchronisation jeux API publique -> Supabase")
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                F95FR_API_URL,
-                headers={"X-API-KEY": F95FR_API_KEY},
-                timeout=aiohttp.ClientTimeout(total=60),
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    if isinstance(data, list) and data:
-                        loop = asyncio.get_event_loop()
-                        await loop.run_in_executor(None, _sync_jeux_to_supabase, data)
-                        logger.info("[scheduler] %d jeux synchronises dans f95_jeux", len(data))
-                    else:
-                        logger.warning("[scheduler] Reponse vide ou invalide depuis f95fr")
-                else:
-                    logger.warning("[scheduler] API f95fr HTTP %d", resp.status)
+            public_games   = await fetch_public_games(session, timeout_seconds=60)
+            translator_map = await fetch_public_translators(session, timeout_seconds=60)
+            data = map_public_games_to_legacy_rows(public_games, translator_map)
+            if isinstance(data, list) and data:
+                loop = asyncio.get_event_loop()
+                # Passer translator_map pour que _sync_jeux_to_supabase résolve
+                # correctement les noms de traducteurs via translatorId
+                await loop.run_in_executor(
+                    None, _sync_jeux_to_supabase, public_games, translator_map
+                )
+                logger.info("[scheduler] %d lignes synchronisees dans f95_jeux", len(data))
+
+                # Relie les entrées user_collection scrapées aux données catalogue
+                # pour les jeux qui viennent d'apparaître dans f95_jeux.
+                synced_site_ids = [
+                    g.get("threadId") for g in public_games
+                    if isinstance(g, dict) and g.get("threadId")
+                ]
+                if synced_site_ids:
+                    await loop.run_in_executor(
+                        None, _relink_scraped_entries_to_catalogue, synced_site_ids
+                    )
+            else:
+                logger.warning("[scheduler] Reponse vide ou invalide depuis l'API publique")
     except Exception as e:
         logger.error("[scheduler] Erreur sync jeux : %s", e)
 

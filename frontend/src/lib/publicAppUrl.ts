@@ -1,5 +1,5 @@
 import { DEFAULT_AUTH_DEEP_LINK_RESET_URL } from './authDeepLink';
-import { isTauri } from '../components/list-form-view/constants';
+import { isTauri } from './runtime';
 
 /**
  * Origine publique de l’application (frontend), pour les redirections Supabase (e-mail reset, etc.).

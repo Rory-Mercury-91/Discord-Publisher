@@ -100,7 +100,6 @@ export default function PreferenceSettings() {
           >
             <option value="translator">✍️ Traducteur</option>
             <option value="library">📚 Bibliothèque</option>
-            <option value="listform">📋 Formulaire liste</option>
           </select>
         </div>
       </section>

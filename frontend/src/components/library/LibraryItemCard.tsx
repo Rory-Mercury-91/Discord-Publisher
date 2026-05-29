@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import GameDetailModal from './GameDetailModal';
 
+
 interface LibraryItemCardProps {
   game: any;
   onLoadForEditing?: (game: any) => void;
@@ -16,6 +17,14 @@ function getEngineData(engine: string): string {
 
 export default function LibraryItemCard({ game }: LibraryItemCardProps) {
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyTitle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(title).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   const title = game.title || game.nom_du_jeu || 'Sans titre';
   const imagePath = game.image_path || game.image || '';
@@ -58,7 +67,13 @@ export default function LibraryItemCard({ game }: LibraryItemCardProps) {
           )}
         </div>
         <div className="library-item-card-content">
-          <h3 className="library-item-card-title">{title}</h3>
+          <h3
+            className={`library-item-card-title library-item-card-title--copyable${copied ? ' library-item-card-title--copied' : ''}`}
+            onClick={handleCopyTitle}
+            title={copied ? '✓ Copié !' : 'Cliquer pour copier le nom'}
+          >
+            {copied ? <span className="library-copy-feedback">✓ Copié !</span> : title}
+          </h3>
           <div className="library-item-card-meta">
             <span>🎮 {gameVersion}</span>
             <span>→</span>

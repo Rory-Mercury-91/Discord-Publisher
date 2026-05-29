@@ -47,7 +47,6 @@ export type MappingRow = {
   profile_id: string;
   tag_id: string;
   forum_channel_id: string;
-  list_form_traducteur?: string | null;
 };
 
 export type ExternalTranslator = {
@@ -55,7 +54,6 @@ export type ExternalTranslator = {
   name: string;
   tag_id: string;
   forum_channel_id: string;
-  list_form_traducteur?: string | null;
 };
 
 export type Slot = { id?: string; discordTagId: string };
@@ -82,4 +80,4 @@ export function emptyTagConfig(): TagConfig {
   };
 }
 
-export type EditRow = { tag_id: string; forum_channel_id: string; list_form_traducteur: string };
+export type EditRow = { tag_id: string; forum_channel_id: string };

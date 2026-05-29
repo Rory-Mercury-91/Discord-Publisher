@@ -31,6 +31,7 @@ async def scrape_enrich(request):
         body_params = {}
 
     force = bool(body_params.get("force", False))
+    force_scrape = bool(body_params.get("force_scrape", False))
     f95_cookies = (body_params.get("f95_cookies") or "").strip() or None
     target_ids_raw = body_params.get("target_ids")
     target_set: set[int] = set()
@@ -42,10 +43,11 @@ async def scrape_enrich(request):
                 continue
 
     logger.info(
-        "[api] /scrape/enrich lancé par %s (id=%s) force=%s target_ids=%s cookies=%s",
+        "[api] /scrape/enrich lancé par %s (id=%s) force=%s force_scrape=%s target_ids=%s cookies=%s",
         discord_name or "unknown",
         discord_user_id or "N/A",
         force,
+        force_scrape,
         len(target_set) if target_set else "tous",
         "oui" if f95_cookies else "non",
     )
@@ -65,6 +67,21 @@ async def scrape_enrich(request):
     await response.prepare(request)
 
     client_disconnected = [False]
+    stream_closed = [False]
+
+    def _to_clean_text(value) -> str:
+        """
+        Normalise une valeur DB vers une chaîne exploitable sans lever d'exception.
+        Évite notamment les cas historiques où synopsis_fr est stocké en tuple.
+        """
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, (list, tuple)):
+            parts = [str(v).strip() for v in value if v is not None and str(v).strip()]
+            return " ".join(parts).strip()
+        return str(value).strip()
 
     async def send_json(data: dict) -> bool:
         try:
@@ -84,7 +101,13 @@ async def scrape_enrich(request):
         offset = 0
         page_size = 1000
         while True:
-            res = sb.table("f95_jeux").select("id, nom_du_jeu, nom_url, site_id, synopsis_fr").order("id").range(offset, offset + page_size - 1).execute()
+            res = (
+                sb.table("f95_jeux")
+                .select("id, nom_du_jeu, nom_url, site_id, synopsis_en, synopsis_fr")
+                .order("id")
+                .range(offset, offset + page_size - 1)
+                .execute()
+            )
             batch = res.data or []
             all_jeux.extend(batch)
             if len(batch) < page_size:
@@ -93,7 +116,11 @@ async def scrape_enrich(request):
 
         if not all_jeux:
             await send_json({"log": "⚠️ Aucun jeu trouvé dans f95_jeux", "status": "completed"})
-            await response.write_eof()
+            try:
+                await response.write_eof()
+            except Exception:
+                pass
+            stream_closed[0] = True
             return response
 
         await send_json({"log": f"📊 {len(all_jeux)} ligne(s) chargée(s) depuis f95_jeux"})
@@ -101,10 +128,13 @@ async def scrape_enrich(request):
         groups: dict[str, list[dict]] = {}
         for jeu in all_jeux:
             url = (jeu.get("nom_url") or "").strip()
-            if not url or "f95zone.to" not in url.lower():
-                continue
-            norm_url = _norm_nom_url(url)
-            if not norm_url:
+            # Clé de groupement : URL normalisée si disponible, sinon id de ligne
+            if url and ("f95zone.to" in url.lower() or "lewdcorner.com" in url.lower()):
+                norm_url = _norm_nom_url(url) or url
+            elif jeu.get("id"):
+                # Pas d'URL reconnue mais synopsis_en présent → clé par id
+                norm_url = f"id:{jeu['id']}"
+            else:
                 continue
             groups.setdefault(norm_url, []).append(jeu)
 
@@ -112,7 +142,7 @@ async def scrape_enrich(request):
         for norm_url, rows in groups.items():
             if target_set and not any(int(r.get("id") or 0) in target_set for r in rows):
                 continue
-            has_fr = any((r.get("synopsis_fr") or "").strip() for r in rows)
+            has_fr = any(_to_clean_text(r.get("synopsis_fr")) for r in rows)
             if not force and not target_set and has_fr:
                 continue
             to_enrich.append((norm_url, rows))
@@ -124,7 +154,7 @@ async def scrape_enrich(request):
             return response
 
         await send_json({
-            "log": f"🎮 {total} groupe(s) à enrichir — 1 scraping + 1 traduction par groupe",
+            "log": f"🎮 {total} groupe(s) à enrichir — mode aligné API publique (scraping seulement avec force_scrape=true)",
             "progress": {"current": 0, "total": total},
         })
 
@@ -139,18 +169,32 @@ async def scrape_enrich(request):
                 if not await send_json({"progress": {"current": idx, "total": total}}):
                     break
 
-                source_url = (rows[0].get("nom_url") or "").strip()
+                source_url  = (rows[0].get("nom_url") or "").strip()
+                game_label  = rows[0].get("nom_du_jeu") or source_url or norm_url
                 try:
-                    synopsis_en = await scrape_f95_synopsis(session, source_url, cookies=f95_cookies)
+                    existing_synopsis_en = next(
+                        (_to_clean_text(r.get("synopsis_en")) for r in rows if _to_clean_text(r.get("synopsis_en"))),
+                        "",
+                    )
+                    # force_scrape jamais envoyé par l'UI — conservé comme filet de
+                    # secours admin uniquement, et uniquement pour les URLs F95Zone.
+                    if existing_synopsis_en and not force_scrape:
+                        synopsis_en = existing_synopsis_en
+                    elif force_scrape and source_url and "f95zone.to" in source_url.lower():
+                        scraped = await scrape_f95_synopsis(session, source_url, cookies=f95_cookies)
+                        synopsis_en = _to_clean_text(scraped[0] if isinstance(scraped, tuple) else scraped)
+                    else:
+                        synopsis_en = ""
+
                     if not synopsis_en:
-                        failed.append({"nom_url": source_url, "reason": "synopsis_introuvable"})
-                        await send_json({"log": f"⏭️ [{idx}/{total}] {source_url} — synopsis introuvable"})
+                        failed.append({"nom_url": source_url, "reason": "synopsis_absent_source_principale"})
+                        await send_json({"log": f"⏭️ [{idx}/{total}] {game_label} — synopsis EN absent du catalogue (sync API requise)"})
                         continue
 
                     synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
                     if not synopsis_fr:
                         failed.append({"nom_url": source_url, "reason": "traduction_echouee"})
-                        await send_json({"log": f"❌ [{idx}/{total}] {source_url} — traduction échouée"})
+                        await send_json({"log": f"❌ [{idx}/{total}] {game_label} — traduction échouée"})
                         continue
 
                     for row in rows:
@@ -164,11 +208,11 @@ async def scrape_enrich(request):
                         }).eq("id", row_id).execute()
 
                     enriched += 1
-                    await send_json({"log": f"✅ [{idx}/{total}] {source_url} — synopsis EN/FR mis à jour ({len(rows)} ligne(s))"})
+                    await send_json({"log": f"✅ [{idx}/{total}] {game_label} — synopsis FR traduit ({len(rows)} ligne(s))"})
                 except Exception as e:
                     logger.warning("[api] scrape_enrich group=%s : %s", norm_url, e)
-                    failed.append({"nom_url": source_url, "reason": str(e)})
-                    await send_json({"log": f"❌ [{idx}/{total}] {source_url} — erreur: {e}"})
+                    failed.append({"nom_url": source_url or norm_url, "reason": str(e)})
+                    await send_json({"log": f"❌ [{idx}/{total}] {game_label} — erreur: {e}"})
 
         if not client_disconnected[0]:
             await send_json({
@@ -181,7 +225,12 @@ async def scrape_enrich(request):
         logger.error("[api] Erreur enrichissement : %s", e, exc_info=True)
         await send_json({"error": str(e), "status": "error"})
     finally:
-        await response.write_eof()
+        if not stream_closed[0]:
+            try:
+                await response.write_eof()
+            except Exception:
+                # Le client peut couper la connexion pendant un stream NDJSON.
+                pass
     return response
 
 

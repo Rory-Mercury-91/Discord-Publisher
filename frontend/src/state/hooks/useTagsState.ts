@@ -13,7 +13,6 @@ type TagRow = {
   profile_id: string | null;
   external_translator_id: string | null;
   label_key: string | null;
-  list_form_name: string | null;
 };
 
 function mapRowToTag(r: TagRow): Tag {
@@ -26,7 +25,6 @@ function mapRowToTag(r: TagRow): Tag {
     profileId: r.profile_id ?? undefined,
     externalTranslatorId: r.external_translator_id ?? undefined,
     labelKey: r.label_key ?? undefined,
-    listFormName: r.list_form_name ?? undefined,
   };
 }
 
@@ -146,7 +144,7 @@ export function useTagsState() {
     if (!sb) return;
     const { data, error } = await sb
       .from('tags')
-      .select('id, name, tag_type, author_discord_id, discord_tag_id, profile_id, external_translator_id, label_key, list_form_name')
+      .select('id, name, tag_type, author_discord_id, discord_tag_id, profile_id, external_translator_id, label_key')
       .order('created_at', { ascending: true });
     if (error || !data?.length) return;
     setSavedTags((data as TagRow[]).map(mapRowToTag));

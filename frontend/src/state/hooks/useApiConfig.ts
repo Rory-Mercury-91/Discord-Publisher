@@ -11,10 +11,9 @@ function getStoredApiBase(): string {
   );
 }
 
-/** État et dérivés pour la configuration API (base URL, URL forum-post, list form). */
+/** État et dérivés pour la configuration API (base URL, URL forum-post). */
 export function useApiConfig() {
   const [apiBaseFromSupabase, setApiBaseFromSupabaseState] = useState<string | null>(null);
-  const [listFormUrl, setListFormUrl] = useState<string>('');
 
   const defaultApiBaseRaw = useMemo(
     () => apiBaseFromSupabase ?? getStoredApiBase(),
@@ -37,7 +36,5 @@ export function useApiConfig() {
     apiUrl,
     apiBaseFromSupabase,
     setApiBaseFromSupabase,
-    listFormUrl,
-    setListFormUrl
   };
 }
