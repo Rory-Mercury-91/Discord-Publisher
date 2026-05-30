@@ -418,8 +418,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           discordUrl: pubState.editingPostData.discordUrl || '',
           forumId: pubState.editingPostData.forumId ?? 0,
           templateId: templateId ?? pubState.editingPostData.templateId ?? undefined,
-          authorDiscordId: pubState.editingPostData.authorDiscordId,
-          authorExternalTranslatorId: pubState.editingPostData.authorExternalTranslatorId
+          authorDiscordId: authorExternalTranslatorId
+            ? undefined
+            : (authorDiscordId ?? pubState.editingPostData.authorDiscordId),
+          authorExternalTranslatorId: authorExternalTranslatorId ?? undefined,
         };
         formData.append('history_payload', JSON.stringify(postToRow(mergedForHistory)));
       } else {

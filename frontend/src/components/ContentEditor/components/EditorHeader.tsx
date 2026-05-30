@@ -72,7 +72,7 @@ export default function EditorHeader({
           🗑️ Vider le formulaire
         </button>
 
-        {translatorOptions.length > 1 && (
+        {(translatorOptions.length > 1 || editingPostId) && translatorOptions.length > 0 && (
           <>
             <div className="editor-toolbar__divider" />
             <div className="editor-toolbar__select-wrap">

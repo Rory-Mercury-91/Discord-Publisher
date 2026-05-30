@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getSupabase } from '../../lib/supabase';
 
 const STORAGE_KEY_MASTER_ADMIN = 'discord-publisher:master-admin-code';
@@ -15,7 +15,79 @@ export type TranslatorOption = {
  * Charge la liste des traducteurs accessibles selon les droits de l'utilisateur,
  * et mappe chaque traducteur vers son tag UUID (translator_forum_mappings / external_translators).
  */
-export function useTranslatorSelector(profileId: string | undefined) {
+export type UseTranslatorSelectorOptions = {
+  /** En édition : inclure tous les traducteurs routés vers ce salon (ex. Jupiterwing + Le Chauve). */
+  editForumChannelId?: number | string | null;
+};
+
+async function mergeTranslatorsForForum(
+  sb: ReturnType<typeof getSupabase>,
+  forumId: string,
+  opts: TranslatorOption[],
+  map: Record<string, string>,
+  validTranslatorTagIds: Set<string>
+) {
+  if (!sb || !forumId) return;
+  const existingProfileIds = new Set(opts.filter((o) => o.kind === 'profile').map((o) => o.id));
+  const existingExtIds = new Set(opts.filter((o) => o.kind === 'external').map((o) => o.id));
+
+  const { data: grantMappings } = await sb
+    .from('translator_forum_mappings')
+    .select('profile_id, tag_id')
+    .eq('forum_channel_id', forumId);
+  const grantProfileIds = [
+    ...new Set(
+      ((grantMappings ?? []) as Array<{ profile_id?: string }>)
+        .map((m) => m.profile_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    ),
+  ];
+  if (grantProfileIds.length) {
+    const missingIds = grantProfileIds.filter((id) => !existingProfileIds.has(id));
+    if (missingIds.length) {
+      const { data: grantProfiles } = await sb
+        .from('profiles')
+        .select('id, pseudo, discord_id')
+        .in('id', missingIds);
+      for (const p of (grantProfiles ?? []) as Array<{ id: string; pseudo?: string; discord_id?: string }>) {
+        opts.push({
+          id: p.id,
+          name: p.pseudo || '(sans nom)',
+          kind: 'profile',
+          discordId: p.discord_id ?? undefined,
+        });
+        existingProfileIds.add(p.id);
+      }
+    }
+    for (const m of (grantMappings ?? []) as Array<{ profile_id?: string; tag_id?: string }>) {
+      if (m.profile_id && m.tag_id && validTranslatorTagIds.has(m.tag_id)) {
+        map[m.profile_id] = m.tag_id;
+      }
+    }
+  }
+
+  const { data: grantExternals } = await sb
+    .from('external_translators')
+    .select('id, name, tag_id, forum_channel_id')
+    .eq('forum_channel_id', forumId);
+  for (const e of (grantExternals ?? []) as Array<{ id: string; name?: string; tag_id?: string }>) {
+    if (!existingExtIds.has(e.id)) {
+      opts.push({
+        id: e.id,
+        name: e.name || '(sans nom)',
+        kind: 'external',
+      });
+      existingExtIds.add(e.id);
+    }
+    if (e.tag_id && validTranslatorTagIds.has(e.tag_id)) map[e.id] = e.tag_id;
+  }
+}
+
+export function useTranslatorSelector(
+  profileId: string | undefined,
+  selectorOptions?: UseTranslatorSelectorOptions
+) {
+  const editForumChannelId = selectorOptions?.editForumChannelId;
   const [options, setOptions]       = useState<TranslatorOption[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [selectedKind, setSelectedKind] = useState<'profile' | 'external'>('profile');
@@ -89,88 +161,68 @@ export function useTranslatorSelector(profileId: string | undefined) {
           .map((g) => (g.forum_channel_id ?? '').trim())
           .filter(Boolean);
         if (grantForumIds.length > 0) {
-          const existingProfileIds = new Set(opts.filter((o) => o.kind === 'profile').map((o) => o.id));
-          const existingExtIds = new Set(opts.filter((o) => o.kind === 'external').map((o) => o.id));
-
-          const { data: grantMappings } = await sb
-            .from('translator_forum_mappings')
-            .select('profile_id, tag_id')
-            .in('forum_channel_id', grantForumIds);
-          const grantProfileIds = [
-            ...new Set(
-              ((grantMappings ?? []) as Array<{ profile_id?: string }>)
-                .map((m) => m.profile_id)
-                .filter((id): id is string => typeof id === 'string' && id.length > 0)
-            ),
-          ];
-          if (grantProfileIds.length) {
-            const missingIds = grantProfileIds.filter((id) => !existingProfileIds.has(id));
-            if (missingIds.length) {
-              const { data: grantProfiles } = await sb
-                .from('profiles')
-                .select('id, pseudo, discord_id')
-                .in('id', missingIds);
-              for (const p of (grantProfiles ?? []) as any[]) {
-                opts.push({
-                  id: p.id,
-                  name: `${p.pseudo || '(sans nom)'} (forum autorisé)`,
-                  kind: 'profile',
-                  discordId: p.discord_id ?? undefined,
-                });
-                existingProfileIds.add(p.id);
-              }
-            }
-            for (const m of (grantMappings ?? []) as any[]) {
-              if (m.tag_id && validTranslatorTagIds.has(m.tag_id)) map[m.profile_id] = m.tag_id;
-            }
-          }
-
-          const { data: grantExternals } = await sb
-            .from('external_translators')
-            .select('id, name, tag_id, forum_channel_id')
-            .in('forum_channel_id', grantForumIds);
-          for (const e of (grantExternals ?? []) as any[]) {
-            if (!existingExtIds.has(e.id)) {
-              opts.push({
-                id: e.id,
-                name: `${e.name || '(sans nom)'} (forum autorisé)`,
-                kind: 'external',
-              });
-              existingExtIds.add(e.id);
-            }
-            if (e.tag_id && validTranslatorTagIds.has(e.tag_id)) map[e.id] = e.tag_id;
+          for (const fid of grantForumIds) {
+            await mergeTranslatorsForForum(sb, fid, opts, map, validTranslatorTagIds);
           }
         }
+      }
+
+      const editForum = String(editForumChannelId ?? '').trim();
+      if (editForum) {
+        await mergeTranslatorsForForum(sb, editForum, opts, map, validTranslatorTagIds);
       }
 
       setOptions(opts);
       setTagMap(map);
 
-      // Sélection par défaut : propre profil en priorité
-      const self = opts.find(o => o.id === profileId && o.kind === 'profile');
-      const def  = self ?? opts[0];
-      if (def) { setSelectedId(def.id); setSelectedKind(def.kind); }
+      // Conserver le choix manuel ; sinon profil connecté par défaut
+      setSelectedId((prevId) => {
+        const kept = prevId ? opts.find((o) => o.id === prevId) : undefined;
+        if (kept) {
+          setSelectedKind(kept.kind);
+          return prevId;
+        }
+        const self = opts.find((o) => o.id === profileId && o.kind === 'profile');
+        const def = self ?? opts[0];
+        if (def) {
+          setSelectedKind(def.kind);
+          return def.id;
+        }
+        return prevId;
+      });
       setLoaded(true);
     })();
-  }, [profileId]);
+  }, [profileId, editForumChannelId]);
 
-  const select = (id: string) => {
-    const opt = options.find(o => o.id === id);
-    if (opt) { setSelectedId(id); setSelectedKind(opt.kind); }
-  };
+  const select = useCallback((id: string) => {
+    const opt = options.find((o) => o.id === id);
+    if (opt) {
+      setSelectedId(id);
+      setSelectedKind(opt.kind);
+    }
+  }, [options]);
 
   /** Sélectionne le traducteur correspondant à l'auteur du post (pour chargement depuis l'historique). */
-  const selectByAuthor = (authorDiscordId: string | undefined, authorExternalTranslatorId: string | undefined) => {
+  const selectByAuthor = useCallback((
+    authorDiscordId: string | undefined,
+    authorExternalTranslatorId: string | undefined
+  ) => {
     if (authorExternalTranslatorId) {
-      const opt = options.find(o => o.kind === 'external' && o.id === authorExternalTranslatorId);
-      if (opt) { setSelectedId(opt.id); setSelectedKind('external'); }
+      const opt = options.find((o) => o.kind === 'external' && o.id === authorExternalTranslatorId);
+      if (opt) {
+        setSelectedId(opt.id);
+        setSelectedKind('external');
+      }
       return;
     }
     if (authorDiscordId) {
-      const opt = options.find(o => o.kind === 'profile' && o.discordId === authorDiscordId);
-      if (opt) { setSelectedId(opt.id); setSelectedKind('profile'); }
+      const opt = options.find((o) => o.kind === 'profile' && o.discordId === authorDiscordId);
+      if (opt) {
+        setSelectedId(opt.id);
+        setSelectedKind('profile');
+      }
     }
-  };
+  }, [options]);
 
   return {
     options,

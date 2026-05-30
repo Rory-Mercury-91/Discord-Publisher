@@ -50,6 +50,12 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
   const [ownerIdsWhoAllowedMe, setOwnerIdsWhoAllowedMe] = useState<Set<string>>(
     new Set()
   );
+  /** Salons forum où le profil connecté peut publier (forum_post_grants) */
+  const [grantedForumIds, setGrantedForumIds] = useState<Set<string>>(new Set());
+  /** Traducteurs externes sur ces salons (posts transférés vers Le Chauve, etc.) */
+  const [grantedExternalAuthorIds, setGrantedExternalAuthorIds] = useState<Set<string>>(
+    new Set()
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -74,13 +80,14 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
     if (!sb || !profile?.id) return;
     (async () => {
       try {
-        const [profilesRes, externalsRes, allowedRes] = await Promise.all([
+        const [profilesRes, externalsRes, allowedRes, grantsRes] = await Promise.all([
           sb.from('profiles').select('id, pseudo, discord_id'),
           sb
             .from('external_translators')
             .select('id, name')
             .order('created_at', { ascending: true }),
           sb.from('allowed_editors').select('owner_id').eq('editor_id', profile.id),
+          sb.from('forum_post_grants').select('forum_channel_id').eq('profile_id', profile.id),
         ]);
         setAllProfilesForEdit((profilesRes.data ?? []) as ProfilePublic[]);
         setExternalTranslators((externalsRes.data ?? []) as ExternalTranslatorPublic[]);
@@ -88,10 +95,30 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
           (allowedRes.data ?? []).map((r: { owner_id: string }) => r.owner_id)
         );
         setOwnerIdsWhoAllowedMe(ids);
+
+        const forumIds = ((grantsRes.data ?? []) as Array<{ forum_channel_id?: string }>)
+          .map((g) => String(g.forum_channel_id ?? '').trim())
+          .filter(Boolean);
+        setGrantedForumIds(new Set(forumIds));
+        if (forumIds.length > 0) {
+          const { data: extOnForums } = await sb
+            .from('external_translators')
+            .select('id')
+            .in('forum_channel_id', forumIds);
+          setGrantedExternalAuthorIds(
+            new Set(
+              ((extOnForums ?? []) as Array<{ id: string }>).map((e) => e.id).filter(Boolean)
+            )
+          );
+        } else {
+          setGrantedExternalAuthorIds(new Set());
+        }
       } catch {
         setAllProfilesForEdit([]);
         setExternalTranslators([]);
         setOwnerIdsWhoAllowedMe(new Set());
+        setGrantedForumIds(new Set());
+        setGrantedExternalAuthorIds(new Set());
       }
     })();
   }, [profile?.id]);
@@ -121,7 +148,16 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
 
     if (filterAuthorId) {
       if (filterAuthorId === 'me') {
-        list = list.filter((post) => post.authorDiscordId === profile?.discord_id);
+        list = list.filter((post) => {
+          if (post.authorDiscordId && post.authorDiscordId === profile?.discord_id) return true;
+          if (
+            post.authorExternalTranslatorId &&
+            grantedExternalAuthorIds.has(post.authorExternalTranslatorId)
+          ) {
+            return true;
+          }
+          return false;
+        });
       } else if (filterAuthorId.startsWith(PREFIX_EXT)) {
         const extId = filterAuthorId.slice(PREFIX_EXT.length);
         list = list.filter((post) => post.authorExternalTranslatorId === extId);
@@ -164,14 +200,23 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
     filterAuthorId,
     profile?.discord_id,
     allProfilesForEdit,
+    grantedExternalAuthorIds,
   ]);
 
   const canEditPost = useMemo(() => {
     return (post: PublishedPost): boolean => {
-      if (post.authorExternalTranslatorId) return profile?.is_master_admin === true;
+      if (post.authorExternalTranslatorId) {
+        if (profile?.is_master_admin) return true;
+        const forumId = String(post.forumId ?? '').trim();
+        if (forumId && grantedForumIds.has(forumId)) return true;
+        if (grantedExternalAuthorIds.has(post.authorExternalTranslatorId)) return true;
+        return false;
+      }
       if (!profile?.discord_id) return false;
       if (profile.discord_id === post.authorDiscordId) return true;
       if (profile.is_master_admin) return true;
+      const forumId = String(post.forumId ?? '').trim();
+      if (forumId && grantedForumIds.has(forumId)) return true;
       const authorProfileId = allProfilesForEdit.find(
         (p) => p.discord_id === post.authorDiscordId
       )?.id;
@@ -182,6 +227,8 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
     profile?.is_master_admin,
     allProfilesForEdit,
     ownerIdsWhoAllowedMe,
+    grantedForumIds,
+    grantedExternalAuthorIds,
   ]);
 
   const transferSourceIsProfile = transferSourceId.startsWith(PREFIX_PROFILE);

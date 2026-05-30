@@ -84,7 +84,9 @@ export default function ContentEditor() {
     loaded: translatorLoaded,
     select: selectTranslator,
     selectByAuthor: selectTranslatorByAuthor,
-  } = useTranslatorSelector(profile?.id);
+  } = useTranslatorSelector(profile?.id, {
+    editForumChannelId: editingPostData?.forumId ?? null,
+  });
 
   // États locaux
   const [showTagSelector, setShowTagSelector] = useState(false);
@@ -265,6 +267,8 @@ export default function ContentEditor() {
   // ==================== REFS ====================
   const translatorInjectedRef = useRef(false);
   const prevEditingPostIdRef = useRef<string | null | undefined>(undefined);
+  /** Évite de réécraser le traducteur choisi manuellement pendant l'édition */
+  const authorTranslatorAppliedForPostRef = useRef<string | null>(null);
   const prevTemplateIdxRef = useRef(currentTemplateIdx);
 
   // ==================== USEEFFECTS ====================
@@ -315,11 +319,32 @@ export default function ContentEditor() {
     }
   }, [editingPostId, editingPostData?.savedInputs?._skip_version_check]);
 
-  // Quand on charge un post depuis l'historique : mettre « Publié pour » sur l'auteur du post (évite duplication tags traducteur)
+  // Au chargement d'un post : sélectionner l'auteur une fois (attendre que les options du salon soient chargées)
   useEffect(() => {
+    if (!editingPostId) {
+      authorTranslatorAppliedForPostRef.current = null;
+      return;
+    }
     if (!editingPostData || !translatorLoaded) return;
-    selectTranslatorByAuthor(editingPostData.authorDiscordId, editingPostData.authorExternalTranslatorId);
-  }, [editingPostData, translatorLoaded, selectTranslatorByAuthor]);
+    if (authorTranslatorAppliedForPostRef.current === editingPostId) return;
+
+    const { authorDiscordId, authorExternalTranslatorId } = editingPostData;
+    const authorResolved = authorExternalTranslatorId
+      ? translatorOptions.some((o) => o.kind === 'external' && o.id === authorExternalTranslatorId)
+      : authorDiscordId
+        ? translatorOptions.some((o) => o.kind === 'profile' && o.discordId === authorDiscordId)
+        : true;
+    if (!authorResolved) return;
+
+    selectTranslatorByAuthor(authorDiscordId, authorExternalTranslatorId);
+    authorTranslatorAppliedForPostRef.current = editingPostId;
+  }, [
+    editingPostId,
+    editingPostData,
+    translatorLoaded,
+    translatorOptions,
+    selectTranslatorByAuthor,
+  ]);
 
   // Synchronisation champ de recherche d'instructions <-> valeur de contexte
   useEffect(() => {
@@ -619,9 +644,14 @@ export default function ContentEditor() {
   };
 
   const onPublish = async (silentUpdate = false, skipVersionControl = false) => {
+    const selectedOpt = translatorOptions.find((o) => o.id === selectedTranslatorId);
+    const authorDiscordId =
+      selectedTranslatorKind === 'profile'
+        ? (selectedOpt?.discordId ?? profile?.discord_id)
+        : undefined;
     const externalIdForHistory =
       selectedTranslatorKind === 'external' ? selectedTranslatorId : undefined;
-    const res = await publishPost(profile?.discord_id, externalIdForHistory, { silentUpdate, skipVersionControl });
+    const res = await publishPost(authorDiscordId, externalIdForHistory, { silentUpdate, skipVersionControl });
     if (res?.ok) {
       showToast(editingPostId ? 'Post mis à jour !' : 'Post publié avec succès !', 'success');
       if (editingPostId) {
