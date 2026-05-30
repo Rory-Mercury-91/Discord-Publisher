@@ -41,7 +41,11 @@ def _normalize_executable_paths(raw) -> list:
             elif isinstance(item, dict):
                 path = item.get("path") or item.get("chemin") or ""
                 if path and path.strip():
-                    result.append({"path": path.strip()})
+                    entry = {"path": path.strip()}
+                    name = item.get("name") or item.get("nom") or ""
+                    if name and str(name).strip():
+                        entry["name"] = str(name).strip()
+                    result.append(entry)
         return result
     if isinstance(raw, dict):
         path = raw.get("path") or raw.get("chemin") or ""

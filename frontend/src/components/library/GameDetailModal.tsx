@@ -7,9 +7,14 @@ import { trackTranslationClick, createApiHeaders } from '../../lib/api-helpers';
 import { useToast } from '../shared/ToastProvider';
 import type { GameF95 } from './library-types';
 import type { CollectionLabel, ExecutablePathEntry } from '../../state/hooks/useCollection';
-import { normalizeExecutablePaths } from '../../state/hooks/useCollection';
+import {
+  normalizeExecutablePaths,
+  getExecutableDisplayName,
+  formatExecutableLastSession,
+} from '../../state/hooks/useCollection';
 import { useTagAvoirs } from '../../state/hooks/useTagAvoirs';
 import CollectionLabelsModal from './components/CollectionLabelsModal';
+import ExecutablePathModal from './components/ExecutablePathModal';
 
 interface GameDetailModalProps {
   game: GameF95;
@@ -47,8 +52,9 @@ export default function GameDetailModal({
 }: GameDetailModalProps) {
   const { showToast } = useToast();
   const [showLabelsModal, setShowLabelsModal] = useState(false);
+  const [executableModal, setExecutableModal] = useState<{ mode: 'add' } | { mode: 'edit'; index: number } | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  useEscapeKey(onClose, !showLabelsModal && !lightboxOpen);
+  useEscapeKey(onClose, !showLabelsModal && !lightboxOpen && !executableModal);
   useEscapeKey(() => setLightboxOpen(false), lightboxOpen);
   useModalScrollLock();
 
@@ -60,6 +66,18 @@ export default function GameDetailModal({
   );
   useEffect(() => { setDetailLabels(collectionEntry?.labels ?? []); }, [collectionEntry?.labels]);
   useEffect(() => { setDetailExecutablePaths(normalizeExecutablePaths(collectionEntry?.executable_paths)); }, [collectionEntry?.executable_paths]);
+
+  /** Sauvegarde silencieuse (pas de refresh collection) pour rester sur la modale détail. */
+  const saveExecutablePaths = useCallback(async (next: ExecutablePathEntry[]) => {
+    if (!collectionEntry || !onUpdateExecutablePaths) return { ok: false as const, error: 'Non disponible' };
+    setDetailExecutablePaths(next);
+    const res = await onUpdateExecutablePaths(collectionEntry.id, next);
+    if (!res.ok) {
+      setDetailExecutablePaths(normalizeExecutablePaths(collectionEntry.executable_paths));
+      showToast(res.error ?? 'Erreur lors de la mise à jour.', 'error');
+    }
+    return res;
+  }, [collectionEntry, onUpdateExecutablePaths, showToast]);
 
   const [synopsisFr, setSynopsisFr] = useState<string>(() => game.synopsis_fr ?? '');
   const [synopsisEn, setSynopsisEn] = useState<string>(() => game.synopsis_en ?? '');
@@ -479,38 +497,49 @@ export default function GameDetailModal({
                   ) : (
                     <ul className="library-detail-executables-items">
                       {detailExecutablePaths.map((entry, i) => (
-                        <li key={i} className="library-detail-executable-item">
+                        <li
+                          key={`${entry.path}-${i}`}
+                          className="library-detail-executable-item"
+                          title={entry.path}
+                        >
                           <div className="library-detail-executable-item-body">
-                            <p className="library-detail-executable-last-session">
-                              Dernière session :{' '}
-                              {entry.last_launch
-                                ? new Date(entry.last_launch).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
-                                : 'Jamais'}
+                            <p className="library-detail-executable-summary">
+                              <span className="library-detail-executable-display-name">
+                                {getExecutableDisplayName(entry)}
+                              </span>
+                              <span className="library-detail-executable-summary-sep"> : </span>
+                              <span className="library-detail-executable-session">
+                                {formatExecutableLastSession(entry.last_launch)}
+                              </span>
                             </p>
-                            <span className="library-detail-executable-path" title={entry.path}>{entry.path}</span>
                           </div>
                           <button
                             type="button"
                             className="library-detail-executable-launch"
                             onClick={async () => {
                               const res = await tauriAPI.openPath(entry.path);
-                              if (!res.ok) { alert(res.error ?? "Impossible de lancer l'exécutable."); return; }
-                              const next = detailExecutablePaths.map((e, j) => j === i ? { ...e, last_launch: new Date().toISOString() } : e);
-                              setDetailExecutablePaths(next);
-                              await onUpdateExecutablePaths(collectionEntry.id, next);
+                              if (!res.ok) { showToast(res.error ?? "Impossible de lancer l'exécutable.", 'error'); return; }
+                              const next = detailExecutablePaths.map((e, j) =>
+                                j === i ? { ...e, last_launch: new Date().toISOString() } : e
+                              );
+                              void saveExecutablePaths(next);
                             }}
                             title="Lancer l'exécutable"
                           >▶️</button>
                           <button
                             type="button"
+                            className="library-detail-executable-edit"
+                            onClick={() => setExecutableModal({ mode: 'edit', index: i })}
+                            title="Modifier"
+                          >✏️</button>
+                          <button
+                            type="button"
                             className="library-detail-executable-remove"
-                            onClick={async () => {
+                            onClick={() => {
                               const next = detailExecutablePaths.filter((_, j) => j !== i);
-                              setDetailExecutablePaths(next);
-                              await onUpdateExecutablePaths(collectionEntry.id, next);
-                              onLabelsUpdated?.();
+                              void saveExecutablePaths(next);
                             }}
-                            title="Retirer ce chemin"
+                            title="Retirer"
                           >🗑️</button>
                         </li>
                       ))}
@@ -519,24 +548,7 @@ export default function GameDetailModal({
                   <button
                     type="button"
                     className="library-detail-executable-add form-btn form-btn--secondary"
-                    onClick={async () => {
-                      const win = window as unknown as {
-                        __TAURI__?: { dialog?: { open: (opts: unknown) => Promise<string | string[] | null> } };
-                        __TAURI_PLUGIN_DIALOG__?: { open: (opts: unknown) => Promise<string | string[] | null> };
-                      };
-                      const dialogOpen = win.__TAURI__?.dialog?.open ?? win.__TAURI_PLUGIN_DIALOG__?.open;
-                      if (!dialogOpen) { alert('Sélection de fichier non disponible.'); return; }
-                      try {
-                        const selected = await dialogOpen({ title: 'Choisir un exécutable', filters: [{ name: 'Exécutables', extensions: ['exe', 'bat', 'cmd'] }, { name: 'Tous', extensions: ['*'] }], multiple: false, directory: false });
-                        if (selected && typeof selected === 'string') {
-                          const next = [...detailExecutablePaths, { path: selected, last_launch: null }];
-                          setDetailExecutablePaths(next);
-                          const res = await onUpdateExecutablePaths(collectionEntry.id, next);
-                          if (res.ok) onLabelsUpdated?.();
-                          else alert(res.error ?? "Erreur lors de l'ajout.");
-                        }
-                      } catch (e) { console.warn('Dialog exécutable:', e); }
-                    }}
+                    onClick={() => setExecutableModal({ mode: 'add' })}
                   >➕ Ajouter un exécutable</button>
                 </div>
               </div>
@@ -623,6 +635,23 @@ export default function GameDetailModal({
           <button type="button" className="game-lightbox__close" onClick={() => setLightboxOpen(false)} title="Fermer">✕</button>
           <img src={game.image} alt={game.nom_du_jeu ?? 'Image du jeu'} className="game-lightbox__img" onClick={e => e.stopPropagation()} />
         </div>
+      )}
+
+      {/* Modale exécutable (ajout / édition) */}
+      {executableModal && collectionEntry && onUpdateExecutablePaths && (
+        <ExecutablePathModal
+          gameTitle={game.nom_du_jeu ?? ''}
+          mode={executableModal.mode}
+          initial={executableModal.mode === 'edit' ? detailExecutablePaths[executableModal.index] : undefined}
+          onClose={() => setExecutableModal(null)}
+          onConfirm={async (entry) => {
+            const next =
+              executableModal.mode === 'add'
+                ? [...detailExecutablePaths, entry]
+                : detailExecutablePaths.map((e, j) => (j === executableModal.index ? entry : e));
+            return saveExecutablePaths(next);
+          }}
+        />
       )}
 
       {/* Modale labels */}

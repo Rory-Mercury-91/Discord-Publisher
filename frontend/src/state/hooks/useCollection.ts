@@ -11,8 +11,22 @@ import { useAuth } from '../authContext';
 /** Label personnalisé (comme Nexus) */
 export type CollectionLabel = { label: string; color: string };
 
-/** Entrée d'un chemin exécutable avec date de dernière session */
-export type ExecutablePathEntry = { path: string; last_launch?: string | null };
+/** Entrée d'un chemin exécutable avec nom personnalisé et date de dernière session */
+export type ExecutablePathEntry = { path: string; name?: string | null; last_launch?: string | null };
+
+/** Libellé affiché pour un exécutable (nom personnalisé ou nom de fichier). */
+export function getExecutableDisplayName(entry: ExecutablePathEntry): string {
+  const name = entry.name?.trim();
+  if (name) return name;
+  const normalized = entry.path.replace(/\\/g, '/');
+  return normalized.split('/').pop() ?? entry.path;
+}
+
+/** Texte « dernière session » pour l'affichage liste. */
+export function formatExecutableLastSession(lastLaunch?: string | null): string {
+  if (!lastLaunch) return 'Jamais';
+  return new Date(lastLaunch).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+}
 
 /** Normalise executable_paths (string[] ou ancien format → ExecutablePathEntry[]) */
 export function normalizeExecutablePaths(
@@ -21,8 +35,12 @@ export function normalizeExecutablePaths(
   if (!raw || !Array.isArray(raw)) return [];
   return raw.map((item) =>
     typeof item === 'string'
-      ? { path: item, last_launch: null }
-      : { path: item.path, last_launch: item.last_launch ?? null }
+      ? { path: item, name: null, last_launch: null }
+      : {
+          path: item.path,
+          name: item.name?.trim() || null,
+          last_launch: item.last_launch ?? null,
+        }
   );
 }
 
