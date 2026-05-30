@@ -6573,8 +6573,40 @@ textarea.form-textarea {
   border-radius: 0 0 12px 12px;
 }
 .library-executable-modal-footer .form-btn {
-  padding: 6px 14px;
+  padding: 6px  14px;
   font-size: 13px;
+}
+.forum-post-grants-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.forum-post-grants-list__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.forum-post-grants-list__text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.forum-post-grants-list__text code {
+  font-size: 12px;
+}
+.forum-post-grants-list__remove {
+  flex-shrink: 0;
+  padding: 4px 8px;
 }
 .library-detail-executable-add {
   align-self: flex-start;

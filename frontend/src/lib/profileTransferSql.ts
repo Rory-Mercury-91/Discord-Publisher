@@ -64,6 +64,15 @@ BEGIN
   DELETE FROM translator_forum_mappings WHERE profile_id = new_id;
   UPDATE translator_forum_mappings SET profile_id = new_id WHERE profile_id = old_id;
 
+  DELETE FROM forum_post_grants g_new
+  WHERE g_new.profile_id = new_id
+    AND EXISTS (
+      SELECT 1 FROM forum_post_grants g_old
+      WHERE g_old.profile_id = old_id
+        AND g_old.forum_channel_id IS NOT DISTINCT FROM g_new.forum_channel_id
+    );
+  UPDATE forum_post_grants SET profile_id = new_id WHERE profile_id = old_id;
+
   UPDATE tags SET profile_id = new_id WHERE profile_id = old_id;
 
   UPDATE profiles AS p

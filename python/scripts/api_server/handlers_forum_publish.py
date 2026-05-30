@@ -30,6 +30,7 @@ from forum_manager import (
     _strip_image_url_from_content,
 )
 from supabase_client import (
+    _check_forum_post_permission_sync,
     _delete_from_supabase_sync,
     _fetch_post_by_thread_id_sync,
     _get_supabase,
@@ -71,7 +72,7 @@ def _save_post_to_supabase(result: dict, title: str, content: str, tags: str, fo
 
 
 async def forum_post(request):
-    is_valid, _, _, is_legacy = await _auth_request(request, "/api/forum-post")
+    is_valid, discord_user_id, _, is_legacy = await _auth_request(request, "/api/forum-post")
     if not is_valid:
         return with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     if not config.FORUM_MY_ID:
@@ -109,6 +110,19 @@ async def forum_post(request):
             history_payload_raw = (await part.text()).strip()
 
     forum_id = int(received_forum_id) if received_forum_id else config.FORUM_MY_ID
+    loop = asyncio.get_event_loop()
+    perm = await loop.run_in_executor(
+        None,
+        _check_forum_post_permission_sync,
+        discord_user_id,
+        forum_id,
+        is_legacy,
+    )
+    if not perm.get("ok"):
+        return with_cors(
+            request,
+            web.json_response({"ok": False, "error": perm.get("error", "Acces refuse")}, status=403),
+        )
     async with aiohttp.ClientSession() as session:
         ok, result = await _create_forum_post(session, forum_id, title, content, tags, [], metadata_b64)
         if ok and config.PUBLISHER_ANNOUNCE_CHANNEL_ID:
@@ -135,7 +149,7 @@ async def forum_post(request):
 
 
 async def forum_post_update(request):
-    is_valid, _, _, is_legacy = await _auth_request(request, "/api/forum-post/update")
+    is_valid, discord_user_id, _, is_legacy = await _auth_request(request, "/api/forum-post/update")
     if not is_valid:
         return with_cors(request, web.json_response({"ok": False, "error": "Invalid API key"}, status=401))
     if not config.FORUM_MY_ID:
@@ -185,6 +199,19 @@ async def forum_post_update(request):
         return with_cors(request, web.json_response({"ok": False, "error": "threadId and messageId required"}, status=400))
 
     target_forum_id = int(received_forum_id) if received_forum_id else config.FORUM_MY_ID
+    loop = asyncio.get_event_loop()
+    perm = await loop.run_in_executor(
+        None,
+        _check_forum_post_permission_sync,
+        discord_user_id,
+        target_forum_id,
+        is_legacy,
+    )
+    if not perm.get("ok"):
+        return with_cors(
+            request,
+            web.json_response({"ok": False, "error": perm.get("error", "Acces refuse")}, status=403),
+        )
     reroute_info = None
 
     async with aiohttp.ClientSession() as session:

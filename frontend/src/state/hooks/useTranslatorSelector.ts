@@ -79,6 +79,68 @@ export function useTranslatorSelector(profileId: string | undefined) {
           for (const m of (mappings ?? []) as any[])
             if (m.tag_id && validTranslatorTagIds.has(m.tag_id)) map[m.profile_id] = m.tag_id;
         }
+
+        // Autorisations explicites de publication sur un salon forum
+        const { data: grants } = await sb
+          .from('forum_post_grants')
+          .select('forum_channel_id')
+          .eq('profile_id', profileId);
+        const grantForumIds = ((grants ?? []) as Array<{ forum_channel_id?: string | null }>)
+          .map((g) => (g.forum_channel_id ?? '').trim())
+          .filter(Boolean);
+        if (grantForumIds.length > 0) {
+          const existingProfileIds = new Set(opts.filter((o) => o.kind === 'profile').map((o) => o.id));
+          const existingExtIds = new Set(opts.filter((o) => o.kind === 'external').map((o) => o.id));
+
+          const { data: grantMappings } = await sb
+            .from('translator_forum_mappings')
+            .select('profile_id, tag_id')
+            .in('forum_channel_id', grantForumIds);
+          const grantProfileIds = [
+            ...new Set(
+              ((grantMappings ?? []) as Array<{ profile_id?: string }>)
+                .map((m) => m.profile_id)
+                .filter((id): id is string => typeof id === 'string' && id.length > 0)
+            ),
+          ];
+          if (grantProfileIds.length) {
+            const missingIds = grantProfileIds.filter((id) => !existingProfileIds.has(id));
+            if (missingIds.length) {
+              const { data: grantProfiles } = await sb
+                .from('profiles')
+                .select('id, pseudo, discord_id')
+                .in('id', missingIds);
+              for (const p of (grantProfiles ?? []) as any[]) {
+                opts.push({
+                  id: p.id,
+                  name: `${p.pseudo || '(sans nom)'} (forum autorisé)`,
+                  kind: 'profile',
+                  discordId: p.discord_id ?? undefined,
+                });
+                existingProfileIds.add(p.id);
+              }
+            }
+            for (const m of (grantMappings ?? []) as any[]) {
+              if (m.tag_id && validTranslatorTagIds.has(m.tag_id)) map[m.profile_id] = m.tag_id;
+            }
+          }
+
+          const { data: grantExternals } = await sb
+            .from('external_translators')
+            .select('id, name, tag_id, forum_channel_id')
+            .in('forum_channel_id', grantForumIds);
+          for (const e of (grantExternals ?? []) as any[]) {
+            if (!existingExtIds.has(e.id)) {
+              opts.push({
+                id: e.id,
+                name: `${e.name || '(sans nom)'} (forum autorisé)`,
+                kind: 'external',
+              });
+              existingExtIds.add(e.id);
+            }
+            if (e.tag_id && validTranslatorTagIds.has(e.tag_id)) map[e.id] = e.tag_id;
+          }
+        }
       }
 
       setOptions(opts);

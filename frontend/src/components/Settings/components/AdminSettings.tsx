@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getSupabase } from '../../../lib/supabase';
 import { generateProfileTransferSql } from '../../../lib/profileTransferSql';
+import ForumPostGrantsSection from './ForumPostGrantsSection';
 import { createApiHeaders } from '../../../lib/api-helpers';
 import { useApp } from '../../../state/appContext';
 import { useToast } from '../../shared/ToastProvider';
@@ -421,6 +422,7 @@ function AdminAccountMigrationSection() {
             </div>
           </section>
 
+          <ForumPostGrantsSection />
           <AdminAccountMigrationSection />
         </>
       ) : (

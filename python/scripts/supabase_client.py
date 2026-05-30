@@ -104,6 +104,233 @@ def _delete_from_supabase_sync(thread_id: str = None, post_id: str = None) -> bo
         return False
 
 
+def _norm_forum_channel_id(forum_channel_id) -> str:
+    return str(forum_channel_id or "").strip()
+
+
+def _profile_can_post_on_forum_sync(profile_id: str, forum_channel_id: str) -> bool:
+    """Vérifie si un profil peut publier sur un salon forum (mapping, grant ou éditeur)."""
+    sb = _get_supabase()
+    if not sb or not profile_id or not forum_channel_id:
+        return False
+    forum = _norm_forum_channel_id(forum_channel_id)
+    if not forum:
+        return False
+    try:
+        prof = (
+            sb.table("profiles")
+            .select("is_master_admin")
+            .eq("id", profile_id)
+            .limit(1)
+            .execute()
+        )
+        if prof.data and prof.data[0].get("is_master_admin"):
+            return True
+
+        own_map = (
+            sb.table("translator_forum_mappings")
+            .select("id")
+            .eq("profile_id", profile_id)
+            .eq("forum_channel_id", forum)
+            .limit(1)
+            .execute()
+        )
+        if own_map.data:
+            return True
+
+        grant = (
+            sb.table("forum_post_grants")
+            .select("id")
+            .eq("profile_id", profile_id)
+            .eq("forum_channel_id", forum)
+            .limit(1)
+            .execute()
+        )
+        if grant.data:
+            return True
+
+        editors = (
+            sb.table("allowed_editors")
+            .select("owner_id")
+            .eq("editor_id", profile_id)
+            .execute()
+        )
+        owner_ids = [r["owner_id"] for r in (editors.data or []) if r.get("owner_id")]
+        if owner_ids:
+            owner_maps = (
+                sb.table("translator_forum_mappings")
+                .select("id")
+                .in_("profile_id", owner_ids)
+                .eq("forum_channel_id", forum)
+                .limit(1)
+                .execute()
+            )
+            if owner_maps.data:
+                return True
+        return False
+    except Exception as e:
+        logger.error("[supabase] _profile_can_post_on_forum_sync : %s", e)
+        return False
+
+
+def _check_forum_post_permission_sync(
+    discord_user_id: Optional[str],
+    forum_channel_id,
+    is_legacy: bool = False,
+) -> Dict:
+    """Contrôle d'accès publication forum (clé API personnelle)."""
+    if is_legacy:
+        return {"ok": True}
+    if not discord_user_id:
+        return {"ok": False, "error": "Cle API sans utilisateur associe — publication refusee"}
+    forum = _norm_forum_channel_id(forum_channel_id)
+    if not forum:
+        return {"ok": False, "error": "Salon forum invalide"}
+    sb = _get_supabase()
+    if not sb:
+        return {"ok": False, "error": "Supabase non configure"}
+    try:
+        res = (
+            sb.table("profiles")
+            .select("id, is_master_admin")
+            .eq("discord_id", discord_user_id)
+            .limit(1)
+            .execute()
+        )
+        if not res.data:
+            return {"ok": False, "error": "Profil introuvable pour cette cle API"}
+        profile_id = res.data[0]["id"]
+        if _profile_can_post_on_forum_sync(profile_id, forum):
+            return {"ok": True, "profile_id": profile_id}
+        return {
+            "ok": False,
+            "error": "Vous n'avez pas l'autorisation de publier sur ce salon forum. Contactez un administrateur.",
+        }
+    except Exception as e:
+        logger.error("[supabase] _check_forum_post_permission_sync : %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+def _list_forum_post_grants_sync(profile_id: Optional[str] = None) -> Dict:
+    sb = _get_supabase()
+    if not sb:
+        return {"ok": False, "error": "Supabase non configure"}
+    try:
+        q = sb.table("forum_post_grants").select(
+            "id, profile_id, forum_channel_id, created_at, granted_by_profile_id"
+        )
+        if profile_id:
+            q = q.eq("profile_id", profile_id.strip())
+        res = q.order("created_at", desc=True).execute()
+        return {"ok": True, "grants": res.data or []}
+    except Exception as e:
+        err = str(e)
+        if "forum_post_grants" in err and ("does not exist" in err or "PGRST205" in err):
+            return {"ok": False, "error": "Table forum_post_grants absente — executez la migration Supabase"}
+        logger.error("[supabase] _list_forum_post_grants_sync : %s", e)
+        return {"ok": False, "error": err}
+
+
+def _list_known_forum_channels_sync() -> Dict:
+    sb = _get_supabase()
+    if not sb:
+        return {"ok": False, "error": "Supabase non configure"}
+    channels: Dict[str, dict] = {}
+    try:
+        maps = sb.table("translator_forum_mappings").select(
+            "forum_channel_id, profile_id"
+        ).execute()
+        pseudo_by_id: Dict[str, str] = {}
+        profile_ids = list({
+            row.get("profile_id")
+            for row in (maps.data or [])
+            if row.get("profile_id")
+        })
+        if profile_ids:
+            prof_res = (
+                sb.table("profiles")
+                .select("id, pseudo")
+                .in_("id", profile_ids)
+                .execute()
+            )
+            for p in prof_res.data or []:
+                pseudo_by_id[p["id"]] = (p.get("pseudo") or "").strip()
+        for row in maps.data or []:
+            fid = _norm_forum_channel_id(row.get("forum_channel_id"))
+            if not fid:
+                continue
+            pid = row.get("profile_id")
+            pseudo = pseudo_by_id.get(pid, "") if pid else ""
+            label = f"{pseudo} ({fid})" if pseudo else fid
+            channels[fid] = {"forum_channel_id": fid, "label": label}
+        exts = sb.table("external_translators").select("forum_channel_id, name").execute()
+        for row in exts.data or []:
+            fid = _norm_forum_channel_id(row.get("forum_channel_id"))
+            if not fid:
+                continue
+            name = (row.get("name") or "").strip()
+            label = f"{name} ({fid})" if name else fid
+            if fid not in channels:
+                channels[fid] = {"forum_channel_id": fid, "label": label}
+        items = sorted(channels.values(), key=lambda x: x["label"].lower())
+        return {"ok": True, "forums": items}
+    except Exception as e:
+        logger.error("[supabase] _list_known_forum_channels_sync : %s", e)
+        return {"ok": False, "error": str(e)}
+
+
+def _add_forum_post_grant_sync(
+    profile_id: str,
+    forum_channel_id: str,
+    granted_by_profile_id: Optional[str] = None,
+) -> Dict:
+    sb = _get_supabase()
+    if not sb:
+        return {"ok": False, "error": "Supabase non configure"}
+    pid = (profile_id or "").strip()
+    forum = _norm_forum_channel_id(forum_channel_id)
+    if not pid or not forum:
+        return {"ok": False, "error": "profile_id et forum_channel_id requis"}
+    try:
+        prof = sb.table("profiles").select("id").eq("id", pid).limit(1).execute()
+        if not prof.data:
+            return {"ok": False, "error": "Profil introuvable"}
+        payload = {
+            "profile_id": pid,
+            "forum_channel_id": forum,
+            "granted_by_profile_id": (granted_by_profile_id or "").strip() or None,
+        }
+        res = sb.table("forum_post_grants").upsert(
+            payload,
+            on_conflict="profile_id,forum_channel_id",
+        ).execute()
+        row = res.data[0] if res.data else payload
+        return {"ok": True, "grant": row}
+    except Exception as e:
+        err = str(e)
+        if "forum_post_grants" in err and ("does not exist" in err or "PGRST205" in err):
+            return {"ok": False, "error": "Table forum_post_grants absente — executez la migration Supabase"}
+        logger.error("[supabase] _add_forum_post_grant_sync : %s", e)
+        return {"ok": False, "error": err}
+
+
+def _delete_forum_post_grant_sync(grant_id: str) -> Dict:
+    sb = _get_supabase()
+    if not sb:
+        return {"ok": False, "error": "Supabase non configure"}
+    gid = (grant_id or "").strip()
+    if not gid:
+        return {"ok": False, "error": "id requis"}
+    try:
+        res = sb.table("forum_post_grants").delete().eq("id", gid).execute()
+        if not res.data:
+            return {"ok": False, "error": "Autorisation introuvable"}
+        return {"ok": True}
+    except Exception as e:
+        logger.error("[supabase] _delete_forum_post_grant_sync : %s", e)
+        return {"ok": False, "error": str(e)}
+
+
 def _transfer_post_ownership_sync(
     source_author_discord_id: Optional[str] = None,
     source_author_external_id: Optional[str] = None,
@@ -933,6 +1160,13 @@ def _delete_account_data_sync(user_id: str) -> dict:
         results["allowed_editors"] = f"erreur: {e}"
         logger.warning("[supabase] delete_account allowed_editors : %s", e)
 
+    try:
+        sb.table("forum_post_grants").delete().eq("profile_id", user_id).execute()
+        results["forum_post_grants"] = "ok"
+    except Exception as e:
+        results["forum_post_grants"] = f"erreur: {e}"
+        logger.warning("[supabase] delete_account forum_post_grants : %s", e)
+
     # owner_data (instructions + templates du profil)
     try:
         sb.table("owner_data").delete().eq("owner_type", "profile").eq("owner_id", user_id).execute()
@@ -1043,6 +1277,13 @@ def _transfer_profile_data_sync(old_profile_id: str, new_profile_id: str) -> Dic
         details["translator_forum_mappings"] = "ok"
     except Exception as e:
         details["translator_forum_mappings"] = f"erreur: {e}"
+
+    try:
+        sb.table("forum_post_grants").delete().eq("profile_id", new_id).execute()
+        sb.table("forum_post_grants").update({"profile_id": new_id}).eq("profile_id", old_id).execute()
+        details["forum_post_grants"] = "ok"
+    except Exception as e:
+        details["forum_post_grants"] = f"erreur: {e}"
 
     try:
         # tags

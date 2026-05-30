@@ -6,8 +6,12 @@ from aiohttp import web
 
 from api_key_auth import _auth_request
 from supabase_client import (
+    _add_forum_post_grant_sync,
     _delete_account_data_sync,
+    _delete_forum_post_grant_sync,
     _get_supabase,
+    _list_forum_post_grants_sync,
+    _list_known_forum_channels_sync,
     _transfer_post_ownership_sync,
     _transfer_profile_data_sync,
 )
@@ -329,6 +333,122 @@ async def transfer_ownership(request):
         return with_cors(request, web.json_response({"ok": False, "error": result.get("error", "Erreur")}, status=status))
     logger.info("[api] Transfert propriété : %d post(s) par %s (admin=%s)", result.get("count", 0), discord_user_id, is_admin)
     return with_cors(request, web.json_response({"ok": True, "count": result.get("count", 0)}))
+
+
+async def _require_master_admin(request, route: str):
+    """Retourne (ok, discord_user_id, profile_id, error_response)."""
+    is_valid, discord_user_id, _, is_legacy = await _auth_request(request, route)
+    if not is_valid or is_legacy or not discord_user_id:
+        return False, None, None, with_cors(
+            request, web.json_response({"ok": False, "error": "Accès refusé"}, status=403)
+        )
+    sb = _get_supabase()
+    if not sb:
+        return False, None, None, with_cors(
+            request, web.json_response({"ok": False, "error": "Supabase non configuré"}, status=500)
+        )
+    try:
+        res = (
+            sb.table("profiles")
+            .select("id, is_master_admin")
+            .eq("discord_id", discord_user_id)
+            .limit(1)
+            .execute()
+        )
+        if not res.data or not res.data[0].get("is_master_admin"):
+            return False, None, None, with_cors(
+                request, web.json_response({"ok": False, "error": "Droits insuffisants"}, status=403)
+            )
+        return True, discord_user_id, res.data[0]["id"], None
+    except Exception as error:
+        logger.error("[api] Vérification master_admin (%s): %s", route, error)
+        return False, None, None, with_cors(
+            request, web.json_response({"ok": False, "error": str(error)}, status=500)
+        )
+
+
+async def admin_forum_post_grants_list(request):
+    ok, _, _, err_resp = await _require_master_admin(request, "/api/admin/forum-post-grants")
+    if not ok:
+        return err_resp
+    profile_id = (request.query.get("profile_id") or "").strip() or None
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _list_forum_post_grants_sync, profile_id)
+    if not result.get("ok"):
+        return with_cors(
+            request, web.json_response({"ok": False, "error": result.get("error", "Erreur")}, status=400)
+        )
+    return with_cors(request, web.json_response({"ok": True, "grants": result.get("grants", [])}))
+
+
+async def admin_forum_channels_list(request):
+    ok, _, _, err_resp = await _require_master_admin(request, "/api/admin/forum-channels")
+    if not ok:
+        return err_resp
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _list_known_forum_channels_sync)
+    if not result.get("ok"):
+        return with_cors(
+            request, web.json_response({"ok": False, "error": result.get("error", "Erreur")}, status=400)
+        )
+    return with_cors(request, web.json_response({"ok": True, "forums": result.get("forums", [])}))
+
+
+async def admin_forum_post_grants_add(request):
+    ok, _, granter_profile_id, err_resp = await _require_master_admin(request, "/api/admin/forum-post-grants")
+    if not ok:
+        return err_resp
+    try:
+        body = await request.json()
+    except Exception:
+        return with_cors(request, web.json_response({"ok": False, "error": "Body JSON invalide"}, status=400))
+    profile_id = (body.get("profile_id") or "").strip()
+    forum_channel_id = (body.get("forum_channel_id") or "").strip()
+    if not profile_id or not forum_channel_id:
+        return with_cors(
+            request,
+            web.json_response({"ok": False, "error": "profile_id et forum_channel_id requis"}, status=400),
+        )
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        _add_forum_post_grant_sync,
+        profile_id,
+        forum_channel_id,
+        granter_profile_id,
+    )
+    if not result.get("ok"):
+        return with_cors(
+            request, web.json_response({"ok": False, "error": result.get("error", "Erreur")}, status=400)
+        )
+    logger.info(
+        "[api] Grant forum post : profile=%s forum=%s par %s",
+        profile_id,
+        forum_channel_id,
+        granter_profile_id,
+    )
+    return with_cors(request, web.json_response({"ok": True, "grant": result.get("grant")}))
+
+
+async def admin_forum_post_grants_delete(request):
+    ok, _, _, err_resp = await _require_master_admin(request, "/api/admin/forum-post-grants")
+    if not ok:
+        return err_resp
+    try:
+        body = await request.json()
+    except Exception:
+        return with_cors(request, web.json_response({"ok": False, "error": "Body JSON invalide"}, status=400))
+    grant_id = (body.get("id") or "").strip()
+    if not grant_id:
+        return with_cors(request, web.json_response({"ok": False, "error": "id requis"}, status=400))
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _delete_forum_post_grant_sync, grant_id)
+    if not result.get("ok"):
+        status = 404 if result.get("error") == "Autorisation introuvable" else 400
+        return with_cors(
+            request, web.json_response({"ok": False, "error": result.get("error", "Erreur")}, status=status)
+        )
+    return with_cors(request, web.json_response({"ok": True}))
 
 
 async def admin_profile_transfer(request):
