@@ -19,6 +19,7 @@ import aiohttp
 import discord
 
 from config import config
+from image_utils import extract_image_urls_from_text
 from content_parser import (
     _RE_GAME_VERSION_MD, _RE_GAME_VERSION_PLAIN,
     _RE_GAME_LINK_MD, _RE_GAME_LINK_PLAIN,
@@ -458,11 +459,7 @@ async def _create_forum_post(
 ):
     applied_tag_ids = await _resolve_applied_tag_ids(session, forum_id, tags_raw)
 
-    image_exts = r"(?:jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)"
-    image_url_pattern = re.compile(
-        rf"https?://[^\s<>\"']+\.{image_exts}(?:\?[^\s<>\"']*)?", re.IGNORECASE
-    )
-    image_urls_full = [m.group(0) for m in image_url_pattern.finditer(content or "")]
+    image_urls_full = extract_image_urls_from_text(content or "")
 
     final_content = content or " "
     use_attachment = False

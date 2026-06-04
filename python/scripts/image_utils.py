@@ -3,8 +3,17 @@ Utilitaires de conversion et de génération de balises pour les images F95Zone 
 Module sans dépendances externes — importable partout.
 """
 
+import re
 from html import escape
-from typing import Optional
+from typing import List, Optional
+
+# Extensions reconnues dans les URLs d'images (publication Discord)
+_IMAGE_EXTS = r"(?:jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)"
+# Chemin optionnel après l'extension (ex. Fandom/Wikia « …/image.png/revision/latest ») puis query string
+_IMAGE_URL_RE = re.compile(
+    rf"https?://[^\s<>\"']+\.{_IMAGE_EXTS}(?:/[^\s<>\"'?]+)?(?:\?[^\s<>\"']*)?",
+    re.IGNORECASE,
+)
 
 
 # ── Tables de remplacement de domaines ───────────────────────────────────────
@@ -16,6 +25,22 @@ _PREVIEW_TO_ATTACH: dict[str, str] = {
 
 
 # ── Fonctions publiques ───────────────────────────────────────────────────────
+
+def extract_image_urls_from_text(content: str) -> List[str]:
+    """
+    Extrait les URLs d'images HTTP(S) présentes dans un texte (contenu de post Discord).
+
+    Gère les CDN avec segment de chemin après l'extension, par ex. Fandom/Wikia :
+    …/cover.png/revision/latest?cb=…&path-prefix=fr
+
+    >>> url = "https://static.wikia.nocookie.net/x/a.png/revision/latest?cb=1&path-prefix=fr"
+    >>> extract_image_urls_from_text("voir " + url)
+    ['https://static.wikia.nocookie.net/x/a.png/revision/latest?cb=1&path-prefix=fr']
+    """
+    if not content:
+        return []
+    return [m.group(0) for m in _IMAGE_URL_RE.finditer(content)]
+
 
 def convert_image_url(url: str) -> str:
     """

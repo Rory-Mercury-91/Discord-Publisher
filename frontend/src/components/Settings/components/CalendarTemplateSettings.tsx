@@ -3,6 +3,7 @@ import Toggle from '../../shared/Toggle';
 import { useAuth } from '../../../state/authContext';
 import { useForumChannels } from '../../../state/hooks/useForumChannels';
 import { useUserPreferences } from '../../../state/hooks/useUserPreferences';
+import { useWebtoonSiteLabelPicker } from '../../../state/hooks/useWebtoonSiteLabelPicker';
 
 type CalendarTemplateSettingsProps = {
   /** Sauvegarde du salon manuel à la fermeture de la modale Configuration */
@@ -21,6 +22,7 @@ export default function CalendarTemplateSettings({ registerFlush }: CalendarTemp
     loading: prefsLoading,
   } = useUserPreferences();
   const { forums, loading: forumsLoading } = useForumChannels();
+  const { pickerEnabled, setPickerEnabled } = useWebtoonSiteLabelPicker();
   const [customForumId, setCustomForumId] = useState(calendarForumChannelId || '');
   const [forumSelectValue, setForumSelectValue] = useState(calendarForumChannelId || '');
   const [savingForum, setSavingForum] = useState(false);
@@ -88,6 +90,18 @@ export default function CalendarTemplateSettings({ registerFlush }: CalendarTemp
               Si activé, chaque utilisateur peut basculer entre publication traduction et publication
               calendrier via le toggle dans l’en-tête du formulaire. Les changements sont enregistrés
               automatiquement.
+            </p>
+          </div>
+          <div className="form-field" style={{ marginTop: 12 }}>
+            <Toggle
+              checked={pickerEnabled}
+              onChange={setPickerEnabled}
+              label="Suggérer les derniers sites renseignés"
+              title="Affiche une liste des derniers noms de site saisis dans les champs « Site » (vue Webtoon)"
+            />
+            <p className="settings-log-description" style={{ marginTop: 8 }}>
+              Mémorise localement les derniers libellés (Webtoon, Tapas, etc.) après chaque publication
+              réussie. Bouton « Récents » et liste au focus sur les champs Site.
             </p>
           </div>
         </div>

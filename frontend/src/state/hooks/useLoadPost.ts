@@ -1,5 +1,10 @@
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import {
+  isCalendarPublishedPost,
+  migrateCalendarInputs,
+  migrateLegacyBookFields,
+} from '../calendarTemplate';
 import { SKIP_VERSION_CHECK_INPUT_KEY } from '../logic/postPublishFlags';
 import type { AdditionalTranslationLink, PublishedPost } from '../types';
 import type { LinkConfigs } from './useLinkConfigState';
@@ -75,6 +80,18 @@ export function useLoadPost(deps: LoadPostDeps) {
           if (key === SKIP_VERSION_CHECK_INPUT_KEY) return;
           setInput(key, post.savedInputs![key] || '');
         });
+
+        if (isCalendarPublishedPost(post)) {
+          const migrated = migrateLegacyBookFields(migrateCalendarInputs(post.savedInputs));
+          for (const key of [
+            'Official_Site_Label',
+            'Official_Site_Link',
+            'Scan_Site_Label',
+            'Scan_Site_Link',
+          ] as const) {
+            if (migrated[key]) setInput(key, migrated[key]);
+          }
+        }
       }
 
       if (post.savedLinkConfigs) {

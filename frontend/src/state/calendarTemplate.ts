@@ -11,7 +11,7 @@ export function isCalendarPublishedPost(post: PublishedPost | null | undefined):
   const hasCalendarFields = !!(
     (inputs.Nom_Oeuvre || '').trim() ||
     (inputs.Chapitre_Actuel || '').trim() ||
-    (inputs.Book_Link || '').trim()
+    hasCalendarLinks(inputs)
   );
   const hasGameFields = !!(
     (inputs.Game_name || '').trim() ||
@@ -20,6 +20,49 @@ export function isCalendarPublishedPost(post: PublishedPost | null | undefined):
   return hasCalendarFields && !hasGameFields;
 }
 export const WEBTOON_PUBLISH_LABEL = 'Webtoon';
+
+/** Libellé Discord attendu pour une œuvre terminée (émoji optionnel devant le texte). */
+export const WEBTOON_TERMINATED_TAG_SUFFIX = 'termine';
+
+/** Retire émojis / symboles pour comparer le libellé (ex. « :white_check_mark: Terminé » → « termine »). */
+export function normalizeWebtoonTagName(name: string): string {
+  const withoutEmoji = name
+    .replace(/:[a-z0-9_]+:/gi, '')
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Component}\uFE0F\u200D]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return withoutEmoji
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '');
+}
+
+export function isTerminatedWorkTagLabel(normalizedName: string): boolean {
+  return (
+    normalizedName === WEBTOON_TERMINATED_TAG_SUFFIX ||
+    normalizedName.endsWith(` ${WEBTOON_TERMINATED_TAG_SUFFIX}`)
+  );
+}
+
+function findTagByPostId(
+  id: string,
+  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>
+) {
+  return savedTags.find(
+    t => (t.id || t.name) === id || String(t.discordTagId ?? '') === id
+  );
+}
+
+export function isWebtoonSeriesTerminatedTag(
+  selectedTagIds: string[],
+  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>
+): boolean {
+  return selectedTagIds.some(id => {
+    const tag = findTagByPostId(id, savedTags);
+    if (!tag?.name) return false;
+    return isTerminatedWorkTagLabel(normalizeWebtoonTagName(tag.name));
+  });
+}
 
 /** Template intégré « mise à jour calendrier » (vue Webtoon). */
 export const calendarTemplate: Template = {
@@ -36,8 +79,8 @@ Statut actuel : Chapitre [Chapitre_Actuel] (Dernier disponible gratuitement)
 * **Prochain chapitre :** [Chapitre_Suivant] — [Date_Suivant]
 * **Fin de série :** chapitre [Chapitre_Fin] — [Date_Fin]
 
-:link: **Lien officiel**
-* [[Book_Platform]](<[Book_Link]>)
+:link: **Lien**
+[CALENDAR_LINKS_LINE]
 
 **Synopsis :**
 > [Synopsis_Oeuvre]`,
@@ -50,10 +93,32 @@ export const calendarVarsConfig: VarConfig[] = [
   { name: 'Date_Suivant', label: 'Date prochaine dispo.', type: 'date' },
   { name: 'Chapitre_Fin', label: 'Dernier chapitre', placeholder: 'ex: 120' },
   { name: 'Date_Fin', label: 'Date fin de série', type: 'date' },
-  { name: 'Book_Platform', label: 'Site / plateforme', placeholder: 'Webtoon, Tapas…' },
-  { name: 'Book_Link', label: "Lien de l'œuvre", placeholder: 'https://...' },
+  { name: 'Official_Site_Label', label: 'Site', placeholder: 'Webtoon, Tapas…' },
+  { name: 'Official_Site_Link', label: 'Lien', placeholder: 'https://...' },
+  { name: 'Scan_Site_Label', label: 'Site', placeholder: 'Scan VF, Flame…' },
+  { name: 'Scan_Site_Link', label: 'Lien', placeholder: 'https://...' },
   { name: 'Synopsis_Oeuvre', label: 'Synopsis', type: 'textarea', placeholder: 'Résumé de la série…' },
 ];
+
+export type CalendarLinkPart = { label: string; url: string };
+
+/** Liens affichables (label + URL requis pour chaque entrée). */
+export function getCalendarLinkParts(inputs: Record<string, string>): CalendarLinkPart[] {
+  const parts: CalendarLinkPart[] = [];
+  const officialLabel = (inputs['Official_Site_Label'] || inputs['Book_Platform'] || '').trim();
+  const officialUrl = (inputs['Official_Site_Link'] || inputs['Book_Link'] || '').trim();
+  if (officialLabel && officialUrl) parts.push({ label: officialLabel, url: officialUrl });
+
+  const scanLabel = (inputs['Scan_Site_Label'] || '').trim();
+  const scanUrl = (inputs['Scan_Site_Link'] || '').trim();
+  if (scanLabel && scanUrl) parts.push({ label: scanLabel, url: scanUrl });
+
+  return parts;
+}
+
+export function hasCalendarLinks(inputs: Record<string, string>): boolean {
+  return getCalendarLinkParts(inputs).length > 0;
+}
 
 /** Anciens noms de variables → nouveaux (rétrocompatibilité savedInputs). */
 const LEGACY_VAR_ALIASES: Record<string, string> = {
@@ -61,12 +126,23 @@ const LEGACY_VAR_ALIASES: Record<string, string> = {
   Lien_Oeuvre: 'Book_Link',
 };
 
+/** Migration explicite des anciens champs livre → site officiel (posts historiques uniquement). */
+export function migrateLegacyBookFields(inputs: Record<string, string>): Record<string, string> {
+  const next = { ...inputs };
+  if (!next.Official_Site_Label?.trim() && next.Book_Platform?.trim()) {
+    next.Official_Site_Label = next.Book_Platform;
+  }
+  if (!next.Official_Site_Link?.trim() && next.Book_Link?.trim()) {
+    next.Official_Site_Link = next.Book_Link;
+  }
+  return next;
+}
+
 export function migrateCalendarInputs(inputs: Record<string, string>): Record<string, string> {
   const next = { ...inputs };
   for (const [oldKey, newKey] of Object.entries(LEGACY_VAR_ALIASES)) {
     if (next[oldKey] && !next[newKey]) next[newKey] = next[oldKey];
   }
-  if (!next.Book_Platform?.trim()) next.Book_Platform = 'Webtoon';
   return next;
 }
 
@@ -101,13 +177,14 @@ export function mergeCalendarVarsConfig(vars: VarConfig[], showCalendar: boolean
 
 export function ensureCalendarInputs(inputs: Record<string, string>): Record<string, string> {
   const next = migrateCalendarInputs({ ...inputs });
+  delete next.Book_Platform;
+  delete next.Book_Link;
   for (const v of calendarVarsConfig) {
     if (next[v.name] === undefined) next[v.name] = '';
     if (v.type === 'date' && next[v.name]) {
       next[v.name] = resolveStoredDateValue(next[v.name]);
     }
   }
-  if (!next.Book_Platform?.trim()) next.Book_Platform = 'Webtoon';
   return next;
 }
 

@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react';
+import {
+  getCalendarLinkParts,
+  isWebtoonSeriesTerminatedTag,
+} from '../calendarTemplate';
 import { formatVarValue, resolveStoredDateValue } from '../logic/formatVar';
-import type { AdditionalTranslationLink, Template, VarConfig } from '../types';
+import type { AdditionalTranslationLink, Tag, Template, VarConfig } from '../types';
 
 /** Même logique qu’appContext : conserver la forme (#post-XXXXX ou /post-XXXXX), ne rien ajouter si absent. */
 function cleanGameLink(url: string): string {
@@ -40,6 +44,8 @@ type UsePreviewEngineProps = {
   additionalModLinks: AdditionalTranslationLink[];
   uploadedImages: Array<{ id: string; url?: string; name: string; isMain: boolean }>;
   editingPostId: string | null;
+  postTags?: string;
+  savedTags?: Tag[];
 };
 
 export function usePreviewEngine(props: UsePreviewEngineProps) {
@@ -53,7 +59,9 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     additionalTranslationLinks,
     additionalModLinks,
     uploadedImages,
-    editingPostId
+    editingPostId,
+    postTags = '',
+    savedTags = [],
   } = props;
 
   const [previewOverride, setPreviewOverride] = useState<string | null>(null);
@@ -119,12 +127,30 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     }
 
     if (tpl.type === 'calendar') {
+      const selectedTagIds = postTags
+        ? postTags.split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+      const seriesTerminated = isWebtoonSeriesTerminatedTag(selectedTagIds, savedTags);
+
+      if (seriesTerminated) {
+        content = content.replace(
+          /Statut actuel : Chapitre \[Chapitre_Actuel\] \(Dernier disponible gratuitement\)\n?/g,
+          'Statut actuel : Chapitre [Chapitre_Fin] (Série terminée)\n'
+        );
+        content = content.replace(
+          /:calendar: \*\*Prochaines disponibilités \(gratuite\)\*\*\n\* \*\*Prochain chapitre :\*\* \[Chapitre_Suivant\] — \[Date_Suivant\]\n\* \*\*Fin de série :\*\* chapitre \[Chapitre_Fin\] — \[Date_Fin\]\n?/g,
+          ''
+        );
+      }
+
       const hasNext =
-        (inputs['Chapitre_Suivant'] || '').trim() ||
-        resolveStoredDateValue(inputs['Date_Suivant'] || '').trim();
+        !seriesTerminated &&
+        ((inputs['Chapitre_Suivant'] || '').trim() ||
+          resolveStoredDateValue(inputs['Date_Suivant'] || '').trim());
       const hasEnd =
-        (inputs['Chapitre_Fin'] || '').trim() ||
-        resolveStoredDateValue(inputs['Date_Fin'] || '').trim();
+        !seriesTerminated &&
+        ((inputs['Chapitre_Fin'] || '').trim() ||
+          resolveStoredDateValue(inputs['Date_Fin'] || '').trim());
       if (!hasNext) {
         content = content.replace(
           /\* \*\*Prochain chapitre :\*\* \[Chapitre_Suivant\] — \[Date_Suivant\]\n?/g,
@@ -143,11 +169,22 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
           ''
         );
       }
-      if (!(inputs['Book_Link'] || '').trim()) {
+      const calendarLinkParts = getCalendarLinkParts(inputs)
+        .map(p => ({ label: p.label, url: cleanGameLink(p.url) }))
+        .filter(p => p.url);
+      if (calendarLinkParts.length === 0) {
+        content = content.replace(/:link: \*\*Lien\*\*\n\[CALENDAR_LINKS_LINE\]\n?/g, '');
+        content = content.replace(/:link: \*\*Liens\*\*\n\[CALENDAR_LINKS_LINE\]\n?/g, '');
         content = content.replace(
           /:link: \*\*Lien officiel\*\*\n\* \[\[Book_Platform\]\]\(<\[Book_Link\]>\)\n?/g,
           ''
         );
+      } else {
+        const heading = calendarLinkParts.length >= 2 ? 'Liens' : 'Lien';
+        const linksLine = `* ${calendarLinkParts.map(p => `[${p.label}](<${p.url}>)`).join(' - ')}`;
+        content = content
+          .replace(/:link: \*\*Lien\*\*\n\[CALENDAR_LINKS_LINE\]/g, `:link: **${heading}**\n${linksLine}`)
+          .replace(/:link: \*\*Liens\*\*\n\[CALENDAR_LINKS_LINE\]/g, `:link: **${heading}**\n${linksLine}`);
       }
     }
 
@@ -165,7 +202,13 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
         discordTimestamp: useDiscordDate,
       });
 
-      if (name === 'Game_link' || name === 'Translate_link' || name === 'Book_Link') {
+      if (
+        name === 'Game_link' ||
+        name === 'Translate_link' ||
+        name === 'Book_Link' ||
+        name === 'Official_Site_Link' ||
+        name === 'Scan_Site_Link'
+      ) {
         finalVal = cleanGameLink(val);
       }
       content = content.split('[' + name + ']').join(finalVal || '[' + name + ']');
@@ -178,6 +221,22 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     };
     applyBlockquoteSynopsis(overviewRaw, 'Overview');
     applyBlockquoteSynopsis(synopsisOeuvreRaw, 'Synopsis_Oeuvre');
+
+    if (tpl.type === 'calendar') {
+      const tagIds = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
+      if (isWebtoonSeriesTerminatedTag(tagIds, savedTags)) {
+        const dateFinRaw = resolveStoredDateValue(inputs['Date_Fin'] || '').trim();
+        if (dateFinRaw) {
+          const dateFinFormatted = formatVarValue(dateFinRaw, 'date', { discordTimestamp: true });
+          if (dateFinFormatted) {
+            content = content.replace(
+              /(Statut actuel : Chapitre [^\n]+)\n/,
+              `$1 — ${dateFinFormatted}\n`
+            );
+          }
+        }
+      }
+    }
 
     // 5. Remplacement de [Translation_Type]
     const displayTranslationType = isIntegrated
@@ -221,7 +280,19 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     // Ne pas ajouter le lien dans le preview - il sera ajouté uniquement lors de la publication
     // L'image sera affichée séparément via le composant PreviewImage
     return content;
-  }, [templates, currentTemplateIdx, allVarsConfig, inputs, translationType, isIntegrated, additionalTranslationLinks, additionalModLinks, uploadedImages]);
+  }, [
+    templates,
+    currentTemplateIdx,
+    allVarsConfig,
+    inputs,
+    translationType,
+    isIntegrated,
+    additionalTranslationLinks,
+    additionalModLinks,
+    uploadedImages,
+    postTags,
+    savedTags,
+  ]);
 
   /** Preview effectif : contenu saisi si non vide, sinon rendu template + variables (affichage et publication). */
   // En mode édition, utiliser toujours le preview recalculé (pas previewOverride figé)

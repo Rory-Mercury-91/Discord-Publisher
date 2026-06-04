@@ -18,6 +18,7 @@ from discord_api import (
     _discord_post_json,
     _discord_suppress_embeds,
 )
+from image_utils import extract_image_urls_from_text
 from forum_manager import (
     _build_metadata_embed,
     _create_forum_post,
@@ -245,10 +246,7 @@ async def forum_post_update(request):
             if not thread_accessible:
                 return with_cors(request, web.json_response({"ok": False, "error": "Thread inaccessible ou impossible à désarchiver"}, status=500))
 
-            import re
-            image_exts = r"(?:jpg|jpeg|png|gif|webp|avif|bmp|svg|ico|tiff|tif)"
-            image_url_pattern = re.compile(rf"https?://[^\s<>\"']+\.{image_exts}(?:\?[^\s<>\"']*)?", re.IGNORECASE)
-            image_urls_full = [m.group(0) for m in image_url_pattern.finditer(content or "")]
+            image_urls_full = extract_image_urls_from_text(content or "")
             final_content = content or " "
             use_attachment = False
             file_bytes, filename, content_type = None, "image.png", "image/png"

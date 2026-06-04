@@ -796,7 +796,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     additionalTranslationLinks: linkState.additionalTranslationLinks,
     additionalModLinks: linkState.additionalModLinks,
     uploadedImages: imagesState.uploadedImages,
-    editingPostId: pubState.editingPostId
+    editingPostId: pubState.editingPostId,
+    postTags: postFormState.postTags,
+    savedTags: tagsState.savedTags,
   });
 
   const { loadPostForEditing, loadPostForDuplication } = useLoadPost({
@@ -844,12 +846,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           key.startsWith('Date_') ||
           key === 'Nom_Oeuvre' ||
           key === 'Book_Link' ||
+          key === 'Book_Platform' ||
+          key === 'Official_Site_Label' ||
+          key === 'Official_Site_Link' ||
+          key === 'Scan_Site_Label' ||
+          key === 'Scan_Site_Link' ||
           key === 'Synopsis_Oeuvre'
         ) {
           cleared[key] = '';
         }
       }
-      cleared.Book_Platform = 'Webtoon';
+      cleared.Official_Site_Label = '';
+      cleared.Book_Platform = '';
+      cleared.Book_Link = '';
       return cleared;
     });
     postFormState.setPostTitle('');
