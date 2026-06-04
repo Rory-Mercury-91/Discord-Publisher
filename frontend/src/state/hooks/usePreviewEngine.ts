@@ -209,12 +209,8 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     content = content.split('[instruction]').join(instructionBlock);
     content = content.split('[INVISIBLE_CHAR]').join('\u200B');
 
-    // 7. Réduire les retours à la ligne multiples
-    if (tpl.type === 'calendar') {
-      content = content.replace(/\n{2,}/g, '\n');
-    } else {
-      content = content.replace(/\n\n\n+/g, '\n\n');
-    }
+    // 7. Réduire les retours à la ligne multiples (conserver une ligne vide entre sections)
+    content = content.replace(/\n\n\n+/g, '\n\n');
 
     // Garder « Version du jeu » et « Version traduite » sur la même ligne (éviter bloc en dessous)
     content = content.replace(/\*\*Version du jeu :\*\*\s*```\s*\n?([^`]*?)\n?```/g, (_, val) => `**Version du jeu :** \`${(val || '').trim()}\``);

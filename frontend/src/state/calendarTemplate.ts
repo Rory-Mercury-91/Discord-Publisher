@@ -29,12 +29,16 @@ export const calendarTemplate: Template = {
   isDefault: true,
   isBuiltin: true,
   content: `:book: **[Nom_Oeuvre]** : Calendrier de mise à jour (gratuite) ! :tada:
+
 Statut actuel : Chapitre [Chapitre_Actuel] (Dernier disponible gratuitement)
+
 :calendar: **Prochaines disponibilités (gratuite)**
 * **Prochain chapitre :** [Chapitre_Suivant] — [Date_Suivant]
 * **Fin de série :** chapitre [Chapitre_Fin] — [Date_Fin]
+
 :link: **Lien officiel**
 * [[Book_Platform]](<[Book_Link]>)
+
 **Synopsis :**
 > [Synopsis_Oeuvre]`,
 };
