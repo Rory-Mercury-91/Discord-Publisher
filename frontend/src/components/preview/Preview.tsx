@@ -25,17 +25,7 @@ export default function Preview({
   const isOverLimit = characterCount > 2000;
 
   return (
-    <div
-      className="preview-section"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        height: '100%',
-        minHeight: 0,
-        background: 'var(--bg)',
-      }}
-    >
+    <div className="preview-section">
       <PreviewToolbar
         templateName={templateName}
         availableTemplates={availableTemplates}
@@ -47,27 +37,11 @@ export default function Preview({
         onCopy={onCopy}
       />
 
-      <div
-        className="preview-body styled-scrollbar"
-        style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}
-      >
+      <div className="preview-body styled-scrollbar">
         <textarea
           readOnly
           value={preview}
           placeholder="L'aperçu (template + variables) s'affiche ici en lecture seule."
-          style={{
-            width: '100%',
-            height: '100%',
-            minHeight: 0,
-            fontFamily: 'monospace',
-            padding: 12,
-            borderRadius: 6,
-            background: '#2b2d31',
-            color: '#dbdee1',
-            border: '1px solid var(--border)',
-            resize: 'none',
-            cursor: 'default',
-          }}
         />
       </div>
     </div>

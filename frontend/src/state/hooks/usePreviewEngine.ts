@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { formatVarValue } from '../logic/formatVar';
+import { formatVarValue, resolveStoredDateValue } from '../logic/formatVar';
 import type { AdditionalTranslationLink, Template, VarConfig } from '../types';
 
 /** Même logique qu’appContext : conserver la forme (#post-XXXXX ou /post-XXXXX), ne rien ajouter si absent. */
@@ -120,9 +120,11 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
 
     if (tpl.type === 'calendar') {
       const hasNext =
-        (inputs['Chapitre_Suivant'] || '').trim() || (inputs['Date_Suivant'] || '').trim();
+        (inputs['Chapitre_Suivant'] || '').trim() ||
+        resolveStoredDateValue(inputs['Date_Suivant'] || '').trim();
       const hasEnd =
-        (inputs['Chapitre_Fin'] || '').trim() || (inputs['Date_Fin'] || '').trim();
+        (inputs['Chapitre_Fin'] || '').trim() ||
+        resolveStoredDateValue(inputs['Date_Fin'] || '').trim();
       if (!hasNext) {
         content = content.replace(
           /\* \*\*Prochain chapitre :\*\* \[Chapitre_Suivant\] — \[Date_Suivant\]\n?/g,
@@ -207,8 +209,12 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     content = content.split('[instruction]').join(instructionBlock);
     content = content.split('[INVISIBLE_CHAR]').join('\u200B');
 
-    // 7. Réduire les retours à la ligne multiples (garder au moins une ligne vide entre sections pour le preview Discord)
-    content = content.replace(/\n\n\n+/g, '\n\n');
+    // 7. Réduire les retours à la ligne multiples
+    if (tpl.type === 'calendar') {
+      content = content.replace(/\n{2,}/g, '\n');
+    } else {
+      content = content.replace(/\n\n\n+/g, '\n\n');
+    }
 
     // Garder « Version du jeu » et « Version traduite » sur la même ligne (éviter bloc en dessous)
     content = content.replace(/\*\*Version du jeu :\*\*\s*```\s*\n?([^`]*?)\n?```/g, (_, val) => `**Version du jeu :** \`${(val || '').trim()}\``);

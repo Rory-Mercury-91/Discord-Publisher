@@ -6,6 +6,7 @@ import {
   mergeCalendarVarsConfig,
   migrateCalendarInputs,
 } from './calendarTemplate';
+import { buildSavedInputsForPublish } from './logic/postPublishFlags';
 import { useUserPreferences } from './hooks/useUserPreferences';
 import ErrorModal from '../components/Modals/ErrorModal';
 import { useToast } from '../components/shared/ToastProvider';
@@ -469,9 +470,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         formData.append('isUpdate', 'true');
       }
 
-      const savedInputsWithVersionFlag = publishOpts.skipVersionControl
-        ? { ...tvState.inputs, _skip_version_check: 'true' }
-        : { ...tvState.inputs };
+      const savedInputsWithVersionFlag = buildSavedInputsForPublish(
+        tvState.inputs,
+        publishOpts.skipVersionControl
+      );
 
       const now = Date.now();
       const postId = `post_${now}_${Math.random().toString(36).substr(2, 9)}`;
@@ -586,9 +588,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const forumId = res.forum_id || res.forumId || 0;
 
       if (threadId && messageId) {
-        const savedInputsForState = publishOpts.skipVersionControl
-          ? { ...tvState.inputs, _skip_version_check: 'true' }
-          : { ...tvState.inputs };
+        const savedInputsForState = buildSavedInputsForPublish(
+          tvState.inputs,
+          publishOpts.skipVersionControl
+        );
         if (isEditMode && pubState.editingPostId && pubState.editingPostData) {
           const now = Date.now();
           const updatedPost: PublishedPost = {

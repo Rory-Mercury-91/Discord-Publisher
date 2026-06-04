@@ -107,11 +107,12 @@ export default function PreferenceSettings({ registerFlush }: PreferenceSettings
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('save_window_state', { state });
-      await applyWindowStateLive(state);
+      // Ne pas réappliquer l'état ici : évite de restaurer/maximiser au clic hors modale
+      // (préférence pour le prochain lancement — voir texte d'aide sous le select).
     } catch (e) {
       console.error('Erreur sauvegarde état fenêtre:', e);
     }
-  }, [applyWindowStateLive]);
+  }, []);
 
   useEffect(() => {
     if (!registerFlush) return;
@@ -149,7 +150,11 @@ export default function PreferenceSettings({ registerFlush }: PreferenceSettings
           <label className="form-label">Mode par défaut (1er lancement)</label>
           <select
             value={windowState}
-            onChange={e => setWindowState(e.target.value as WindowState)}
+            onChange={e => {
+              const next = e.target.value as WindowState;
+              setWindowState(next);
+              void applyWindowStateLive(next);
+            }}
             className="form-input settings-select-pointer"
           >
             <option value="normal">🔲 Normal</option>

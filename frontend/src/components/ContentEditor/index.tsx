@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCallback } from 'react';
 import { useConfirm } from '../../hooks/useConfirm';
+import { parseSkipVersionCheckFlag } from '../../state/logic/postPublishFlags';
 import { apiFetch } from '../../lib/api-helpers';
 import { useApp } from '../../state/appContext';
 import { useAuth } from '../../state/authContext';
@@ -343,10 +344,12 @@ export default function ContentEditor({ isActive = true }: ContentEditorProps) {
     if (!editingPostId) {
       setSilentUpdateMode(false);
       setSkipVersionControlMode(false);
-    } else if (editingPostData?.savedInputs?._skip_version_check) {
-      setSkipVersionControlMode(['true', '1', 'yes'].includes(String(editingPostData.savedInputs._skip_version_check)));
+      return;
     }
-  }, [editingPostId, editingPostData?.savedInputs?._skip_version_check]);
+    setSkipVersionControlMode(
+      parseSkipVersionCheckFlag(editingPostData?.savedInputs?._skip_version_check)
+    );
+  }, [editingPostId, editingPostData]);
 
   // Au chargement d'un post : sélectionner l'auteur une fois (attendre que les options du salon soient chargées)
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { SKIP_VERSION_CHECK_INPUT_KEY } from '../logic/postPublishFlags';
 import type { AdditionalTranslationLink, PublishedPost } from '../types';
 import type { LinkConfigs } from './useLinkConfigState';
 
@@ -70,7 +71,10 @@ export function useLoadPost(deps: LoadPostDeps) {
         cleanInputs['main_mod_label'] = 'Mod';
 
         Object.keys(cleanInputs).forEach(key => setInput(key, cleanInputs[key]));
-        Object.keys(post.savedInputs).forEach(key => setInput(key, post.savedInputs![key] || ''));
+        Object.keys(post.savedInputs).forEach(key => {
+          if (key === SKIP_VERSION_CHECK_INPUT_KEY) return;
+          setInput(key, post.savedInputs![key] || '');
+        });
       }
 
       if (post.savedLinkConfigs) {
@@ -141,7 +145,10 @@ export function useLoadPost(deps: LoadPostDeps) {
       if (post.isIntegrated !== undefined) setIsIntegrated(post.isIntegrated);
 
       if (post.savedInputs) {
-        Object.keys(post.savedInputs).forEach(key => setInput(key, post.savedInputs![key] ?? ''));
+        Object.keys(post.savedInputs).forEach(key => {
+          if (key === SKIP_VERSION_CHECK_INPUT_KEY) return;
+          setInput(key, post.savedInputs![key] ?? '');
+        });
       }
 
       if (post.savedLinkConfigs) {

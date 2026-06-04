@@ -65,8 +65,8 @@ export default function GameLinkAndTranslationTypeSection({
         </div>
       </div>
 
-      <div className="form-field">
-        <div className="form-field form-field--row form-field__label-row" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
+      <div className="form-field form-field--translation-type">
+        <div className="form-field__label-row translation-type__label-row">
           <label className="form-label form-label--inline">Type de traduction</label>
           <Toggle
             checked={isIntegrated}
@@ -74,7 +74,7 @@ export default function GameLinkAndTranslationTypeSection({
             label="Traduction intégrée au jeu"
           />
         </div>
-        <div className="segmented" style={{ height: 40 }}>
+        <div className="segmented segmented--fill">
           {(['Automatique', 'Semi-automatique', 'Manuelle'] as const).map((opt) => {
             const active = translationType === opt;
             return (

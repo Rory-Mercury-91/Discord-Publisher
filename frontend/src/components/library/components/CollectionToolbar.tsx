@@ -123,7 +123,7 @@ export default function CollectionToolbar({
 
   return (
     <div className="library-toolbar library-toolbar--collection">
-
+      <div className="library-toolbar__filters">
       {/* ── Tri ── */}
       <select
         className="app-select library-toolbar-select library-toolbar-select--sort"
@@ -214,6 +214,7 @@ export default function CollectionToolbar({
         <option value={1000}>1000 / page</option>
         <option value={-1}>Illimité</option>
       </select>
+      </div>
 
       {/* ── Actions ── */}
       <div className="library-toolbar-right">

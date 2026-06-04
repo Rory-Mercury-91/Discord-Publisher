@@ -1,3 +1,4 @@
+import DateInputWithDayOffset from '../../shared/DateInputWithDayOffset';
 import type { VarConfig } from '../../../state/types';
 
 type CustomVar = Pick<VarConfig, 'name' | 'label' | 'placeholder' | 'type'>;
@@ -40,12 +41,11 @@ export default function CustomVarsSection({
                 className={`form-textarea styled-scrollbar ${!isUsed ? 'form-textarea--disabled' : ''}`}
               />
             ) : isDate ? (
-              <input
-                type="date"
+              <DateInputWithDayOffset
+                label=""
                 value={inputs[v.name] || ''}
-                onChange={(e) => setInput(v.name, e.target.value)}
+                onChange={val => setInput(v.name, val)}
                 disabled={!isUsed}
-                className={`form-input ${!isUsed ? 'form-input--disabled' : ''}`}
               />
             ) : isTime ? (
               <input

@@ -227,9 +227,11 @@ function AdditionalLinksBlock({
 
   return (
     <div className="links-block">
-      <div className="links-block__header">
-        <div className="links-block__header-left">
-          <label className="form-label form-label--inline" style={{ marginBottom: 0 }}>{title}</label>
+      <div className="links-block__toolbar">
+        <div
+          className={`links-block__header-left${headerExtra ? ' links-block__header-left--spread' : ''}`}
+        >
+          <label className="form-label form-label--inline">{title}</label>
           {headerExtra}
         </div>
         <button type="button" onClick={onAdd} className="links-block__add-btn">
@@ -318,9 +320,12 @@ export default function LinksSection({
   showMod = true,  
 }: LinksSectionProps) {
   // Si un seul bloc est visible, pleine largeur ; sinon 2 colonnes.
-  const gridCols = showTranslations && showMod ? '1fr 1fr' : '1fr';
+  const gridClass =
+    showTranslations && showMod
+      ? 'links-section-grid links-section-grid--2col'
+      : 'links-section-grid';
   return (
-    <div className="form-grid form-grid--start" style={{ gridTemplateColumns: gridCols }}>
+    <div className={`form-grid form-grid--start ${gridClass}`}>
       {showTranslations && (
         <AdditionalLinksBlock
           title="Traductions"

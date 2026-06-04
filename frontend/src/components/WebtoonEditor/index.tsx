@@ -18,6 +18,7 @@ import {
   isAutoInjectedTagType,
   WEBTOON_TAGS_MAX,
 } from '../tags/constants';
+import DateInputWithDayOffset from '../shared/DateInputWithDayOffset';
 import TagSelectorModalWebtoon from './TagSelectorModalWebtoon';
 
 export default function WebtoonEditor() {
@@ -193,55 +194,7 @@ export default function WebtoonEditor() {
           tagButtonClassName="webtoon-editor__tags-btn"
         />
 
-        <div className="form-grid webtoon-editor__chapters-row">
-          <div className="form-field">
-            <label className="form-label">Chapitre actuel</label>
-            <input
-              value={inputs['Chapitre_Actuel'] || ''}
-              onChange={e => handleChapitreActuelChange(e.target.value)}
-              className="form-input"
-              placeholder="ex: 45"
-            />
-          </div>
-          <div className="form-field">
-            <label className="form-label">Prochain chapitre</label>
-            <input
-              value={inputs['Chapitre_Suivant'] || ''}
-              onChange={e => setInput('Chapitre_Suivant', e.target.value)}
-              className="form-input"
-              placeholder="Calcul auto (+1)"
-            />
-          </div>
-          <div className="form-field">
-            <label className="form-label">Date prochaine dispo.</label>
-            <input
-              type="date"
-              value={inputs['Date_Suivant'] || ''}
-              onChange={e => setInput('Date_Suivant', e.target.value)}
-              className="form-input"
-            />
-          </div>
-          <div className="form-field">
-            <label className="form-label">Dernier chapitre</label>
-            <input
-              value={inputs['Chapitre_Fin'] || ''}
-              onChange={e => setInput('Chapitre_Fin', e.target.value)}
-              className="form-input"
-              placeholder="ex: 120"
-            />
-          </div>
-          <div className="form-field">
-            <label className="form-label">Date fin de série</label>
-            <input
-              type="date"
-              value={inputs['Date_Fin'] || ''}
-              onChange={e => setInput('Date_Fin', e.target.value)}
-              className="form-input"
-            />
-          </div>
-        </div>
-
-        <div className="form-grid form-grid--2col webtoon-editor__row">
+        <div className="form-grid webtoon-editor__meta-row">
           <div className="form-field">
             <label className="form-label">Site</label>
             <input
@@ -259,6 +212,78 @@ export default function WebtoonEditor() {
               className="form-input"
               placeholder="https://..."
             />
+          </div>
+        </div>
+
+        <div className="webtoon-editor__planning">
+          <div className="webtoon-editor__planning-section webtoon-editor__planning-section--next">
+            <div className="webtoon-editor__plan-field webtoon-editor__plan-field--ch">
+              <label className="form-label" htmlFor="webtoon-ch-actuel" title="Chapitre actuel">
+                Ch. actuel
+              </label>
+              <input
+                id="webtoon-ch-actuel"
+                value={inputs['Chapitre_Actuel'] || ''}
+                onChange={e => handleChapitreActuelChange(e.target.value)}
+                className="form-input"
+                placeholder="52"
+                inputMode="numeric"
+              />
+            </div>
+            <div className="webtoon-editor__plan-field webtoon-editor__plan-field--ch">
+              <label className="form-label" htmlFor="webtoon-ch-suivant" title="Prochain chapitre">
+                Proch. ch.
+              </label>
+              <input
+                id="webtoon-ch-suivant"
+                value={inputs['Chapitre_Suivant'] || ''}
+                onChange={e => setInput('Chapitre_Suivant', e.target.value)}
+                className="form-input"
+                placeholder="+1"
+                inputMode="numeric"
+              />
+            </div>
+            <div className="webtoon-editor__plan-field webtoon-editor__plan-field--dates">
+              <label className="form-label" htmlFor="webtoon-date-suivant" title="Date prochaine dispo.">
+                Date proch.
+              </label>
+              <DateInputWithDayOffset
+                layout="planning"
+                id="webtoon-date-suivant"
+                label="Date (prochain)"
+                labelTitle="Date prochaine dispo."
+                value={inputs['Date_Suivant'] || ''}
+                onChange={v => setInput('Date_Suivant', v)}
+              />
+            </div>
+          </div>
+          <div className="webtoon-editor__planning-section webtoon-editor__planning-section--end">
+            <div className="webtoon-editor__plan-field webtoon-editor__plan-field--ch">
+              <label className="form-label" htmlFor="webtoon-ch-fin" title="Dernier chapitre">
+                Dern. ch.
+              </label>
+              <input
+                id="webtoon-ch-fin"
+                value={inputs['Chapitre_Fin'] || ''}
+                onChange={e => setInput('Chapitre_Fin', e.target.value)}
+                className="form-input"
+                placeholder="120"
+                inputMode="numeric"
+              />
+            </div>
+            <div className="webtoon-editor__plan-field webtoon-editor__plan-field--dates">
+              <label className="form-label" htmlFor="webtoon-date-fin" title="Date fin de série">
+                Date fin
+              </label>
+              <DateInputWithDayOffset
+                layout="planning"
+                id="webtoon-date-fin"
+                label="Date (fin de série)"
+                labelTitle="Date fin de série"
+                value={inputs['Date_Fin'] || ''}
+                onChange={v => setInput('Date_Fin', v)}
+              />
+            </div>
           </div>
         </div>
 

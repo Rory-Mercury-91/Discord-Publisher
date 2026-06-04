@@ -1,3 +1,4 @@
+import { resolveStoredDateValue } from './logic/formatVar';
 import type { PublishedPost, Template, VarConfig } from './types';
 
 export const CALENDAR_TEMPLATE_ID = 'calendar';
@@ -28,16 +29,12 @@ export const calendarTemplate: Template = {
   isDefault: true,
   isBuiltin: true,
   content: `:book: **[Nom_Oeuvre]** : Calendrier de mise à jour (gratuite) ! :tada:
-
 Statut actuel : Chapitre [Chapitre_Actuel] (Dernier disponible gratuitement)
-
 :calendar: **Prochaines disponibilités (gratuite)**
 * **Prochain chapitre :** [Chapitre_Suivant] — [Date_Suivant]
 * **Fin de série :** chapitre [Chapitre_Fin] — [Date_Fin]
-
 :link: **Lien officiel**
 * [[Book_Platform]](<[Book_Link]>)
-
 **Synopsis :**
 > [Synopsis_Oeuvre]`,
 };
@@ -102,6 +99,9 @@ export function ensureCalendarInputs(inputs: Record<string, string>): Record<str
   const next = migrateCalendarInputs({ ...inputs });
   for (const v of calendarVarsConfig) {
     if (next[v.name] === undefined) next[v.name] = '';
+    if (v.type === 'date' && next[v.name]) {
+      next[v.name] = resolveStoredDateValue(next[v.name]);
+    }
   }
   if (!next.Book_Platform?.trim()) next.Book_Platform = 'Webtoon';
   return next;

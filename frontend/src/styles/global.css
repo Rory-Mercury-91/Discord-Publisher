@@ -2663,12 +2663,23 @@ textarea.form-textarea {
   border-radius: 8px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.03);
-  align-items: center;
+  align-items: stretch;
+  min-height: 40px;
+  height: auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.segmented--fill {
+  min-height: 40px;
 }
 
 .segmented__option {
-  flex: 1;
-  height: 32px;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 32px;
+  height: auto;
+  padding: 6px 6px;
   border-radius: 6px;
   border: none;
   cursor: pointer;
@@ -2676,6 +2687,13 @@ textarea.form-textarea {
   color: var(--muted);
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
   transition: all 0.15s;
 }
 
@@ -4649,25 +4667,559 @@ textarea.form-textarea {
   display: none !important;
 }
 
+/* Éditeur 65 % + aperçu 35 % (App.tsx) — la requête conteneur cible la colonne éditeur */
+.publication-layout {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.publication-layout--with-preview {
+  grid-template-columns: minmax(0, 65%) minmax(0, 35%);
+}
+
+.publication-layout__editor {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-right: 1px solid var(--border);
+  box-sizing: border-box;
+  min-width: 0;
+  container-type: inline-size;
+  container-name: publication-editor;
+}
+
+.publication-layout__preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  padding: 16px;
+  min-width: 0;
+  box-sizing: border-box;
+  container-type: inline-size;
+  container-name: publication-preview;
+}
+
+@media (max-width: 768px) {
+  .publication-layout--with-preview {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .publication-layout__editor {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .publication-layout__preview {
+    max-height: 70vh;
+  }
+}
+
+/* Barre d’outils aperçu (colonne ~35 % ou étroite) */
+.preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.preview-body {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.preview-body textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  font-family: monospace;
+  padding: 12px;
+  border-radius: 6px;
+  background: #2b2d31;
+  color: #dbdee1;
+  border: 1px solid var(--border);
+  resize: none;
+  cursor: default;
+  box-sizing: border-box;
+}
+
+.preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.preview-toolbar__start,
+.preview-toolbar__end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.preview-toolbar__template-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.preview-toolbar__template-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--accent-bg-subtle);
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  height: 32px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  max-width: 100%;
+}
+
+.preview-toolbar__template-btn:hover {
+  background: var(--accent-bg);
+}
+
+.preview-toolbar__template-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.preview-toolbar__template-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.preview-toolbar__template-caret {
+  font-size: 10px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.preview-toolbar__template-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 200px;
+  max-width: min(300px, 100cqw);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.preview-toolbar__template-item {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s;
+}
+
+.preview-toolbar__template-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.preview-toolbar__template-item--active {
+  background: var(--accent-bg);
+  font-weight: 700;
+}
+
+.preview-toolbar__template-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.preview-toolbar__discord-btn {
+  padding: 0 12px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  height: 32px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.preview-toolbar__discord-btn:hover {
+  background: var(--link-preview-bg);
+  border-color: var(--link-preview);
+}
+
+.preview-toolbar__discord-btn img {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.preview-toolbar__count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  padding: 0 12px;
+  background: var(--accent-bg-subtle);
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.preview-toolbar__count--over {
+  color: var(--error);
+  background: var(--error-bg);
+  border-color: var(--error);
+}
+
+.preview-toolbar__count-warn {
+  margin-left: 8px;
+  font-size: 11px;
+}
+
+.preview-toolbar__copy-btn {
+  padding: 0 12px;
+  font-size: 13px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.preview-toolbar__copy-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+@container publication-preview (max-width: 30rem) {
+  .preview-toolbar__start,
+  .preview-toolbar__end {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  .preview-toolbar__end {
+    justify-content: space-between;
+  }
+
+  .preview-toolbar__template-btn {
+    max-width: min(12rem, 100%);
+  }
+}
+
+@container publication-preview (max-width: 22rem) {
+  .preview-toolbar__discord-label,
+  .preview-toolbar__copy-label {
+    display: none;
+  }
+
+  .preview-toolbar__discord-btn,
+  .preview-toolbar__copy-btn {
+    padding: 0 10px;
+  }
+
+  .preview-toolbar__count {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .preview-toolbar__template-btn {
+    padding: 6px 8px;
+    gap: 6px;
+    max-width: 9rem;
+  }
+}
+
+@container publication-preview (max-width: 17rem) {
+  .preview-toolbar {
+    gap: 6px;
+  }
+
+  .preview-toolbar__start,
+  .preview-toolbar__end {
+    gap: 6px;
+  }
+
+  .preview-toolbar__template-name {
+    display: none;
+  }
+
+  .preview-toolbar__count-warn {
+    display: none;
+  }
+}
+
 .webtoon-editor__grid {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
-.webtoon-editor__chapters-row {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
+.webtoon-editor__meta-row {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: end;
 }
 
-@media (max-width: 1100px) {
-  .webtoon-editor__chapters-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+.webtoon-editor__meta-row .form-input {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+/* Planning : 2 sections (prochain / fin) — largeur selon le panneau éditeur */
+.webtoon-editor__planning {
+  --plan-gap: 1rem;
+  --plan-bundle-gap: 0.65rem;
+  --plan-ch-min: 4.5rem;
+  --plan-date-min: 9rem;
+  --plan-days-min: 4.25rem;
+  --plan-days-max: 7rem;
+  /* Une seule ligne si la colonne éditeur (≈65 % fenêtre) est très large */
+  --plan-wide-min: 58rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--plan-gap);
+  width: 100%;
+  min-width: 0;
+}
+
+.webtoon-editor__planning-section {
+  display: grid;
+  gap: var(--plan-gap);
+  align-items: end;
+  width: 100%;
+  min-width: 0;
+}
+
+.webtoon-editor__planning-section--next {
+  grid-template-columns:
+    minmax(var(--plan-ch-min), 1fr)
+    minmax(var(--plan-ch-min), 1fr)
+    minmax(12rem, 3fr);
+}
+
+.webtoon-editor__planning-section--end {
+  grid-template-columns:
+    minmax(var(--plan-ch-min), 1fr)
+    minmax(14rem, 4fr);
+}
+
+@container publication-editor (min-width: 58rem) {
+  .publication-layout--with-preview .webtoon-editor__planning {
+    display: grid;
+    grid-template-columns:
+      minmax(var(--plan-ch-min), 1fr)
+      minmax(var(--plan-ch-min), 1fr)
+      minmax(14rem, 3fr)
+      minmax(var(--plan-ch-min), 1fr)
+      minmax(14rem, 3fr);
+    align-items: end;
+  }
+
+  .publication-layout--with-preview .webtoon-editor__planning-section {
+    display: contents;
+  }
+}
+
+.webtoon-editor__plan-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  align-items: stretch;
+}
+
+.webtoon-editor__plan-field .form-label {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.webtoon-editor__plan-date-bundle {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--plan-bundle-gap);
+  width: 100%;
+  min-width: 0;
+}
+
+.webtoon-editor__plan-date-bundle .form-input {
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  font-size: 0.8125rem;
+  min-width: 0;
+}
+
+.webtoon-editor__plan-date-bundle input[type='date'].form-input {
+  flex: 2 1 0;
+  width: auto;
+  min-width: var(--plan-date-min);
+  line-height: normal;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.webtoon-editor__plan-date-bundle .date-input-offset__days {
+  flex: 1 1 0;
+  width: auto;
+  min-width: var(--plan-days-min);
+  max-width: var(--plan-days-max);
+  text-align: center;
+}
+
+.webtoon-editor__plan-field--ch .form-input {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.webtoon-editor__plan-ou-sep {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  color: var(--text-muted, #9ca3af);
+  white-space: nowrap;
+  padding: 0 0.4rem;
+  user-select: none;
+  line-height: 40px;
+}
+
+.date-input-offset--row {
+  display: contents;
+}
+
+@container publication-editor (max-width: 57.99rem) {
+  .webtoon-editor__planning {
+    --plan-ch-min: 4rem;
+    --plan-date-min: 7.5rem;
+    --plan-days-max: none;
+  }
+
+  .webtoon-editor__planning-section--next {
+    grid-template-columns:
+      minmax(var(--plan-ch-min), 1fr)
+      minmax(var(--plan-ch-min), 1fr)
+      minmax(10rem, 3fr);
+  }
+
+  .webtoon-editor__planning-section--end {
+    grid-template-columns:
+      minmax(var(--plan-ch-min), 1fr)
+      minmax(10rem, 4fr);
+  }
+}
+
+@container publication-editor (max-width: 22rem) {
+  .webtoon-editor__planning-section--next {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .webtoon-editor__planning-section--next .webtoon-editor__plan-field--dates {
+    grid-column: 1 / -1;
+  }
+
+  .webtoon-editor__planning-section--end {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .webtoon-editor__planning-section--end .webtoon-editor__plan-field--dates {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .webtoon-editor__meta-row {
+    grid-template-columns: 1fr;
   }
 }
 
 .webtoon-editor__image-row {
   margin-top: -4px;
+}
+
+.date-input-offset__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.date-input-offset__label {
+  font-size: 0.85rem;
+  color: var(--text-muted, #9ca3af);
+  white-space: nowrap;
+}
+
+.date-input-offset__days {
+  flex: 1;
+  min-width: 5rem;
+  max-width: 8rem;
+}
+
+.date-input-offset__hint {
+  margin: 4px 0 0;
 }
 
 /* Footer publication */
@@ -4747,15 +5299,21 @@ textarea.form-textarea {
   gap: 12px;
 }
 
-.links-block__header {
+.links-block__toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
+  min-width: 0;
 }
 
 .links-block__add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  white-space: nowrap;
   padding: 6px 12px;
   font-size: 13px;
   height: 32px;
@@ -4917,10 +5475,111 @@ textarea.form-textarea {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Mod + toggle « Mod compatible » (comme Type de traduction) */
+.links-block__header-left--spread {
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.links-block__header-left--spread > .form-label {
+  flex: 0 1 auto;
+  margin: 0;
+}
+
+.links-block__header-left--spread > .toggle {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .links-block__spacer {
   width: 40px;
+}
+
+/* Grille Mod + Traductions */
+.links-section-grid {
+  grid-template-columns: 1fr;
+}
+
+.links-section-grid--2col {
+  grid-template-columns: 1fr 1fr;
+}
+
+.form-grid--align-rows .translation-type__label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+}
+
+.form-grid--align-rows .translation-type__label-row > .form-label {
+  flex: 0 1 auto;
+  margin: 0;
+}
+
+.form-grid--align-rows .translation-type__label-row > .toggle {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* Vue traduction — colonne éditeur étroite (~65 % fenêtre) */
+@container publication-editor (max-width: 52rem) {
+  .links-section-grid--2col {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid--2col.form-grid--align-rows {
+    grid-template-columns: 1fr;
+  }
+
+  .links-block__toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .links-block__header-left--spread {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+}
+
+@container publication-editor (max-width: 36rem) {
+  .form-grid--align-rows .translation-type__label-row {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .segmented {
+    flex-wrap: wrap;
+  }
+
+  .segmented__option {
+    flex: 1 1 calc(33.333% - 4px);
+    min-width: 5.5rem;
+  }
+}
+
+@container publication-editor (max-width: 26rem) {
+  .segmented__option {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .links-block__add-btn {
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
+    height: auto;
+    min-height: 32px;
+    padding: 8px 10px;
+  }
 }
 
 /* Barre éditeur : label "Publier pour" */
@@ -6921,6 +7580,8 @@ textarea.form-textarea {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  container-type: inline-size;
+  container-name: library-collection;
 }
 
 .library-tabs {
@@ -6969,6 +7630,39 @@ textarea.form-textarea {
   flex-wrap: wrap;
   padding: 6px 16px;
   margin-bottom: 12px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.library-toolbar__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.library-toolbar--collection .library-toolbar__filters .app-select {
+  flex: 1 1 auto;
+  min-width: 7.5rem;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.library-toolbar--collection .library-toolbar-select--sort,
+.library-toolbar--collection .library-toolbar-select--sync {
+  flex: 0 1 auto;
+  min-width: 6.5rem;
+}
+
+.library-toolbar--collection .library-toolbar-select--page-size {
+  flex: 0 0 auto;
+  min-width: 5.75rem;
 }
 
 .library-toolbar-filters {
@@ -7030,12 +7724,6 @@ textarea.form-textarea {
 }
 
 .library-toolbar-input { flex: 1; min-width: 160px; }
-/* Vue Ma collection : pleine largeur, input flexible, retour à la ligne automatique */
-.library-toolbar--collection {
-  width: 100%;
-  flex-wrap: wrap;
-  align-items: center;
-}
 .library-toolbar--collection .library-toolbar-input--collection {
   flex: 1 1 auto;
   min-width: 80px;
@@ -7086,12 +7774,17 @@ textarea.form-textarea {
 
 /* Bloc droit : tags + espace restant + boutons vue (reste sur une seule ligne, occupe l'espace) */
 .library-toolbar-right {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  margin-left: 8px;
+  margin-left: auto;
+}
+
+.library-toolbar--collection .library-toolbar-right {
+  margin-left: auto;
 }
 
 /* Conteneur des boutons tags aligné dans la barre (ne sort pas de la ligne) */
@@ -7367,21 +8060,24 @@ textarea.form-textarea {
 
 .library-f95-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0;
+  gap: 8px;
   width: 100%;
   min-width: 0;
-  height: 36px;
+  min-height: 36px;
+  height: auto;
 }
 
-/* Zone gauche 60% : label + input URL + boutons + cookie */
+/* Import URL / ID + boutons */
 .library-f95-bar__import {
-  flex: 0 0 60%;
+  flex: 1 1 28rem;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
-  height: 36px;
+  min-height: 34px;
 }
 
 /* Input URL/ID */
@@ -7433,15 +8129,21 @@ textarea.form-textarea {
   margin: 0 12px;
 }
 
-/* Champ de recherche — 40% restants */
+/* Recherche */
 .library-f95-bar__search {
-  flex: 0 0 calc(40% - 26px);
+  flex: 1 1 12rem;
   height: 34px;
   box-sizing: border-box;
-  min-width: 0;
+  min-width: 10rem;
+  max-width: 100%;
 }
 
-/* ========== CollectionToolbar — barre 2 sur une ligne ========== */
+.library-toolbar--add-and-cookies {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ========== CollectionToolbar — filtres + actions ========== */
 .library-rss-bar {
   display: flex;
   align-items: center;
@@ -7464,46 +8166,6 @@ textarea.form-textarea {
   max-width: 120px;
 }
 
-.library-toolbar--collection {
-  flex-wrap: nowrap;
-  gap: 6px;
-  padding: 6px 16px;
-  align-items: center;
-}
-
-.library-toolbar--collection::-webkit-scrollbar {
-  display: none;
-}
-
-.library-toolbar--collection .library-sync-btn {
-  height: 28px;
-  padding: 0 8px;
-  font-size: 11px;
-}
-
-.library-toolbar--collection .library-toolbar-divider {
-  flex-shrink: 0;
-}
-
-.library-toolbar--collection .app-select {
-  height: 28px;
-  padding: 0 6px;
-  font-size: 12px;
-  flex: 1;
-  min-width: 0;
-}
-
-.library-toolbar--collection .library-toolbar-select--filter-statut  { min-width: max-content; }
-.library-toolbar--collection .library-toolbar-select--filter-trad    { min-width: max-content; }
-.library-toolbar--collection .library-toolbar-select--filter-type    { min-width: max-content; }
-.library-toolbar--collection .library-toolbar-select--filter-trad-type { min-width: max-content; }
-.library-toolbar--collection .library-toolbar-select--page-size      { min-width: max-content; flex: 0 0 auto; }
-
-.library-toolbar--collection .library-toolbar-right {
-  flex-shrink: 0;
-  gap: 6px;
-}
-
 .library-toolbar--collection .library-collection-tag-btn {
   height: 28px;
   padding: 0 10px;
@@ -7513,6 +8175,62 @@ textarea.form-textarea {
 .library-toolbar--collection .library-toolbar-btn {
   height: 28px;
   padding: 0 8px;
+}
+
+.library-toolbar--collection .library-toolbar-spacer {
+  display: none;
+}
+
+/* Ma collection — barres responsives selon la largeur du panneau */
+@container library-collection (max-width: 56rem) {
+  .library-f95-bar__import {
+    flex: 1 1 100%;
+  }
+
+  .library-f95-bar__search {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .library-f95-bar .library-toolbar-divider--vertical {
+    display: none;
+  }
+
+  .library-toolbar--collection .library-toolbar__filters {
+    flex: 1 1 100%;
+  }
+
+  .library-toolbar--collection .library-toolbar-right {
+    flex: 1 1 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+}
+
+@container library-collection (max-width: 40rem) {
+  .library-f95-bar__import .library-collection-import-label {
+    flex: 1 1 100%;
+  }
+
+  .library-f95-bar__import .library-collection-import-input {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .library-toolbar--collection .library-toolbar__filters .app-select {
+    flex: 1 1 calc(50% - 3px);
+    min-width: 0;
+  }
+}
+
+@container library-collection (max-width: 28rem) {
+  .library-toolbar--collection .library-toolbar__filters .app-select {
+    flex: 1 1 100%;
+  }
+
+  .library-toolbar--collection .library-toolbar-right {
+    gap: 6px;
+  }
 }
 
 /* ========== Modale Cookies F95 ========== */
