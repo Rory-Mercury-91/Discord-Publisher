@@ -136,7 +136,10 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
         );
       }
       if (!hasNext && !hasEnd) {
-        content = content.replace(/:calendar: \*\*Prochaines disponibilités\*\*\n?/g, '');
+        content = content.replace(
+          /:calendar: \*\*Prochaines disponibilités \(gratuite\)\*\*\n?/g,
+          ''
+        );
       }
       if (!(inputs['Book_Link'] || '').trim()) {
         content = content.replace(

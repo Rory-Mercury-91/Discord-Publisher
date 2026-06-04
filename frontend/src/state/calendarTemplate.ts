@@ -31,7 +31,7 @@ export const calendarTemplate: Template = {
 
 Statut actuel : Chapitre [Chapitre_Actuel] (Dernier disponible gratuitement)
 
-:calendar: **Prochaines disponibilités**
+:calendar: **Prochaines disponibilités (gratuite)**
 * **Prochain chapitre :** [Chapitre_Suivant] — [Date_Suivant]
 * **Fin de série :** chapitre [Chapitre_Fin] — [Date_Fin]
 
