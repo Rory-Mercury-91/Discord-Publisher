@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   getCalendarLinkParts,
-  isWebtoonSeriesTerminatedTag,
+  getWebtoonWorkStatusFromTags,
 } from '../calendarTemplate';
 import { formatVarValue, resolveStoredDateValue } from '../logic/formatVar';
 import type { AdditionalTranslationLink, Tag, Template, VarConfig } from '../types';
@@ -130,13 +130,22 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
       const selectedTagIds = postTags
         ? postTags.split(',').map(s => s.trim()).filter(Boolean)
         : [];
-      const seriesTerminated = isWebtoonSeriesTerminatedTag(selectedTagIds, savedTags);
+      const workStatus = getWebtoonWorkStatusFromTags(selectedTagIds, savedTags);
+      const isFinalWorkStatus = workStatus !== 'ongoing';
 
-      if (seriesTerminated) {
+      if (workStatus === 'terminated') {
         content = content.replace(
           /Statut actuel : Chapitre \[Chapitre_Actuel\] \(Dernier disponible gratuitement\)\n?/g,
           'Statut actuel : Chapitre [Chapitre_Fin] (Série terminée)\n'
         );
+      } else if (workStatus === 'abandoned') {
+        content = content.replace(
+          /Statut actuel : Chapitre \[Chapitre_Actuel\] \(Dernier disponible gratuitement\)\n?/g,
+          'Statut actuel : Chapitre [Chapitre_Fin] (Série abandonnée)\n'
+        );
+      }
+
+      if (isFinalWorkStatus) {
         content = content.replace(
           /:calendar: \*\*Prochaines disponibilités \(gratuite\)\*\*\n\* \*\*Prochain chapitre :\*\* \[Chapitre_Suivant\] — \[Date_Suivant\]\n\* \*\*Fin de série :\*\* chapitre \[Chapitre_Fin\] — \[Date_Fin\]\n?/g,
           ''
@@ -144,11 +153,11 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
       }
 
       const hasNext =
-        !seriesTerminated &&
+        !isFinalWorkStatus &&
         ((inputs['Chapitre_Suivant'] || '').trim() ||
           resolveStoredDateValue(inputs['Date_Suivant'] || '').trim());
       const hasEnd =
-        !seriesTerminated &&
+        !isFinalWorkStatus &&
         ((inputs['Chapitre_Fin'] || '').trim() ||
           resolveStoredDateValue(inputs['Date_Fin'] || '').trim());
       if (!hasNext) {
@@ -224,7 +233,8 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
 
     if (tpl.type === 'calendar') {
       const tagIds = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
-      if (isWebtoonSeriesTerminatedTag(tagIds, savedTags)) {
+      const workStatus = getWebtoonWorkStatusFromTags(tagIds, savedTags);
+      if (workStatus !== 'ongoing') {
         const dateFinRaw = resolveStoredDateValue(inputs['Date_Fin'] || '').trim();
         if (dateFinRaw) {
           const dateFinFormatted = formatVarValue(dateFinRaw, 'date', { discordTimestamp: true });

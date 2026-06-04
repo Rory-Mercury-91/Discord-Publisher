@@ -12,7 +12,7 @@ import {
 
   computeNextChapter,
 
-  isWebtoonSeriesTerminatedTag,
+  getWebtoonWorkStatusFromTags,
 
 } from '../../state/calendarTemplate';
 
@@ -139,12 +139,14 @@ export default function WebtoonEditor() {
     selectedTagIds
   );
 
-  const isSeriesTerminated = useMemo(
-    () =>
-      isWebtoonSeriesTerminatedTag(selectedTagIds, savedTags) ||
-      isWebtoonSeriesTerminatedTag(selectedTagIds, displayTags),
-    [selectedTagIds, savedTags, displayTags]
-  );
+  const workStatus = useMemo(() => {
+    const fromSaved = getWebtoonWorkStatusFromTags(selectedTagIds, savedTags);
+    const fromDisplay = getWebtoonWorkStatusFromTags(selectedTagIds, displayTags);
+    if (fromSaved !== 'ongoing') return fromSaved;
+    return fromDisplay;
+  }, [selectedTagIds, savedTags, displayTags]);
+
+  const isFinalWorkStatus = workStatus !== 'ongoing';
 
 
 
@@ -188,10 +190,10 @@ export default function WebtoonEditor() {
 
     if (!(inputs['Nom_Oeuvre'] || '').trim()) return "Renseignez le nom de l'œuvre";
 
-    if (isSeriesTerminated && !(inputs['Chapitre_Fin'] || '').trim()) {
-
-      return 'Renseignez le dernier chapitre (tag Terminé)';
-
+    if (isFinalWorkStatus && !(inputs['Chapitre_Fin'] || '').trim()) {
+      return workStatus === 'abandoned'
+        ? 'Renseignez le dernier chapitre (tag Abandonné)'
+        : 'Renseignez le dernier chapitre (tag Terminé)';
     }
 
     return '';
@@ -450,21 +452,17 @@ export default function WebtoonEditor() {
 
         <h4 className="webtoon-editor__block-title">Calendrier des chapitres</h4>
 
-          {isSeriesTerminated && (
-
+          {isFinalWorkStatus && (
             <p className="webtoon-editor__planning-hint">
-
-              Tag « Terminé » actif : indiquez le dernier chapitre de la série. La date de fin est
-
-              optionnelle.
-
+              {workStatus === 'abandoned'
+                ? 'Tag « Abandonné » actif : indiquez le dernier chapitre de la série. La date de fin est optionnelle.'
+                : 'Tag « Terminé » actif : indiquez le dernier chapitre de la série. La date de fin est optionnelle.'}
             </p>
-
           )}
 
           <div className="webtoon-editor__planning">
 
-            {!isSeriesTerminated && (
+            {!isFinalWorkStatus && (
 
               <div className="webtoon-editor__planning-section webtoon-editor__planning-section--next">
 
@@ -552,7 +550,7 @@ export default function WebtoonEditor() {
 
             <div
 
-              className={`webtoon-editor__planning-section webtoon-editor__planning-section--end${isSeriesTerminated ? ' webtoon-editor__planning-section--terminated-only' : ''}`}
+              className={`webtoon-editor__planning-section webtoon-editor__planning-section--end${isFinalWorkStatus ? ' webtoon-editor__planning-section--terminated-only' : ''}`}
 
             >
 
@@ -560,7 +558,7 @@ export default function WebtoonEditor() {
 
                 <label className="form-label" htmlFor="webtoon-ch-fin" title="Dernier chapitre">
 
-                  {isSeriesTerminated ? 'Dernier chapitre' : 'Dern. ch.'}
+                  {isFinalWorkStatus ? 'Dernier chapitre' : 'Dern. ch.'}
 
                 </label>
 
@@ -586,7 +584,7 @@ export default function WebtoonEditor() {
 
                 <label className="form-label" htmlFor="webtoon-date-fin" title="Date fin de série">
 
-                  Date fin{isSeriesTerminated ? ' (optionnel)' : ''}
+                  Date fin{isFinalWorkStatus ? ' (optionnel)' : ''}
 
                 </label>
 
@@ -628,7 +626,7 @@ export default function WebtoonEditor() {
 
             !!(inputs['Nom_Oeuvre'] || '').trim() &&
 
-            (!isSeriesTerminated || !!(inputs['Chapitre_Fin'] || '').trim())
+            (!isFinalWorkStatus || !!(inputs['Chapitre_Fin'] || '').trim())
 
           }
 

@@ -21,8 +21,11 @@ export function isCalendarPublishedPost(post: PublishedPost | null | undefined):
 }
 export const WEBTOON_PUBLISH_LABEL = 'Webtoon';
 
-/** Libellé Discord attendu pour une œuvre terminée (émoji optionnel devant le texte). */
+/** Libellés Discord attendus (émojis / shortcodes optionnels devant le texte). */
 export const WEBTOON_TERMINATED_TAG_SUFFIX = 'termine';
+export const WEBTOON_ABANDONED_TAG_SUFFIX = 'abandonnee';
+
+export type WebtoonWorkStatus = 'ongoing' | 'terminated' | 'abandoned';
 
 /** Retire émojis / symboles pour comparer le libellé (ex. « :white_check_mark: Terminé » → « termine »). */
 export function normalizeWebtoonTagName(name: string): string {
@@ -44,6 +47,17 @@ export function isTerminatedWorkTagLabel(normalizedName: string): boolean {
   );
 }
 
+export function isAbandonedWorkTagLabel(normalizedName: string): boolean {
+  return (
+    normalizedName === WEBTOON_ABANDONED_TAG_SUFFIX ||
+    normalizedName.endsWith(` ${WEBTOON_ABANDONED_TAG_SUFFIX}`) ||
+    normalizedName === 'abandonne' ||
+    normalizedName.endsWith(` abandonne`) ||
+    normalizedName === 'abandoned' ||
+    normalizedName.endsWith(` abandoned`)
+  );
+}
+
 function findTagByPostId(
   id: string,
   savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>
@@ -53,15 +67,40 @@ function findTagByPostId(
   );
 }
 
-export function isWebtoonSeriesTerminatedTag(
+function matchWebtoonWorkStatusTag(
   selectedTagIds: string[],
-  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>
+  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>,
+  matchLabel: (normalized: string) => boolean
 ): boolean {
   return selectedTagIds.some(id => {
     const tag = findTagByPostId(id, savedTags);
     if (!tag?.name) return false;
-    return isTerminatedWorkTagLabel(normalizeWebtoonTagName(tag.name));
+    return matchLabel(normalizeWebtoonTagName(tag.name));
   });
+}
+
+export function isWebtoonSeriesTerminatedTag(
+  selectedTagIds: string[],
+  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>
+): boolean {
+  return matchWebtoonWorkStatusTag(selectedTagIds, savedTags, isTerminatedWorkTagLabel);
+}
+
+export function isWebtoonSeriesAbandonedTag(
+  selectedTagIds: string[],
+  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>
+): boolean {
+  return matchWebtoonWorkStatusTag(selectedTagIds, savedTags, isAbandonedWorkTagLabel);
+}
+
+/** Terminé prioritaire si les deux tags sont présents. */
+export function getWebtoonWorkStatusFromTags(
+  selectedTagIds: string[],
+  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>
+): WebtoonWorkStatus {
+  if (isWebtoonSeriesTerminatedTag(selectedTagIds, savedTags)) return 'terminated';
+  if (isWebtoonSeriesAbandonedTag(selectedTagIds, savedTags)) return 'abandoned';
+  return 'ongoing';
 }
 
 /** Template intégré « mise à jour calendrier » (vue Webtoon). */
