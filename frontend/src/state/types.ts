@@ -1,8 +1,10 @@
+export type VarInputType = 'text' | 'textarea' | 'date' | 'time';
+
 export type VarConfig = {
   name: string;
   label: string;
   placeholder?: string;
-  type?: 'text' | 'textarea';
+  type?: VarInputType;
   fullWidth?: boolean;
   hasSaveLoad?: boolean;
   showInAvailableVars?: boolean;
@@ -19,6 +21,8 @@ export type Template = {
   isDraft?: boolean;
   /** Template par défaut (défini dans le code) : sauvegardé localement uniquement, jamais poussé en BDD. */
   isDefault?: boolean;
+  /** Template fourni par l’app (ex. calendrier) : non synchronisé, non supprimable. */
+  isBuiltin?: boolean;
   createdAt?: number;
   modifiedAt?: number;
   lastSavedAt?: number;

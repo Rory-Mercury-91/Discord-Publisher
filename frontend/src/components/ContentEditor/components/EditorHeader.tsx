@@ -1,4 +1,6 @@
 import type { ConfirmOptions } from '../../../hooks/useConfirm';
+import { useWebtoonView } from '../../../state/webtoonViewContext';
+import PublicationEditorToolbar from './PublicationEditorToolbar';
 
 interface EditorHeaderProps {
   editingPostId: string | null;
@@ -21,79 +23,23 @@ export default function EditorHeader({
   onExitEditMode,
   confirm,
 }: EditorHeaderProps) {
-  const handleExitEditMode = async () => {
-    const ok = await confirm({
-      title: 'Quitter le mode édition',
-      message: 'Abandonner les modifications non enregistrées ? Le formulaire repassera en mode création.',
-      confirmText: 'Quitter',
-      cancelText: 'Rester',
-      type: 'warning',
-    });
-    if (ok) onExitEditMode();
-  };
+  const { calendarViewAvailable, isWebtoonViewActive, setWebtoonViewActive } = useWebtoonView();
 
-  const handleReset = async () => {
-    const ok = await confirm({
-      title: 'Vider le formulaire',
-      message: 'Voulez-vous vraiment vider tous les champs ? Cette action est irréversible.',
-      confirmText: 'Vider',
-      cancelText: 'Annuler',
-      type: 'danger'
-    });
-
-    if (ok) {
-      onResetForm();
-    }
-  };
   return (
-    <div className="editor-toolbar">
-      <h4 className="editor-toolbar__title">
-        📝 Contenu du post Discord
-        {editingPostId && (
-          <>
-            <span className="editor-toolbar__badge">✏️ Mode modification</span>
-            <button
-              type="button"
-              onClick={handleExitEditMode}
-              className="form-btn form-btn--ghost"
-              title="Abandonner les modifications et repasser en mode création"
-            >
-              ✕ Quitter l'édition
-            </button>
-          </>
-        )}
-      </h4>
-
-      <div className="editor-toolbar__actions">
-        <button type="button" onClick={onImportData} className="form-btn form-btn--toolbar form-btn--import">
-          📥 Importer Données
-        </button>
-        <button type="button" onClick={handleReset} className="form-btn form-btn--toolbar form-btn--reset">
-          🗑️ Vider le formulaire
-        </button>
-
-        {(translatorOptions.length > 1 || editingPostId) && translatorOptions.length > 0 && (
-          <>
-            <div className="editor-toolbar__divider" />
-            <div className="editor-toolbar__select-wrap">
-              <span className="editor-toolbar__label-sm">
-                👤 Publier pour :
-              </span>
-              <select
-                value={selectedTranslatorId}
-                onChange={(e) => onTranslatorChange(e.target.value)}
-                className="editor-toolbar__select"
-              >
-                {translatorOptions.map(opt => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+    <PublicationEditorToolbar
+      editingPostId={editingPostId}
+      onResetForm={onResetForm}
+      confirm={confirm}
+      onExitEditMode={onExitEditMode}
+      showImport
+      onImportData={onImportData}
+      showWebtoonViewToggle={calendarViewAvailable}
+      webtoonViewActive={isWebtoonViewActive}
+      onWebtoonViewChange={setWebtoonViewActive}
+      publishForMode="translator"
+      translatorOptions={translatorOptions}
+      selectedTranslatorId={selectedTranslatorId}
+      onTranslatorChange={onTranslatorChange}
+    />
   );
 }

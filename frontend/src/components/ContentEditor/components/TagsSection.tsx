@@ -6,6 +6,9 @@ interface TagsSectionProps {
   savedTags: any[];
   onOpenTagSelector: () => void;
   onRemoveTag: (tagId: string) => void;
+  /** Vue Webtoon : tous les tags peuvent être retirés (pas de traducteur / type imposés). */
+  allowRemoveAll?: boolean;
+  tagButtonClassName?: string;
 }
 
 export default function TagsSection({
@@ -13,6 +16,8 @@ export default function TagsSection({
   savedTags,
   onOpenTagSelector,
   onRemoveTag,
+  allowRemoveAll = false,
+  tagButtonClassName,
 }: TagsSectionProps) {
   const tagButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -24,7 +29,7 @@ export default function TagsSection({
           ref={tagButtonRef}
           type="button"
           onClick={onOpenTagSelector}
-          className="form-btn form-btn--sm"
+          className={tagButtonClassName ? `form-btn form-btn--sm ${tagButtonClassName}` : 'form-btn form-btn--sm'}
         >
           ➕ Ajouter
         </button>
@@ -33,7 +38,9 @@ export default function TagsSection({
           const tag = savedTags.find(t =>
             (t.id || t.name) === tagId || String(t.discordTagId ?? '') === tagId
           );
-          const isProtected = tag?.tagType === 'translator' || tag?.tagType === 'sites' || tag?.tagType === 'translationType';
+          const isProtected =
+            !allowRemoveAll &&
+            (tag?.tagType === 'translator' || tag?.tagType === 'sites' || tag?.tagType === 'translationType');
 
           return (
             <div key={tagId} className="tag-badge">

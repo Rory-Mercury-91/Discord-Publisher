@@ -2,6 +2,10 @@ interface TagSelectorBannerProps {
   isControlled: boolean;
   requiredCount: number;
   optionalCount: number;
+  /** Vue Webtoon : aucun tag obligatoire, compteur X/Y tags actifs */
+  webtoonMode?: boolean;
+  webtoonActiveCount?: number;
+  webtoonMax?: number;
 }
 
 const REQUIRED_MAX = 3;
@@ -11,7 +15,25 @@ export default function TagSelectorBanner({
   isControlled,
   requiredCount,
   optionalCount,
+  webtoonMode = false,
+  webtoonActiveCount = 0,
+  webtoonMax = 5,
 }: TagSelectorBannerProps) {
+  if (webtoonMode) {
+    const atMax = webtoonActiveCount >= webtoonMax;
+    return (
+      <div className="tag-selector__banner tag-selector__banner--info">
+        <span className="tag-selector__banner-icon">🏷️</span>
+        <span>
+          Tous les tags sont facultatifs.{' '}
+          <span className={atMax ? 'tag-selector__limit-count--max' : 'tag-selector__limit-count'}>
+            {webtoonActiveCount}/{webtoonMax} tags actifs
+          </span>
+        </span>
+      </div>
+    );
+  }
+
   return (
     <>
       {isControlled && (

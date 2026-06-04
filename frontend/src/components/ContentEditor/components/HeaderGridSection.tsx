@@ -7,6 +7,7 @@ interface HeaderGridSectionProps {
   gameName: string;
   onGameNameChange: (value: string) => void;
   gameNameDisabled: boolean;
+  gameNameLabel?: string;
   imageUrlInput: string;
   onImageUrlInputChange: (value: string) => void;
   onAddImage: () => void;
@@ -16,6 +17,8 @@ interface HeaderGridSectionProps {
   onRemoveTag: (tagId: string) => void;
   uploadedImages: Array<{ id: string; url?: string; name: string; isMain: boolean }>;
   removeImage: (idx: number) => void;
+  tagsAllowRemoveAll?: boolean;
+  tagButtonClassName?: string;
 }
 
 export default function HeaderGridSection({
@@ -23,6 +26,7 @@ export default function HeaderGridSection({
   gameName,
   onGameNameChange,
   gameNameDisabled,
+  gameNameLabel = 'Nom du jeu',
   imageUrlInput,
   onImageUrlInputChange,
   onAddImage,
@@ -32,6 +36,8 @@ export default function HeaderGridSection({
   onRemoveTag,
   uploadedImages,
   removeImage,
+  tagsAllowRemoveAll,
+  tagButtonClassName,
 }: HeaderGridSectionProps) {
   return (
     <div className="form-grid form-grid--3col">
@@ -49,6 +55,8 @@ export default function HeaderGridSection({
         savedTags={savedTags}
         onOpenTagSelector={onOpenTagSelector}
         onRemoveTag={onRemoveTag}
+        allowRemoveAll={tagsAllowRemoveAll}
+        tagButtonClassName={tagButtonClassName}
       />
 
       <div className="grid-cell--col3-row2">
@@ -56,7 +64,7 @@ export default function HeaderGridSection({
       </div>
 
       <div className="form-field">
-        <label className="form-label">Nom du jeu</label>
+        <label className="form-label">{gameNameLabel}</label>
         <input
           value={gameName}
           onChange={(e) => onGameNameChange(e.target.value)}

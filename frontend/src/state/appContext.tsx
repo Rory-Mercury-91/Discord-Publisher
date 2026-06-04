@@ -1,4 +1,12 @@
-import React, { createContext, useCallback, useContext, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
+import {
+  buildEffectiveTemplates,
+  CALENDAR_TEMPLATE_ID,
+  ensureCalendarInputs,
+  mergeCalendarVarsConfig,
+  migrateCalendarInputs,
+} from './calendarTemplate';
+import { useUserPreferences } from './hooks/useUserPreferences';
 import ErrorModal from '../components/Modals/ErrorModal';
 import { useToast } from '../components/shared/ToastProvider';
 import { createApiHeaders } from '../lib/api-helpers';
@@ -20,6 +28,7 @@ import { useLoadPost } from './hooks/useLoadPost';
 import { useClearAllAppData } from './hooks/useClearAllAppData';
 import { mergeInstructionsFromSupabase, useInstructionsState } from './hooks/useInstructionsState';
 import { usePreviewEngine } from './hooks/usePreviewEngine';
+import { resolveExternalTranslatorIdForForum } from './hooks/useForumChannelTags';
 import { buildFinalLink } from './logic/links';
 import { postToRow, rowToPost } from './logic/history';
 import { buildDynamicTitle } from './logic/title';
@@ -172,6 +181,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const { discordConfig, setDiscordConfig, apiStatus, setApiStatus } = useDiscordAndApiStatus();
 
   const tvState = useTemplatesVarsInputs();
+  const { showCalendarTemplate, calendarForumChannelId } = useUserPreferences();
+
+  const activeTemplates = useMemo(
+    () => buildEffectiveTemplates(tvState.templates, showCalendarTemplate),
+    [tvState.templates, showCalendarTemplate]
+  );
+  const activeVarsConfig = useMemo(
+    () => mergeCalendarVarsConfig(tvState.allVarsConfig, showCalendarTemplate),
+    [tvState.allVarsConfig, showCalendarTemplate]
+  );
+
+  useEffect(() => {
+    if (showCalendarTemplate) {
+      tvState.setInputs(prev => ensureCalendarInputs(prev));
+    }
+  }, [showCalendarTemplate, tvState.setInputs]);
+
+  useEffect(() => {
+    if (tvState.currentTemplateIdx >= activeTemplates.length) {
+      tvState.setCurrentTemplateIdx(Math.max(0, activeTemplates.length - 1));
+      return;
+    }
+    const cur = activeTemplates[tvState.currentTemplateIdx];
+    if (!showCalendarTemplate && cur?.id === CALENDAR_TEMPLATE_ID) {
+      tvState.setCurrentTemplateIdx(0);
+    }
+  }, [
+    showCalendarTemplate,
+    activeTemplates.length,
+    tvState.currentTemplateIdx,
+    activeTemplates,
+    tvState.setCurrentTemplateIdx,
+  ]);
 
   function importFullConfig(config: unknown) {
     applyFullConfig(config, {
@@ -207,8 +249,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Génération automatique du titre dynamique (logique pure dans state/logic/title.ts)
   useEffect(() => {
-    postFormState.setPostTitle(buildDynamicTitle(tvState.inputs['Game_name'], tvState.inputs['Game_version']));
-  }, [tvState.inputs['Game_name'], tvState.inputs['Game_version']]);
+    const tpl = activeTemplates[tvState.currentTemplateIdx];
+    if (tpl?.type === 'calendar') {
+      postFormState.setPostTitle(buildDynamicTitle(tvState.inputs['Nom_Oeuvre'], undefined));
+    } else {
+      postFormState.setPostTitle(buildDynamicTitle(tvState.inputs['Game_name'], tvState.inputs['Game_version']));
+    }
+  }, [
+    tvState.inputs['Game_name'],
+    tvState.inputs['Game_version'],
+    tvState.inputs['Nom_Oeuvre'],
+    tvState.currentTemplateIdx,
+    activeTemplates,
+  ]);
 
   // Envoyer la configuration Discord à l'API au démarrage
   useEffect(() => {
@@ -250,8 +303,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   ) {
     const title = (postFormState.postTitle || '').trim();
     const content = previewEngine.preview || '';
-    const templateId = tvState.templates[tvState.currentTemplateIdx]?.id || null;
+    const activeTpl = activeTemplates[tvState.currentTemplateIdx];
+    const isCalendarPublish = activeTpl?.type === 'calendar';
+    const publishOpts = {
+      silentUpdate: isCalendarPublish || options?.silentUpdate === true,
+      skipVersionControl: isCalendarPublish || options?.skipVersionControl === true,
+    };
+    const templateId = activeTpl?.id || null;
     const isEditMode = pubState.editingPostId !== null && pubState.editingPostData !== null;
+
+    let historyAuthorDiscordId = authorDiscordId;
+    let historyAuthorExternalId = authorExternalTranslatorId;
+    if (isCalendarPublish) {
+      if (!historyAuthorExternalId && calendarForumChannelId?.trim()) {
+        historyAuthorExternalId = await resolveExternalTranslatorIdForForum(
+          calendarForumChannelId
+        );
+      }
+    }
+    if (historyAuthorExternalId) {
+      historyAuthorDiscordId = undefined;
+    }
 
     const selectedIds = (postFormState.postTags || '').split(',').map(s => s.trim()).filter(Boolean);
     const tagsToSend = selectedIds
@@ -295,6 +367,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: 'rate_limit_cooldown' };
     }
 
+    if (!isCalendarPublish) {
     const hasSite = selectedTagObjects.some(t => t.tagType === 'sites');
     const hasTranslationType = selectedTagObjects.some(t => t.tagType === 'translationType');
     const hasTranslator = selectedTagObjects.some(t => t.tagType === 'translator');
@@ -307,13 +380,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       showErrorModal({ code: 'VALIDATION_ERROR', message: 'Tags obligatoires manquants', context: `Vous devez sélectionner au moins un tag pour chaque catégorie : Site, Type de traduction et Traducteur. Manquant : ${missing.join(', ')}. Les tags "Autres" et "Statut du jeu" restent optionnels.`, httpStatus: 400 });
       return { ok: false, error: 'missing_required_tags' };
     }
+    }
 
     pubState.setPublishInProgress(true);
     pubState.setLastPublishResult(null);
 
     try {
       const metadata = {
-        game_name: tvState.inputs['Game_name'] || '',
+        game_name: tvState.inputs['Nom_Oeuvre'] || tvState.inputs['Game_name'] || '',
         game_version: tvState.inputs['Game_version'] || '',
         translate_version: tvState.inputs['Translate_version'] || '',
         translation_type: postFormState.translationType || '',
@@ -322,10 +396,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         timestamp: Date.now()
       };
 
-      // Résoudre le forum_channel_id depuis le mapping du tag traducteur sélectionné
       let resolvedForumChannelId: string | null = null;
+      if (isCalendarPublish && calendarForumChannelId?.trim()) {
+        resolvedForumChannelId = calendarForumChannelId.trim();
+      }
+
+      // Résoudre le forum_channel_id depuis le mapping du tag traducteur (posts traduction)
       const translatorTag = selectedTagObjects.find(t => t.tagType === 'translator');
-      if (translatorTag?.id) {
+      if (!resolvedForumChannelId && translatorTag?.id) {
         const sb = getSupabase();
         if (sb) {
           try {
@@ -380,17 +458,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         formData.append('forum_channel_id', resolvedForumChannelId);
       }
 
+      if (publishOpts.silentUpdate) {
+        formData.append('silent_update', 'true');
+      }
+
       if (isEditMode && pubState.editingPostData) {
         formData.append('threadId', pubState.editingPostData.threadId);
         formData.append('messageId', pubState.editingPostData.messageId);
         formData.append('thread_url', pubState.editingPostData.discordUrl || '');
         formData.append('isUpdate', 'true');
-        if (options?.silentUpdate) {
-          formData.append('silent_update', 'true');
-        }
       }
 
-      const savedInputsWithVersionFlag = options?.skipVersionControl
+      const savedInputsWithVersionFlag = publishOpts.skipVersionControl
         ? { ...tvState.inputs, _skip_version_check: 'true' }
         : { ...tvState.inputs };
 
@@ -418,10 +497,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           discordUrl: pubState.editingPostData.discordUrl || '',
           forumId: pubState.editingPostData.forumId ?? 0,
           templateId: templateId ?? pubState.editingPostData.templateId ?? undefined,
-          authorDiscordId: authorExternalTranslatorId
+          authorDiscordId: historyAuthorExternalId
             ? undefined
-            : (authorDiscordId ?? pubState.editingPostData.authorDiscordId),
-          authorExternalTranslatorId: authorExternalTranslatorId ?? undefined,
+            : (historyAuthorDiscordId ?? pubState.editingPostData.authorDiscordId),
+          authorExternalTranslatorId: historyAuthorExternalId ?? undefined,
         };
         formData.append('history_payload', JSON.stringify(postToRow(mergedForHistory)));
       } else {
@@ -444,8 +523,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           messageId: '',
           discordUrl: '',
           forumId: 0,
-          authorDiscordId: authorDiscordId ?? undefined,
-          authorExternalTranslatorId: authorExternalTranslatorId ?? undefined,
+          authorDiscordId: historyAuthorDiscordId ?? undefined,
+          authorExternalTranslatorId: historyAuthorExternalId ?? undefined,
           templateId: templateId ?? undefined
         };
         formData.append('history_payload', JSON.stringify(postToRow(newPostForHistory)));
@@ -507,7 +586,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const forumId = res.forum_id || res.forumId || 0;
 
       if (threadId && messageId) {
-        const savedInputsForState = options?.skipVersionControl
+        const savedInputsForState = publishOpts.skipVersionControl
           ? { ...tvState.inputs, _skip_version_check: 'true' }
           : { ...tvState.inputs };
         if (isEditMode && pubState.editingPostId && pubState.editingPostData) {
@@ -532,11 +611,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             messageId: String(messageId),
             discordUrl: threadUrl || pubState.editingPostData.discordUrl,
             forumId: typeof forumId === 'number' ? forumId : parseInt(String(forumId)) || 0,
-            authorDiscordId: pubState.editingPostData.authorDiscordId,
-            authorExternalTranslatorId: pubState.editingPostData.authorExternalTranslatorId
+            authorDiscordId: historyAuthorExternalId
+              ? undefined
+              : (historyAuthorDiscordId ?? pubState.editingPostData.authorDiscordId),
+            authorExternalTranslatorId:
+              historyAuthorExternalId ?? pubState.editingPostData.authorExternalTranslatorId
           };
           await pubState.updatePublishedPost(pubState.editingPostId, updatedPost);
-          tauriAPI.saveLocalHistoryPost(postToRow(updatedPost), updatedPost.authorDiscordId ?? updatedPost.authorExternalTranslatorId ?? undefined);
+          tauriAPI.saveLocalHistoryPost(
+            postToRow(updatedPost),
+            updatedPost.authorDiscordId ?? updatedPost.authorExternalTranslatorId ?? undefined
+          );
           pubState.setEditingPostId(null);
           pubState.setEditingPostData(null);
         } else {
@@ -560,12 +645,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             messageId: String(messageId),
             discordUrl: threadUrl,
             forumId: typeof forumId === 'number' ? forumId : parseInt(String(forumId)) || 0,
-            authorDiscordId: authorDiscordId ?? undefined,
-            authorExternalTranslatorId: authorExternalTranslatorId ?? undefined,
+            authorDiscordId: historyAuthorDiscordId ?? undefined,
+            authorExternalTranslatorId: historyAuthorExternalId ?? undefined,
             templateId: templateId ?? undefined
           };
           await pubState.addPublishedPost(newPost, true);
-          tauriAPI.saveLocalHistoryPost(postToRow(newPost), newPost.authorDiscordId);
+          tauriAPI.saveLocalHistoryPost(
+            postToRow(newPost),
+            newPost.authorDiscordId ?? newPost.authorExternalTranslatorId ?? undefined
+          );
         }
       }
 
@@ -696,9 +784,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // PREVIEW ENGINE (hook extrait)
   // ========================================
   const previewEngine = usePreviewEngine({
-    templates: tvState.templates,
+    templates: activeTemplates,
     currentTemplateIdx: tvState.currentTemplateIdx,
-    allVarsConfig: tvState.allVarsConfig,
+    allVarsConfig: activeVarsConfig,
     inputs: tvState.inputs,
     translationType: postFormState.translationType,
     isIntegrated: postFormState.isIntegrated,
@@ -715,8 +803,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPostTags: postFormState.setPostTags,
     setTranslationType: postFormState.setTranslationType,
     setIsIntegrated: postFormState.setIsIntegrated,
-    templates: tvState.templates,
-    allVarsConfig: tvState.allVarsConfig,
+    templates: activeTemplates,
+    setCurrentTemplateIdx: tvState.setCurrentTemplateIdx,
+    allVarsConfig: activeVarsConfig,
     setInput: tvState.setInput,
     setLinkConfigs: linkState.setLinkConfigs,
     setAdditionalTranslationLinks: linkState.setAdditionalTranslationLinks,
@@ -725,13 +814,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setPreviewOverride: previewEngine.setPreviewOverride,
   });
 
+  const updateTemplateActive = useCallback(
+    (idx: number, t: Template) => {
+      const target = activeTemplates[idx];
+      if (!target || target.isBuiltin) return;
+      const rawIdx = tvState.templates.findIndex(
+        x => (target.id && x.id === target.id) || (!target.id && x.name === target.name)
+      );
+      if (rawIdx >= 0) tvState.updateTemplate(rawIdx, t);
+    },
+    [activeTemplates, tvState]
+  );
+
   const resetAllFields = useCallback(() => {
-    tvState.allVarsConfig.forEach(v => tvState.setInput(v.name, ''));
+    activeVarsConfig.forEach(v => tvState.setInput(v.name, ''));
     tvState.setInput('instruction', '');
     tvState.setInput('selected_instruction_key', '');
     tvState.setInput('is_modded_game', 'false');
     tvState.setInput('Mod_link', '');
     tvState.setInput('use_additional_links', 'false');
+    tvState.setInputs(prev => {
+      const cleared = migrateCalendarInputs(prev);
+      for (const key of Object.keys(cleared)) {
+        if (
+          key.startsWith('Chapitre_') ||
+          key.startsWith('Date_') ||
+          key === 'Nom_Oeuvre' ||
+          key === 'Book_Link' ||
+          key === 'Synopsis_Oeuvre'
+        ) {
+          cleared[key] = '';
+        }
+      }
+      cleared.Book_Platform = 'Webtoon';
+      return cleared;
+    });
     postFormState.setPostTitle('');
     postFormState.setTranslationType('Automatique');
     postFormState.setIsIntegrated(false);
@@ -754,13 +871,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setLinkConfig: linkState.setLinkConfig,
     buildFinalLink,
     setLinkConfigs: linkState.setLinkConfigs,
-    templates: tvState.templates,
+    templates: activeTemplates,
     importFullConfig,
-    updateTemplate: tvState.updateTemplate,
+    updateTemplate: updateTemplateActive,
     restoreDefaultTemplates: tvState.restoreDefaultTemplates,
     currentTemplateIdx: tvState.currentTemplateIdx,
     setCurrentTemplateIdx: tvState.setCurrentTemplateIdx,
-    allVarsConfig: tvState.allVarsConfig,
+    allVarsConfig: activeVarsConfig,
     addVarConfig: tvState.addVarConfig,
     updateVarConfig: tvState.updateVarConfig,
     deleteVarConfig: tvState.deleteVarConfig,

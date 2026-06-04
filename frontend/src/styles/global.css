@@ -1454,6 +1454,9 @@ textarea.form-textarea {
   padding: 40px;
   color: var(--muted);
   font-style: italic;
+  white-space: normal;
+  line-height: 1.5;
+  word-wrap: break-word;
 }
 
 .tag-selector__content-inner {
@@ -1834,6 +1837,31 @@ textarea.form-textarea {
 
 .settings-grid--full {
   grid-column: 1 / -1;
+}
+
+/* Préférences : Webtoon (gauche) + salon publication (droite, admin) */
+.settings-prefs-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.settings-prefs-split--single {
+  grid-template-columns: 1fr;
+}
+
+.settings-prefs-split__col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .settings-prefs-split {
+    grid-template-columns: 1fr;
+  }
 }
 
 .settings-radio-card {
@@ -4595,6 +4623,51 @@ textarea.form-textarea {
   font-size: 12px;
   cursor: pointer;
   min-width: 140px;
+}
+
+.editor-toolbar__select--disabled {
+  opacity: 0.85;
+  cursor: not-allowed;
+}
+
+.editor-toolbar__view-toggle {
+  flex-shrink: 0;
+}
+
+/* Bascule Webtoon / traduction sans démontage (évite le scintillement) */
+.publication-editor-pane {
+  height: 100%;
+  min-height: 0;
+}
+
+.publication-editor-pane__layer {
+  height: 100%;
+  min-height: 0;
+}
+
+.publication-editor-pane__layer[hidden] {
+  display: none !important;
+}
+
+.webtoon-editor__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.webtoon-editor__chapters-row {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1100px) {
+  .webtoon-editor__chapters-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.webtoon-editor__image-row {
+  margin-top: -4px;
 }
 
 /* Footer publication */

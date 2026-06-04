@@ -18,6 +18,7 @@ type LoadPostDeps = {
   setAdditionalModLinks: Dispatch<SetStateAction<AdditionalTranslationLink[]>>;
   setUploadedImages: (images: Array<{ id: string; url?: string; name: string; isMain: boolean }>) => void;
   setPreviewOverride: (value: string | null) => void;
+  setCurrentTemplateIdx: (idx: number) => void;
 };
 
 /** Retourne loadPostForEditing et loadPostForDuplication pour restaurer un post dans le formulaire. */
@@ -37,6 +38,7 @@ export function useLoadPost(deps: LoadPostDeps) {
     setAdditionalModLinks,
     setUploadedImages,
     setPreviewOverride,
+    setCurrentTemplateIdx,
   } = deps;
 
   const loadPostForEditing = useCallback(
@@ -52,9 +54,7 @@ export function useLoadPost(deps: LoadPostDeps) {
       if (post.templateId) {
         const templateIdx = templates.findIndex(t => t.id === post.templateId);
         if (templateIdx !== -1) {
-          console.log(`[Edit] Post créé avec le template: ${templates[templateIdx].name}`);
-        } else {
-          console.log(`[Edit] Template original (${post.templateId}) introuvable, utilisation du template actuel`);
+          setCurrentTemplateIdx(templateIdx);
         }
       }
 
@@ -125,6 +125,7 @@ export function useLoadPost(deps: LoadPostDeps) {
       setAdditionalModLinks,
       setUploadedImages,
       setPreviewOverride,
+      setCurrentTemplateIdx,
     ]
   );
 

@@ -1,10 +1,10 @@
-import type { VarConfig } from '../../../state/types';
+import type { VarConfig, VarInputType } from '../../../state/types';
 
 interface TemplatesVarsColumnProps {
   customVars: { v: VarConfig; idx: number }[];
   editingVarIdx: number | null;
-  varForm: { name: string; label: string; type: 'text' | 'textarea' };
-  setVarForm: (f: { name: string; label: string; type: 'text' | 'textarea' }) => void;
+  varForm: { name: string; label: string; type: VarInputType };
+  setVarForm: (f: { name: string; label: string; type: VarInputType }) => void;
   onStartEdit: (idx: number) => void;
   onCancelEdit: () => void;
   onSaveVar: () => void;
@@ -51,10 +51,12 @@ export default function TemplatesVarsColumn({
                 <label className="form-label">Type</label>
                 <select
                   value={varForm.type}
-                  onChange={e => setVarForm({ ...varForm, type: e.target.value as 'text' | 'textarea' })}
+                  onChange={e => setVarForm({ ...varForm, type: e.target.value as VarInputType })}
                 >
                   <option value="text">Texte</option>
                   <option value="textarea">Textarea</option>
+                  <option value="date">Date</option>
+                  <option value="time">Heure</option>
                 </select>
               </div>
               <div className="templates-vars-form__actions">

@@ -381,16 +381,84 @@ async fn cleanup_old_updates(app: AppHandle) -> Result<u32, String> {
     cleanup_old_updates_internal(&app).await
 }
 
-// 📊 État de la fenêtre
-fn apply_window_state(window: &WebviewWindow) -> Result<(), String> {
-    let app = window.app_handle();
+// 📊 Géométrie fenêtre : position / taille / maximisé persistés automatiquement
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct WindowLayoutFile {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    maximized: bool,
+}
+
+fn app_config_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let config_dir = app
         .path()
         .app_config_dir()
         .map_err(|e| format!("Config dir : {:?}", e))?;
-
     fs::create_dir_all(&config_dir).ok();
+    Ok(config_dir)
+}
 
+fn window_layout_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app_config_dir(app)?.join("window_layout.json"))
+}
+
+fn persist_window_layout(window: &WebviewWindow) -> Result<(), String> {
+    let app = window.app_handle();
+    let path = window_layout_path(&app)?;
+    let maximized = window.is_maximized().unwrap_or(false);
+    let position = window
+        .outer_position()
+        .map_err(|e| format!("Lecture position fenêtre : {}", e))?;
+    let size = window
+        .outer_size()
+        .map_err(|e| format!("Lecture taille fenêtre : {}", e))?;
+    let layout = WindowLayoutFile {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+        maximized,
+    };
+    let json = serde_json::to_string_pretty(&layout)
+        .map_err(|e| format!("Sérialisation window_layout : {}", e))?;
+    fs::write(&path, json).map_err(|e| format!("Écriture window_layout : {}", e))?;
+    Ok(())
+}
+
+/// Restaure la dernière géométrie utilisateur. Retourne `true` si un fichier valide a été appliqué.
+fn try_apply_window_layout(window: &WebviewWindow) -> Result<bool, String> {
+    let app = window.app_handle();
+    let path = window_layout_path(&app)?;
+    if !path.exists() {
+        return Ok(false);
+    }
+    let raw = fs::read_to_string(&path).map_err(|e| format!("Lecture window_layout : {}", e))?;
+    let layout: WindowLayoutFile =
+        serde_json::from_str(&raw).map_err(|e| format!("Parse window_layout : {}", e))?;
+    if layout.width < 400 || layout.height < 300 {
+        return Ok(false);
+    }
+    use tauri::{PhysicalPosition, PhysicalSize, Position, Size};
+    window
+        .set_size(Size::Physical(PhysicalSize::new(layout.width, layout.height)))
+        .map_err(|e| format!("set_size : {}", e))?;
+    window
+        .set_position(Position::Physical(PhysicalPosition::new(layout.x, layout.y)))
+        .map_err(|e| format!("set_position : {}", e))?;
+    if layout.maximized {
+        window.maximize().ok();
+    } else {
+        window.unmaximize().ok();
+    }
+    Ok(true)
+}
+
+/// Mode d'affichage au démarrage (préférences) si aucune géométrie sauvegardée
+fn apply_window_state(window: &WebviewWindow) -> Result<(), String> {
+    let app = window.app_handle();
+    let config_dir = app_config_dir(&app)?;
     let config_file = config_dir.join("window_state.txt");
 
     if config_file.exists() {
@@ -426,13 +494,7 @@ fn apply_window_state(window: &WebviewWindow) -> Result<(), String> {
 
 #[tauri::command]
 async fn save_window_state(app: AppHandle, state: String) -> Result<(), String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("Config dir : {:?}", e))?;
-
-    fs::create_dir_all(&config_dir).ok();
-
+    let config_dir = app_config_dir(&app)?;
     let config_file = config_dir.join("window_state.txt");
     fs::write(&config_file, state.trim()).map_err(|e| format!("Écriture window_state : {}", e))?;
 
@@ -442,10 +504,7 @@ async fn save_window_state(app: AppHandle, state: String) -> Result<(), String> 
 /// Lit l'état fenêtre persisté (même fichier que `apply_window_state` au démarrage).
 #[tauri::command]
 fn get_saved_window_state(app: AppHandle) -> Result<String, String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("Config dir : {:?}", e))?;
+    let config_dir = app_config_dir(&app)?;
     let config_file = config_dir.join("window_state.txt");
     if !config_file.exists() {
         return Ok("maximized".to_string());
@@ -654,9 +713,34 @@ pub fn run() {
                 .get_webview_window("main")
                 .ok_or("Fenêtre principale introuvable")?;
 
-            if let Err(e) = apply_window_state(&window) {
-                eprintln!("⚠️  État fenêtre : {}", e);
+            match try_apply_window_layout(&window) {
+                Ok(true) => {}
+                Ok(false) => {
+                    if let Err(e) = apply_window_state(&window) {
+                        eprintln!("⚠️  État fenêtre : {}", e);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("⚠️  Géométrie fenêtre : {}", e);
+                    if let Err(e2) = apply_window_state(&window) {
+                        eprintln!("⚠️  État fenêtre : {}", e2);
+                    }
+                }
             }
+
+            let window_for_events = window.clone();
+            window.on_window_event(move |event| {
+                match event {
+                    tauri::WindowEvent::Resized(_)
+                    | tauri::WindowEvent::Moved(_)
+                    | tauri::WindowEvent::CloseRequested { .. } => {
+                        if let Err(e) = persist_window_layout(&window_for_events) {
+                            eprintln!("⚠️  Sauvegarde géométrie fenêtre : {}", e);
+                        }
+                    }
+                    _ => {}
+                }
+            });
 
             // Nettoyage au démarrage
             let app_handle = app.handle().clone();

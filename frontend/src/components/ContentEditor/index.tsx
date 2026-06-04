@@ -10,6 +10,7 @@ import ConfirmModal from '../Modals/ConfirmModal';
 import { TagSelectorModal } from '../tags';
 import { useToast } from '../shared/ToastProvider';
 
+import { computeTagSelectorPositionFromPreview } from '../tags/constants';
 import { DISCORD_TAG_ALIASES } from '../tags/tags-modal-constants';
 import CustomVarsSection from './components/CustomVarsSection';
 import EditorHeader from './components/EditorHeader';
@@ -30,7 +31,12 @@ function statusExportToGameStatusKey(status: string): 'ongoing' | 'completed' | 
   return null;
 }
 
-export default function ContentEditor() {
+interface ContentEditorProps {
+  /** Faux quand la vue est masquée (Webtoon active) — évite effets de bord et re-renders inutiles. */
+  isActive?: boolean;
+}
+
+export default function ContentEditor({ isActive = true }: ContentEditorProps) {
   const {
     allVarsConfig,
     inputs,
@@ -185,11 +191,14 @@ export default function ContentEditor() {
     return labels;
   }, [selectedTagIds, savedTags]);
 
-  const canPublish = currentTemplate?.type === 'my' && rateLimitCooldown === null && hasRequiredTags;
+  const canPublish =
+    (currentTemplate?.type === 'my' || currentTemplate?.type === 'calendar') &&
+    rateLimitCooldown === null &&
+    hasRequiredTags;
 
   const publishTooltipText = (() => {
     if (publishInProgress) return 'Publication en cours…';
-    if (currentTemplate?.type !== 'my') return 'Template en lecture seule';
+    if (currentTemplate?.type !== 'my' && currentTemplate?.type !== 'calendar') return 'Template en lecture seule';
     if (rateLimitCooldown !== null) return `Rate limit : patientez ${Math.ceil((rateLimitCooldown - Date.now()) / 1000)}s`;
     if (missingRequiredTagLabels.length > 0) return `Tags obligatoires manquants : ${missingRequiredTagLabels.join(', ')}`;
     return '';
@@ -208,12 +217,16 @@ export default function ContentEditor() {
     return set;
   }, [currentTemplate?.content]);
 
+  const usesNomOeuvre = varsUsedInTemplate.has('Nom_Oeuvre');
+  const primaryNameKey = usesNomOeuvre ? 'Nom_Oeuvre' : 'Game_name';
+  const primaryNameLabel = usesNomOeuvre ? "Nom de l'œuvre" : 'Nom du jeu';
+
   const sectionVisibility = useMemo(() => ({
     versions:     varsUsedInTemplate.has('Game_version') || varsUsedInTemplate.has('Translate_version'),
     gameLink:     varsUsedInTemplate.has('Game_link'),
     translations: varsUsedInTemplate.has('Translate_link'),
     mod:          varsUsedInTemplate.has('Mod_link'),
-    synopsis:     varsUsedInTemplate.has('Overview'),
+    synopsis:     varsUsedInTemplate.has('Overview') || varsUsedInTemplate.has('Synopsis_Oeuvre'),
     instructions: varsUsedInTemplate.has('instruction'),
   }), [varsUsedInTemplate]);
 
@@ -223,7 +236,13 @@ export default function ContentEditor() {
   const showEditorTwoCol   = synopsis || instructions;
 
   const visibleVars = useMemo(() => {
-    const hardcoded = ['Game_name', 'Game_version', 'Translate_version', 'Game_link', 'Translate_link', 'Mod_link', 'Overview', 'instruction', 'is_modded_game'];
+    const hardcoded = [
+      'Game_name', 'Nom_Oeuvre',
+      'Game_version', 'Translate_version',
+      'Game_link', 'Translate_link', 'Mod_link', 'Lien_Oeuvre',
+      'Overview', 'Synopsis_Oeuvre',
+      'instruction', 'is_modded_game',
+    ];
     return allVarsConfig.filter(v => !hardcoded.includes(v.name) && varsUsedInTemplate.has(v.name));
   }, [allVarsConfig, varsUsedInTemplate]);
 
@@ -270,12 +289,21 @@ export default function ContentEditor() {
   /** Évite de réécraser le traducteur choisi manuellement pendant l'édition */
   const authorTranslatorAppliedForPostRef = useRef<string | null>(null);
   const prevTemplateIdxRef = useRef(currentTemplateIdx);
+  const prevIsActiveRef = useRef(isActive);
 
   // ==================== USEEFFECTS ====================
 
-  // Injection du tag traducteur
+  // Réappliquer l’injection traducteur quand on revient sur la vue traduction
   useEffect(() => {
-    if (!translatorLoaded || !translatorTagId) return;
+    if (!prevIsActiveRef.current && isActive) {
+      translatorInjectedRef.current = false;
+    }
+    prevIsActiveRef.current = isActive;
+  }, [isActive]);
+
+  // Injection du tag traducteur (vue traduction uniquement)
+  useEffect(() => {
+    if (!isActive || !translatorLoaded || !translatorTagId) return;
 
     if (!translatorInjectedRef.current) {
       translatorInjectedRef.current = true;
@@ -293,10 +321,11 @@ export default function ContentEditor() {
       });
       setPostTags([translatorTagId, ...others].join(','));
     }
-  }, [translatorTagId, translatorLoaded, postTags, savedTags, setPostTags]);
+  }, [isActive, translatorTagId, translatorLoaded, postTags, savedTags, setPostTags]);
 
   // Re-injection à la sortie du mode édition
   useEffect(() => {
+    if (!isActive) return;
     if (prevEditingPostIdRef.current === undefined) {
       prevEditingPostIdRef.current = editingPostId;
       return;
@@ -308,7 +337,7 @@ export default function ContentEditor() {
       translatorInjectedRef.current = false;
       if (translatorLoaded && translatorTagId) setPostTags(translatorTagId);
     }
-  }, [editingPostId, translatorLoaded, translatorTagId, setPostTags]);
+  }, [isActive, editingPostId, translatorLoaded, translatorTagId, setPostTags]);
 
   useEffect(() => {
     if (!editingPostId) {
@@ -390,8 +419,9 @@ export default function ContentEditor() {
     auto: 'Automatique',
   };
 
-  // Type de traduction (boutons) → tag translationType correspondant
+  // Type de traduction (boutons) → tag translationType correspondant (vue traduction uniquement)
   useEffect(() => {
+    if (!isActive) return;
     const labelKey = LABEL_KEY_BY_TRANSLATION_TYPE[translationType];
     if (!labelKey) return;
 
@@ -418,11 +448,12 @@ export default function ContentEditor() {
 
     setPostTags([...withoutTranslationType, tagId].join(','));
   // On ne dépend volontairement pas de postTags pour éviter des boucles
-  }, [translationType, myTags, savedTags, setPostTags]);
+  }, [isActive, translationType, myTags, savedTags, setPostTags]);
 
   // ==================== DÉDUCTION AUTOMATIQUE DU TAG SITES ====================
   const syncingSiteTagRef = useRef(false);
   useEffect(() => {
+    if (!isActive) return;
     if (syncingSiteTagRef.current) return;
 
     const gameLink = buildFinalLink(linkConfigs.Game_link);
@@ -468,21 +499,11 @@ export default function ContentEditor() {
     setPostTags([...withoutSites, tagId].join(','));
     setTimeout(() => { syncingSiteTagRef.current = false; }, 100);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linkConfigs.Game_link, linkConfigs.Translate_link, savedTags, postTags]);
+  }, [isActive, linkConfigs.Game_link, linkConfigs.Translate_link, savedTags, postTags]);
 
   // ==================== HANDLERS ====================
   const handleOpenTagSelector = () => {
-    const previewElement = document.querySelector('[data-preview-container]') as HTMLElement;
-    if (previewElement) {
-      const rect = previewElement.getBoundingClientRect();
-      setTagSelectorPosition({
-        top: rect.top - 10,
-        left: rect.left + 16,
-        width: Math.min(rect.width - 32, 500)
-      });
-    } else {
-      setTagSelectorPosition({ top: 120, left: window.innerWidth * 0.65 + 16, width: 500 });
-    }
+    setTagSelectorPosition(computeTagSelectorPositionFromPreview());
     setShowTagSelector(true);
   };
 
@@ -680,9 +701,10 @@ export default function ContentEditor() {
     {/* Titre / Tags / Image — toujours visible */}
     <HeaderGridSection
       postTitle={postTitle}
-      gameName={inputs['Game_name'] || ''}
-      onGameNameChange={(v) => setInput('Game_name', v)}
-      gameNameDisabled={!varsUsedInTemplate.has('Game_name')}
+      gameName={inputs[primaryNameKey] || ''}
+      onGameNameChange={(v) => setInput(primaryNameKey, v)}
+      gameNameDisabled={!varsUsedInTemplate.has(primaryNameKey)}
+      gameNameLabel={primaryNameLabel}
       imageUrlInput={imageUrlInput}
       onImageUrlInputChange={setImageUrlInput}
       onAddImage={handleAddImage}
@@ -759,11 +781,22 @@ export default function ContentEditor() {
         {synopsis && (
           <SynopsisSection
             ref={overviewRef}
-            value={inputs['Overview'] || ''}
-            onChange={(v) => setInput('Overview', v)}
+            value={
+              varsUsedInTemplate.has('Synopsis_Oeuvre')
+                ? (inputs['Synopsis_Oeuvre'] || '')
+                : (inputs['Overview'] || '')
+            }
+            onChange={(v) =>
+              setInput(varsUsedInTemplate.has('Synopsis_Oeuvre') ? 'Synopsis_Oeuvre' : 'Overview', v)
+            }
             disabled={false}
-            onTranslate={handleTranslateSynopsis}
+            onTranslate={
+              varsUsedInTemplate.has('Overview') && !varsUsedInTemplate.has('Synopsis_Oeuvre')
+                ? handleTranslateSynopsis
+                : undefined
+            }
             translating={translatingOverview}
+            label={varsUsedInTemplate.has('Synopsis_Oeuvre') ? 'Synopsis' : undefined}
           />
         )}
 

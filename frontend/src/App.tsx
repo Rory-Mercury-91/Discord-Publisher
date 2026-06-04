@@ -4,7 +4,9 @@ import AuthModal from './components/AuthModal';
 import PasswordRecoveryModal from './components/AuthModal/PasswordRecoveryModal';
 import SettingsModal from './components/Settings';
 import ConfirmModal from './components/Modals/ConfirmModal';
-import ContentEditor from './components/ContentEditor';
+import PublicationEditorPane from './components/ContentEditor/PublicationEditorPane';
+import { CALENDAR_TEMPLATE_ID } from './state/calendarTemplate';
+import { useWebtoonView, WebtoonViewProvider } from './state/webtoonViewContext';
 import { DiscordPreviewModal, Preview } from './components/preview';
 import HelpCenterModal from './components/HelpCenter';
 import { HistoryModal } from './components/history';
@@ -18,6 +20,7 @@ import { ToastProvider, useToast } from './components/shared/ToastProvider';
 import UpdateNotification from './components/UpdateNotification';
 import { AppProvider, useApp } from './state/appContext';
 import { AuthProvider, useAuth } from './state/authContext';
+import { UserPreferencesProvider } from './state/userPreferencesContext';
 import { EnrichmentProvider, useEnrichment } from './state/enrichmentContext';
 import { useEnrichScheduler } from './state/hooks/useEnrichScheduler';
 
@@ -39,6 +42,7 @@ function AppContentInner() {
   } = useApp();
 
   const { showToast } = useToast();
+  const { calendarViewAvailable, isWebtoonViewActive, setWebtoonViewActive } = useWebtoonView();
 
   const currentTemplate = templates[currentTemplateIdx];
   const templateName = currentTemplate?.name || 'Template';
@@ -73,6 +77,32 @@ function AppContentInner() {
     }
   });
 
+  const handleModeChange = (m: AppMode) => {
+    setMode(m);
+    try {
+      localStorage.setItem('defaultMode', m === 'user' ? 'library' : 'translator');
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // Aligner localStorage avec l’état fenêtre Tauri au démarrage (évite un décalage avec les préférences)
+  useEffect(() => {
+    if (!(window as unknown as { __TAURI__?: unknown }).__TAURI__) return;
+    void (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const saved = await invoke<string>('get_saved_window_state');
+        const normalized = (saved || '').trim().toLowerCase();
+        if (['normal', 'maximized', 'fullscreen', 'minimized'].includes(normalized)) {
+          localStorage.setItem('windowState', normalized);
+        }
+      } catch {
+        /* ignoré */
+      }
+    })();
+  }, []);
+
   // ── Thème ─────────────────────────────────────────────────────────────────
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try { return (localStorage.getItem('theme') === 'light' ? 'light' : 'dark') as 'dark' | 'light'; }
@@ -102,8 +132,15 @@ function AppContentInner() {
   }, [setApiStatus]);
 
   const handleTemplateChange = (newIndex: number) => {
+    const tpl = templates[newIndex];
     setCurrentTemplateIdx(newIndex);
-    showToast(`Template : ${templates[newIndex]?.name}`, 'success');
+    if (calendarViewAvailable && tpl) {
+      const isCalendar = tpl.id === CALENDAR_TEMPLATE_ID || tpl.type === 'calendar';
+      if (isCalendar !== isWebtoonViewActive) {
+        setWebtoonViewActive(isCalendar);
+      }
+    }
+    showToast(`Template : ${tpl?.name ?? 'Template'}`, 'success');
   };
 
   const handleCopyPreview = async () => {
@@ -121,7 +158,7 @@ function AppContentInner() {
       {/* ── Header refactorisé ─────────────────────────────────────────── */}
       <AppHeader
         mode={mode}
-        onModeChange={setMode}
+        onModeChange={handleModeChange}
         theme={theme}
         onToggleTheme={toggleTheme}
         onOpenTemplates={() => setOpenTemplates(true)}
@@ -141,7 +178,7 @@ function AppContentInner() {
         <main style={{ display: 'grid', gridTemplateRows: 'auto 1fr', flex: 1, minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '65% 35%', height: '100%', minHeight: 0, overflow: 'hidden', boxSizing: 'border-box' }}>
             <div className="styled-scrollbar" style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', borderRight: '1px solid var(--border)', boxSizing: 'border-box' }}>
-              <ContentEditor />
+              <PublicationEditorPane />
             </div>
             <div data-preview-container style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--bg)', padding: 16 }}>
               <Preview
@@ -158,7 +195,7 @@ function AppContentInner() {
           </div>
         </main>
       ) : (
-        <LibraryView onModeChange={setMode} />
+        <LibraryView onModeChange={handleModeChange} />
       )}
       {/* ── Modales ───────────────────────────────────────────────────────── */}
       {openTemplates && <TemplatesModal onClose={() => setOpenTemplates(false)} />}
@@ -219,11 +256,15 @@ function AppWithAuth() {
 export default function App() {
   return (
     <AuthProvider>
-      <ToastProvider> {/* On le remonte ici */}
-        <AppProvider>
-          <AppWithAuth />
-        </AppProvider>
-      </ToastProvider>
+      <UserPreferencesProvider>
+        <ToastProvider>
+          <AppProvider>
+            <WebtoonViewProvider>
+              <AppWithAuth />
+            </WebtoonViewProvider>
+          </AppProvider>
+        </ToastProvider>
+      </UserPreferencesProvider>
     </AuthProvider>
   );
 }

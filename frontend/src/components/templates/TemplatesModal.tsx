@@ -6,7 +6,8 @@ import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 import { useApp } from '../../state/appContext';
 import { useAuth } from '../../state/authContext';
 import { parseSavedTemplatesValue } from '../../state/hooks/useTemplatesVarsInputs';
-import type { Template, VarConfig } from '../../state/types';
+import { CALENDAR_TEMPLATE_ID } from '../../state/calendarTemplate';
+import type { Template, VarConfig, VarInputType } from '../../state/types';
 import ConfirmModal from '../Modals/ConfirmModal';
 import { useToast } from '../shared/ToastProvider';
 import TemplatesModalFooter from './components/TemplatesModalFooter';
@@ -46,7 +47,7 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   const [formName, setFormName] = useState('');
   const [copiedVar, setCopiedVar] = useState<string | null>(null);
   const [editingVarIdx, setEditingVarIdx] = useState<number | null>(null);
-  const [varForm, setVarForm] = useState({ name: '', label: '', type: 'text' as 'text' | 'textarea' });
+  const [varForm, setVarForm] = useState({ name: '', label: '', type: 'text' as VarInputType });
   const [showMarkdownHelp, setShowMarkdownHelp] = useState(false);
   const [showCreateTemplateModal, setShowCreateTemplateModal] = useState(false);
 
@@ -196,8 +197,9 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   }
 
   async function deleteTemplate(idx: number) {
-    if (templatesToShow[idx]?.isDefault) {
-      showToast('Impossible de supprimer le template par défaut', 'error');
+    const target = templatesToShow[idx];
+    if (target?.isDefault || target?.isBuiltin || target?.id === CALENDAR_TEMPLATE_ID) {
+      showToast('Impossible de supprimer ce template intégré', 'error');
       return;
     }
     const ok = await confirm({
@@ -251,6 +253,10 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       content: formContent,
       modifiedAt: Date.now(),
     };
+    if (currentTemplate?.isBuiltin) {
+      showToast('Ce template intégré ne peut pas être modifié ici', 'warning');
+      return;
+    }
     if (isViewingSelf) {
       updateTemplate(selectedTemplateIdx, payload);
     } else {
@@ -279,7 +285,8 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
 
   function startVarEdit(idx: number) {
     const v = allVarsConfig[idx];
-    const t = v.type === 'text' || v.type === 'textarea' ? v.type : 'text';
+    const allowed: VarInputType[] = ['text', 'textarea', 'date', 'time'];
+    const t = v.type && allowed.includes(v.type) ? v.type : 'text';
     setVarForm({ name: v.name, label: v.label, type: t });
     setEditingVarIdx(idx);
   }

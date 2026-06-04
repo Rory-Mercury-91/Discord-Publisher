@@ -82,11 +82,14 @@ async def forum_post(request):
     translator_label = state_label = game_version = ""
     received_forum_id = translate_version = announce_image_url = ""
     history_payload_raw = None
+    silent_update = False
 
     reader = await request.multipart()
     async for part in reader:
         n = part.name
-        if n == "title":
+        if n == "silent_update":
+            silent_update = (await part.text()).strip().lower() in ("true", "1", "yes")
+        elif n == "title":
             title = (await part.text()).strip()
         elif n == "content":
             content = (await part.text()).strip()
@@ -125,7 +128,7 @@ async def forum_post(request):
         )
     async with aiohttp.ClientSession() as session:
         ok, result = await _create_forum_post(session, forum_id, title, content, tags, [], metadata_b64)
-        if ok and config.PUBLISHER_ANNOUNCE_CHANNEL_ID:
+        if ok and config.PUBLISHER_ANNOUNCE_CHANNEL_ID and not silent_update:
             await _send_announcement(
                 session,
                 is_update=False,

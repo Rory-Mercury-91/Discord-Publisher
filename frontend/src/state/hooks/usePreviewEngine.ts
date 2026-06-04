@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { formatVarValue } from '../logic/formatVar';
 import type { AdditionalTranslationLink, Template, VarConfig } from '../types';
 
 /** Même logique qu’appContext : conserver la forme (#post-XXXXX ou /post-XXXXX), ne rien ajouter si absent. */
@@ -107,11 +108,42 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
       content = content.split('[TRANSLATION_LINKS_LINE]').join(translationLinksLine);
     }
 
-    // 3. Synopsis : bloc entier optionnel
+    // 3. Synopsis : blocs optionnels
     const overviewRaw = (inputs['Overview'] || '').trim();
     if (!overviewRaw) {
-      // Si aucun synopsis renseigné, supprimer le bloc "**Synopsis du jeu :**\n> [Overview]"
       content = content.replace(/\*\*Synopsis du jeu :\*\*\n> \[Overview\]\n?/g, '');
+    }
+    const synopsisOeuvreRaw = (inputs['Synopsis_Oeuvre'] || '').trim();
+    if (!synopsisOeuvreRaw) {
+      content = content.replace(/\*\*Synopsis :\*\*\n> \[Synopsis_Oeuvre\]\n?/g, '');
+    }
+
+    if (tpl.type === 'calendar') {
+      const hasNext =
+        (inputs['Chapitre_Suivant'] || '').trim() || (inputs['Date_Suivant'] || '').trim();
+      const hasEnd =
+        (inputs['Chapitre_Fin'] || '').trim() || (inputs['Date_Fin'] || '').trim();
+      if (!hasNext) {
+        content = content.replace(
+          /\* \*\*Prochain chapitre :\*\* \[Chapitre_Suivant\] — \[Date_Suivant\]\n?/g,
+          ''
+        );
+      }
+      if (!hasEnd) {
+        content = content.replace(
+          /\* \*\*Fin de série :\*\* chapitre \[Chapitre_Fin\] — \[Date_Fin\]\n?/g,
+          ''
+        );
+      }
+      if (!hasNext && !hasEnd) {
+        content = content.replace(/:calendar: \*\*Prochaines disponibilités\*\*\n?/g, '');
+      }
+      if (!(inputs['Book_Link'] || '').trim()) {
+        content = content.replace(
+          /:link: \*\*Lien officiel\*\*\n\* \[\[Book_Platform\]\]\(<\[Book_Link\]>\)\n?/g,
+          ''
+        );
+      }
     }
 
     // 4. Remplacement des variables classiques
@@ -119,25 +151,28 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
       const name = varConfig.name;
       if (name === 'is_modded_game') return;
       if (name === 'Mod_link' || name === 'Translate_link') return;
-      if (name === 'Overview') return;
+      if (name === 'Overview' || name === 'Synopsis_Oeuvre') return;
 
       const val = (inputs[name] || '').trim();
-      let finalVal = val;
+      const useDiscordDate =
+        tpl.type === 'calendar' && varConfig.type === 'date';
+      let finalVal = formatVarValue(val, varConfig.type, {
+        discordTimestamp: useDiscordDate,
+      });
 
-      // Nettoyer les liens (Game_link, Translate_link) à la volée
-      if (name === 'Game_link' || name === 'Translate_link') {
+      if (name === 'Game_link' || name === 'Translate_link' || name === 'Book_Link') {
         finalVal = cleanGameLink(val);
       }
       content = content.split('[' + name + ']').join(finalVal || '[' + name + ']');
     });
-    // Cas particulier Overview : conserver les retours à la ligne en blockquote "> "
-    if (overviewRaw) {
-      const overviewLines = overviewRaw.split('\n');
-      const overviewFinal = overviewLines.length
-        ? overviewLines.map((line, i) => (i === 0 ? line : '> ' + line)).join('\n')
-        : '';
-      content = content.split('[Overview]').join(overviewFinal || '[Overview]');
-    }
+    const applyBlockquoteSynopsis = (raw: string, tag: string) => {
+      if (!raw) return;
+      const lines = raw.split('\n');
+      const final = lines.length ? lines.map((line, i) => (i === 0 ? line : '> ' + line)).join('\n') : '';
+      content = content.split('[' + tag + ']').join(final || '[' + tag + ']');
+    };
+    applyBlockquoteSynopsis(overviewRaw, 'Overview');
+    applyBlockquoteSynopsis(synopsisOeuvreRaw, 'Synopsis_Oeuvre');
 
     // 5. Remplacement de [Translation_Type]
     const displayTranslationType = isIntegrated

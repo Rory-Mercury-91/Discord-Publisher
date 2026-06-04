@@ -16,6 +16,8 @@ interface PublishFooterProps {
   publishTooltipText: string;
   onPublish: (silentUpdate?: boolean, skipVersionControl?: boolean) => Promise<void>;
   confirm: (options: ConfirmOptions) => Promise<boolean>;
+  /** Vue Webtoon : pas de toggles, publication silencieuse + sans contrôle de version. */
+  webtoonMode?: boolean;
 }
 
 export default function PublishFooter({
@@ -30,6 +32,7 @@ export default function PublishFooter({
   publishTooltipText,
   onPublish,
   confirm,
+  webtoonMode = false,
 }: PublishFooterProps) {
   const [showTooltip, setShowTooltip] = useState(false);
 
@@ -54,8 +57,12 @@ export default function PublishFooter({
 
     if (!ok) return;
 
-    const silent = isUpdate ? silentUpdateMode : false;
-    await onPublish(silent, skipVersionControlMode);
+    if (webtoonMode) {
+      await onPublish(true, true);
+    } else {
+      const silent = isUpdate ? silentUpdateMode : false;
+      await onPublish(silent, skipVersionControlMode);
+    }
   };
 
   const isDisabled = publishInProgress || !canPublish;
@@ -68,22 +75,24 @@ export default function PublishFooter({
         </div>
       )}
 
-      <div className="publish-footer__toggles">
-        {editingPostId && (
+      {!webtoonMode && (
+        <div className="publish-footer__toggles">
+          {editingPostId && (
+            <Toggle
+              checked={silentUpdateMode}
+              onChange={setSilentUpdateMode}
+              label="Mise à jour silencieuse"
+              title="Ne pas envoyer de notification de mise à jour"
+            />
+          )}
           <Toggle
-            checked={silentUpdateMode}
-            onChange={setSilentUpdateMode}
-            label="Mise à jour silencieuse"
-            title="Ne pas envoyer de notification de mise à jour"
+            checked={skipVersionControlMode}
+            onChange={setSkipVersionControlMode}
+            label="Ne pas appliquer le contrôle de version"
+            title="Exclure ce post du contrôle des versions F95 (le script ne le vérifiera pas)"
           />
-        )}
-        <Toggle
-          checked={skipVersionControlMode}
-          onChange={setSkipVersionControlMode}
-          label="Ne pas appliquer le contrôle de version"
-          title="Exclure ce post du contrôle des versions F95 (le script ne le vérifiera pas)"
-        />
-      </div>
+        </div>
+      )}
 
       <div
         className="relative"

@@ -1,5 +1,5 @@
 // frontend/src/components/Settings/index.tsx (ex ConfigModal)
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useModalScrollLock } from '../../hooks/useModalScrollLock';
@@ -21,6 +21,25 @@ interface SettingsModalProps {
 export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('preferences');
   const [masterAdmin, setMasterAdmin] = useState(() => !!localStorage.getItem(STORAGE_KEY_MASTER_ADMIN));
+  const preferencesFlushRef = useRef<(() => Promise<void>) | null>(null);
+  const [closing, setClosing] = useState(false);
+
+  const registerPreferencesFlush = useCallback((fn: (() => Promise<void>) | null) => {
+    preferencesFlushRef.current = fn;
+  }, []);
+
+  const handleClose = useCallback(async () => {
+    if (closing) return;
+    setClosing(true);
+    try {
+      await preferencesFlushRef.current?.();
+    } catch (e) {
+      console.error('Erreur sauvegarde préférences à la fermeture:', e);
+    } finally {
+      setClosing(false);
+      onClose?.();
+    }
+  }, [closing, onClose]);
 
   useEffect(() => {
     const sync = () => setMasterAdmin(!!localStorage.getItem(STORAGE_KEY_MASTER_ADMIN));
@@ -35,7 +54,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     };
   }, []);
 
-  useEscapeKey(() => onClose?.(), true);
+  useEscapeKey(() => void handleClose(), true);
   useModalScrollLock();
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
@@ -47,7 +66,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   ];
 
   const modalContent = (
-    <div className="modal" onClick={() => onClose?.()}>
+    <div className="modal" onClick={() => void handleClose()}>
       <div
         className="panel modal-panel modal-panel--config"
         onClick={e => e.stopPropagation()}
@@ -71,7 +90,9 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         </div>
 
         <div className="config-content styled-scrollbar">
-          {activeTab === 'preferences' && <PreferenceSettings />}
+          <div hidden={activeTab !== 'preferences'}>
+            <PreferenceSettings registerFlush={registerPreferencesFlush} />
+          </div>
           {activeTab === 'account'     && <MyAccountSettings />}
           {activeTab === 'collection'  && <CollectionSettings />}
           {activeTab === 'admin'       && <AdminSettings />}
@@ -95,8 +116,13 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         </div>
 
         <div className="modal-footer">
-          <button type="button" onClick={onClose} className="form-btn form-btn--ghost">
-            ↩️ Fermer
+          <button
+            type="button"
+            onClick={() => void handleClose()}
+            disabled={closing}
+            className="form-btn form-btn--ghost"
+          >
+            {closing ? 'Enregistrement…' : '↩️ Fermer'}
           </button>
         </div>
       </div>

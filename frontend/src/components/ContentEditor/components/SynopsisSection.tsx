@@ -7,14 +7,15 @@ interface SynopsisSectionProps {
   disabled: boolean;
   onTranslate?: () => void;
   translating?: boolean;
+  label?: string;
 }
 
 const SynopsisSection = forwardRef<HTMLTextAreaElement, SynopsisSectionProps>(
-  ({ value, onChange, disabled, onTranslate, translating }, ref) => {
+  ({ value, onChange, disabled, onTranslate, translating, label = 'Synopsis' }, ref) => {
     return (
       <div className="form-field form-field--fill">
         <div className="editor-section-header">
-          <label className="form-label">Synopsis</label>
+          <label className="form-label">{label}</label>
           {onTranslate && (
             <button
               type="button"

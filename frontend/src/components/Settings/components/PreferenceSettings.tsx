@@ -1,5 +1,11 @@
 // frontend/src/components/Settings/components/PreferenceSettings.tsx
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { isTauri } from '../../../lib/runtime';
+import CalendarTemplateSettings from './CalendarTemplateSettings';
+
+type PreferenceSettingsProps = {
+  registerFlush?: (fn: (() => Promise<void>) | null) => void;
+};
 
 type WindowState = 'normal' | 'maximized' | 'fullscreen' | 'minimized';
 
@@ -9,19 +15,31 @@ function isWindowState(v: string): v is WindowState {
   return VALID_WINDOW_STATES.includes(v as WindowState);
 }
 
-export default function PreferenceSettings() {
+export default function PreferenceSettings({ registerFlush }: PreferenceSettingsProps) {
   const [defaultTranslationLabel, setDefaultTranslationLabel] = useState(() => localStorage.getItem('default_translation_label') || 'Traduction');
   const [defaultModLabel, setDefaultModLabel] = useState(() => localStorage.getItem('default_mod_label') || 'Mod');
   const [windowState, setWindowState] = useState<WindowState>(() => (localStorage.getItem('windowState') as WindowState) || 'maximized');
   const [defaultMode, setDefaultMode] = useState<string>(() => localStorage.getItem('defaultMode') || 'translator');
 
+  const windowStateRef = useRef(windowState);
+  windowStateRef.current = windowState;
+
+  const childFlushesRef = useRef(new Set<() => Promise<void>>());
+
+  const registerChildFlush = useCallback((fn: (() => Promise<void>) | null) => {
+    if (!fn) return undefined;
+    childFlushesRef.current.add(fn);
+    return () => {
+      childFlushesRef.current.delete(fn);
+    };
+  }, []);
+
   useEffect(() => { localStorage.setItem('default_translation_label', defaultTranslationLabel); }, [defaultTranslationLabel]);
   useEffect(() => { localStorage.setItem('default_mod_label', defaultModLabel); }, [defaultModLabel]);
   useEffect(() => { localStorage.setItem('defaultMode', defaultMode); }, [defaultMode]);
 
-  // Aligner le sélecteur avec le fichier lu par Tauri au démarrage (window_state.txt)
   useEffect(() => {
-    if (!(window as unknown as { __TAURI__?: unknown }).__TAURI__) return;
+    if (!isTauri) return;
     void (async () => {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
@@ -32,24 +50,24 @@ export default function PreferenceSettings() {
           localStorage.setItem('windowState', normalized);
         }
       } catch {
-        /* ignoré : navigateur ou ancienne build */
+        /* ignoré */
       }
     })();
   }, []);
 
-  const applyWindowStateLive = async (next: WindowState) => {
+  const applyWindowStateLive = useCallback(async (next: WindowState) => {
+    if (!isTauri) return;
     try {
-      if (!window.__TAURI__) return;
-      let win: any = null;
+      let win: { setFullscreen?: (v: boolean) => Promise<void>; isFullscreen?: () => Promise<boolean>; isMinimized?: () => Promise<boolean>; unminimize?: () => Promise<void>; unmaximize?: () => Promise<void>; maximize?: () => Promise<void>; minimize?: () => Promise<void> } | null = null;
       try {
-        const wv: any = await import('@tauri-apps/api/webviewWindow');
-        win = typeof wv.getCurrentWebviewWindow === 'function' ? wv.getCurrentWebviewWindow() : (wv.appWindow ?? null);
-      } catch { }
+        const wv: { getCurrentWebviewWindow?: () => typeof win } = await import('@tauri-apps/api/webviewWindow');
+        win = wv.getCurrentWebviewWindow?.() ?? null;
+      } catch { /* ignore */ }
       if (!win) {
         try {
-          const w: any = await import('@tauri-apps/api/window');
-          win = typeof w.getCurrentWindow === 'function' ? w.getCurrentWindow() : (w.appWindow ?? null);
-        } catch { }
+          const w: { getCurrentWindow?: () => typeof win } = await import('@tauri-apps/api/window');
+          win = w.getCurrentWindow?.() ?? null;
+        } catch { /* ignore */ }
       }
       if (!win) return;
 
@@ -63,32 +81,53 @@ export default function PreferenceSettings() {
       }
 
       switch (next) {
-        case 'fullscreen': await win.unmaximize?.(); await win.setFullscreen?.(true); break;
-        case 'maximized': await win.maximize?.(); break;
-        case 'normal': await win.unmaximize?.(); break;
-        case 'minimized': await win.minimize?.(); break;
+        case 'fullscreen':
+          await win.unmaximize?.();
+          await win.setFullscreen?.(true);
+          break;
+        case 'maximized':
+          await win.maximize?.();
+          break;
+        case 'normal':
+          await win.unmaximize?.();
+          break;
+        case 'minimized':
+          await win.minimize?.();
+          break;
       }
     } catch (e) {
       console.error('Erreur état fenêtre:', e);
     }
-  };
+  }, []);
 
-  const handleWindowStateChange = async (state: WindowState) => {
-    setWindowState(state);
-    await applyWindowStateLive(state);
+  const flushWindowState = useCallback(async () => {
+    const state = windowStateRef.current;
     localStorage.setItem('windowState', state);
-    if ((window as unknown as { __TAURI__?: unknown }).__TAURI__) {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('save_window_state', { state });
-      } catch (e) {
-        console.error('Erreur sauvegarde état fenêtre (Tauri):', e);
-      }
+    if (!isTauri) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('save_window_state', { state });
+      await applyWindowStateLive(state);
+    } catch (e) {
+      console.error('Erreur sauvegarde état fenêtre:', e);
     }
-  };
+  }, [applyWindowStateLive]);
+
+  useEffect(() => {
+    if (!registerFlush) return;
+    const combinedFlush = async () => {
+      await flushWindowState();
+      for (const fn of childFlushesRef.current) {
+        await fn();
+      }
+    };
+    registerFlush(combinedFlush);
+    return () => registerFlush(null);
+  }, [registerFlush, flushWindowState]);
 
   return (
     <div className="settings-grid">
+      {/* Section 1 : démarrage | fenêtre */}
       <section className="settings-section">
         <h4 className="settings-section__title">🚀 Onglet au démarrage</h4>
         <div className="form-field">
@@ -107,10 +146,10 @@ export default function PreferenceSettings() {
       <section className="settings-section">
         <h4 className="settings-section__title">🪟 Affichage de la fenêtre</h4>
         <div className="form-field">
-          <label className="form-label">Mode d'affichage au démarrage</label>
+          <label className="form-label">Mode par défaut (1er lancement)</label>
           <select
             value={windowState}
-            onChange={e => handleWindowStateChange(e.target.value as WindowState)}
+            onChange={e => setWindowState(e.target.value as WindowState)}
             className="form-input settings-select-pointer"
           >
             <option value="normal">🔲 Normal</option>
@@ -118,9 +157,15 @@ export default function PreferenceSettings() {
             <option value="fullscreen">🖥️ Plein écran</option>
             <option value="minimized">➖ Minimisé</option>
           </select>
+          <p className="settings-log-description" style={{ marginTop: 8 }}>
+            {isTauri
+              ? 'La position et la taille de la fenêtre sont retenues automatiquement. Ce réglage ne s’utilise qu’au tout premier lancement.'
+              : 'Enregistré à la fermeture de cette fenêtre.'}
+          </p>
         </div>
       </section>
 
+      {/* Section 2 : labels */}
       <section className="settings-section settings-grid--full">
         <div className="settings-log-header settings-log-header--labels">
           <div>
@@ -163,6 +208,9 @@ export default function PreferenceSettings() {
           </div>
         </div>
       </section>
+
+      {/* Section 3 : Webtoon | salon (admin) */}
+      <CalendarTemplateSettings registerFlush={registerChildFlush} />
     </div>
   );
 }

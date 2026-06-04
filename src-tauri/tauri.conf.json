@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Discord Publisher",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "identifier": "com.publication.generator",
   "build": {
     "frontendDist": "../frontend/dist",
@@ -20,7 +20,7 @@
         "minHeight": 800,
         "resizable": true,
         "fullscreen": false,
-        "maximized": true,
+        "maximized": false,
         "center": true,
         "devtools": true,
         "dragDropEnabled": false
