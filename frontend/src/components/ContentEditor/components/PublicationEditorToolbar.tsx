@@ -70,7 +70,7 @@ export default function PublicationEditorToolbar({
         📝 Contenu du post Discord
         {editingPostId && (
           <>
-            <span className="editor-toolbar__badge">✏️ Mode modification</span>
+            <span className="editor-toolbar__badge">✏️ Mode édition</span>
             {onExitEditMode && (
               <button
                 type="button"
@@ -101,7 +101,7 @@ export default function PublicationEditorToolbar({
             <Toggle
               checked={webtoonViewActive}
               onChange={onWebtoonViewChange}
-              label="Vue Webtoon"
+              label="Webtoon"
               title={
                 webtoonViewActive
                   ? 'Passer à la publication traduction'
@@ -117,7 +117,7 @@ export default function PublicationEditorToolbar({
           <>
             <div className="editor-toolbar__divider" />
             <div className="editor-toolbar__select-wrap">
-              <span className="editor-toolbar__label-sm">👤 Publier pour :</span>
+              <span className="editor-toolbar__label-sm">👤 Publier sur :</span>
               {publishForMode === 'webtoon' ? (
                 <select
                   value="webtoon"

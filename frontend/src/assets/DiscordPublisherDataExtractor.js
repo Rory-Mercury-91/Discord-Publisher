@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discord Publisher — Import rapide
 // @namespace    http://tampermonkey.net/
-// @version      4.5
+// @version      4.6
 // @description  Importe F95/LewdCorner, fiche Nautiljon (métadonnées) ou WEBTOON (lien officiel) dans Discord Publisher.
 // @author       Rory Mercury 91
 // @match        https://f95zone.to/threads/*
@@ -235,11 +235,19 @@
 
   // ─── Nautiljon ─────────────────────────────────────────────────────────────
 
-  function findNautiljonInfoLi(label) {
-    const items = document.querySelectorAll('.liste_infos li, ul.mb10 li');
+  function normalizeNautiljonLabel(text) {
+    return (text || '').trim().replace(/:\s*$/, '').toLowerCase();
+  }
+
+  function findNautiljonInfoLi(labelVariants) {
+    const variants = Array.isArray(labelVariants) ? labelVariants : [labelVariants];
+    const wanted = variants.map(v => v.toLowerCase());
+    const items = document.querySelectorAll('.liste_infos li, ul.mb10 li, .infosFicheTop li');
     for (const li of items) {
       const bold = li.querySelector('.bold');
-      if (bold && (bold.textContent || '').trim().startsWith(label)) return li;
+      if (!bold) continue;
+      const boldNorm = normalizeNautiljonLabel(bold.textContent);
+      if (wanted.some(v => boldNorm === v || boldNorm.startsWith(v))) return li;
     }
     return null;
   }
@@ -251,19 +259,36 @@
       .filter(Boolean);
   }
 
-  function extractNautiljonGenres() {
-    const li = findNautiljonInfoLi('Genres');
+  /** Texte libre après le libellé (ex. « Action- Aventure » sans liens, ou « École » seul). */
+  function extractNautiljonPlainTexts(li) {
+    if (!li) return [];
+    const clone = li.cloneNode(true);
+    clone.querySelectorAll('.bold').forEach(el => el.remove());
+    const text = (clone.textContent || '').trim().replace(/^:\s*/, '');
+    if (!text) return [];
+    return text
+      .split(/\s*-\s*/)
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+
+  function extractNautiljonValuesFromLi(li) {
     if (!li) return [];
     const fromSchema = Array.from(li.querySelectorAll('[itemprop="genre"]'))
       .map(el => (el.textContent || '').trim())
       .filter(Boolean);
     if (fromSchema.length) return fromSchema;
-    return extractNautiljonLinkTexts(li);
+    const fromLinks = extractNautiljonLinkTexts(li);
+    if (fromLinks.length) return fromLinks;
+    return extractNautiljonPlainTexts(li);
+  }
+
+  function extractNautiljonGenres() {
+    return extractNautiljonValuesFromLi(findNautiljonInfoLi(['Genres', 'Genre']));
   }
 
   function extractNautiljonThemes() {
-    const li = findNautiljonInfoLi('Thèmes');
-    return extractNautiljonLinkTexts(li);
+    return extractNautiljonValuesFromLi(findNautiljonInfoLi(['Thèmes', 'Thème']));
   }
 
   function extractNautiljonTitle() {
@@ -387,11 +412,47 @@
     return '';
   }
 
+  function extractWebtoonGenres() {
+    const state = window.__episodeListState__;
+    const fromState = state?.title?.genreList
+      || state?.title?.genres
+      || state?.genreList
+      || state?.title?.representGenre;
+    if (Array.isArray(fromState) && fromState.length) {
+      return fromState
+        .map(g => (typeof g === 'string' ? g : (g?.name || g?.genreName || g?.genre || '')).trim())
+        .filter(Boolean);
+    }
+    if (typeof fromState === 'string' && fromState.trim()) {
+      return fromState.split(/[,/|]/).map(s => s.trim()).filter(Boolean);
+    }
+
+    const fromDom = Array.from(
+      document.querySelectorAll('.genre, .tag_list a, .work_tags a, .detail_header .tag')
+    )
+      .map(el => (el.textContent || '').trim())
+      .filter(Boolean);
+    if (fromDom.length) return [...new Set(fromDom)];
+
+    const keywords = document.querySelector('meta[name="keywords"]')?.content || '';
+    if (keywords.trim()) {
+      return keywords
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s && !/webtoon|comics|webcomic/i.test(s))
+        .slice(0, 8);
+    }
+    return [];
+  }
+
   function extractWebtoonData() {
+    const genres = extractWebtoonGenres();
+    const combined = genres.length ? genres.join(' - ') : '';
     return {
       domain              : 'WEBTOON',
       kind                : 'work_tracking',
       name                : extractWebtoonTitle(),
+      genres_themes       : combined || undefined,
       synopsis            : extractWebtoonSynopsis(),
       link                : extractWebtoonListUrl(),
       official_site_label : 'WEBTOON',

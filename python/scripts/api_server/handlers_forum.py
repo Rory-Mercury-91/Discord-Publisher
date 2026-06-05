@@ -62,7 +62,10 @@ async def forum_post_delete(request):
         await __import__("asyncio").get_event_loop().run_in_executor(None, _delete_from_supabase_sync, thread_id, post_id)
         post_title = (body.get("postTitle") or body.get("title") or "").strip()
         reason = (body.get("reason") or "").strip()
-        if post_title:
+        silent_delete = body.get("silent_delete") or body.get("silent_update")
+        if isinstance(silent_delete, str):
+            silent_delete = silent_delete.strip().lower() in ("true", "1", "yes")
+        if post_title and not silent_delete:
             discord_url = body.get("discordUrl") or body.get("discord_url") or body.get("thread_url") or ""
             await _send_deletion_announcement(session, post_title, reason, thread_url=discord_url)
     return with_cors(request, web.json_response({"ok": True, "thread_id": thread_id}))

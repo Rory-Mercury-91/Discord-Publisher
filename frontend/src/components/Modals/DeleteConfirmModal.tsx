@@ -4,6 +4,8 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 interface DeleteConfirmModalProps {
   isOpen: boolean;
   postTitle: string;
+  /** Faux pour les posts Webtoon (suppression silencieuse, sans annonce Discord). */
+  showDeletionAnnouncement?: boolean;
   onConfirm: (reason: string) => void;
   onCancel: () => void;
 }
@@ -11,6 +13,7 @@ interface DeleteConfirmModalProps {
 export default function DeleteConfirmModal({
   isOpen,
   postTitle,
+  showDeletionAnnouncement = true,
   onConfirm,
   onCancel
 }: DeleteConfirmModalProps) {
@@ -44,7 +47,9 @@ export default function DeleteConfirmModal({
             <li>Retirer le post de votre historique</li>
             <li>Le supprimer de la base de données</li>
             <li>Supprimer le thread (et tout son contenu) sur Discord</li>
-            <li>Envoyer une annonce de suppression dans le salon Discord</li>
+            {showDeletionAnnouncement && (
+              <li>Envoyer une annonce de suppression dans le salon Discord</li>
+            )}
           </ul>
           <p className="modal-confirm__body--warning">⚠️ Cette action est irréversible.</p>
         </div>

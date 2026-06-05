@@ -5,6 +5,7 @@ import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 import { createApiHeaders } from '../../lib/api-helpers';
 import { getSupabase } from '../../lib/supabase';
 import { PublishedPost, useApp } from '../../state/appContext';
+import { isCalendarPublishedPost } from '../../state/calendarTemplate';
 import { useAuth } from '../../state/authContext';
 import ConfirmModal from '../Modals/ConfirmModal';
 import DeleteConfirmModal from '../Modals/DeleteConfirmModal';
@@ -384,6 +385,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
       const headers = await createApiHeaders(apiKey, {
         'Content-Type': 'application/json',
       });
+      const silentDelete = isCalendarPublishedPost(post);
       const res = await fetch(`${baseUrl}/api/forum-post/delete`, {
         method: 'POST',
         headers,
@@ -392,6 +394,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
           postId: post.id,
           postTitle: post.title,
           reason: reason || undefined,
+          silent_delete: silentDelete,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -530,6 +533,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
       <DeleteConfirmModal
         isOpen={deleteModalOpen}
         postTitle={postToDelete?.title || ''}
+        showDeletionAnnouncement={!isCalendarPublishedPost(postToDelete)}
         onConfirm={performDelete}
         onCancel={() => {
           setDeleteModalOpen(false);

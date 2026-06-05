@@ -32,19 +32,34 @@ export function serializeAdditionalScanLinks(links: ScanLink[]): string {
   return cleaned.length > 0 ? JSON.stringify(cleaned) : '';
 }
 
-/** Liens officiels + scan (principal + additionnels). */
+function normalizeLinkUrl(url: string): string {
+  return url.trim().toLowerCase().replace(/\/$/, '');
+}
+
+/** Liens officiels + scan (principal + additionnels, sans doublon d'URL). */
 export function getWorkTrackingLinkParts(
   inputs: Record<string, string>,
   additionalScanLinks: ScanLink[] = []
 ): CalendarLinkPart[] {
   const parts: CalendarLinkPart[] = [];
-  const officialLabel = (inputs.Official_Site_Label || inputs.Book_Platform || '').trim();
-  const officialUrl = (inputs.Official_Site_Link || inputs.Book_Link || '').trim();
-  if (officialLabel && officialUrl) parts.push({ label: officialLabel, url: officialUrl });
+  const seenUrls = new Set<string>();
 
-  const scanLabel = (inputs.Scan_Site_Label || '').trim();
-  const scanUrl = (inputs.Scan_Site_Link || '').trim();
-  if (scanLabel && scanUrl) parts.push({ label: scanLabel, url: scanUrl });
+  const push = (label: string, url: string) => {
+    const cleanLabel = label.trim();
+    const cleanUrl = url.trim();
+    if (!cleanLabel || !cleanUrl) return;
+    const key = normalizeLinkUrl(cleanUrl);
+    if (seenUrls.has(key)) return;
+    seenUrls.add(key);
+    parts.push({ label: cleanLabel, url: cleanUrl });
+  };
+
+  push(
+    inputs.Official_Site_Label || inputs.Book_Platform || '',
+    inputs.Official_Site_Link || inputs.Book_Link || ''
+  );
+
+  push(inputs.Scan_Site_Label || '', inputs.Scan_Site_Link || '');
 
   const extras =
     additionalScanLinks.length > 0
@@ -52,9 +67,7 @@ export function getWorkTrackingLinkParts(
       : parseAdditionalScanLinks(inputs[ADDITIONAL_SCAN_LINKS_INPUT_KEY]);
 
   for (const entry of extras) {
-    const label = (entry.label || '').trim();
-    const url = (entry.link || '').trim();
-    if (label && url) parts.push({ label, url });
+    push(entry.label || '', entry.link || '');
   }
 
   return parts;

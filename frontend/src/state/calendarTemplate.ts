@@ -7,6 +7,7 @@ export const CALENDAR_TEMPLATE_ID = 'calendar';
 /** Post historique créé avec le template Webtoon / calendrier. */
 export function isCalendarPublishedPost(post: PublishedPost | null | undefined): boolean {
   if (!post) return false;
+  if (post.publicationCategory === 'work_tracking') return true;
   if (post.templateId === CALENDAR_TEMPLATE_ID) return true;
   const inputs = post.savedInputs ?? {};
   const hasCalendarFields = !!(

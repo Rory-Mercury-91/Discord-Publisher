@@ -255,34 +255,28 @@ export default function WebtoonEditor() {
 
     if (!tag || isAutoInjectedTagType(tag.tagType)) return;
 
-
-
     const current = filterWebtoonSelectableTagIds(
-
       postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [],
-
       savedTags
-
     );
 
-
-
-    if (!current.includes(tagId)) {
-
-      if (current.length >= WEBTOON_TAGS_MAX) {
-
-        showToast(`Maximum ${WEBTOON_TAGS_MAX} tags actifs`, 'warning');
-
-        return;
-
-      }
-
-      setPostTags([...current, tagId].join(','));
-
+    let nextIds = current;
+    if (tag.tagType === 'workType' || tag.tagType === 'workStatus') {
+      nextIds = current.filter(id => {
+        const t = savedTags.find(
+          st => (st.id || st.name) === id || String(st.discordTagId ?? '') === id
+        );
+        return t?.tagType !== tag.tagType;
+      });
     }
 
-    setShowTagSelector(false);
-
+    if (!nextIds.includes(tagId)) {
+      if (nextIds.length >= WEBTOON_TAGS_MAX) {
+        showToast(`Maximum ${WEBTOON_TAGS_MAX} tags actifs`, 'warning');
+        return;
+      }
+      setPostTags([...nextIds, tagId].join(','));
+    }
   };
 
 

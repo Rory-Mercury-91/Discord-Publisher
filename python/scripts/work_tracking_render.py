@@ -174,29 +174,47 @@ def _has_scan_link(wp: dict) -> bool:
 
 
 
+def _normalize_link_url(url: str) -> str:
+
+    return (url or "").strip().lower().rstrip("/")
+
+
+
+
+
 def _build_links(wp: dict) -> str:
 
     parts: list[str] = []
 
-    olabel = (wp.get("official_site_label") or "").strip()
+    seen: set[str] = set()
 
-    ourl = (wp.get("official_site_link") or "").strip()
+    def add(label: str, url: str) -> None:
 
-    if olabel and ourl:
+        label = (label or "").strip()
 
-        parts.append(f"[{olabel}](<{ourl}>)")
+        url = (url or "").strip()
 
-    slabel = (wp.get("scan_site_label") or "").strip()
+        if not label or not url:
 
-    surl = (wp.get("scan_site_link") or "").strip()
+            return
 
-    if slabel and surl:
+        key = _normalize_link_url(url)
 
-        parts.append(f"[{slabel}](<{surl}>)")
+        if key in seen:
+
+            return
+
+        seen.add(key)
+
+        parts.append(f"[{label}](<{url}>)")
+
+    add(wp.get("official_site_label") or "", wp.get("official_site_link") or "")
+
+    add(wp.get("scan_site_label") or "", wp.get("scan_site_link") or "")
 
     for label, url in _parse_additional_scan_links(wp):
 
-        parts.append(f"[{label}](<{url}>)")
+        add(label, url)
 
     if not parts:
 
