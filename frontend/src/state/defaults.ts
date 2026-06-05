@@ -15,6 +15,7 @@ export const defaultTemplate: Template = {
   id: 'my',
   name: 'Mes traductions',
   type: 'my',
+  category: 'translator',
   isDefault: true,
   content: `## :flag_fr: La traduction française de [Game_name] est disponible ! :tada:
 

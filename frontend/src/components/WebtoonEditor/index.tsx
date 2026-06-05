@@ -12,9 +12,12 @@ import {
 
   computeNextChapter,
 
-  getWebtoonWorkStatusFromTags,
-
 } from '../../state/calendarTemplate';
+
+import { PROGRESS_UNIT_OPTIONS } from '../../state/workTracking/registry';
+import { resolveWorkTrackingFromTags } from '../../state/workTracking/resolveFromTags';
+import type { ProgressUnit } from '../../state/workTracking/types';
+import WorkTrackingPlanningSection from './WorkTrackingPlanningSection';
 
 import { useUserPreferences } from '../../state/hooks/useUserPreferences';
 
@@ -47,13 +50,13 @@ import {
 
 } from '../tags/constants';
 
-import DateInputWithDayOffset from '../shared/DateInputWithDayOffset';
-
 import TagSelectorModalWebtoon from './TagSelectorModalWebtoon';
 
 import WebtoonSiteLabelField from './WebtoonSiteLabelField';
 
 import { useWebtoonSiteLabelPicker } from '../../state/hooks/useWebtoonSiteLabelPicker';
+import { applyWorkImportAsync, isWorkImportPayload } from '../../state/workTracking/applyWorkImport';
+import { resolveWorkImagePreview } from '../../state/workTracking/resolveWorkImage';
 
 
 
@@ -139,14 +142,23 @@ export default function WebtoonEditor() {
     selectedTagIds
   );
 
-  const workStatus = useMemo(() => {
-    const fromSaved = getWebtoonWorkStatusFromTags(selectedTagIds, savedTags);
-    const fromDisplay = getWebtoonWorkStatusFromTags(selectedTagIds, displayTags);
-    if (fromSaved !== 'ongoing') return fromSaved;
-    return fromDisplay;
-  }, [selectedTagIds, savedTags, displayTags]);
+  const resolvedWork = useMemo(
+    () => resolveWorkTrackingFromTags(selectedTagIds, savedTags),
+    [selectedTagIds, savedTags]
+  );
 
-  const isFinalWorkStatus = workStatus !== 'ongoing';
+  const workStatus = resolvedWork.status;
+  const isFinalWorkStatus = workStatus === 'completed' || workStatus === 'abandoned';
+  const chapterControlAvailable = workStatus === 'ongoing';
+
+  const progressUnit = ((inputs.Progress_Unit as ProgressUnit) || 'chapter') as ProgressUnit;
+
+  const chapterControlEnabled =
+    chapterControlAvailable && inputs.Chapter_Control_Enabled !== 'false';
+
+  useEffect(() => {
+    setInput('Chapter_Control_Enabled', chapterControlAvailable ? 'true' : 'false');
+  }, [workStatus, chapterControlAvailable, setInput]);
 
 
 
@@ -166,13 +178,12 @@ export default function WebtoonEditor() {
 
   const currentTemplate = templates[currentTemplateIdx];
 
-  const isCalendarTemplate =
+  const isWorkTemplate =
+    currentTemplate?.id === CALENDAR_TEMPLATE_ID ||
+    currentTemplate?.type === 'calendar' ||
+    currentTemplate?.type === 'work_tracking';
 
-    currentTemplate?.id === CALENDAR_TEMPLATE_ID || currentTemplate?.type === 'calendar';
-
-
-
-  const canPublish = isCalendarTemplate && rateLimitCooldown === null;
+  const canPublish = isWorkTemplate && rateLimitCooldown === null;
 
 
 
@@ -180,7 +191,7 @@ export default function WebtoonEditor() {
 
     if (publishInProgress) return 'Publication en cours…';
 
-    if (!isCalendarTemplate) return 'Template calendrier requis';
+    if (!isWorkTemplate) return 'Template suivi d\'œuvres requis';
 
     if (rateLimitCooldown !== null) {
 
@@ -190,9 +201,9 @@ export default function WebtoonEditor() {
 
     if (!(inputs['Nom_Oeuvre'] || '').trim()) return "Renseignez le nom de l'œuvre";
 
-    if (isFinalWorkStatus && !(inputs['Chapitre_Fin'] || '').trim()) {
+    if (isFinalWorkStatus && !(inputs.Chapitre_Fin || '').trim()) {
       return workStatus === 'abandoned'
-        ? 'Renseignez le dernier chapitre (tag Abandonné)'
+        ? 'Renseignez le dernier chapitre (tag Abandonnée)'
         : 'Renseignez le dernier chapitre (tag Terminé)';
     }
 
@@ -288,6 +299,26 @@ export default function WebtoonEditor() {
 
 
 
+  const handlePasteImport = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return showToast('Presse-papier vide', 'error');
+
+      const data = JSON.parse(text);
+      if (!isWorkImportPayload(data)) {
+        return showToast('Format JSON non reconnu (export Nautiljon ou WEBTOON attendu)', 'error');
+      }
+
+      const { imageOk } = await applyWorkImportAsync(data, { setInput, addImageFromUrl });
+      showToast(
+        imageOk ? 'Données importées avec succès !' : 'Données importées (couverture non chargée)',
+        imageOk ? 'success' : 'warning',
+      );
+    } catch {
+      showToast('Format JSON invalide', 'error');
+    }
+  };
+
   const handleResetForm = () => {
 
     resetAllFields();
@@ -308,16 +339,17 @@ export default function WebtoonEditor() {
 
 
 
-  const handleAddImage = () => {
-
+  const handleAddImage = async () => {
     const url = imageUrlInput.trim();
-
     if (!url) return;
 
-    addImageFromUrl(url);
-
+    const resolved = await resolveWorkImagePreview(url);
+    if (resolved) {
+      addImageFromUrl(resolved.sourceUrl, { previewUrl: resolved.previewUrl });
+    } else {
+      addImageFromUrl(url);
+    }
     setImageUrlInput('');
-
   };
 
 
@@ -365,6 +397,10 @@ export default function WebtoonEditor() {
       <PublicationEditorToolbar
 
         editingPostId={editingPostId}
+
+        showImport
+
+        onImportData={handlePasteImport}
 
         onResetForm={handleResetForm}
 
@@ -450,165 +486,47 @@ export default function WebtoonEditor() {
           </div>
         </div>
 
-        <h4 className="webtoon-editor__block-title">Calendrier des chapitres</h4>
-
-          {isFinalWorkStatus && (
-            <p className="webtoon-editor__planning-hint">
-              {workStatus === 'abandoned'
-                ? 'Tag « Abandonné » actif : indiquez le dernier chapitre de la série. La date de fin est optionnelle.'
-                : 'Tag « Terminé » actif : indiquez le dernier chapitre de la série. La date de fin est optionnelle.'}
-            </p>
-          )}
-
-          <div className="webtoon-editor__planning">
-
-            {!isFinalWorkStatus && (
-
-              <div className="webtoon-editor__planning-section webtoon-editor__planning-section--next">
-
-                <div className="webtoon-editor__plan-field webtoon-editor__plan-field--ch">
-
-                  <label className="form-label" htmlFor="webtoon-ch-actuel" title="Chapitre actuel">
-
-                    Ch. actuel
-
-                  </label>
-
-                  <input
-
-                    id="webtoon-ch-actuel"
-
-                    value={inputs['Chapitre_Actuel'] || ''}
-
-                    onChange={e => handleChapitreActuelChange(e.target.value)}
-
-                    className="form-input"
-
-                    placeholder="52"
-
-                    inputMode="numeric"
-
-                  />
-
-                </div>
-
-                <div className="webtoon-editor__plan-field webtoon-editor__plan-field--ch">
-
-                  <label className="form-label" htmlFor="webtoon-ch-suivant" title="Prochain chapitre">
-
-                    Proch. ch.
-
-                  </label>
-
-                  <input
-
-                    id="webtoon-ch-suivant"
-
-                    value={inputs['Chapitre_Suivant'] || ''}
-
-                    onChange={e => setInput('Chapitre_Suivant', e.target.value)}
-
-                    className="form-input"
-
-                    placeholder="+1"
-
-                    inputMode="numeric"
-
-                  />
-
-                </div>
-
-                <div className="webtoon-editor__plan-field webtoon-editor__plan-field--dates">
-
-                  <label className="form-label" htmlFor="webtoon-date-suivant" title="Date prochaine dispo.">
-
-                    Date proch.
-
-                  </label>
-
-                  <DateInputWithDayOffset
-
-                    layout="planning"
-
-                    id="webtoon-date-suivant"
-
-                    label="Date (prochain)"
-
-                    labelTitle="Date prochaine dispo."
-
-                    value={inputs['Date_Suivant'] || ''}
-
-                    onChange={v => setInput('Date_Suivant', v)}
-
-                  />
-
-                </div>
-
-              </div>
-
-            )}
-
-            <div
-
-              className={`webtoon-editor__planning-section webtoon-editor__planning-section--end${isFinalWorkStatus ? ' webtoon-editor__planning-section--terminated-only' : ''}`}
-
-            >
-
-              <div className="webtoon-editor__plan-field webtoon-editor__plan-field--ch">
-
-                <label className="form-label" htmlFor="webtoon-ch-fin" title="Dernier chapitre">
-
-                  {isFinalWorkStatus ? 'Dernier chapitre' : 'Dern. ch.'}
-
-                </label>
-
-                <input
-
-                  id="webtoon-ch-fin"
-
-                  value={inputs['Chapitre_Fin'] || ''}
-
-                  onChange={e => setInput('Chapitre_Fin', e.target.value)}
-
-                  className="form-input"
-
-                  placeholder="120"
-
-                  inputMode="numeric"
-
-                />
-
-              </div>
-
-              <div className="webtoon-editor__plan-field webtoon-editor__plan-field--dates">
-
-                <label className="form-label" htmlFor="webtoon-date-fin" title="Date fin de série">
-
-                  Date fin{isFinalWorkStatus ? ' (optionnel)' : ''}
-
-                </label>
-
-                <DateInputWithDayOffset
-
-                  layout="planning"
-
-                  id="webtoon-date-fin"
-
-                  label="Date (fin de série)"
-
-                  labelTitle="Date fin de série"
-
-                  value={inputs['Date_Fin'] || ''}
-
-                  onChange={v => setInput('Date_Fin', v)}
-
-                />
-
-              </div>
-
-            </div>
-
+        <div className="webtoon-editor__meta-row">
+          <div className="form-field">
+            <label className="form-label" htmlFor="webtoon-genres">
+              Genres / Thèmes
+            </label>
+            <input
+              id="webtoon-genres"
+              value={inputs.Genres_Themes || ''}
+              onChange={e => setInput('Genres_Themes', e.target.value)}
+              className="form-input"
+              placeholder="Action - Fantastique - Romance"
+            />
           </div>
+          <div className="form-field">
+            <label className="form-label" htmlFor="webtoon-progress-unit">
+              Unité de progression
+            </label>
+            <select
+              id="webtoon-progress-unit"
+              className="form-input"
+              value={progressUnit}
+              onChange={e => setInput('Progress_Unit', e.target.value)}
+            >
+              {PROGRESS_UNIT_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <h4 className="webtoon-editor__block-title">Rythme de publication</h4>
+
+        <WorkTrackingPlanningSection
+          workStatus={workStatus}
+          progressUnit={progressUnit}
+          inputs={inputs}
+          setInput={setInput}
+          onChapitreActuelChange={handleChapitreActuelChange}
+        />
 
         <SynopsisSection
           ref={overviewRef}
@@ -651,7 +569,10 @@ export default function WebtoonEditor() {
           confirm={confirm}
 
           webtoonMode
-
+          showChapterControlToggle
+          chapterControlAvailable={chapterControlAvailable}
+          chapterControlMode={chapterControlEnabled}
+          setChapterControlMode={v => setInput('Chapter_Control_Enabled', v ? 'true' : 'false')}
         />
 
       </div>

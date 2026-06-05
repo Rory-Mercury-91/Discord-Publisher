@@ -3,8 +3,13 @@ import {
   getCalendarLinkParts,
   getWebtoonWorkStatusFromTags,
 } from '../calendarTemplate';
+import {
+  applyWorkTrackingPreview,
+  isWorkTrackingTemplateType,
+} from '../workTracking/renderPreview';
 import { formatVarValue, resolveStoredDateValue } from '../logic/formatVar';
 import type { AdditionalTranslationLink, Tag, Template, VarConfig } from '../types';
+import type { ImageData } from './useImagesState';
 
 /** Même logique qu’appContext : conserver la forme (#post-XXXXX ou /post-XXXXX), ne rien ajouter si absent. */
 function cleanGameLink(url: string): string {
@@ -42,7 +47,7 @@ type UsePreviewEngineProps = {
   isIntegrated: boolean;
   additionalTranslationLinks: AdditionalTranslationLink[];
   additionalModLinks: AdditionalTranslationLink[];
-  uploadedImages: Array<{ id: string; url?: string; name: string; isMain: boolean }>;
+  uploadedImages: ImageData[];
   editingPostId: string | null;
   postTags?: string;
   savedTags?: Tag[];
@@ -124,9 +129,21 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     const synopsisOeuvreRaw = (inputs['Synopsis_Oeuvre'] || '').trim();
     if (!synopsisOeuvreRaw) {
       content = content.replace(/\*\*Synopsis :\*\*\n> \[Synopsis_Oeuvre\]\n?/g, '');
+      content = content.replace(/:pencil: \*\*Synopsis :\*\*\n> \[Synopsis_Oeuvre\]\n?/g, '');
     }
 
-    if (tpl.type === 'calendar') {
+    const isWorkTracking = isWorkTrackingTemplateType(tpl.type);
+    const isNewWorkTemplate = isWorkTracking && content.includes('[WORK_PROGRESS_BLOCK]');
+
+    if (isNewWorkTemplate) {
+      content = applyWorkTrackingPreview({
+        content,
+        inputs,
+        postTags,
+        savedTags,
+        cleanUrl: cleanGameLink,
+      });
+    } else if (tpl.type === 'calendar') {
       const selectedTagIds = postTags
         ? postTags.split(',').map(s => s.trim()).filter(Boolean)
         : [];
@@ -147,7 +164,7 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
 
       if (isFinalWorkStatus) {
         content = content.replace(
-          /:calendar: \*\*Prochaines disponibilités \(gratuite\)\*\*\n\* \*\*Prochain chapitre :\*\* \[Chapitre_Suivant\] — \[Date_Suivant\]\n\* \*\*Fin de série :\*\* chapitre \[Chapitre_Fin\] — \[Date_Fin\]\n?/g,
+          /:calendar: \*\*Prochaines disponibilités \(gratuite\)\*\*\n\* \*\*Prochain chapitre :\*\* \[Chapitre_Suivant\] — \[Date_Suivant\]\n\* \*\*Fin des publications connues :\*\* chapitre \[Chapitre_Fin\] — \[Date_Fin\]\n?/g,
           ''
         );
       }
@@ -168,7 +185,7 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
       }
       if (!hasEnd) {
         content = content.replace(
-          /\* \*\*Fin de série :\*\* chapitre \[Chapitre_Fin\] — \[Date_Fin\]\n?/g,
+          /\* \*\*Fin des publications connues :\*\* chapitre \[Chapitre_Fin\] — \[Date_Fin\]\n?/g,
           ''
         );
       }
@@ -206,7 +223,7 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
 
       const val = (inputs[name] || '').trim();
       const useDiscordDate =
-        tpl.type === 'calendar' && varConfig.type === 'date';
+        isWorkTrackingTemplateType(tpl.type) && varConfig.type === 'date';
       let finalVal = formatVarValue(val, varConfig.type, {
         discordTimestamp: useDiscordDate,
       });
@@ -231,7 +248,7 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     applyBlockquoteSynopsis(overviewRaw, 'Overview');
     applyBlockquoteSynopsis(synopsisOeuvreRaw, 'Synopsis_Oeuvre');
 
-    if (tpl.type === 'calendar') {
+    if (tpl.type === 'calendar' && !isNewWorkTemplate) {
       const tagIds = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
       const workStatus = getWebtoonWorkStatusFromTags(tagIds, savedTags);
       if (workStatus !== 'ongoing') {

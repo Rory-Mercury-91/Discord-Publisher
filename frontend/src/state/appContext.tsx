@@ -7,6 +7,7 @@ import {
   migrateCalendarInputs,
 } from './calendarTemplate';
 import { buildSavedInputsForPublish } from './logic/postPublishFlags';
+import { syncWorkPublicationToSupabase } from './workTracking/syncWorkPublication';
 import { useUserPreferences } from './hooks/useUserPreferences';
 import ErrorModal from '../components/Modals/ErrorModal';
 import { useToast } from '../components/shared/ToastProvider';
@@ -15,7 +16,7 @@ import { getSupabase } from '../lib/supabase';
 import { useTampermonkeyListener } from './hooks/useTampermonkeyListener';
 import { tauriAPI } from '../lib/tauri-api';
 import { useAuth } from './authContext';
-import { useImagesState } from './hooks/useImagesState';
+import { getImagePublishUrl, useImagesState } from './hooks/useImagesState';
 import { useApiConfig } from './hooks/useApiConfig';
 import { useErrorModal } from './hooks/useErrorModal';
 import { useLinkConfigState } from './hooks/useLinkConfigState';
@@ -88,8 +89,8 @@ export type {
   deleteInstruction: (name: string) => void;
   instructionOwners: Record<string, string>;
 
-  uploadedImages: Array<{ id: string; url?: string; name: string; isMain: boolean }>;
-  addImageFromUrl: (url: string) => void;
+  uploadedImages: Array<{ id: string; url?: string; previewUrl?: string; name: string; isMain: boolean }>;
+  addImageFromUrl: (url: string, options?: { previewUrl?: string }) => void;
   removeImage: (idx: number) => void;
   setMainImage: (idx: number) => void;
 
@@ -305,7 +306,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const title = (postFormState.postTitle || '').trim();
     const content = previewEngine.preview || '';
     const activeTpl = activeTemplates[tvState.currentTemplateIdx];
-    const isCalendarPublish = activeTpl?.type === 'calendar';
+    const isCalendarPublish =
+      activeTpl?.type === 'calendar' || activeTpl?.type === 'work_tracking';
     const publishOpts = {
       silentUpdate: isCalendarPublish || options?.silentUpdate === true,
       skipVersionControl: isCalendarPublish || options?.skipVersionControl === true,
@@ -436,8 +438,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let finalContent = content;
       if (imagesState.uploadedImages.length > 0) {
         const mainImage = imagesState.uploadedImages.find(img => img.isMain) || imagesState.uploadedImages[0];
-        if (mainImage.url) {
-          finalContent = content + '\n' + mainImage.url;
+        const publishImageUrl = getImagePublishUrl(mainImage);
+        if (publishImageUrl) {
+          finalContent = content + '\n' + publishImageUrl;
         }
       }
 
@@ -451,9 +454,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       formData.append('game_version', tvState.inputs['Game_version'] || '');
       formData.append('translate_version', tvState.inputs['Translate_version'] || '');
       const mainImageForAnnounce = imagesState.uploadedImages.find(i => i.isMain) || imagesState.uploadedImages[0];
-      const announceImageUrl = mainImageForAnnounce?.url && (mainImageForAnnounce.url.startsWith('http://') || mainImageForAnnounce.url.startsWith('https://'))
-        ? mainImageForAnnounce.url
-        : '';
+      const announceImageUrl = getImagePublishUrl(mainImageForAnnounce);
       formData.append('announce_image_url', announceImageUrl);
       if (resolvedForumChannelId) {
         formData.append('forum_channel_id', resolvedForumChannelId);
@@ -477,7 +478,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       const now = Date.now();
       const postId = `post_${now}_${Math.random().toString(36).substr(2, 9)}`;
-      const imagePathVal = imagesState.uploadedImages.find(i => i.isMain)?.url;
+      const imagePathVal = getImagePublishUrl(imagesState.uploadedImages.find(i => i.isMain));
       if (isEditMode && pubState.editingPostData) {
         const mergedForHistory: PublishedPost = {
           ...pubState.editingPostData,
@@ -588,6 +589,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const forumId = res.forum_id || res.forumId || 0;
 
       if (threadId && messageId) {
+        const historyPostId =
+          isEditMode && pubState.editingPostId ? pubState.editingPostId : postId;
         const savedInputsForState = buildSavedInputsForPublish(
           tvState.inputs,
           publishOpts.skipVersionControl
@@ -603,7 +606,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             title,
             content,
             tags: tagsToSend,
-            imagePath: imagesState.uploadedImages.find(i => i.isMain)?.url,
+            imagePath: getImagePublishUrl(imagesState.uploadedImages.find(i => i.isMain)),
             translationType: postFormState.translationType,
             isIntegrated: postFormState.isIntegrated,
             savedInputs: savedInputsForState,
@@ -637,7 +640,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             title,
             content,
             tags: tagsToSend,
-            imagePath: imagesState.uploadedImages.find(i => i.isMain)?.url,
+            imagePath: getImagePublishUrl(imagesState.uploadedImages.find(i => i.isMain)),
             translationType: postFormState.translationType,
             isIntegrated: postFormState.isIntegrated,
             savedInputs: savedInputsForState,
@@ -657,6 +660,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             postToRow(newPost),
             newPost.authorDiscordId ?? newPost.authorExternalTranslatorId ?? undefined
           );
+        }
+
+        if (isCalendarPublish) {
+          const syncResult = await syncWorkPublicationToSupabase({
+            publishedPostId: historyPostId,
+            profileId: profile?.id ?? null,
+            templateId: templateId ?? CALENDAR_TEMPLATE_ID,
+            inputs: buildSavedInputsForPublish(tvState.inputs, publishOpts.skipVersionControl),
+            selectedTagIds: selectedIds,
+            savedTags: tagsState.savedTags,
+          });
+          if (!syncResult.ok) {
+            console.warn('[work_tracking] sync work_publications:', syncResult.error);
+          }
         }
       }
 
@@ -845,6 +862,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           key.startsWith('Chapitre_') ||
           key.startsWith('Date_') ||
           key === 'Nom_Oeuvre' ||
+          key === 'Genres_Themes' ||
           key === 'Book_Link' ||
           key === 'Book_Platform' ||
           key === 'Official_Site_Label' ||

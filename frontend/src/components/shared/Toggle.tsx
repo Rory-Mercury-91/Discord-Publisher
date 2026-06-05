@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 // Composant toggle partagé (label à gauche, piste arrondie, pastille)
 // Styles via variables CSS dans global.css : --accent, --border, --muted, --toggle-knob
 
@@ -6,8 +8,10 @@ export interface ToggleProps {
   checked: boolean;
   /** Appelé au clic avec la nouvelle valeur */
   onChange: (checked: boolean) => void;
-  /** Libellé affiché à gauche du switch */
+  /** Libellé affiché à gauche du switch (accessibilité) */
   label: string;
+  /** Contenu visuel du libellé (remplace le texte simple si fourni) */
+  labelContent?: ReactNode;
   /** Désactive le toggle */
   disabled?: boolean;
   /** Texte au survol (title) */
@@ -24,6 +28,7 @@ export default function Toggle({
   checked,
   onChange,
   label,
+  labelContent,
   disabled = false,
   title,
   size = 'md',
@@ -53,7 +58,7 @@ export default function Toggle({
         .join(' ')}
       title={title}
     >
-      <span className={labelClasses}>{label}</span>
+      <span className={labelClasses}>{labelContent ?? label}</span>
       <div
         role="switch"
         aria-checked={checked}

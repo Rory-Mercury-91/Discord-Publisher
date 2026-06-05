@@ -1,10 +1,11 @@
 // frontend/src/components/ContentEditorComponents/ImageSection.tsx
 import { useConfirm } from '../../../hooks/useConfirm';
 import { useImageLoader } from '../../../hooks/useImageLoader';
+import { getImageDisplayUrl, type ImageData } from '../../../state/hooks/useImagesState';
 import ConfirmModal from '../../Modals/ConfirmModal';
 
 interface ImageSectionProps {
-  uploadedImages: Array<{ id: string; url?: string; name: string; isMain: boolean }>;
+  uploadedImages: ImageData[];
   removeImage: (idx: number) => void;
 }
 
@@ -61,7 +62,7 @@ export default function ImageSection({
       <div className={`image-preview-box ${currentImage ? 'image-preview-box--filled' : ''}`}>
         {currentImage ? (
           <FormImageDisplay
-            imagePath={currentImage.url || ''}
+            imagePath={getImageDisplayUrl(currentImage)}
             onDelete={() => handleDeleteImage(0)}
           />
         ) : (

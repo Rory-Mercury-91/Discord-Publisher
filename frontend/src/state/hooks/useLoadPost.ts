@@ -7,6 +7,7 @@ import {
 } from '../calendarTemplate';
 import { SKIP_VERSION_CHECK_INPUT_KEY } from '../logic/postPublishFlags';
 import type { AdditionalTranslationLink, PublishedPost } from '../types';
+import type { ImageData } from './useImagesState';
 import type { LinkConfigs } from './useLinkConfigState';
 
 type LoadPostDeps = {
@@ -22,7 +23,7 @@ type LoadPostDeps = {
   setLinkConfigs: Dispatch<SetStateAction<LinkConfigs>>;
   setAdditionalTranslationLinks: Dispatch<SetStateAction<AdditionalTranslationLink[]>>;
   setAdditionalModLinks: Dispatch<SetStateAction<AdditionalTranslationLink[]>>;
-  setUploadedImages: (images: Array<{ id: string; url?: string; name: string; isMain: boolean }>) => void;
+  setUploadedImages: (images: ImageData[]) => void;
   setPreviewOverride: (value: string | null) => void;
   setCurrentTemplateIdx: (idx: number) => void;
 };
@@ -124,9 +125,18 @@ export function useLoadPost(deps: LoadPostDeps) {
 
       if (post.imagePath && (post.imagePath.startsWith('http://') || post.imagePath.startsWith('https://'))) {
         const fileName = new URL(post.imagePath).pathname.split('/').pop() || 'image.jpg';
-        setUploadedImages([
-          { id: Date.now().toString(), url: post.imagePath, name: fileName, isMain: true },
-        ]);
+        const baseImage = { id: Date.now().toString(), url: post.imagePath, name: fileName, isMain: true };
+        setUploadedImages([baseImage]);
+        void import('../workTracking/resolveWorkImage').then(({ resolveWorkImagePreview }) =>
+          resolveWorkImagePreview(post.imagePath!).then(resolved => {
+            if (!resolved) return;
+            setUploadedImages([{
+              ...baseImage,
+              url: resolved.sourceUrl,
+              previewUrl: resolved.previewUrl,
+            }]);
+          }),
+        );
       }
 
       setPreviewOverride(post.content ?? '');

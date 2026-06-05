@@ -13,13 +13,17 @@ export function useImageLoader(imagePath: string) {
       return;
     }
 
-    // Vérifier si c'est une URL HTTP(S)
-    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+    const isValid =
+      imagePath.startsWith('http://')
+      || imagePath.startsWith('https://')
+      || imagePath.startsWith('data:image/')
+      || imagePath.startsWith('blob:');
+
+    if (isValid) {
       setImageUrl(imagePath);
       setIsLoading(false);
       setError(null);
     } else {
-      // Ce n'est pas une URL valide
       setImageUrl('');
       setIsLoading(false);
       setError('Invalid image URL');

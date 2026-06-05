@@ -57,6 +57,9 @@ export default function TagSelectorModal({
       myTags.filter((t) => {
         if (t.tagType === 'translator') return false;
         if (t.tagType === 'sites') return false;
+        if (t.tagType === 'workType' || t.tagType === 'workStatus' || t.tagType === 'workModifier') {
+          return false;
+        }
         const tagId = t.id || t.name;
         const discordId = String(t.discordTagId ?? '');
         const alreadySelected =
@@ -76,6 +79,9 @@ export default function TagSelectorModal({
       translationType: sortTags(availableTags.filter((t) => t.tagType === 'translationType')),
       gameStatus: sortTags(availableTags.filter((t) => t.tagType === 'gameStatus')),
       sites: sortTags(availableTags.filter((t) => t.tagType === 'sites')),
+      workType: sortTags(availableTags.filter((t) => t.tagType === 'workType')),
+      workStatus: sortTags(availableTags.filter((t) => t.tagType === 'workStatus')),
+      workModifier: sortTags(availableTags.filter((t) => t.tagType === 'workModifier')),
       other: sortTags(availableTags.filter((t) => t.tagType === 'other')),
     }),
     [availableTags]

@@ -18,6 +18,7 @@ import { TagsModal } from './components/tags';
 import { TemplatesModal } from './components/templates';
 import { ToastProvider, useToast } from './components/shared/ToastProvider';
 import UpdateNotification from './components/UpdateNotification';
+import WorkImportListener from './components/WorkImportListener';
 import { AppProvider, useApp } from './state/appContext';
 import { AuthProvider, useAuth } from './state/authContext';
 import { UserPreferencesProvider } from './state/userPreferencesContext';
@@ -148,7 +149,10 @@ function AppContentInner() {
     catch (e) { showToast('Erreur lors de la copie: ' + e, 'error'); }
   };
 
-  const mainImagePath = uploadedImages.find(img => img.isMain)?.url;
+  const mainImagePath = (() => {
+    const img = uploadedImages.find(i => i.isMain) || uploadedImages[0];
+    return img?.previewUrl || img?.url;
+  })();
 
   return (
     <EnrichmentProvider>
@@ -260,6 +264,7 @@ export default function App() {
         <ToastProvider>
           <AppProvider>
             <WebtoonViewProvider>
+              <WorkImportListener />
               <AppWithAuth />
             </WebtoonViewProvider>
           </AppProvider>

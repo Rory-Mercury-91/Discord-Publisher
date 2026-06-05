@@ -1,4 +1,5 @@
 import { resolveStoredDateValue } from './logic/formatVar';
+import { resolveLegacyWebtoonStatusFromTags } from './workTracking/resolveFromTags';
 import type { PublishedPost, Template, VarConfig } from './types';
 
 export const CALENDAR_TEMPLATE_ID = 'calendar';
@@ -21,115 +22,62 @@ export function isCalendarPublishedPost(post: PublishedPost | null | undefined):
 }
 export const WEBTOON_PUBLISH_LABEL = 'Webtoon';
 
-/** Libellés Discord attendus (émojis / shortcodes optionnels devant le texte). */
-export const WEBTOON_TERMINATED_TAG_SUFFIX = 'termine';
-export const WEBTOON_ABANDONED_TAG_SUFFIX = 'abandonnee';
-
+/** @deprecated Utiliser WorkStatus depuis workTracking — conservé pour rétrocompat. */
 export type WebtoonWorkStatus = 'ongoing' | 'terminated' | 'abandoned';
 
-/** Retire émojis / symboles pour comparer le libellé (ex. « :white_check_mark: Terminé » → « termine »). */
-export function normalizeWebtoonTagName(name: string): string {
-  const withoutEmoji = name
-    .replace(/:[a-z0-9_]+:/gi, '')
-    .replace(/[\p{Extended_Pictographic}\p{Emoji_Component}\uFE0F\u200D]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return withoutEmoji
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '');
-}
+export { normalizeWorkTagName as normalizeWebtoonTagName } from './workTracking/normalizeTagName';
 
-export function isTerminatedWorkTagLabel(normalizedName: string): boolean {
-  return (
-    normalizedName === WEBTOON_TERMINATED_TAG_SUFFIX ||
-    normalizedName.endsWith(` ${WEBTOON_TERMINATED_TAG_SUFFIX}`)
-  );
-}
-
-export function isAbandonedWorkTagLabel(normalizedName: string): boolean {
-  return (
-    normalizedName === WEBTOON_ABANDONED_TAG_SUFFIX ||
-    normalizedName.endsWith(` ${WEBTOON_ABANDONED_TAG_SUFFIX}`) ||
-    normalizedName === 'abandonne' ||
-    normalizedName.endsWith(` abandonne`) ||
-    normalizedName === 'abandoned' ||
-    normalizedName.endsWith(` abandoned`)
-  );
-}
-
-function findTagByPostId(
-  id: string,
-  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>
-) {
-  return savedTags.find(
-    t => (t.id || t.name) === id || String(t.discordTagId ?? '') === id
-  );
-}
-
-function matchWebtoonWorkStatusTag(
-  selectedTagIds: string[],
-  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>,
-  matchLabel: (normalized: string) => boolean
-): boolean {
-  return selectedTagIds.some(id => {
-    const tag = findTagByPostId(id, savedTags);
-    if (!tag?.name) return false;
-    return matchLabel(normalizeWebtoonTagName(tag.name));
-  });
-}
-
-export function isWebtoonSeriesTerminatedTag(
-  selectedTagIds: string[],
-  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>
-): boolean {
-  return matchWebtoonWorkStatusTag(selectedTagIds, savedTags, isTerminatedWorkTagLabel);
-}
-
-export function isWebtoonSeriesAbandonedTag(
-  selectedTagIds: string[],
-  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>
-): boolean {
-  return matchWebtoonWorkStatusTag(selectedTagIds, savedTags, isAbandonedWorkTagLabel);
-}
-
-/** Terminé prioritaire si les deux tags sont présents. */
+/** Rétrocompat éditeur / validation (terminated = terminé). */
 export function getWebtoonWorkStatusFromTags(
   selectedTagIds: string[],
-  savedTags: Array<{ id?: string; name: string; discordTagId?: string | number | null; tagType?: string }>
+  savedTags: Parameters<typeof resolveLegacyWebtoonStatusFromTags>[1]
 ): WebtoonWorkStatus {
-  if (isWebtoonSeriesTerminatedTag(selectedTagIds, savedTags)) return 'terminated';
-  if (isWebtoonSeriesAbandonedTag(selectedTagIds, savedTags)) return 'abandoned';
-  return 'ongoing';
+  return resolveLegacyWebtoonStatusFromTags(selectedTagIds, savedTags);
 }
 
 /** Template intégré « mise à jour calendrier » (vue Webtoon). */
 export const calendarTemplate: Template = {
   id: CALENDAR_TEMPLATE_ID,
-  name: 'Webtoon',
+  name: 'Suivi d\'œuvres',
   type: 'calendar',
+  category: 'work_tracking',
   isDefault: true,
   isBuiltin: true,
-  content: `:book: **[Nom_Oeuvre]** : Calendrier de mise à jour (gratuite) ! :tada:
+  content: `# :bookmark: **[Nom_Oeuvre]**
 
-Statut actuel : Chapitre [Chapitre_Actuel] (Dernier disponible gratuitement)
+## **Informations générales :**
+:dart: **Statut :** *[Work_Status_Label] [Work_Status_Emoji]*
+:label: **Type :** *[Work_Type_Label]*
+:zap: **Genres / Thèmes :** [Genres_Themes]
+:pencil: **Synopsis :**
+> [Synopsis_Oeuvre]
 
-:calendar: **Prochaines disponibilités (gratuite)**
-* **Prochain chapitre :** [Chapitre_Suivant] — [Date_Suivant]
-* **Fin de série :** chapitre [Chapitre_Fin] — [Date_Fin]
+## :chart_with_upwards_trend: **Suivi de publication :**
+[WORK_PROGRESS_BLOCK]
+[WORK_RELEASE_BLOCK]
 
-:link: **Lien**
+## :link: **Liens officiels & Plateformes :**
 [CALENDAR_LINKS_LINE]
 
-**Synopsis :**
-> [Synopsis_Oeuvre]`,
+[WORK_WARNING_NOTE]`,
 };
 
 export const calendarVarsConfig: VarConfig[] = [
   { name: 'Nom_Oeuvre', label: "Nom de l'œuvre", placeholder: 'Titre de la série' },
+  { name: 'Genres_Themes', label: 'Genres / Thèmes', placeholder: 'Action - Fantastique - Romance' },
+  { name: 'Progress_Unit', label: 'Unité de progression', placeholder: 'chapter' },
+  { name: 'Progress_Current', label: 'Progression actuelle', placeholder: 'ex: 45' },
+  { name: 'Progress_Total', label: 'Plafond / total connu', placeholder: 'ex: 120' },
+  { name: 'Progress_Scan_Current', label: 'Scan actuel', placeholder: 'ex: 45' },
+  { name: 'Progress_Physical_Current', label: 'Tome physique actuel', placeholder: 'ex: 3' },
+  { name: 'Release_Weekdays', label: 'Jours de sortie', placeholder: '0,2,4' },
+  { name: 'Release_Monthly', label: 'Fréquence mensuelle', placeholder: 'false' },
+  { name: 'Date_Pause_Fin', label: 'Date fin de saison', type: 'date' },
+  { name: 'Chapter_Control_Enabled', label: 'Contrôle de chapitre', placeholder: 'true' },
+  { name: 'Season_Number', label: 'Numéro de saison', placeholder: 'ex: 2' },
   { name: 'Chapitre_Actuel', label: 'Chapitre actuel', placeholder: 'ex: 45' },
   { name: 'Chapitre_Suivant', label: 'Prochain chapitre', placeholder: 'ex: 46' },
-  { name: 'Date_Suivant', label: 'Date prochaine dispo.', type: 'date' },
+  { name: 'Date_Suivant', label: 'Date prochaine sortie gratuite', type: 'date' },
   { name: 'Chapitre_Fin', label: 'Dernier chapitre', placeholder: 'ex: 120' },
   { name: 'Date_Fin', label: 'Date fin de série', type: 'date' },
   { name: 'Official_Site_Label', label: 'Site', placeholder: 'Webtoon, Tapas…' },
@@ -218,6 +166,8 @@ export function ensureCalendarInputs(inputs: Record<string, string>): Record<str
   const next = migrateCalendarInputs({ ...inputs });
   delete next.Book_Platform;
   delete next.Book_Link;
+  delete next.Chapitre_Derniere_Sortie;
+  delete next.Date_Derniere_Sortie;
   for (const v of calendarVarsConfig) {
     if (next[v.name] === undefined) next[v.name] = '';
     if (v.type === 'date' && next[v.name]) {

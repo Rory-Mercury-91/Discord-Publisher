@@ -193,13 +193,21 @@ export default function ContentEditor({ isActive = true }: ContentEditorProps) {
   }, [selectedTagIds, savedTags]);
 
   const canPublish =
-    (currentTemplate?.type === 'my' || currentTemplate?.type === 'calendar') &&
+    (currentTemplate?.type === 'my' ||
+      currentTemplate?.type === 'calendar' ||
+      currentTemplate?.type === 'work_tracking') &&
     rateLimitCooldown === null &&
     hasRequiredTags;
 
   const publishTooltipText = (() => {
     if (publishInProgress) return 'Publication en cours…';
-    if (currentTemplate?.type !== 'my' && currentTemplate?.type !== 'calendar') return 'Template en lecture seule';
+    if (
+      currentTemplate?.type !== 'my' &&
+      currentTemplate?.type !== 'calendar' &&
+      currentTemplate?.type !== 'work_tracking'
+    ) {
+      return 'Template en lecture seule';
+    }
     if (rateLimitCooldown !== null) return `Rate limit : patientez ${Math.ceil((rateLimitCooldown - Date.now()) / 1000)}s`;
     if (missingRequiredTagLabels.length > 0) return `Tags obligatoires manquants : ${missingRequiredTagLabels.join(', ')}`;
     return '';
@@ -660,10 +668,16 @@ export default function ContentEditor({ isActive = true }: ContentEditorProps) {
     setInput('Translate_version', inputs['Game_version'] || '');
   };
 
-  const handleAddImage = () => {
+  const handleAddImage = async () => {
     const url = imageUrlInput.trim();
     if (!url) return;
-    addImageFromUrl(url);
+    const { resolveWorkImagePreview } = await import('../../state/workTracking/resolveWorkImage');
+    const resolved = await resolveWorkImagePreview(url);
+    if (resolved) {
+      addImageFromUrl(resolved.sourceUrl, { previewUrl: resolved.previewUrl });
+    } else {
+      addImageFromUrl(url);
+    }
     setImageUrlInput('');
   };
 

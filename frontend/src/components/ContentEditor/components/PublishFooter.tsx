@@ -16,8 +16,14 @@ interface PublishFooterProps {
   publishTooltipText: string;
   onPublish: (silentUpdate?: boolean, skipVersionControl?: boolean) => Promise<void>;
   confirm: (options: ConfirmOptions) => Promise<boolean>;
-  /** Vue Webtoon : pas de toggles, publication silencieuse + sans contrôle de version. */
+  /** Vue Webtoon : publication silencieuse + sans contrôle de version F95. */
   webtoonMode?: boolean;
+  /** Suivi d'œuvres : contrôle auto chapitres (bot 00h00). */
+  chapterControlMode?: boolean;
+  setChapterControlMode?: (value: boolean) => void;
+  showChapterControlToggle?: boolean;
+  /** false = toggle visible mais désactivé (ex. tag Incomplet, En pause…) */
+  chapterControlAvailable?: boolean;
 }
 
 export default function PublishFooter({
@@ -33,6 +39,10 @@ export default function PublishFooter({
   onPublish,
   confirm,
   webtoonMode = false,
+  chapterControlMode = true,
+  setChapterControlMode,
+  showChapterControlToggle = false,
+  chapterControlAvailable = true,
 }: PublishFooterProps) {
   const [showTooltip, setShowTooltip] = useState(false);
 
@@ -66,6 +76,8 @@ export default function PublishFooter({
   };
 
   const isDisabled = publishInProgress || !canPublish;
+  const showToggles =
+    !webtoonMode || (webtoonMode && showChapterControlToggle && !!setChapterControlMode);
 
   return (
     <div className="publish-footer">
@@ -75,23 +87,36 @@ export default function PublishFooter({
         </div>
       )}
 
-      {!webtoonMode && (
-        <div className="publish-footer__toggles">
-          {editingPostId && (
+      {showToggles && (
+      <div className="publish-footer__toggles">
+        {!webtoonMode && (
+          <>
+            {editingPostId && (
+              <Toggle
+                checked={silentUpdateMode}
+                onChange={setSilentUpdateMode}
+                label="Mise à jour silencieuse"
+                title="Ne pas envoyer de notification de mise à jour"
+              />
+            )}
             <Toggle
-              checked={silentUpdateMode}
-              onChange={setSilentUpdateMode}
-              label="Mise à jour silencieuse"
-              title="Ne pas envoyer de notification de mise à jour"
+              checked={skipVersionControlMode}
+              onChange={setSkipVersionControlMode}
+              label="Ne pas appliquer le contrôle de version"
+              title="Exclure ce post du contrôle des versions F95 (le script ne le vérifiera pas)"
             />
-          )}
+          </>
+        )}
+        {webtoonMode && showChapterControlToggle && setChapterControlMode && (
           <Toggle
-            checked={skipVersionControlMode}
-            onChange={setSkipVersionControlMode}
-            label="Ne pas appliquer le contrôle de version"
-            title="Exclure ce post du contrôle des versions F95 (le script ne le vérifiera pas)"
+            checked={chapterControlMode}
+            onChange={setChapterControlMode}
+            disabled={!chapterControlAvailable}
+            label="Contrôle automatique des chapitres"
+            title="Le bot avance chapitres et dates chaque nuit à 00h00 (si la date de sortie est dépassée)"
           />
-        </div>
+        )}
+      </div>
       )}
 
       <div

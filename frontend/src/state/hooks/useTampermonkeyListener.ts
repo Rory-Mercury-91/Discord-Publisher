@@ -13,17 +13,27 @@ import { generateManualPseudoId } from './useCollection';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface TampermonkeyPayload {
-  domain       : string;
-  id?          : number | string | null;
-  name         : string;
-  version?     : string | null;
-  status?      : string | null;
-  game_type?   : string | null;
-  tags?        : string | null;
-  link?        : string | null;
-  image?       : string | null;
-  synopsis?    : string | null;
-  f95_date_maj?: string | null;
+  domain         : string;
+  kind?          : string | null;
+  id?            : number | string | null;
+  name           : string;
+  version?       : string | null;
+  status?        : string | null;
+  game_type?     : string | null;
+  tags?          : string | null;
+  genres_themes?       : string | null;
+  official_site_label? : string | null;
+  link?                : string | null;
+  image?         : string | null;
+  image_data?    : string | null;
+  synopsis?      : string | null;
+  f95_date_maj?  : string | null;
+}
+
+function isWorkTrackingImport(payload: TampermonkeyPayload): boolean {
+  if (payload.kind === 'work_tracking') return true;
+  if (payload.domain === 'Nautiljon' || payload.domain === 'WEBTOON') return true;
+  return false;
 }
 
 interface QuickAddEvent {
@@ -110,6 +120,26 @@ export function useTampermonkeyListener() {
         const { request_id, payload } = event.payload;
 
         console.info('[Tampermonkey] 📥 Import reçu :', payload);
+
+        if (isWorkTrackingImport(payload)) {
+          window.dispatchEvent(
+            new CustomEvent('work-tracking:import', {
+              detail: {
+                domain              : payload.domain,
+                kind                : payload.kind ?? 'work_tracking',
+                name                : payload.name,
+                genres_themes       : payload.genres_themes ?? payload.tags ?? undefined,
+                image               : payload.image ?? undefined,
+                image_data          : payload.image_data ?? undefined,
+                synopsis            : payload.synopsis ?? undefined,
+                link                : payload.link ?? undefined,
+                official_site_label : payload.official_site_label ?? undefined,
+              },
+            }),
+          );
+          await reportResult(request_id, true, 'work_imported');
+          return;
+        }
 
         const sb = getSupabase();
         if (!sb) {

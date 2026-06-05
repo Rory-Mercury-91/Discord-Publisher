@@ -1,12 +1,13 @@
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 import { useApp } from '../../state/appContext';
+import { getImageDisplayUrl } from '../../state/hooks/useImagesState';
 
 import DiscordPreviewHeader from './components/DiscordPreviewHeader';
 import DiscordPreviewMessage from './components/DiscordPreviewMessage';
 import { replaceEmojis } from './constants/discordEmojis';
 
-type UploadedImage = { id: string; url?: string; name: string; isMain: boolean };
+type UploadedImage = { id: string; url?: string; previewUrl?: string; name: string; isMain: boolean };
 
 interface DiscordPreviewModalProps {
   preview: string;
@@ -29,7 +30,7 @@ export default function DiscordPreviewModal({
     ? uploadedImages.find((img: UploadedImage) => img.url === mainImagePath)
     : uploadedImages.find((img: UploadedImage) => img.isMain);
 
-  const imagePathToDisplay = mainImage?.url;
+  const imagePathToDisplay = getImageDisplayUrl(mainImage);
   const processedPreview = replaceEmojis(preview);
   const characterCount = preview.length;
   const isOverLimit = characterCount > 2000;

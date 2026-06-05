@@ -5005,6 +5005,7 @@ textarea.form-textarea {
   gap: 20px;
   min-width: 0;
   width: 100%;
+  overflow-x: hidden;
 }
 
 .webtoon-editor__block-title {
@@ -5033,13 +5034,6 @@ textarea.form-textarea {
   gap: 12px 20px;
   width: 100%;
   min-width: 0;
-}
-
-.webtoon-editor__planning-hint {
-  margin: 0 0 10px;
-  font-size: 0.8125rem;
-  line-height: 1.4;
-  color: var(--muted, #9ca3af);
 }
 
 .webtoon-editor__planning-section--terminated-only {
@@ -5102,10 +5096,422 @@ textarea.form-textarea {
   padding: 0;
 }
 
+.templates-category-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
 .webtoon-editor__meta-row {
+  display: grid;
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
   gap: 1.25rem;
   align-items: end;
+}
+
+/* Calendrier compact — tailles d'inputs homogènes */
+.webtoon-editor__plan-compact {
+  --plan-control-h: 40px;
+  --plan-control-w: 6.25rem;
+  --plan-date-control-w: 8.25rem;
+  --plan-ou-sep-w: 1.1rem;
+  --plan-date-bundle-w: calc(
+    var(--plan-date-control-w) + var(--plan-ou-sep-w) + var(--plan-control-w) + 0.7rem
+  );
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Lignes fluides : champs côte à côte, retour à la ligne si besoin (pas de grille rigide) */
+.webtoon-editor__plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.55rem 0.75rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.webtoon-editor__plan-cell--days-line {
+  width: 100%;
+  min-width: 0;
+}
+
+.webtoon-editor__days-monthly-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.webtoon-editor__days-monthly-sep,
+.webtoon-editor__plan-fields-sep {
+  flex: 0 0 1px;
+  align-self: center;
+  width: 1px;
+  height: 1.85rem;
+  margin: 0 0.1rem;
+  background: color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+.webtoon-editor__plan-fields-sep {
+  height: 2.75rem;
+  align-self: flex-end;
+  margin-bottom: 0.45rem;
+}
+
+.webtoon-editor__monthly-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 0 auto;
+  padding: 0.28rem 0.6rem 0.28rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  background: color-mix(in srgb, var(--border) 18%, transparent);
+}
+
+.webtoon-editor__monthly-pill-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text, inherit);
+  white-space: nowrap;
+}
+
+.webtoon-editor__plan-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  min-width: 0;
+}
+
+.webtoon-editor__plan-cell .form-label {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  hyphens: auto;
+}
+
+/* Lignes calendrier — flex simple, aligné à gauche */
+.webtoon-editor__plan-row--schedule-top,
+.webtoon-editor__plan-row--schedule-ongoing,
+.webtoon-editor__plan-row--schedule-paid,
+.webtoon-editor__plan-row--pause,
+.webtoon-editor__plan-row--final {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+}
+
+/* Colonnes plus larges si le libellé l'exige — inputs identiques */
+.webtoon-editor__plan-cell--ch-wide {
+  min-width: 11.25rem;
+}
+
+.webtoon-editor__plan-cell--date-wide {
+  min-width: 15.5rem;
+}
+
+@container publication-editor (min-width: 44rem) {
+  .webtoon-editor__plan-row--schedule-ongoing .webtoon-editor__plan-cell .form-label,
+  .webtoon-editor__plan-row--schedule-paid .webtoon-editor__plan-cell .form-label {
+    white-space: nowrap;
+  }
+}
+
+.webtoon-editor__plan-cell--ch,
+.webtoon-editor__plan-cell--ch-wide {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: var(--plan-control-w);
+}
+
+.webtoon-editor__plan-cell--date,
+.webtoon-editor__plan-cell--date-wide {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: var(--plan-date-bundle-w);
+}
+
+.webtoon-editor__plan-cell-input,
+.webtoon-editor__plan-compact .webtoon-editor__plan-date-bundle .date-input-offset__days {
+  width: var(--plan-control-w);
+  min-width: var(--plan-control-w);
+  max-width: var(--plan-control-w);
+  height: var(--plan-control-h);
+  min-height: var(--plan-control-h);
+  box-sizing: border-box;
+  padding: 0 8px;
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
+.webtoon-editor__plan-compact .webtoon-editor__plan-date-bundle {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.35rem;
+  width: var(--plan-date-bundle-w);
+  max-width: var(--plan-date-bundle-w);
+  min-width: var(--plan-date-bundle-w);
+}
+
+.webtoon-editor__plan-compact .webtoon-editor__plan-date-bundle input[type='date'].form-input {
+  flex: 0 0 var(--plan-date-control-w);
+  width: var(--plan-date-control-w);
+  min-width: var(--plan-date-control-w);
+  max-width: var(--plan-date-control-w);
+  height: var(--plan-control-h);
+  min-height: var(--plan-control-h);
+  padding: 0 4px;
+  font-size: 0.8125rem;
+}
+
+.webtoon-editor__plan-compact .webtoon-editor__plan-date-bundle .date-input-offset__days {
+  padding: 0 8px;
+}
+
+.webtoon-editor__plan-compact .webtoon-editor__plan-ou-sep {
+  flex: 0 0 var(--plan-ou-sep-w);
+  width: var(--plan-ou-sep-w);
+  font-size: 0.72rem;
+  line-height: var(--plan-control-h);
+  padding: 0;
+  text-align: center;
+}
+
+.webtoon-editor__plan-monthly-toggle .toggle__label {
+  display: none;
+}
+
+.webtoon-editor__weekdays {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.webtoon-editor__weekday-toggle {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0.28rem 0.55rem 0.28rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  background: color-mix(in srgb, var(--border) 18%, transparent);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.webtoon-editor__weekday-toggle:has(.toggle__track--checked) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.webtoon-editor__weekday-toggle .toggle__label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-align: left;
+  letter-spacing: 0.02em;
+  color: var(--text, inherit);
+  order: 2;
+  white-space: nowrap;
+}
+
+.webtoon-editor__weekday-toggle .toggle__track {
+  order: 1;
+  flex-shrink: 0;
+}
+
+/* Jours : nom complet sur grand écran, abrégé sur petit */
+.webtoon-editor__weekday-label--short {
+  display: none;
+}
+
+@container publication-editor (max-width: 40rem) {
+  .webtoon-editor__weekday-label--long {
+    display: none;
+  }
+
+  .webtoon-editor__weekday-label--short {
+    display: inline;
+  }
+
+  .webtoon-editor__weekday-toggle {
+    padding: 0.24rem 0.45rem 0.24rem 0.35rem;
+  }
+}
+
+.webtoon-editor__planning-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.webtoon-editor__planning-block:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.webtoon-editor__planning-block-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.webtoon-editor__planning-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.85rem 1rem;
+  align-items: end;
+  width: 100%;
+  min-width: 0;
+}
+
+.webtoon-editor__plan-grid {
+  display: grid;
+  gap: 0.3rem 0.65rem;
+  align-items: end;
+  width: 100%;
+  min-width: 0;
+}
+
+.webtoon-editor__plan-grid[data-cols='2'] {
+  grid-template-columns: minmax(5rem, 6.5rem) minmax(0, 1.35fr);
+}
+
+.webtoon-editor__plan-grid[data-cols='2']:has(.webtoon-editor__plan-grid-cell--prog-cur) {
+  grid-template-columns: 6.5rem 6.5rem;
+  justify-content: start;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.webtoon-editor__plan-grid[data-cols='3'] {
+  grid-template-columns: minmax(0, 1.25fr) minmax(4.5rem, 0.8fr) minmax(0, 1.35fr);
+}
+
+.webtoon-editor__plan-grid[data-cols='4'] {
+  grid-template-columns:
+    minmax(15rem, 1fr)
+    4.5rem
+    minmax(9.25rem, 10.75rem)
+    3.25rem;
+  gap: 0.35rem 0.55rem;
+}
+
+.webtoon-editor__plan-grid--labels {
+  margin-top: 0.15rem;
+}
+
+.webtoon-editor__plan-grid--labels + .webtoon-editor__plan-grid:not(.webtoon-editor__plan-grid--labels) {
+  margin-bottom: 0.5rem;
+}
+
+.webtoon-editor__plan-grid-cell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.webtoon-editor__plan-grid-cell--label .form-label {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.webtoon-editor__plan-grid-cell .form-input {
+  height: 40px;
+  min-height: 40px;
+  max-height: 40px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  font-size: 0.8125rem;
+  width: 100%;
+}
+
+.webtoon-editor__plan-grid-cell--label + .webtoon-editor__plan-grid-cell--label {
+  /* labels row */
+}
+
+.webtoon-editor__monthly-toggle {
+  align-self: center;
+  width: 100%;
+  justify-content: center;
+}
+
+/* Calendrier En cours / Incomplet */
+.webtoon-editor__plan-grid-cell--days {
+  min-width: 0;
+}
+
+.webtoon-editor__plan-grid-cell--next-ch .form-input {
+  width: 100%;
+  padding: 0 8px;
+  text-align: center;
+}
+
+.webtoon-editor__plan-grid-cell--next-date .webtoon-editor__plan-date-bundle {
+  flex-wrap: nowrap;
+  gap: 0.4rem;
+}
+
+.webtoon-editor__plan-grid-cell--next-date .webtoon-editor__plan-date-bundle input[type='date'].form-input {
+  flex: 1 1 5.5rem;
+  min-width: 5.5rem;
+  max-width: 6.75rem;
+}
+
+.webtoon-editor__plan-grid-cell--next-date .webtoon-editor__plan-date-bundle .date-input-offset__days {
+  flex: 0 0 3.25rem;
+  min-width: 3.25rem;
+  max-width: 3.75rem;
+  text-align: center;
+}
+
+.webtoon-editor__plan-grid-cell--next-date .webtoon-editor__plan-ou-sep {
+  padding: 0 0.15rem;
+  font-size: 0.78rem;
+  line-height: 40px;
+}
+
+.webtoon-editor__plan-grid-cell--prog-cur .form-input,
+.webtoon-editor__plan-grid-cell--prog-total .form-input {
+  width: 100%;
+}
+
+.webtoon-editor__plan-grid-cell--monthly .webtoon-editor__monthly-toggle {
+  justify-content: center;
+}
+
+.webtoon-editor__plan-field--dates {
+  grid-column: 1 / -1;
 }
 
 .webtoon-editor__meta-row .form-input {
@@ -5113,8 +5519,9 @@ textarea.form-textarea {
   padding-right: 12px;
 }
 
-/* Planning : 2 sections (prochain / fin) — largeur selon le panneau éditeur */
+/* Planning : blocs empilés (jours / progression / prochaine sortie / dernière sortie) */
 .webtoon-editor__planning {
+  margin-top: 0.35rem;
   --plan-gap: 1rem;
   --plan-bundle-gap: 0.65rem;
   --plan-ch-min: 4.5rem;
@@ -5130,42 +5537,19 @@ textarea.form-textarea {
   min-width: 0;
 }
 
+/* Sections legacy (posts anciens) — conservées pour rétrocompat CSS */
 .webtoon-editor__planning-section {
   display: grid;
   gap: var(--plan-gap);
   align-items: end;
   width: 100%;
   min-width: 0;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
 }
 
-.webtoon-editor__planning-section--next {
-  grid-template-columns:
-    minmax(var(--plan-ch-min), 1fr)
-    minmax(var(--plan-ch-min), 1fr)
-    minmax(12rem, 3fr);
-}
-
-.webtoon-editor__planning-section--end {
-  grid-template-columns:
-    minmax(var(--plan-ch-min), 1fr)
-    minmax(14rem, 4fr);
-}
-
-@container publication-editor (min-width: 58rem) {
-  .publication-layout--with-preview .webtoon-editor__planning {
-    display: grid;
-    grid-template-columns:
-      minmax(var(--plan-ch-min), 1fr)
-      minmax(var(--plan-ch-min), 1fr)
-      minmax(14rem, 3fr)
-      minmax(var(--plan-ch-min), 1fr)
-      minmax(14rem, 3fr);
-    align-items: end;
-  }
-
-  .publication-layout--with-preview .webtoon-editor__planning-section {
-    display: contents;
-  }
+.webtoon-editor__planning-section--next .webtoon-editor__plan-field--dates,
+.webtoon-editor__planning-section--end .webtoon-editor__plan-field--dates {
+  grid-column: 1 / -1;
 }
 
 .webtoon-editor__plan-field {
@@ -5186,7 +5570,7 @@ textarea.form-textarea {
 
 .webtoon-editor__plan-date-bundle {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--plan-bundle-gap);
   width: 100%;
@@ -5204,16 +5588,17 @@ textarea.form-textarea {
 }
 
 .webtoon-editor__plan-date-bundle input[type='date'].form-input {
-  flex: 2 1 0;
+  flex: 1 1 10rem;
   width: auto;
-  min-width: var(--plan-date-min);
+  min-width: min(100%, var(--plan-date-min));
+  max-width: 100%;
   line-height: normal;
   padding-top: 0;
   padding-bottom: 0;
 }
 
 .webtoon-editor__plan-date-bundle .date-input-offset__days {
-  flex: 1 1 0;
+  flex: 0 1 5.5rem;
   width: auto;
   min-width: var(--plan-days-min);
   max-width: var(--plan-days-max);
@@ -5245,6 +5630,28 @@ textarea.form-textarea {
   display: contents;
 }
 
+@container publication-editor (max-width: 42rem) {
+  .webtoon-editor__plan-compact {
+    --plan-control-w: 5.75rem;
+    --plan-date-control-w: 7.25rem;
+  }
+
+  .webtoon-editor__weekday-toggle {
+    padding: 0.12rem 0.2rem;
+    gap: 0.2rem;
+  }
+
+  .webtoon-editor__weekday-toggle .toggle__label {
+    font-size: 0.62rem;
+  }
+
+  .webtoon-editor__plan-row--schedule-ongoing,
+  .webtoon-editor__plan-row--schedule-paid {
+    flex-wrap: wrap;
+  }
+}
+
+
 @container publication-editor (max-width: 57.99rem) {
   .webtoon-editor__planning {
     --plan-ch-min: 4rem;
@@ -5252,35 +5659,8 @@ textarea.form-textarea {
     --plan-days-max: none;
   }
 
-  .webtoon-editor__planning-section--next {
-    grid-template-columns:
-      minmax(var(--plan-ch-min), 1fr)
-      minmax(var(--plan-ch-min), 1fr)
-      minmax(10rem, 3fr);
-  }
-
-  .webtoon-editor__planning-section--end {
-    grid-template-columns:
-      minmax(var(--plan-ch-min), 1fr)
-      minmax(10rem, 4fr);
-  }
-}
-
-@container publication-editor (max-width: 22rem) {
-  .webtoon-editor__planning-section--next {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .webtoon-editor__planning-section--next .webtoon-editor__plan-field--dates {
-    grid-column: 1 / -1;
-  }
-
-  .webtoon-editor__planning-section--end {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .webtoon-editor__planning-section--end .webtoon-editor__plan-field--dates {
-    grid-column: 1 / -1;
+  .webtoon-editor__planning-row {
+    grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
   }
 }
 

@@ -120,7 +120,6 @@ export default function DateInputWithDayOffset({
       disabled={disabled}
       className={`form-input date-input-offset__days ${disabled ? 'form-input--disabled' : ''}`}
       placeholder="468"
-      title="Jours à partir d'aujourd'hui. Se met à jour si vous changez la date, ou tapez un nombre puis Entrée."
       inputMode="numeric"
       aria-label={label ? `${label} — délai en jours` : 'Délai en jours'}
     />

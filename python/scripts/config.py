@@ -51,6 +51,12 @@ class Config:
         self.CLEANUP_EMPTY_MESSAGES_HOUR     = int(os.getenv("CLEANUP_EMPTY_MESSAGES_HOUR", "4"))
         self.CLEANUP_EMPTY_MESSAGES_MINUTE   = int(os.getenv("CLEANUP_EMPTY_MESSAGES_MINUTE", "0"))
 
+        # Suivi d'œuvres (Webtoon / Manga…) — refresh quotidien + alertes payant
+        _admin_id = os.getenv("WORK_TRACKING_ADMIN_DISCORD_USER_ID", "").strip()
+        self.WORK_TRACKING_ADMIN_DISCORD_USER_ID = int(_admin_id) if _admin_id.isdigit() else 0
+        self.WORK_TRACKING_REFRESH_HOUR = int(os.getenv("WORK_TRACKING_REFRESH_HOUR", "0"))
+        self.WORK_TRACKING_REFRESH_MINUTE = int(os.getenv("WORK_TRACKING_REFRESH_MINUTE", "0"))
+
         self.configured = bool(
             self.PUBLISHER_DISCORD_TOKEN
             and self.FORUM_MY_ID

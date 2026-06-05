@@ -45,6 +45,8 @@ export function postToRow(p: PublishedPost): Record<string, unknown> {
       : (p.savedAdditionalModLinks ?? null),
     is_archived: p.archived ?? false,
     template_id: p.templateId ?? null,
+    publication_category: p.publicationCategory ?? null,
+    work_publication_id: p.workPublicationId ?? null,
     created_at: new Date(createdTs).toISOString(),
     updated_at: new Date(updatedTs).toISOString()
   };
@@ -93,6 +95,10 @@ export function rowToPost(r: Record<string, unknown>): PublishedPost {
         ? String(r.author_external_translator_id)
         : undefined,
     archived: Boolean(r.is_archived),
-    templateId: r.template_id != null ? String(r.template_id) : undefined
+    templateId: r.template_id != null ? String(r.template_id) : undefined,
+    publicationCategory:
+      r.publication_category != null ? (String(r.publication_category) as PublishedPost['publicationCategory']) : undefined,
+    workPublicationId:
+      r.work_publication_id != null ? String(r.work_publication_id) : undefined,
   };
 }

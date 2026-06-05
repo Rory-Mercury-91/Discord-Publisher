@@ -13,10 +13,14 @@ export type VarConfig = {
   isCustom?: boolean; // Pour distinguer les variables par défaut des personnalisées
 };
 
+export type TemplateCategory = 'translator' | 'work_tracking';
+
 export type Template = {
   id?: string;
   name: string;
   type?: string | null;
+  /** Catégorie UI : traducteur vs suivi d'œuvres. */
+  category?: TemplateCategory | null;
   content: string;
   isDraft?: boolean;
   /** Template par défaut (défini dans le code) : sauvegardé localement uniquement, jamais poussé en BDD. */
@@ -39,7 +43,15 @@ export type AdditionalTranslationLink = {
   link: string;
 };
 
-export type TagType = 'translator' | 'translationType' | 'gameStatus' | 'sites' | 'other';
+export type TagType =
+  | 'translator'
+  | 'translationType'
+  | 'gameStatus'
+  | 'sites'
+  | 'workType'
+  | 'workStatus'
+  | 'workModifier'
+  | 'other';
 
 export type Tag = {
   id?: string;
@@ -81,6 +93,8 @@ export type PublishedPost = {
   authorExternalTranslatorId?: string;
   archived?: boolean;
   templateId?: string;
+  publicationCategory?: TemplateCategory;
+  workPublicationId?: string;
 };
 
 export type AppContextValue = {
@@ -120,8 +134,8 @@ export type AppContextValue = {
   saveInstruction: (name: string, text: string, ownerId?: string) => void;
   deleteInstruction: (name: string) => void;
 
-  uploadedImages: Array<{ id: string, url?: string, name: string, isMain: boolean }>;
-  addImageFromUrl: (url: string) => void;
+  uploadedImages: Array<{ id: string; url?: string; previewUrl?: string; name: string; isMain: boolean }>;
+  addImageFromUrl: (url: string, options?: { previewUrl?: string }) => void;
   removeImage: (idx: number) => void;
   setMainImage: (idx: number) => void;
 

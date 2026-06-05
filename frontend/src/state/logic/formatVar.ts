@@ -84,6 +84,14 @@ export function formatDateDiscordTimestamp(isoDate: string): string {
   return `<t:${unix}:D> (<t:${unix}:R>)`;
 }
 
+/** Timestamp Discord date seule (:D), sans relatif. */
+export function formatDateDiscordTimestampShort(isoDate: string): string {
+  const resolved = resolveStoredDateValue(isoDate);
+  const unix = isoDateToUnixSeconds(resolved);
+  if (unix === null) return '';
+  return `<t:${unix}:D>`;
+}
+
 /** Formate une valeur selon le type de variable pour l’aperçu / publication. */
 export function formatVarValue(
   value: string,

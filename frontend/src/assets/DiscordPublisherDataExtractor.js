@@ -1,18 +1,26 @@
 // ==UserScript==
 // @name         Discord Publisher — Import rapide
 // @namespace    http://tampermonkey.net/
-// @version      4.1
-// @description  Importe un jeu F95Zone ou LewdCorner dans Discord Publisher en un clic. Aucune configuration requise.
+// @version      4.5
+// @description  Importe F95/LewdCorner, fiche Nautiljon (métadonnées) ou WEBTOON (lien officiel) dans Discord Publisher.
 // @author       Rory Mercury 91
 // @match        https://f95zone.to/threads/*
 // @match        https://*.f95zone.to/threads/*
 // @match        https://lewdcorner.com/threads/*
 // @match        https://*.lewdcorner.com/threads/*
+// @match        https://www.nautiljon.com/mangas/*
+// @match        https://www.nautiljon.com/animes/*
+// @match        https://www.nautiljon.com/light_novels/*
+// @match        https://www.nautiljon.com/manwhas/*
+// @match        https://www.webtoons.com/*/list*
+// @match        https://www.webtoons.com/*/*/list*
+// @match        https://www.webtoons.com/*/*/*/list*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @connect      127.0.0.1
 // @connect      localhost
+// @connect      www.nautiljon.com
 // ==/UserScript==
 
 (function () {
@@ -23,6 +31,17 @@
 
   const isF95Zone    = window.location.hostname.includes('f95zone');
   const isLewdCorner = window.location.hostname.includes('lewdcorner');
+  const isNautiljon  = window.location.hostname.includes('nautiljon.com');
+  const isWebtoon    = window.location.hostname.includes('webtoons.com');
+  const isWorkImport = isNautiljon || isWebtoon;
+  const NAUTILJON_ORIGIN = 'https://www.nautiljon.com';
+
+  function decodeHtmlEntities(text) {
+    if (!text) return '';
+    const el = document.createElement('textarea');
+    el.innerHTML = text;
+    return el.value.trim();
+  }
 
   // ========================================
   // EXTRACTION DE DONNÉES
@@ -214,7 +233,172 @@
     return '';
   }
 
-  function extractData() {
+  // ─── Nautiljon ─────────────────────────────────────────────────────────────
+
+  function findNautiljonInfoLi(label) {
+    const items = document.querySelectorAll('.liste_infos li, ul.mb10 li');
+    for (const li of items) {
+      const bold = li.querySelector('.bold');
+      if (bold && (bold.textContent || '').trim().startsWith(label)) return li;
+    }
+    return null;
+  }
+
+  function extractNautiljonLinkTexts(li) {
+    if (!li) return [];
+    return Array.from(li.querySelectorAll('a'))
+      .map(a => (a.textContent || '').trim())
+      .filter(Boolean);
+  }
+
+  function extractNautiljonGenres() {
+    const li = findNautiljonInfoLi('Genres');
+    if (!li) return [];
+    const fromSchema = Array.from(li.querySelectorAll('[itemprop="genre"]'))
+      .map(el => (el.textContent || '').trim())
+      .filter(Boolean);
+    if (fromSchema.length) return fromSchema;
+    return extractNautiljonLinkTexts(li);
+  }
+
+  function extractNautiljonThemes() {
+    const li = findNautiljonInfoLi('Thèmes');
+    return extractNautiljonLinkTexts(li);
+  }
+
+  function extractNautiljonTitle() {
+    const img = document.querySelector('.image_fiche img[itemprop="image"]');
+    const fromAlt = decodeHtmlEntities(img?.getAttribute('alt') || '');
+    if (fromAlt) return fromAlt;
+    const h1 = document.querySelector('.infosFicheTop h1, #content h1, h1');
+    const fromH1 = (h1?.textContent || '').trim();
+    if (fromH1 && !/nautiljon/i.test(fromH1)) return fromH1;
+    const docTitle = (document.title || '').replace(/\s*-\s*Nautiljon.*$/i, '').trim();
+    return docTitle || 'N/A';
+  }
+
+  function toAbsoluteNautiljonUrl(href) {
+    if (!href) return '';
+    if (href.startsWith('http://') || href.startsWith('https://')) return href.split('?')[0];
+    return NAUTILJON_ORIGIN + (href.startsWith('/') ? href : '/' + href);
+  }
+
+  function toNautiljonMiniImageUrl(url) {
+    if (!url || !url.includes('nautiljon.com') || url.includes('/mini/')) return url;
+    try {
+      const parsed = new URL(url);
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      const fileName = segments.pop();
+      if (!fileName || segments[segments.length - 1] === 'mini') return url;
+      segments.push('mini', fileName);
+      parsed.pathname = '/' + segments.join('/');
+      return parsed.toString();
+    } catch (e) {
+      return url.replace(/(\/images\/[^/]+\/\d+\/\d+\/)(?!mini\/)/, '$1mini/');
+    }
+  }
+
+  function extractNautiljonCover() {
+    const img = document.querySelector('.image_fiche img[itemprop="image"]');
+    if (img) {
+      const src = img.getAttribute('src') || img.src || '';
+      if (src) return toAbsoluteNautiljonUrl(src);
+    }
+    const link = document.querySelector('.image_fiche a.cboxImage');
+    if (link) {
+      const href = link.getAttribute('href') || link.href || '';
+      return toNautiljonMiniImageUrl(toAbsoluteNautiljonUrl(href));
+    }
+    return '';
+  }
+
+  function extractNautiljonSynopsis() {
+    const desc = document.querySelector('.top_bloc .description, .top_bloc h2 + .bas_bloc .description');
+    if (!desc) return '';
+    const clone = desc.cloneNode(true);
+    clone.querySelectorAll('.fader, .showmore, .bio_infos').forEach(el => el.remove());
+    return (clone.innerText || clone.textContent || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function extractNautiljonData() {
+    const genres = extractNautiljonGenres();
+    const themes = extractNautiljonThemes();
+    const combined = [...genres, ...themes].filter(Boolean).join(' - ');
+    return {
+      domain        : 'Nautiljon',
+      kind          : 'work_tracking',
+      name          : extractNautiljonTitle(),
+      genres_themes : combined,
+      image         : extractNautiljonCover(),
+      synopsis      : extractNautiljonSynopsis(),
+    };
+  }
+
+  // ─── WEBTOON (plateforme officielle : titre, synopsis, lien) ───────────────
+
+  function extractWebtoonListUrl() {
+    const canonical = document.querySelector('link[rel="canonical"]')?.getAttribute('href');
+    if (canonical) return canonical.split('#')[0];
+
+    const state = window.__episodeListState__;
+    const episodePath = state?.episodeListParam?.episodePath;
+    const titleNo = state?.episodeListParam?.titleNo
+      || state?.logParam?.titleNo
+      || state?.title?.titleNo;
+    if (episodePath && titleNo) {
+      return `${episodePath}/list?title_no=${titleNo}`;
+    }
+
+    const url = window.location.href.split('#')[0];
+    if (/\/list(\?|$)/i.test(url)) return url;
+    return url;
+  }
+
+  function extractWebtoonTitle() {
+    const state = window.__episodeListState__;
+    const fromState = state?.shareParam?.title || state?.logParam?.title;
+    if (fromState) return decodeHtmlEntities(fromState);
+
+    const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
+    if (ogTitle) return decodeHtmlEntities(ogTitle).replace(/\s*\|\s*WEBTOON.*$/i, '').trim();
+
+    const pageTitle = document.title.replace(/\s*\|\s*WEBTOON.*$/i, '').trim();
+    if (pageTitle) return decodeHtmlEntities(pageTitle);
+
+    const h1 = document.querySelector('.subj_info h1, #_episodeList .subj_info h1, h1');
+    return (h1?.textContent || '').trim() || 'N/A';
+  }
+
+  function extractWebtoonSynopsis() {
+    const state = window.__episodeListState__;
+    const fromState = state?.shareParam?.synopsis;
+    if (fromState) return fromState.replace(/\\'/g, "'").trim();
+
+    const summary = document.querySelector('.summary, .detail_summary, p.summary, .work_summary p');
+    if (summary) return (summary.textContent || '').trim();
+
+    const metaDesc = document.querySelector('meta[name="description"]')?.content || '';
+    if (metaDesc) {
+      const marker = metaDesc.match(/(?:MARDI|LUNDI|MERCREDI|JEUDI|VENDREDI|SAMEDI|DIMANCHE)\.\s+(.+?)(?:,\s*disponibles|$)/i);
+      if (marker?.[1]) return marker[1].trim();
+    }
+    return '';
+  }
+
+  function extractWebtoonData() {
+    return {
+      domain              : 'WEBTOON',
+      kind                : 'work_tracking',
+      name                : extractWebtoonTitle(),
+      synopsis            : extractWebtoonSynopsis(),
+      link                : extractWebtoonListUrl(),
+      official_site_label : 'WEBTOON',
+    };
+  }
+
+  function extractF95Data() {
     const url         = window.location.href;
     const domain      = isLewdCorner ? 'LewdCorner' : 'F95z';
     const id          = extractThreadId();
@@ -230,25 +414,88 @@
     return { domain, id, name, version, status, type, tags, image, synopsis, link, f95_date_maj };
   }
 
+  function extractData() {
+    if (isNautiljon) return extractNautiljonData();
+    if (isWebtoon) return extractWebtoonData();
+    return extractF95Data();
+  }
+
+  // Télécharge la couverture Nautiljon en data URL (anti-hotlink dans l'app Tauri).
+  function fetchImageAsDataUrl(imageUrl) {
+    return new Promise((resolve) => {
+      if (!imageUrl || (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://'))) {
+        resolve('');
+        return;
+      }
+      GM_xmlhttpRequest({
+        method      : 'GET',
+        url         : imageUrl,
+        responseType: 'arraybuffer',
+        headers     : isNautiljon ? { Referer: 'https://www.nautiljon.com/' } : {},
+        onload(resp) {
+          if (resp.status < 200 || resp.status >= 300) {
+            resolve('');
+            return;
+          }
+          try {
+            const bytes = new Uint8Array(resp.response);
+            let binary = '';
+            const chunk = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunk) {
+              binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+            }
+            const b64 = btoa(binary);
+            const hdr = (resp.responseHeaders || '').toLowerCase();
+            const match = hdr.match(/content-type:\s*([^\r\n;]+)/);
+            const mime = match ? match[1].trim() : 'image/webp';
+            resolve(`data:${mime};base64,${b64}`);
+          } catch (e) {
+            resolve('');
+          }
+        },
+        onerror: () => resolve(''),
+      });
+    });
+  }
+
+  async function prepareWorkImportData(data) {
+    if (!isNautiljon || !data.image) return data;
+    const miniImage = toNautiljonMiniImageUrl(data.image);
+    const image_data = await fetchImageAsDataUrl(miniImage);
+    return { ...data, image: miniImage, ...(image_data ? { image_data } : {}) };
+  }
+
   // ========================================
   // COMMUNICATION AVEC DISCORD PUBLISHER (localhost)
   // ========================================
 
   function sendToPublisher(gameData) {
     return new Promise((resolve, reject) => {
-      const payload = {
-        domain      : gameData.domain,
-        id          : gameData.id,
-        name        : gameData.name,
-        version     : gameData.version,
-        status      : gameData.status,
-        type        : gameData.type,
-        tags        : gameData.tags,
-        link        : gameData.link,
-        image       : gameData.image,
-        synopsis    : gameData.synopsis,
-        f95_date_maj: gameData.f95_date_maj || null,
-      };
+      const payload = isWorkImport
+        ? {
+            domain              : gameData.domain,
+            kind                : 'work_tracking',
+            name                : gameData.name,
+            genres_themes       : gameData.genres_themes || null,
+            image               : gameData.image || null,
+            image_data          : gameData.image_data || null,
+            synopsis            : gameData.synopsis || null,
+            link                : gameData.link || null,
+            official_site_label : gameData.official_site_label || null,
+          }
+        : {
+            domain      : gameData.domain,
+            id          : gameData.id,
+            name        : gameData.name,
+            version     : gameData.version,
+            status      : gameData.status,
+            type        : gameData.type,
+            tags        : gameData.tags,
+            link        : gameData.link,
+            image       : gameData.image,
+            synopsis    : gameData.synopsis,
+            f95_date_maj: gameData.f95_date_maj || null,
+          };
 
       console.info('%c[Discord Publisher]', 'color:#6366f1;font-weight:bold;', 'Envoi :', payload);
 
@@ -378,14 +625,26 @@
     `;
 
     // Bouton import
-    const importBtn = createMenuBtn('📥 Importer dans Publisher', '', async () => {
+    const importLabel = isWorkImport
+      ? '📥 Importer dans Publisher (Suivi d\'œuvres)'
+      : '📥 Importer dans Publisher';
+
+    const importBtn = createMenuBtn(importLabel, '', async () => {
       hideMenu();
-      const overlay = createOverlay(`Import de « ${document.querySelector('.p-title-value')?.childNodes[0]?.textContent?.trim() || '…'} »`);
+      const titlePreview = isWorkImport
+        ? (isWebtoon ? extractWebtoonTitle() : extractNautiljonTitle())
+        : (document.querySelector('.p-title-value')?.childNodes[0]?.textContent?.trim() || '…');
+      const overlay = createOverlay(`Import de « ${titlePreview} »`);
       try {
-        const data   = extractData();
+        const data   = await prepareWorkImportData(extractData());
         const result = await sendToPublisher(data);
 
-        if (result.action === 'already_in_collection') {
+        if (result.action === 'work_imported') {
+          const hint = isWebtoon
+            ? 'Lien WEBTOON + synopsis importés.'
+            : 'Genres, couverture et métadonnées importés.';
+          showNotification(`✅ Données importées !\n${data.name}\n${hint}`, 'success');
+        } else if (result.action === 'already_in_collection') {
           showNotification(`⚠️ Déjà dans votre collection !\n${data.name}`, 'warning');
         } else {
           showNotification(`✅ Ajouté avec succès !\n${data.name}${data.version ? ' ' + data.version : ''}`, 'success');
@@ -478,7 +737,9 @@
       align-items: center;
       gap: 8px;
     `;
-    btn.innerHTML = '<span>🎮</span><span>Publisher</span>';
+    btn.innerHTML = isWorkImport
+      ? (isWebtoon ? '<span>🌐</span><span>Publisher</span>' : '<span>📚</span><span>Publisher</span>')
+      : '<span>🎮</span><span>Publisher</span>';
 
     btn.addEventListener('mouseover', () => {
       btn.style.transform = 'translateY(-2px)';
@@ -536,11 +797,12 @@
     buildMenu();
     createMainButton();
 
+    const siteLabel = isNautiljon ? 'Nautiljon' : (isWebtoon ? 'WEBTOON' : (isF95Zone ? 'F95Zone' : 'LewdCorner'));
     console.info(
-      '%c[Discord Publisher v4.1]',
+      '%c[Discord Publisher v4.5]',
       'color:#6366f1;font-weight:bold;font-size:13px;',
       `✅ Prêt — connexion via http://127.0.0.1:${LOCAL_PORT}`,
-      `| ${isF95Zone ? 'F95Zone' : 'LewdCorner'}`
+      `| ${siteLabel}`
     );
   }
 

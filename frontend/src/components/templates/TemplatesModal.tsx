@@ -7,7 +7,8 @@ import { useApp } from '../../state/appContext';
 import { useAuth } from '../../state/authContext';
 import { parseSavedTemplatesValue } from '../../state/hooks/useTemplatesVarsInputs';
 import { CALENDAR_TEMPLATE_ID } from '../../state/calendarTemplate';
-import type { Template, VarConfig, VarInputType } from '../../state/types';
+import type { Template, TemplateCategory, VarConfig, VarInputType } from '../../state/types';
+import { useWebtoonView } from '../../state/webtoonViewContext';
 import ConfirmModal from '../Modals/ConfirmModal';
 import { useToast } from '../shared/ToastProvider';
 import TemplatesModalFooter from './components/TemplatesModalFooter';
@@ -34,6 +35,8 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
   } = useApp();
   const { showToast } = useToast();
   const { confirm, confirmState, handleConfirm, handleCancel } = useConfirm();
+  const { isWebtoonViewActive } = useWebtoonView();
+  const [categoryFilter, setCategoryFilter] = useState<TemplateCategory | 'all'>('all');
 
   const isMasterAdmin = profile?.is_master_admin === true;
   const [templateOwnerOptions, setTemplateOwnerOptions] = useState<TemplateOwnerOption[]>([]);
@@ -59,6 +62,18 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
     ? templates
     : (templatesByOwner[selectedTemplateOwnerId] ?? []);
 
+  const resolveTemplateCategory = (t: Template): TemplateCategory =>
+    t.category ?? (t.type === 'calendar' || t.type === 'work_tracking' ? 'work_tracking' : 'translator');
+
+  const filteredTemplates = useMemo(() => {
+    if (categoryFilter === 'all') return templatesToShow;
+    return templatesToShow.filter(t => resolveTemplateCategory(t) === categoryFilter);
+  }, [templatesToShow, categoryFilter]);
+
+  useEffect(() => {
+    setCategoryFilter(isWebtoonViewActive ? 'work_tracking' : 'translator');
+  }, [isWebtoonViewActive]);
+
   const doClose = useCallback(() => {
     cancelVarEdit();
     onClose?.();
@@ -71,6 +86,20 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
     const nameMatch = (formName || '').trim() === (t.name ?? '').trim();
     return !contentMatch || !nameMatch;
   }, [templatesToShow, selectedTemplateIdx, formContent, formName]);
+
+  const selectedFilteredIdx = useMemo(() => {
+    const current = templatesToShow[selectedTemplateIdx];
+    if (!current) return 0;
+    const idx = filteredTemplates.findIndex(t => t.id === current.id);
+    return idx >= 0 ? idx : 0;
+  }, [filteredTemplates, templatesToShow, selectedTemplateIdx]);
+
+  const handleSelectFiltered = (idx: number) => {
+    const tpl = filteredTemplates[idx];
+    if (!tpl) return;
+    const realIdx = templatesToShow.findIndex(t => t.id === tpl.id);
+    setSelectedTemplateIdx(realIdx >= 0 ? realIdx : 0);
+  };
 
   const handleEscape = useCallback(() => {
     if (hasChanges) {
@@ -175,7 +204,8 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
       id: `template_${Date.now()}`,
       name: newTemplateName.trim(),
       content: '# Nouveau template\n\nContenu du template...',
-      type: 'my',
+      type: isWebtoonViewActive ? 'work_tracking' : 'my',
+      category: isWebtoonViewActive ? 'work_tracking' : 'translator',
       modifiedAt: Date.now(),
       isDefault: false,
     };
@@ -418,10 +448,34 @@ export default function TemplatesModal({ onClose }: { onClose?: () => void }) {
           }}
         />
 
+        <div className="templates-category-toggle" role="group" aria-label="Filtrer par catégorie">
+          <button
+            type="button"
+            className={`form-btn form-btn--sm${categoryFilter === 'translator' ? ' form-btn--primary' : ' form-btn--ghost'}`}
+            onClick={() => setCategoryFilter('translator')}
+          >
+            Traducteur
+          </button>
+          <button
+            type="button"
+            className={`form-btn form-btn--sm${categoryFilter === 'work_tracking' ? ' form-btn--primary' : ' form-btn--ghost'}`}
+            onClick={() => setCategoryFilter('work_tracking')}
+          >
+            Suivi d&apos;œuvres
+          </button>
+          <button
+            type="button"
+            className={`form-btn form-btn--sm${categoryFilter === 'all' ? ' form-btn--primary' : ' form-btn--ghost'}`}
+            onClick={() => setCategoryFilter('all')}
+          >
+            Tous
+          </button>
+        </div>
+
         <TemplatesListSection
-          templates={templatesToShow}
-          selectedTemplateIdx={selectedTemplateIdx}
-          onSelect={setSelectedTemplateIdx}
+          templates={filteredTemplates}
+          selectedTemplateIdx={selectedFilteredIdx}
+          onSelect={handleSelectFiltered}
           onOpenCreateModal={() => {
             setNewTemplateName('');
             setShowCreateTemplateModal(true);

@@ -243,31 +243,70 @@ async def _fetch_image_from_url(
     Retourne (bytes, filename, content_type) ou None.
     """
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-            if resp.status >= 400:
-                logger.warning("[publisher] Echec telechargement image (status %d) : %s", resp.status, url[:60])
-                return None
-            data = await resp.read()
-            if not data:
-                return None
-            disp = resp.headers.get("Content-Disposition")
-            filename = "image.png"
-            if disp and "filename=" in disp:
-                part = disp.split("filename=")[-1].strip().strip("\"'")
-                if part:
-                    filename = part
-            else:
-                path = url.split("?")[0].strip("/")
-                if "/" in path:
-                    name = path.split("/")[-1]
-                    if "." in name and len(name) < 200:
-                        filename = name
-            if not any(filename.lower().endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                filename = filename + ".png" if "." not in filename else "image.png"
-            ctype = resp.headers.get("Content-Type") or "image/png"
-            if ";" in ctype:
-                ctype = ctype.split(";")[0].strip()
-            return (data, filename, ctype)
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            ),
+        }
+        if "nautiljon.com" in url.lower():
+            headers["Referer"] = "https://www.nautiljon.com/"
+
+        def _nautiljon_mini_url(full_url: str) -> str:
+            if "/mini/" in full_url or "nautiljon.com" not in full_url.lower():
+                return full_url
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(full_url)
+            parts = [p for p in parsed.path.split("/") if p]
+            if len(parts) < 2:
+                return full_url
+            name = parts.pop()
+            if parts[-1] == "mini":
+                return full_url
+            parts.append("mini")
+            parts.append(name)
+            return urlunparse(parsed._replace(path="/" + "/".join(parts)))
+
+        urls_to_try = [url]
+        mini = _nautiljon_mini_url(url)
+        if mini != url:
+            urls_to_try.append(mini)
+
+        for try_url in urls_to_try:
+            async with session.get(
+                try_url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                if resp.status >= 400:
+                    logger.warning(
+                        "[publisher] Echec telechargement image (status %d) : %s",
+                        resp.status, try_url[:60],
+                    )
+                    continue
+                data = await resp.read()
+                if not data:
+                    continue
+                disp = resp.headers.get("Content-Disposition")
+                filename = "image.png"
+                if disp and "filename=" in disp:
+                    part = disp.split("filename=")[-1].strip().strip("\"'")
+                    if part:
+                        filename = part
+                else:
+                    path = try_url.split("?")[0].strip("/")
+                    if "/" in path:
+                        name = path.split("/")[-1]
+                        if "." in name and len(name) < 200:
+                            filename = name
+                if not any(
+                    filename.lower().endswith(ext)
+                    for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp")
+                ):
+                    filename = filename + ".png" if "." not in filename else "image.png"
+                ctype = resp.headers.get("Content-Type") or "image/png"
+                if ";" in ctype:
+                    ctype = ctype.split(";")[0].strip()
+                return (data, filename, ctype)
+        return None
     except Exception as e:
         logger.warning("[publisher] Exception telechargement image : %s", e)
         return None

@@ -62,6 +62,9 @@ export const TAG_SELECTOR_GROUP_ORDER: Exclude<TagType, 'translator'>[] = [
   'translationType',
   'sites',
   'gameStatus',
+  'workType',
+  'workStatus',
+  'workModifier',
   'other',
 ];
 
@@ -69,6 +72,9 @@ export const TAG_SELECTOR_TYPE_LABELS: Record<Exclude<TagType, 'translator'>, st
   translationType: '📋 Type de traduction',
   gameStatus: '🎮 Statut du jeu',
   sites: '🌐 Sites',
+  workType: '📚 Type d\'œuvre',
+  workStatus: '📖 Statut de l\'œuvre',
+  workModifier: '🏷️ Modificateurs',
   other: '📦 Autres',
 };
 
