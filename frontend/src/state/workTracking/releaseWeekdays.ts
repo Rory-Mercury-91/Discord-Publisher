@@ -1,3 +1,4 @@
+import { resolveStoredDateValue } from '../logic/formatVar';
 import { WEEKDAY_OPTIONS } from './registry';
 
 /** Sérialise les jours cochés (input formulaire). */
@@ -125,9 +126,10 @@ export function projectReleaseDateAtChapter(
   return current;
 }
 
-/** Date du jour (minuit local) >= dateIso ? */
+/** Date du jour (minuit local) >= dateIso ? (ISO ou offset « X J »). */
 export function isReleaseDatePassed(dateIso: string): boolean {
-  const m = dateIso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const resolved = resolveStoredDateValue(dateIso);
+  const m = resolved.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return false;
   const target = new Date(
     parseInt(m[1], 10),

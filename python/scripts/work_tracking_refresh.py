@@ -73,23 +73,31 @@ def _should_send_paid_alert(wp: dict) -> bool:
 
 
 def _advance_ongoing_row(wp: dict) -> Optional[dict]:
-    date_next_raw = wp.get("date_next_release") or ""
-    if not is_release_date_passed(date_next_raw):
-        return None
-
-    resolved = resolve_stored_date_value(date_next_raw)
-    weekdays = wp.get("release_weekdays") or []
-    released_ch = (wp.get("chapter_next_release") or wp.get("progress_current") or "").strip()
-    new_next_ch = increment_chapter(released_ch) if released_ch else ""
-    monthly = bool(wp.get("release_monthly"))
-    new_next_date = compute_next_release_date_by_mode(resolved, list(weekdays), monthly) or resolved
-
+    """Rattrape toutes les sorties passées (pas une seule par passage)."""
     updated = dict(wp)
-    updated["chapter_next_release"] = new_next_ch
-    updated["date_next_release"] = new_next_date
-    if released_ch:
-        updated["progress_current"] = released_ch
-    return updated
+    weekdays = list(wp.get("release_weekdays") or [])
+    monthly = bool(wp.get("release_monthly"))
+    changed = False
+
+    for _ in range(500):
+        date_next_raw = updated.get("date_next_release") or ""
+        if not is_release_date_passed(date_next_raw):
+            break
+
+        resolved = resolve_stored_date_value(date_next_raw)
+        released_ch = (
+            updated.get("chapter_next_release") or updated.get("progress_current") or ""
+        ).strip()
+        new_next_ch = increment_chapter(released_ch) if released_ch else ""
+        new_next_date = compute_next_release_date_by_mode(resolved, weekdays, monthly) or resolved
+
+        updated["chapter_next_release"] = new_next_ch
+        updated["date_next_release"] = new_next_date
+        if released_ch:
+            updated["progress_current"] = released_ch
+        changed = True
+
+    return updated if changed else None
 
 
 async def run_work_tracking_refresh_once(bot=None) -> dict[str, int]:

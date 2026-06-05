@@ -6,9 +6,29 @@ import {
   migrateLegacyBookFields,
 } from '../calendarTemplate';
 import { SKIP_VERSION_CHECK_INPUT_KEY } from '../logic/postPublishFlags';
-import type { AdditionalTranslationLink, PublishedPost } from '../types';
+import type { AdditionalTranslationLink, PublishedPost, Tag } from '../types';
+import {
+  applyWorkTrackingInputs,
+  catchUpWorkTrackingInputs,
+} from '../workTracking/catchUpWorkTrackingInputs';
+import { fetchPublishedPostById } from '../workTracking/fetchPublishedPost';
 import type { ImageData } from './useImagesState';
 import type { LinkConfigs } from './useLinkConfigState';
+
+function parsePostTagIds(tags: string): string[] {
+  return tags ? tags.split(',').map(s => s.trim()).filter(Boolean) : [];
+}
+
+function refreshWorkTrackingInputs(
+  rawInputs: Record<string, string>,
+  tagIds: string[],
+  savedTags: Tag[],
+  setInput: (name: string, value: string) => void
+): void {
+  const migrated = migrateLegacyBookFields(migrateCalendarInputs(rawInputs));
+  const caught = catchUpWorkTrackingInputs(migrated, tagIds, savedTags);
+  applyWorkTrackingInputs(caught, setInput);
+}
 
 type LoadPostDeps = {
   setEditingPostId: (id: string | null) => void;
@@ -26,6 +46,7 @@ type LoadPostDeps = {
   setUploadedImages: (images: ImageData[]) => void;
   setPreviewOverride: (value: string | null) => void;
   setCurrentTemplateIdx: (idx: number) => void;
+  savedTags: Tag[];
 };
 
 /** Retourne loadPostForEditing et loadPostForDuplication pour restaurer un post dans le formulaire. */
@@ -46,6 +67,7 @@ export function useLoadPost(deps: LoadPostDeps) {
     setUploadedImages,
     setPreviewOverride,
     setCurrentTemplateIdx,
+    savedTags,
   } = deps;
 
   const loadPostForEditing = useCallback(
@@ -92,6 +114,12 @@ export function useLoadPost(deps: LoadPostDeps) {
           ] as const) {
             if (migrated[key]) setInput(key, migrated[key]);
           }
+          refreshWorkTrackingInputs(
+            post.savedInputs,
+            parsePostTagIds(post.tags || ''),
+            savedTags,
+            setInput
+          );
         }
       }
 
@@ -139,7 +167,21 @@ export function useLoadPost(deps: LoadPostDeps) {
         );
       }
 
-      setPreviewOverride(post.content ?? '');
+      if (isCalendarPublishedPost(post)) {
+        setPreviewOverride(null);
+        void (async () => {
+          const fresh = await fetchPublishedPostById(post.id);
+          if (!fresh?.savedInputs) return;
+          refreshWorkTrackingInputs(
+            fresh.savedInputs,
+            parsePostTagIds(fresh.tags || post.tags || ''),
+            savedTags,
+            setInput
+          );
+        })();
+      } else {
+        setPreviewOverride(post.content ?? '');
+      }
     },
     [
       setEditingPostId,
@@ -157,6 +199,7 @@ export function useLoadPost(deps: LoadPostDeps) {
       setUploadedImages,
       setPreviewOverride,
       setCurrentTemplateIdx,
+      savedTags,
     ]
   );
 
@@ -176,6 +219,14 @@ export function useLoadPost(deps: LoadPostDeps) {
           if (key === SKIP_VERSION_CHECK_INPUT_KEY) return;
           setInput(key, post.savedInputs![key] ?? '');
         });
+        if (isCalendarPublishedPost(post)) {
+          refreshWorkTrackingInputs(
+            post.savedInputs,
+            parsePostTagIds(post.tags || ''),
+            savedTags,
+            setInput
+          );
+        }
       }
 
       if (post.savedLinkConfigs) {
@@ -216,6 +267,7 @@ export function useLoadPost(deps: LoadPostDeps) {
       setLinkConfigs,
       setAdditionalTranslationLinks,
       setAdditionalModLinks,
+      savedTags,
     ]
   );
 

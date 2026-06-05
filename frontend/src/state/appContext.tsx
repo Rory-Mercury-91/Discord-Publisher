@@ -834,6 +834,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAdditionalModLinks: linkState.setAdditionalModLinks,
     setUploadedImages: imagesState.setUploadedImages,
     setPreviewOverride: previewEngine.setPreviewOverride,
+    savedTags: tagsState.savedTags,
   });
 
   const updateTemplateActive = useCallback(
