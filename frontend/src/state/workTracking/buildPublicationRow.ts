@@ -2,6 +2,7 @@ import type { Tag } from '../types';
 import { resolveStoredDateValue } from '../logic/formatVar';
 import { parseReleaseWeekdays } from './releaseWeekdays';
 import { resolveWorkTrackingFromTags } from './resolveFromTags';
+import { ADDITIONAL_SCAN_LINKS_INPUT_KEY, parseAdditionalScanLinks } from './scanLinks';
 import type { ProgressUnit, WorkPublicationRow } from './types';
 
 function parseProgressUnit(raw: string | undefined): ProgressUnit {
@@ -58,6 +59,10 @@ export function buildWorkPublicationRow(params: {
     official_site_link: (inputs.Official_Site_Link || '').trim() || null,
     scan_site_label: (inputs.Scan_Site_Label || '').trim() || null,
     scan_site_link: (inputs.Scan_Site_Link || '').trim() || null,
+    additional_scan_links: (() => {
+      const extras = parseAdditionalScanLinks(inputs[ADDITIONAL_SCAN_LINKS_INPUT_KEY]);
+      return extras.length > 0 ? extras : null;
+    })(),
     work_status: resolved.status,
     work_type: resolved.workType,
     is_paid: resolved.isPaid,

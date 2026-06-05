@@ -47,6 +47,7 @@ type UsePreviewEngineProps = {
   isIntegrated: boolean;
   additionalTranslationLinks: AdditionalTranslationLink[];
   additionalModLinks: AdditionalTranslationLink[];
+  additionalScanLinks: AdditionalTranslationLink[];
   uploadedImages: ImageData[];
   editingPostId: string | null;
   postTags?: string;
@@ -63,6 +64,7 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     isIntegrated,
     additionalTranslationLinks,
     additionalModLinks,
+    additionalScanLinks,
     uploadedImages,
     editingPostId,
     postTags = '',
@@ -141,6 +143,7 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
         inputs,
         postTags,
         savedTags,
+        additionalScanLinks,
         cleanUrl: cleanGameLink,
       });
     } else if (tpl.type === 'calendar') {
@@ -316,6 +319,7 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     isIntegrated,
     additionalTranslationLinks,
     additionalModLinks,
+    additionalScanLinks,
     uploadedImages,
     postTags,
     savedTags,

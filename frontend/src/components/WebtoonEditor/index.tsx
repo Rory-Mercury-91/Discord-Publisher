@@ -52,9 +52,9 @@ import {
 
 import TagSelectorModalWebtoon from './TagSelectorModalWebtoon';
 
-import WebtoonSiteLabelField from './WebtoonSiteLabelField';
+import WorkTrackingOfficialLinkSection from './WorkTrackingOfficialLinkSection';
+import WorkTrackingScanLinksSection from './WorkTrackingScanLinksSection';
 
-import { useWebtoonSiteLabelPicker } from '../../state/hooks/useWebtoonSiteLabelPicker';
 import { applyWorkImportAsync, isWorkImportPayload } from '../../state/workTracking/applyWorkImport';
 import { resolveWorkImagePreview } from '../../state/workTracking/resolveWorkImage';
 
@@ -102,6 +102,14 @@ export default function WebtoonEditor() {
 
     savedTags,
 
+    additionalScanLinks,
+
+    addAdditionalScanLink,
+
+    updateAdditionalScanLink,
+
+    deleteAdditionalScanLink,
+
   } = useApp();
 
 
@@ -113,10 +121,6 @@ export default function WebtoonEditor() {
   const { calendarViewAvailable, isWebtoonViewActive, setWebtoonViewActive } = useWebtoonView();
 
   const { calendarForumChannelId } = useUserPreferences();
-
-  const { pickerEnabled, recentLabels, recordSiteLabels } = useWebtoonSiteLabelPicker();
-
-
 
   const selectedTagIds = useMemo(() => {
 
@@ -327,10 +331,6 @@ export default function WebtoonEditor() {
 
     setInput('Official_Site_Link', '');
 
-    setInput('Scan_Site_Label', '');
-
-    setInput('Scan_Site_Link', '');
-
     setPostTags('');
 
     showToast('Formulaire vidé', 'success');
@@ -365,15 +365,6 @@ export default function WebtoonEditor() {
     });
 
     if (res?.ok) {
-
-      recordSiteLabels([
-
-        (inputs['Official_Site_Label'] || '').trim(),
-
-        (inputs['Scan_Site_Label'] || '').trim(),
-
-      ]);
-
       showToast(editingPostId ? 'Post mis à jour !' : 'Post publié avec succès !', 'success');
 
       if (editingPostId) {
@@ -446,44 +437,15 @@ export default function WebtoonEditor() {
 
         <h4 className="webtoon-editor__block-title">Liens de publication</h4>
         <div className="webtoon-editor__links-row">
-          <div className="webtoon-editor__links-col">
-            <h5 className="webtoon-editor__links-title">Site officiel</h5>
-            <WebtoonSiteLabelField
-              value={inputs['Official_Site_Label'] || ''}
-              onChange={v => setInput('Official_Site_Label', v)}
-              placeholder="Webtoon, Tapas, Kakao…"
-              pickerEnabled={pickerEnabled}
-              recentLabels={recentLabels}
-            />
-            <div className="form-field">
-              <label className="form-label">Lien</label>
-              <input
-                value={inputs['Official_Site_Link'] || ''}
-                onChange={e => setInput('Official_Site_Link', e.target.value)}
-                className="form-input"
-                placeholder="https://..."
-              />
-            </div>
-          </div>
-          <div className="webtoon-editor__links-col">
-            <h5 className="webtoon-editor__links-title">Site scan</h5>
-            <WebtoonSiteLabelField
-              value={inputs['Scan_Site_Label'] || ''}
-              onChange={v => setInput('Scan_Site_Label', v)}
-              placeholder="Scan VF, Flame…"
-              pickerEnabled={pickerEnabled}
-              recentLabels={recentLabels}
-            />
-            <div className="form-field">
-              <label className="form-label">Lien</label>
-              <input
-                value={inputs['Scan_Site_Link'] || ''}
-                onChange={e => setInput('Scan_Site_Link', e.target.value)}
-                className="form-input"
-                placeholder="https://..."
-              />
-            </div>
-          </div>
+          <WorkTrackingOfficialLinkSection inputs={inputs} setInput={setInput} />
+          <WorkTrackingScanLinksSection
+            inputs={inputs}
+            setInput={setInput}
+            additionalScanLinks={additionalScanLinks}
+            onAdd={addAdditionalScanLink}
+            onUpdate={updateAdditionalScanLink}
+            onDelete={deleteAdditionalScanLink}
+          />
         </div>
 
         <div className="webtoon-editor__meta-row">

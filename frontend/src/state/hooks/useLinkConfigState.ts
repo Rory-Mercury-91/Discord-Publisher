@@ -45,6 +45,16 @@ export function useLinkConfigState() {
     return [];
   });
 
+  const [additionalScanLinks, setAdditionalScanLinks] = useState<AdditionalTranslationLink[]>(() => {
+    try {
+      const raw = localStorage.getItem('additionalScanLinks');
+      if (raw) return JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+    return [];
+  });
+
   useEffect(() => {
     localStorage.setItem('linkConfigs', JSON.stringify(linkConfigs));
   }, [linkConfigs]);
@@ -56,6 +66,10 @@ export function useLinkConfigState() {
   useEffect(() => {
     localStorage.setItem('additionalModLinks', JSON.stringify(additionalModLinks));
   }, [additionalModLinks]);
+
+  useEffect(() => {
+    localStorage.setItem('additionalScanLinks', JSON.stringify(additionalScanLinks));
+  }, [additionalScanLinks]);
 
   const addAdditionalTranslationLink = useCallback(() => {
     setAdditionalTranslationLinks(prev => [...prev, { label: '', link: '' }]);
@@ -89,6 +103,22 @@ export function useLinkConfigState() {
     setAdditionalModLinks(prev => prev.filter((_, i) => i !== index));
   }, []);
 
+  const addAdditionalScanLink = useCallback(() => {
+    setAdditionalScanLinks(prev => [...prev, { label: '', link: '' }]);
+  }, []);
+
+  const updateAdditionalScanLink = useCallback((index: number, link: AdditionalTranslationLink) => {
+    setAdditionalScanLinks(prev => {
+      const next = [...prev];
+      next[index] = { ...link, link: cleanGameLinkUrl(link.link) };
+      return next;
+    });
+  }, []);
+
+  const deleteAdditionalScanLink = useCallback((index: number) => {
+    setAdditionalScanLinks(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
   const setLinkConfig = useCallback(
     (linkName: 'Game_link' | 'Translate_link' | 'Mod_link', source: 'F95' | 'Lewd' | 'Autre', value: string) => {
       setLinkConfigs(prev => {
@@ -115,6 +145,11 @@ export function useLinkConfigState() {
     setAdditionalModLinks,
     addAdditionalModLink,
     updateAdditionalModLink,
-    deleteAdditionalModLink
+    deleteAdditionalModLink,
+    additionalScanLinks,
+    setAdditionalScanLinks,
+    addAdditionalScanLink,
+    updateAdditionalScanLink,
+    deleteAdditionalScanLink,
   };
 }

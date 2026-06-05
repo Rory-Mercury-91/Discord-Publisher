@@ -56,6 +56,7 @@ export type WorkPublicationRow = {
   official_site_link?: string | null;
   scan_site_label?: string | null;
   scan_site_link?: string | null;
+  additional_scan_links?: { label: string; link: string }[] | null;
   work_status: WorkStatus;
   work_type?: string | null;
   is_paid: boolean;

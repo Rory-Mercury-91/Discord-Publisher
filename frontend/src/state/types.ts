@@ -204,6 +204,11 @@ export type AppContextValue = {
   updateAdditionalModLink: (index: number, link: AdditionalTranslationLink) => void;
   deleteAdditionalModLink: (index: number) => void;
 
+  additionalScanLinks: AdditionalTranslationLink[];
+  addAdditionalScanLink: () => void;
+  updateAdditionalScanLink: (index: number, link: AdditionalTranslationLink) => void;
+  deleteAdditionalScanLink: (index: number) => void;
+
   apiStatus: string;
   setApiStatus: (status: string) => void;
   discordConfig: any;

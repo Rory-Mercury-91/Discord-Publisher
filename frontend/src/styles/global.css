@@ -5057,43 +5057,34 @@ textarea.form-textarea {
   color: var(--text-secondary, #c5cad3);
 }
 
-.webtoon-editor__links-col .form-field,
-.webtoon-editor__links-col .webtoon-site-label-field {
+.webtoon-editor__links-col .form-field {
   margin: 0;
 }
 
-.webtoon-site-label-field__row {
-  display: flex;
-  align-items: stretch;
-  gap: 0.5rem;
+.webtoon-editor__links-toolbar {
+  min-height: 32px;
 }
 
-.webtoon-site-label-field__input-wrap {
-  flex: 1;
+.webtoon-editor__links-toolbar .webtoon-editor__links-title {
+  margin: 0;
+  flex: 1 1 auto;
   min-width: 0;
-  margin-bottom: 0;
 }
 
-.webtoon-site-label-field__pick-btn {
-  flex-shrink: 0;
-  align-self: stretch;
-  padding-left: 0.65rem;
-  padding-right: 0.65rem;
-  font-size: 0.78rem;
+.webtoon-editor__links-toolbar-spacer {
+  visibility: hidden;
+  pointer-events: none;
 }
 
-.webtoon-site-label-field__suggestions {
-  z-index: 50;
+.webtoon-editor__link-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) 40px 40px;
 }
 
-.webtoon-site-label-field__backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  border: none;
-  background: transparent;
-  cursor: default;
-  padding: 0;
+.webtoon-editor__link-row .form-input {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  box-sizing: border-box;
 }
 
 .templates-category-toggle {

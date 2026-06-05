@@ -12,6 +12,7 @@ from __future__ import annotations
 
 
 
+import json
 import re
 
 
@@ -37,7 +38,7 @@ WEEKDAY_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dima
 
 WORK_WARNING = (
 
-    ":warning: **Note :** L'œuvre n'étant pas complètement gratuite sur la plateforme officielle, "
+    ":warning: **Note :** L'œuvre n'étant pas complètement gratuite ou disponible sur la plateforme officielle, "
 
     "vous pouvez retrouver la suite sur le site alternatif mentionné ci-dessus. "
 
@@ -123,17 +124,41 @@ def _format_weekdays_text(weekdays: list[int]) -> str:
 
 
 
-def _build_links(wp: dict) -> str:
+def _parse_additional_scan_links(wp: dict) -> list[tuple[str, str]]:
 
-    lines = []
+    raw = wp.get("additional_scan_links")
 
-    olabel = (wp.get("official_site_label") or "").strip()
+    if not raw:
 
-    ourl = (wp.get("official_site_link") or "").strip()
+        return []
 
-    if olabel and ourl:
+    if not isinstance(raw, list):
 
-        lines.append(f"* [{olabel}](<{ourl}>)")
+        return []
+
+    pairs: list[tuple[str, str]] = []
+
+    for item in raw:
+
+        if not isinstance(item, dict):
+
+            continue
+
+        label = (item.get("label") or "").strip()
+
+        url = (item.get("link") or "").strip()
+
+        if label and url:
+
+            pairs.append((label, url))
+
+    return pairs
+
+
+
+
+
+def _has_scan_link(wp: dict) -> bool:
 
     slabel = (wp.get("scan_site_label") or "").strip()
 
@@ -141,9 +166,43 @@ def _build_links(wp: dict) -> str:
 
     if slabel and surl:
 
-        lines.append(f"* [{slabel}](<{surl}>)")
+        return True
 
-    return "\n".join(lines)
+    return len(_parse_additional_scan_links(wp)) > 0
+
+
+
+
+
+def _build_links(wp: dict) -> str:
+
+    parts: list[str] = []
+
+    olabel = (wp.get("official_site_label") or "").strip()
+
+    ourl = (wp.get("official_site_link") or "").strip()
+
+    if olabel and ourl:
+
+        parts.append(f"[{olabel}](<{ourl}>)")
+
+    slabel = (wp.get("scan_site_label") or "").strip()
+
+    surl = (wp.get("scan_site_link") or "").strip()
+
+    if slabel and surl:
+
+        parts.append(f"[{slabel}](<{surl}>)")
+
+    for label, url in _parse_additional_scan_links(wp):
+
+        parts.append(f"[{label}](<{url}>)")
+
+    if not parts:
+
+        return ""
+
+    return f"* {' - '.join(parts)}"
 
 
 
@@ -399,11 +458,7 @@ def render_work_publication_message(wp: dict) -> str:
 
 
 
-    scan_label = (wp.get("scan_site_label") or "").strip()
-
-    scan_url = (wp.get("scan_site_link") or "").strip()
-
-    warning = WORK_WARNING if scan_label and scan_url else ""
+    warning = WORK_WARNING if _has_scan_link(wp) else ""
 
 
 
@@ -508,6 +563,18 @@ def work_publication_to_saved_inputs(wp: dict) -> dict:
         "Chapter_Control_Enabled": "true" if wp.get("chapter_control_enabled") else "false",
 
     }
+
+    extras = _parse_additional_scan_links(wp)
+
+    if extras:
+
+        inputs["Additional_Scan_Links"] = json.dumps(
+
+            [{"label": label, "link": url} for label, url in extras],
+
+            ensure_ascii=False,
+
+        )
 
     if wp.get("progress_current"):
 

@@ -46,7 +46,7 @@ export const PROGRESS_UNIT_OPTIONS: { value: ProgressUnit; label: string; singul
 ];
 
 export const WORK_WARNING_NOTE =
-  ':warning: **Note :** L\'œuvre n\'étant pas complètement gratuite sur la plateforme officielle, vous pouvez retrouver la suite sur le site alternatif mentionné ci-dessus. *(Attention, la qualité de traduction ou d\'image peut varier)*.';
+  ':warning: **Note :** L\'œuvre n\'étant pas complètement gratuite ou disponible sur la plateforme officielle, vous pouvez retrouver la suite sur le site alternatif mentionné ci-dessus. *(Attention, la qualité de traduction ou d\'image peut varier)*.';
 
 /** Clés label_key reconnues pour les tags structurés. */
 export const WORK_STATUS_LABEL_KEYS: Record<string, WorkStatus> = {

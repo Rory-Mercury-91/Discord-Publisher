@@ -1,6 +1,10 @@
-/** Site scan renseigné (label + URL) — affiche la note warning dans le message. */
-export function hasScanSiteFilled(inputs: Record<string, string>): boolean {
-  const label = (inputs.Scan_Site_Label || '').trim();
-  const url = (inputs.Scan_Site_Link || '').trim();
-  return !!label && !!url;
+import type { AdditionalTranslationLink } from '../types';
+import { hasAnyScanLink } from './scanLinks';
+
+/** Au moins un lien scan (principal ou additionnel) — affiche la note warning. */
+export function hasScanSiteFilled(
+  inputs: Record<string, string>,
+  additionalScanLinks: AdditionalTranslationLink[] = []
+): boolean {
+  return hasAnyScanLink(inputs, additionalScanLinks);
 }

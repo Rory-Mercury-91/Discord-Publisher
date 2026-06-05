@@ -7,6 +7,7 @@ import {
   migrateCalendarInputs,
 } from './calendarTemplate';
 import { buildSavedInputsForPublish } from './logic/postPublishFlags';
+import { buildCalendarSavedInputs } from './workTracking/scanLinks';
 import { syncWorkPublicationToSupabase } from './workTracking/syncWorkPublication';
 import { useUserPreferences } from './hooks/useUserPreferences';
 import ErrorModal from '../components/Modals/ErrorModal';
@@ -164,6 +165,10 @@ export type {
   addAdditionalModLink: () => void;
   updateAdditionalModLink: (index: number, link: AdditionalTranslationLink) => void;
   deleteAdditionalModLink: (index: number) => void;
+  additionalScanLinks: AdditionalTranslationLink[];
+  addAdditionalScanLink: () => void;
+  updateAdditionalScanLink: (index: number, link: AdditionalTranslationLink) => void;
+  deleteAdditionalScanLink: (index: number) => void;
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -471,10 +476,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         formData.append('isUpdate', 'true');
       }
 
-      const savedInputsWithVersionFlag = buildSavedInputsForPublish(
-        tvState.inputs,
-        publishOpts.skipVersionControl
-      );
+      const savedInputsWithVersionFlag = isCalendarPublish
+        ? buildCalendarSavedInputs(
+            tvState.inputs,
+            linkState.additionalScanLinks,
+            publishOpts.skipVersionControl
+          )
+        : buildSavedInputsForPublish(tvState.inputs, publishOpts.skipVersionControl);
 
       const now = Date.now();
       const postId = `post_${now}_${Math.random().toString(36).substr(2, 9)}`;
@@ -591,10 +599,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (threadId && messageId) {
         const historyPostId =
           isEditMode && pubState.editingPostId ? pubState.editingPostId : postId;
-        const savedInputsForState = buildSavedInputsForPublish(
-          tvState.inputs,
-          publishOpts.skipVersionControl
-        );
+        const savedInputsForState = isCalendarPublish
+          ? buildCalendarSavedInputs(
+              tvState.inputs,
+              linkState.additionalScanLinks,
+              publishOpts.skipVersionControl
+            )
+          : buildSavedInputsForPublish(tvState.inputs, publishOpts.skipVersionControl);
         if (isEditMode && pubState.editingPostId && pubState.editingPostData) {
           const now = Date.now();
           const updatedPost: PublishedPost = {
@@ -667,7 +678,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             publishedPostId: historyPostId,
             profileId: profile?.id ?? null,
             templateId: templateId ?? CALENDAR_TEMPLATE_ID,
-            inputs: buildSavedInputsForPublish(tvState.inputs, publishOpts.skipVersionControl),
+            inputs: savedInputsForState,
             selectedTagIds: selectedIds,
             savedTags: tagsState.savedTags,
           });
@@ -812,6 +823,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     isIntegrated: postFormState.isIntegrated,
     additionalTranslationLinks: linkState.additionalTranslationLinks,
     additionalModLinks: linkState.additionalModLinks,
+    additionalScanLinks: linkState.additionalScanLinks,
     uploadedImages: imagesState.uploadedImages,
     editingPostId: pubState.editingPostId,
     postTags: postFormState.postTags,
@@ -832,6 +844,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setLinkConfigs: linkState.setLinkConfigs,
     setAdditionalTranslationLinks: linkState.setAdditionalTranslationLinks,
     setAdditionalModLinks: linkState.setAdditionalModLinks,
+    setAdditionalScanLinks: linkState.setAdditionalScanLinks,
     setUploadedImages: imagesState.setUploadedImages,
     setPreviewOverride: previewEngine.setPreviewOverride,
     savedTags: tagsState.savedTags,
@@ -890,6 +903,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     linkState.setAdditionalTranslationLinks([]);
     linkState.setAdditionalModLinks([]);
+    linkState.setAdditionalScanLinks([]);
     tvState.setInput('main_translation_label', localStorage.getItem('default_translation_label') || 'Traduction');
     tvState.setInput('main_mod_label', localStorage.getItem('default_mod_label') || 'Mod');
     imagesState.clearImages();
@@ -996,7 +1010,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     additionalModLinks: linkState.additionalModLinks,
     addAdditionalModLink: linkState.addAdditionalModLink,
     updateAdditionalModLink: linkState.updateAdditionalModLink,
-    deleteAdditionalModLink: linkState.deleteAdditionalModLink
+    deleteAdditionalModLink: linkState.deleteAdditionalModLink,
+    additionalScanLinks: linkState.additionalScanLinks,
+    addAdditionalScanLink: linkState.addAdditionalScanLink,
+    updateAdditionalScanLink: linkState.updateAdditionalScanLink,
+    deleteAdditionalScanLink: linkState.deleteAdditionalScanLink,
   };
 
   // Écoute les imports Tampermonkey envoyés via le serveur local Tauri (localhost:7832)

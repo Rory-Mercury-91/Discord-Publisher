@@ -12,6 +12,7 @@ import {
   catchUpWorkTrackingInputs,
 } from '../workTracking/catchUpWorkTrackingInputs';
 import { fetchPublishedPostById } from '../workTracking/fetchPublishedPost';
+import { ADDITIONAL_SCAN_LINKS_INPUT_KEY, parseAdditionalScanLinks } from '../workTracking/scanLinks';
 import type { ImageData } from './useImagesState';
 import type { LinkConfigs } from './useLinkConfigState';
 
@@ -43,6 +44,7 @@ type LoadPostDeps = {
   setLinkConfigs: Dispatch<SetStateAction<LinkConfigs>>;
   setAdditionalTranslationLinks: Dispatch<SetStateAction<AdditionalTranslationLink[]>>;
   setAdditionalModLinks: Dispatch<SetStateAction<AdditionalTranslationLink[]>>;
+  setAdditionalScanLinks: Dispatch<SetStateAction<AdditionalTranslationLink[]>>;
   setUploadedImages: (images: ImageData[]) => void;
   setPreviewOverride: (value: string | null) => void;
   setCurrentTemplateIdx: (idx: number) => void;
@@ -64,6 +66,7 @@ export function useLoadPost(deps: LoadPostDeps) {
     setLinkConfigs,
     setAdditionalTranslationLinks,
     setAdditionalModLinks,
+    setAdditionalScanLinks,
     setUploadedImages,
     setPreviewOverride,
     setCurrentTemplateIdx,
@@ -143,6 +146,13 @@ export function useLoadPost(deps: LoadPostDeps) {
       } else {
         setAdditionalModLinks([]);
       }
+      if (post.savedInputs?.[ADDITIONAL_SCAN_LINKS_INPUT_KEY]) {
+        setAdditionalScanLinks(
+          parseAdditionalScanLinks(post.savedInputs[ADDITIONAL_SCAN_LINKS_INPUT_KEY])
+        );
+      } else {
+        setAdditionalScanLinks([]);
+      }
 
       if (post.savedInputs?.['main_translation_label']) {
         setInput('main_translation_label', post.savedInputs.main_translation_label);
@@ -196,6 +206,7 @@ export function useLoadPost(deps: LoadPostDeps) {
       setLinkConfigs,
       setAdditionalTranslationLinks,
       setAdditionalModLinks,
+      setAdditionalScanLinks,
       setUploadedImages,
       setPreviewOverride,
       setCurrentTemplateIdx,
@@ -248,6 +259,13 @@ export function useLoadPost(deps: LoadPostDeps) {
       } else {
         setAdditionalModLinks([]);
       }
+      if (post.savedInputs?.[ADDITIONAL_SCAN_LINKS_INPUT_KEY]) {
+        setAdditionalScanLinks(
+          parseAdditionalScanLinks(post.savedInputs[ADDITIONAL_SCAN_LINKS_INPUT_KEY])
+        );
+      } else {
+        setAdditionalScanLinks([]);
+      }
       if (post.savedInputs?.['main_translation_label']) {
         setInput('main_translation_label', post.savedInputs.main_translation_label);
       }
@@ -267,6 +285,7 @@ export function useLoadPost(deps: LoadPostDeps) {
       setLinkConfigs,
       setAdditionalTranslationLinks,
       setAdditionalModLinks,
+      setAdditionalScanLinks,
       savedTags,
     ]
   );

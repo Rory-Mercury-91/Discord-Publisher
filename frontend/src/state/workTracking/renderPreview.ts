@@ -1,4 +1,5 @@
-import { getCalendarLinkParts } from '../calendarTemplate';
+import { getWorkTrackingLinkParts } from './scanLinks';
+import type { AdditionalTranslationLink } from '../types';
 
 import {
   formatDateDiscordTimestampShort,
@@ -312,18 +313,18 @@ function buildReleaseLines(status: WorkStatus, inputs: Record<string, string>): 
 
 
 
-function buildLinksBlock(inputs: Record<string, string>, cleanUrl: (u: string) => string): string {
-
-  const parts = getCalendarLinkParts(inputs)
-
+function buildLinksBlock(
+  inputs: Record<string, string>,
+  additionalScanLinks: AdditionalTranslationLink[],
+  cleanUrl: (u: string) => string
+): string {
+  const parts = getWorkTrackingLinkParts(inputs, additionalScanLinks)
     .map(p => ({ label: p.label, url: cleanUrl(p.url) }))
-
     .filter(p => p.url);
 
   if (parts.length === 0) return '';
 
-  return parts.map(p => `* [${p.label}](<${p.url}>)`).join('\n');
-
+  return `* ${parts.map(p => `[${p.label}](<${p.url}>)`).join(' - ')}`;
 }
 
 
@@ -338,13 +339,15 @@ export function applyWorkTrackingPreview(params: {
 
   savedTags: Tag[];
 
+  additionalScanLinks: AdditionalTranslationLink[];
+
   cleanUrl: (url: string) => string;
 
 }): string {
 
   let content = params.content;
 
-  const { inputs, postTags, savedTags, cleanUrl } = params;
+  const { inputs, postTags, savedTags, additionalScanLinks, cleanUrl } = params;
 
   const tagIds = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
 
@@ -360,9 +363,9 @@ export function applyWorkTrackingPreview(params: {
 
   const releaseBlock = releaseLines.join('\n');
 
-  const linksBlock = buildLinksBlock(inputs, cleanUrl);
+  const linksBlock = buildLinksBlock(inputs, additionalScanLinks, cleanUrl);
 
-  const warningNote = hasScanSiteFilled(inputs) ? WORK_WARNING_NOTE : '';
+  const warningNote = hasScanSiteFilled(inputs, additionalScanLinks) ? WORK_WARNING_NOTE : '';
 
 
 
