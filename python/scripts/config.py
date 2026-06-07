@@ -56,6 +56,8 @@ class Config:
         self.WORK_TRACKING_ADMIN_DISCORD_USER_ID = int(_admin_id) if _admin_id.isdigit() else 0
         self.WORK_TRACKING_REFRESH_HOUR = int(os.getenv("WORK_TRACKING_REFRESH_HOUR", "0"))
         self.WORK_TRACKING_REFRESH_MINUTE = int(os.getenv("WORK_TRACKING_REFRESH_MINUTE", "0"))
+        self.WORK_TRACKING_DIGEST_HOUR = int(os.getenv("WORK_TRACKING_DIGEST_HOUR", "9"))
+        self.WORK_TRACKING_DIGEST_MINUTE = int(os.getenv("WORK_TRACKING_DIGEST_MINUTE", "0"))
 
         self.configured = bool(
             self.PUBLISHER_DISCORD_TOKEN

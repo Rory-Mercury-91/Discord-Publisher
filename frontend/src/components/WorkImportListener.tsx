@@ -5,7 +5,7 @@ import { useToast } from './shared/ToastProvider';
 
 /** Pont entre Tampermonkey (événement global) et le formulaire suivi d'œuvres. */
 export default function WorkImportListener() {
-  const { setInput, addImageFromUrl } = useApp();
+  const { setInput, addImageFromUrl, postTags, setPostTags, savedTags } = useApp();
   const { setWebtoonViewActive, calendarViewAvailable } = useWebtoonView();
   const { showToast } = useToast();
 
@@ -14,6 +14,9 @@ export default function WorkImportListener() {
     addImageFromUrl,
     setWebtoonViewActive,
     calendarViewAvailable,
+    postTags,
+    setPostTags,
+    savedTags,
     onImported: ({ imageOk }) => {
       if (imageOk) {
         showToast('Données importées dans le formulaire suivi d\'œuvres !', 'success');

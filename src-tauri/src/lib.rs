@@ -24,6 +24,10 @@ struct TampermonkeyPayload {
     image: Option<String>,
     image_data: Option<String>,
     synopsis: Option<String>,
+    work_type: Option<String>,
+    progress_current: Option<String>,
+    chapter_next_release: Option<String>,
+    date_next_release: Option<String>,
 }
 
 /// Événement émis vers la fenêtre Tauri pour traitement par le frontend

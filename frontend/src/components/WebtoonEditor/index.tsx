@@ -55,7 +55,8 @@ import TagSelectorModalWebtoon from './TagSelectorModalWebtoon';
 import WorkTrackingOfficialLinkSection from './WorkTrackingOfficialLinkSection';
 import WorkTrackingScanLinksSection from './WorkTrackingScanLinksSection';
 
-import { applyWorkImportAsync, isWorkImportPayload } from '../../state/workTracking/applyWorkImport';
+import { applyWorkImportAsync, isWorkImportPayload, mergeWorkTypeTagId } from '../../state/workTracking/applyWorkImport';
+import type { WorkTypeKey } from '../../state/workTracking/types';
 import { resolveWorkImagePreview } from '../../state/workTracking/resolveWorkImage';
 
 
@@ -307,7 +308,16 @@ export default function WebtoonEditor() {
         return showToast('Format JSON non reconnu (export Nautiljon ou WEBTOON attendu)', 'error');
       }
 
-      const { imageOk } = await applyWorkImportAsync(data, { setInput, addImageFromUrl });
+      const applyWorkTypeTag = (workType: WorkTypeKey) => {
+        const ids = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const cleaned = filterWebtoonSelectableTagIds(ids, savedTags);
+        const merged = mergeWorkTypeTagId(workType, cleaned, savedTags);
+        if (merged.join(',') !== cleaned.join(',')) {
+          setPostTags(merged.join(','));
+        }
+      };
+
+      const { imageOk } = await applyWorkImportAsync(data, { setInput, addImageFromUrl, applyWorkTypeTag });
       showToast(
         imageOk ? 'Données importées avec succès !' : 'Données importées (couverture non chargée)',
         imageOk ? 'success' : 'warning',

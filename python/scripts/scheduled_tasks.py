@@ -518,6 +518,28 @@ async def daily_work_tracking_refresh():
         logger.error("[scheduler] Erreur refresh suivi d'œuvres : %s", e)
 
 
+@tasks.loop(
+    time=datetime.time(
+        hour=config.WORK_TRACKING_DIGEST_HOUR,
+        minute=config.WORK_TRACKING_DIGEST_MINUTE,
+        tzinfo=ZoneInfo("Europe/Paris"),
+    )
+)
+async def daily_work_tracking_yesterday_digest():
+    """Récap MP condensé des sorties de la veille (œuvres avec date renseignée)."""
+    logger.info(
+        "[scheduler] Lancement digest suivi d'œuvres (%02d:%02d Europe/Paris)",
+        config.WORK_TRACKING_DIGEST_HOUR,
+        config.WORK_TRACKING_DIGEST_MINUTE,
+    )
+    try:
+        from publisher_bot import bot
+        from work_tracking_refresh import run_work_tracking_yesterday_digest
+        await run_work_tracking_yesterday_digest(bot)
+    except Exception as e:
+        logger.error("[scheduler] Erreur digest suivi d'œuvres : %s", e)
+
+
 def start_all_tasks():
     """
     Démarre toutes les tâches planifiées au démarrage du bot Publisher.
@@ -553,6 +575,14 @@ def start_all_tasks():
             "[scheduler] Refresh suivi d'œuvres planifié à %02d:%02d Europe/Paris",
             config.WORK_TRACKING_REFRESH_HOUR,
             config.WORK_TRACKING_REFRESH_MINUTE,
+        )
+
+    if not daily_work_tracking_yesterday_digest.is_running():
+        daily_work_tracking_yesterday_digest.start()
+        logger.info(
+            "[scheduler] Digest suivi d'œuvres planifié à %02d:%02d Europe/Paris",
+            config.WORK_TRACKING_DIGEST_HOUR,
+            config.WORK_TRACKING_DIGEST_MINUTE,
         )
 
     # configurable_date_refresh n'est PAS démarré ici.

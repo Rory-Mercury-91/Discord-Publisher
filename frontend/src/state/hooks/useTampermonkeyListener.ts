@@ -27,6 +27,10 @@ interface TampermonkeyPayload {
   image?         : string | null;
   image_data?    : string | null;
   synopsis?      : string | null;
+  work_type?             : string | null;
+  progress_current?      : string | null;
+  chapter_next_release?  : string | null;
+  date_next_release?     : string | null;
   f95_date_maj?  : string | null;
 }
 
@@ -125,15 +129,19 @@ export function useTampermonkeyListener() {
           window.dispatchEvent(
             new CustomEvent('work-tracking:import', {
               detail: {
-                domain              : payload.domain,
-                kind                : payload.kind ?? 'work_tracking',
-                name                : payload.name,
-                genres_themes       : payload.genres_themes ?? payload.tags ?? undefined,
-                image               : payload.image ?? undefined,
-                image_data          : payload.image_data ?? undefined,
-                synopsis            : payload.synopsis ?? undefined,
-                link                : payload.link ?? undefined,
-                official_site_label : payload.official_site_label ?? undefined,
+                domain               : payload.domain,
+                kind                 : payload.kind ?? 'work_tracking',
+                name                 : payload.name,
+                genres_themes        : payload.genres_themes ?? payload.tags ?? undefined,
+                image                : payload.image ?? undefined,
+                image_data           : payload.image_data ?? undefined,
+                synopsis             : payload.synopsis ?? undefined,
+                link                 : payload.link ?? undefined,
+                official_site_label  : payload.official_site_label ?? undefined,
+                work_type            : payload.work_type ?? undefined,
+                progress_current     : payload.progress_current ?? undefined,
+                chapter_next_release : payload.chapter_next_release ?? undefined,
+                date_next_release    : payload.date_next_release ?? undefined,
               },
             }),
           );

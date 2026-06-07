@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discord Publisher — Import rapide
 // @namespace    http://tampermonkey.net/
-// @version      4.6
+// @version      4.7
 // @description  Importe F95/LewdCorner, fiche Nautiljon (métadonnées) ou WEBTOON (lien officiel) dans Discord Publisher.
 // @author       Rory Mercury 91
 // @match        https://f95zone.to/threads/*
@@ -347,10 +347,36 @@
       .trim();
   }
 
+  /** Type d'œuvre : Manhua / Manhwa / WebComic (webcomic Oui) / Manga / LN… */
+  function extractNautiljonWorkType() {
+    const path = (window.location.pathname || '').toLowerCase();
+
+    const webcomicLi = findNautiljonInfoLi(['Webcomic']);
+    if (webcomicLi) {
+      const webcomicValues = extractNautiljonValuesFromLi(webcomicLi);
+      if (webcomicValues.some(v => /^oui$/i.test(v))) return 'webtoon';
+    }
+
+    if (path.includes('/manwhas/')) return 'manhwa';
+
+    const typeLi = findNautiljonInfoLi(['Type', 'Types', 'Catégorie', 'Categorie']);
+    const typeText = extractNautiljonValuesFromLi(typeLi).join(' ').toLowerCase();
+    if (typeText.includes('manhua')) return 'manhua';
+    if (typeText.includes('manhwa')) return 'manhwa';
+    if (typeText.includes('webcomic') || typeText.includes('webtoon')) return 'webtoon';
+    if (typeText.includes('light novel') || typeText.includes('light_novel')) return 'light_novel';
+    if (typeText.includes('roman') && !typeText.includes('graphique')) return 'novel';
+
+    if (path.includes('/light_novels/')) return 'light_novel';
+    if (path.includes('/mangas/')) return 'manga';
+    return null;
+  }
+
   function extractNautiljonData() {
     const genres = extractNautiljonGenres();
     const themes = extractNautiljonThemes();
     const combined = [...genres, ...themes].filter(Boolean).join(' - ');
+    const workType = extractNautiljonWorkType();
     return {
       domain        : 'Nautiljon',
       kind          : 'work_tracking',
@@ -358,6 +384,7 @@
       genres_themes : combined,
       image         : extractNautiljonCover(),
       synopsis      : extractNautiljonSynopsis(),
+      ...(workType ? { work_type: workType } : {}),
     };
   }
 
@@ -412,50 +439,98 @@
     return '';
   }
 
-  function extractWebtoonGenres() {
-    const state = window.__episodeListState__;
-    const fromState = state?.title?.genreList
-      || state?.title?.genres
-      || state?.genreList
-      || state?.title?.representGenre;
-    if (Array.isArray(fromState) && fromState.length) {
-      return fromState
-        .map(g => (typeof g === 'string' ? g : (g?.name || g?.genreName || g?.genre || '')).trim())
-        .filter(Boolean);
-    }
-    if (typeof fromState === 'string' && fromState.trim()) {
-      return fromState.split(/[,/|]/).map(s => s.trim()).filter(Boolean);
+  const FRENCH_MONTHS = {
+    janv: '01', janvier: '01', 'févr': '02', fevr: '02', fevrier: '02', 'février': '02',
+    mars: '03', avr: '04', avril: '04', mai: '05', juin: '06',
+    juil: '07', juillet: '07', 'août': '08', aout: '08', 'ao\u00fbt': '08',
+    sept: '09', septembre: '09', oct: '10', octobre: '10',
+    nov: '11', novembre: '11', 'déc': '12', dec: '12', 'd\u00e9c': '12', decembre: '12', 'd\u00e9cembre': '12',
+  };
+
+  function pad2(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  function isoFromParts(day, month, year) {
+    const d = parseInt(day, 10);
+    const y = parseInt(year, 10);
+    if (!month || !d || !y || d < 1 || d > 31) return '';
+    return `${y}-${month}-${pad2(d)}`;
+  }
+
+  /** Parse « 6 juin 2026 », « 25 avr. 2026 », etc. → YYYY-MM-DD */
+  function parseFrenchWebtoonDate(raw) {
+    const text = (raw || '').trim().replace(/\u00a0/g, ' ').replace(/\./g, '').toLowerCase();
+    if (!text) return '';
+
+    let m = text.match(/^(\d{1,2})\s+([a-z\u00e0-\u017f]+)\s+(\d{4})$/i);
+    if (m) {
+      const month = FRENCH_MONTHS[m[2]];
+      return isoFromParts(m[1], month, m[3]);
     }
 
-    const fromDom = Array.from(
-      document.querySelectorAll('.genre, .tag_list a, .work_tags a, .detail_header .tag')
-    )
-      .map(el => (el.textContent || '').trim())
-      .filter(Boolean);
-    if (fromDom.length) return [...new Set(fromDom)];
+    m = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+    if (m) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
 
-    const keywords = document.querySelector('meta[name="keywords"]')?.content || '';
-    if (keywords.trim()) {
-      return keywords
-        .split(',')
-        .map(s => s.trim())
-        .filter(s => s && !/webtoon|comics|webcomic/i.test(s))
-        .slice(0, 8);
+    return '';
+  }
+
+  function addDaysIso(iso, days) {
+    if (!iso || !days) return '';
+    const parts = iso.split('-').map(Number);
+    if (parts.length !== 3) return '';
+    const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+    dt.setDate(dt.getDate() + days);
+    return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+  }
+
+  /** Dernier chapitre publié (premier de la liste) + date prochaine sortie estimée. */
+  function extractWebtoonLatestEpisode() {
+    const items = document.querySelectorAll('li._episodeItem');
+    if (!items.length) return null;
+
+    const latest = items[0];
+    const episodeNo = (
+      latest.getAttribute('data-episode-no')
+      || latest.querySelector('.tx')?.textContent
+      || latest.querySelector('.subj span')?.textContent
+      || ''
+    ).replace(/[^\d]/g, '').trim();
+    if (!episodeNo) return null;
+
+    const latestDateIso = parseFrenchWebtoonDate(latest.querySelector('span.date')?.textContent);
+
+    let intervalDays = 7;
+    if (items.length >= 2) {
+      const prevDateIso = parseFrenchWebtoonDate(items[1].querySelector('span.date')?.textContent);
+      if (latestDateIso && prevDateIso) {
+        const d1 = new Date(latestDateIso);
+        const d2 = new Date(prevDateIso);
+        const diff = Math.round((d1 - d2) / 86400000);
+        if (diff > 0 && diff <= 31) intervalDays = diff;
+      }
     }
-    return [];
+
+    const nextChapter = String(parseInt(episodeNo, 10) + 1);
+    const nextDateIso = latestDateIso ? addDaysIso(latestDateIso, intervalDays) : '';
+
+    return {
+      progress_current      : episodeNo,
+      chapter_next_release  : nextChapter,
+      date_next_release     : nextDateIso,
+    };
   }
 
   function extractWebtoonData() {
-    const genres = extractWebtoonGenres();
-    const combined = genres.length ? genres.join(' - ') : '';
+    const episode = extractWebtoonLatestEpisode();
     return {
       domain              : 'WEBTOON',
       kind                : 'work_tracking',
       name                : extractWebtoonTitle(),
-      genres_themes       : combined || undefined,
       synopsis            : extractWebtoonSynopsis(),
       link                : extractWebtoonListUrl(),
       official_site_label : 'WEBTOON',
+      ...(episode || {}),
     };
   }
 
@@ -534,15 +609,19 @@
     return new Promise((resolve, reject) => {
       const payload = isWorkImport
         ? {
-            domain              : gameData.domain,
-            kind                : 'work_tracking',
-            name                : gameData.name,
-            genres_themes       : gameData.genres_themes || null,
-            image               : gameData.image || null,
-            image_data          : gameData.image_data || null,
-            synopsis            : gameData.synopsis || null,
-            link                : gameData.link || null,
-            official_site_label : gameData.official_site_label || null,
+            domain               : gameData.domain,
+            kind                 : 'work_tracking',
+            name                 : gameData.name,
+            genres_themes        : gameData.genres_themes || null,
+            image                : gameData.image || null,
+            image_data           : gameData.image_data || null,
+            synopsis             : gameData.synopsis || null,
+            link                 : gameData.link || null,
+            official_site_label  : gameData.official_site_label || null,
+            work_type            : gameData.work_type || null,
+            progress_current     : gameData.progress_current || null,
+            chapter_next_release : gameData.chapter_next_release || null,
+            date_next_release    : gameData.date_next_release || null,
           }
         : {
             domain      : gameData.domain,
@@ -702,8 +781,8 @@
 
         if (result.action === 'work_imported') {
           const hint = isWebtoon
-            ? 'Lien WEBTOON + synopsis importés.'
-            : 'Genres, couverture et métadonnées importés.';
+            ? 'Lien WEBTOON, synopsis, titre et dernier chapitre importés.'
+            : 'Genres, couverture, type et métadonnées importés.';
           showNotification(`✅ Données importées !\n${data.name}\n${hint}`, 'success');
         } else if (result.action === 'already_in_collection') {
           showNotification(`⚠️ Déjà dans votre collection !\n${data.name}`, 'warning');
@@ -860,7 +939,7 @@
 
     const siteLabel = isNautiljon ? 'Nautiljon' : (isWebtoon ? 'WEBTOON' : (isF95Zone ? 'F95Zone' : 'LewdCorner'));
     console.info(
-      '%c[Discord Publisher v4.5]',
+      '%c[Discord Publisher v4.7]',
       'color:#6366f1;font-weight:bold;font-size:13px;',
       `✅ Prêt — connexion via http://127.0.0.1:${LOCAL_PORT}`,
       `| ${siteLabel}`
