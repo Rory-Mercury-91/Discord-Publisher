@@ -44,9 +44,7 @@ export const calendarTemplate: Template = {
   category: 'work_tracking',
   isDefault: true,
   isBuiltin: true,
-  content: `# :bookmark: **[Nom_Oeuvre]**
-
-## **Informations générales :**
+  content: `## **Informations générales :**
 :dart: **Statut :** *[Work_Status_Label] [Work_Status_Emoji]*
 :label: **Type :** *[Work_Type_Label]*
 :zap: **Genres / Thèmes :** [Genres_Themes]

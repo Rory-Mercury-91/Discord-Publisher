@@ -9,14 +9,8 @@ export type WorkStatus =
 /** Unité de progression affichée dans le message. */
 export type ProgressUnit = 'chapter' | 'volume' | 'hybrid';
 
-/** Types d'œuvre (un seul tag actif). Manhua / Manhwa = variantes régionales du webtoon. */
-export type WorkTypeKey =
-  | 'webtoon'
-  | 'manhua'
-  | 'manhwa'
-  | 'manga'
-  | 'light_novel'
-  | 'novel';
+/** Types d'œuvre affichés (un seul tag actif). Manhua / Manhwa / WebComic → Webtoon à l'import. */
+export type WorkTypeKey = 'webtoon' | 'manga' | 'light_novel' | 'novel';
 
 export type TemplateCategory = 'translator' | 'work_tracking';
 

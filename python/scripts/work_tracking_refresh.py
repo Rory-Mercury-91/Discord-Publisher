@@ -125,15 +125,6 @@ def _advance_ongoing_row(wp: dict) -> Optional[dict]:
     return updated if changed else None
 
 
-def _released_chapter_from_advance(before: dict, after: dict) -> str:
-    """Chapitre publié lors de l'avance (valeur avant refresh)."""
-    return (
-        (before.get("chapter_next_release") or before.get("progress_current") or "")
-        .strip()
-        or (after.get("progress_current") or "").strip()
-    )
-
-
 async def _fetch_discord_url(sb, published_post_id: Any) -> str:
     if not published_post_id:
         return ""
@@ -151,16 +142,16 @@ async def _fetch_discord_url(sb, published_post_id: Any) -> str:
 async def run_work_tracking_refresh_once(bot=None) -> dict[str, int]:
     """
     Exécute un passage de contrôle suivi d'œuvres.
-    Retourne des compteurs {advanced, paid_alerts, chapter_dms, errors}.
+    Retourne des compteurs {advanced, paid_alerts, errors}.
+    Les sorties sont notifiées uniquement via le digest matinal (09:00).
     """
     sb = _get_supabase()
-    stats = {"advanced": 0, "paid_alerts": 0, "chapter_dms": 0, "errors": 0}
+    stats = {"advanced": 0, "paid_alerts": 0, "errors": 0}
     if not sb:
         logger.debug("[work_tracking] Supabase indisponible")
         return stats
 
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    new_releases: list[dict[str, str]] = []
 
     try:
         ongoing_res = (
@@ -186,12 +177,6 @@ async def run_work_tracking_refresh_once(bot=None) -> dict[str, int]:
                 post = (post_res.data or [None])[0]
                 if not post:
                     continue
-
-                released_ch = (
-                    (advanced.get("progress_current") or "").strip()
-                    or _released_chapter_from_advance(wp, advanced)
-                )
-                release_date = resolve_stored_date_value(wp.get("date_next_release") or "")
 
                 payload = {
                     **{k: advanced[k] for k in wp.keys() if k in advanced},
@@ -229,24 +214,9 @@ async def run_work_tracking_refresh_once(bot=None) -> dict[str, int]:
                         },
                     }).execute()
                     stats["advanced"] += 1
-                    if released_ch and release_date:
-                        new_releases.append({
-                            "title": (wp.get("title") or "Œuvre").strip(),
-                            "chapter": released_ch,
-                            "url": (post.get("discord_url") or "").strip(),
-                        })
             except Exception as row_err:
                 stats["errors"] += 1
                 logger.error("[work_tracking] Erreur ongoing %s : %s", wp.get("id"), row_err)
-
-        if new_releases and bot:
-            sent = await _send_chapter_release_dm(
-                bot,
-                new_releases,
-                "📚 **Suivi d'œuvres — nouvelle(s) sortie(s)**",
-            )
-            if sent:
-                stats["chapter_dms"] += 1
 
         paid_res = (
             sb.table("work_publications")
@@ -285,8 +255,8 @@ async def run_work_tracking_refresh_once(bot=None) -> dict[str, int]:
         stats["errors"] += 1
 
     logger.info(
-        "[work_tracking] Refresh terminé : %d avancé(s), %d MP sortie(s), %d alerte(s) payant, %d erreur(s)",
-        stats["advanced"], stats["chapter_dms"], stats["paid_alerts"], stats["errors"],
+        "[work_tracking] Refresh terminé : %d avancé(s), %d alerte(s) payant, %d erreur(s)",
+        stats["advanced"], stats["paid_alerts"], stats["errors"],
     )
     return stats
 

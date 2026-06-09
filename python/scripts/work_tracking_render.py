@@ -46,13 +46,14 @@ WORK_WARNING = (
 
 )
 
+WORK_PAID_KNOWN_END_NOTE = (
+    "* : Cela ne veut pas dire que l'œuvre est terminée, "
+    "elle peut être en pause ou abandonnée."
+)
 
 
-WORK_TEMPLATE = """# :bookmark: **{title}**
 
-
-
-## **Informations générales :**
+WORK_TEMPLATE = """## **Informations générales :**
 
 :dart: **Statut :** *{status_label} {status_emoji}*
 
@@ -277,12 +278,12 @@ def _build_progress(wp: dict) -> str:
 
 
     if status == "ongoing_paid":
-
         if not current:
-
-            return "Statut actuel : —"
-
-        return f"Statut actuel : {label} {current} (Dernier disponible gratuitement)"
+            return ":books: **Progression :** —"
+        return (
+            f":books: **Progression :** {label} {current} "
+            f"(Dernier {label.lower()} gratuit)"
+        )
 
 
 
@@ -346,7 +347,7 @@ def _build_release(wp: dict) -> str:
 
     days_text = _format_weekdays_text(weekdays)
 
-    next_date = iso_to_discord_timestamp(wp.get("date_next_release") or "")
+    next_date = iso_to_discord_timestamp(wp.get("date_next_release") or "", end_of_day=True)
 
     next_ch = (wp.get("chapter_next_release") or "").strip()
 
@@ -356,7 +357,7 @@ def _build_release(wp: dict) -> str:
 
     if status == "season_pause":
 
-        pause_end = iso_to_discord_date(wp.get("date_season_end") or "")
+        pause_end = iso_to_discord_date(wp.get("date_season_end") or "", end_of_day=True)
 
         if pause_end:
 
@@ -372,7 +373,7 @@ def _build_release(wp: dict) -> str:
 
         end_raw = _resolve_paid_end_date(wp)
 
-        end_date = iso_to_discord_timestamp(end_raw) if end_raw else ""
+        end_date = iso_to_discord_timestamp(end_raw, end_of_day=True) if end_raw else ""
 
 
 
@@ -393,8 +394,8 @@ def _build_release(wp: dict) -> str:
             lines.append(f"* **Prochain chapitre :** {next_ch} — {next_date}")
 
         if has_end:
-
-            lines.append(f"* **Fin des publications connues :** chapitre {plafond} — {end_date}")
+            lines.append(f"* **Fin des publications connues :** chapitre {plafond} — {end_date}*")
+            lines.append(WORK_PAID_KNOWN_END_NOTE)
 
         return "\n".join(lines)
 
@@ -433,21 +434,13 @@ STATUS_META = {
 
 
 TYPE_DISPLAY = {
-
-    "webtoon": "WebComic",
-
-    "webcomic": "WebComic",
-
-    "manhua": "Manhua",
-
-    "manhwa": "Manhwa",
-
+    "webtoon": "Webtoon",
+    "webcomic": "Webtoon",
+    "manhua": "Webtoon",
+    "manhwa": "Webtoon",
     "manga": "Manga",
-
     "light_novel": "Light Novel",
-
     "novel": "Roman",
-
 }
 
 
@@ -481,9 +474,6 @@ def render_work_publication_message(wp: dict) -> str:
 
 
     content = WORK_TEMPLATE.format(
-
-        title=(wp.get("title") or "").strip() or "—",
-
         status_label=status_label,
 
         status_emoji=status_emoji,

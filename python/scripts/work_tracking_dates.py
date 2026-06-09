@@ -126,28 +126,30 @@ def is_release_date_passed(date_iso: str) -> bool:
         target = datetime.date.fromisoformat(resolved)
     except ValueError:
         return False
-    return datetime.date.today() >= target
+    return datetime.date.today() > target
 
 
-def iso_to_discord_timestamp(iso_date: str) -> str:
+def iso_to_discord_timestamp(iso_date: str, *, end_of_day: bool = False) -> str:
     resolved = resolve_stored_date_value(iso_date)
     try:
         d = datetime.date.fromisoformat(resolved)
     except ValueError:
         return ""
-    dt = datetime.datetime(d.year, d.month, d.day, 0, 0, 0)
+    hour, minute, second = (23, 59, 59) if end_of_day else (0, 0, 0)
+    dt = datetime.datetime(d.year, d.month, d.day, hour, minute, second)
     unix = int(dt.timestamp())
     return f"<t:{unix}:D> (<t:{unix}:R>)"
 
 
-def iso_to_discord_date(iso_date: str) -> str:
+def iso_to_discord_date(iso_date: str, *, end_of_day: bool = False) -> str:
     """Timestamp Discord date seule (:D), sans relatif."""
     resolved = resolve_stored_date_value(iso_date)
     try:
         d = datetime.date.fromisoformat(resolved)
     except ValueError:
         return ""
-    dt = datetime.datetime(d.year, d.month, d.day, 0, 0, 0)
+    hour, minute, second = (23, 59, 59) if end_of_day else (0, 0, 0)
+    dt = datetime.datetime(d.year, d.month, d.day, hour, minute, second)
     unix = int(dt.timestamp())
     return f"<t:{unix}:D>"
 

@@ -2,14 +2,14 @@ import { getWorkTrackingLinkParts } from './scanLinks';
 import type { AdditionalTranslationLink } from '../types';
 
 import {
+  formatDateDiscordTimestamp,
   formatDateDiscordTimestampShort,
-  formatVarValue,
   resolveStoredDateValue,
 } from '../logic/formatVar';
 
 import type { Tag } from '../types';
 
-import { PROGRESS_UNIT_OPTIONS, WORK_WARNING_NOTE } from './registry';
+import { PROGRESS_UNIT_OPTIONS, WORK_PAID_KNOWN_END_NOTE, WORK_WARNING_NOTE } from './registry';
 
 import { hasScanSiteFilled } from './scanSite';
 
@@ -94,11 +94,8 @@ function buildProgressLine(
 
 
   if (status === 'ongoing_paid') {
-
-    if (!current) return 'Statut actuel : —';
-
-    return `Statut actuel : ${labels.singular} ${current} (Dernier disponible gratuitement)`;
-
+    if (!current) return ':books: **Progression :** —';
+    return `:books: **Progression :** ${labels.singular} ${current} (Dernier ${labels.singular.toLowerCase()} gratuit)`;
   }
 
 
@@ -164,11 +161,8 @@ function buildProgressLine(
 
 
 function formatDiscordDate(raw: string): string {
-
   const resolved = resolveStoredDateValue(raw);
-
-  return formatVarValue(resolved, 'date', { discordTimestamp: true }) || '';
-
+  return formatDateDiscordTimestamp(resolved, { endOfDay: true }) || '';
 }
 
 
@@ -227,7 +221,9 @@ function buildReleaseLines(status: WorkStatus, inputs: Record<string, string>): 
 
   if (status === 'season_pause') {
 
-    const pauseEndDate = formatDateDiscordTimestampShort(inputs.Date_Pause_Fin || '');
+    const pauseEndDate = formatDateDiscordTimestampShort(inputs.Date_Pause_Fin || '', {
+      endOfDay: true,
+    });
 
     const line = pauseEndDate
 
@@ -276,9 +272,8 @@ function buildReleaseLines(status: WorkStatus, inputs: Record<string, string>): 
     }
 
     if (hasEnd) {
-
-      lines.push(`* **Fin des publications connues :** chapitre ${plafondChapter} — ${endDate}`);
-
+      lines.push(`* **Fin des publications connues :** chapitre ${plafondChapter} — ${endDate}*`);
+      lines.push(WORK_PAID_KNOWN_END_NOTE);
     }
 
     return lines;

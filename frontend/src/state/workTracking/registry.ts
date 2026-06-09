@@ -21,9 +21,7 @@ export const WORK_STATUS_META: Record<
 
 /** Libellés alignés sur les tags Discord (workType). */
 export const WORK_TYPE_META: Record<WorkTypeKey, { label: string; hashtag: string }> = {
-  webtoon: { label: 'WebComic', hashtag: '#WebComic' },
-  manhua: { label: 'Manhua', hashtag: '#Manhua' },
-  manhwa: { label: 'Manhwa', hashtag: '#Manhwa' },
+  webtoon: { label: 'Webtoon', hashtag: '#Webtoon' },
   manga: { label: 'Manga', hashtag: '#Manga' },
   light_novel: { label: 'Light Novel', hashtag: '#Light Novel' },
   novel: { label: 'Roman', hashtag: '#Roman' },
@@ -48,6 +46,10 @@ export const PROGRESS_UNIT_OPTIONS: { value: ProgressUnit; label: string; singul
 export const WORK_WARNING_NOTE =
   ':warning: **Note :** L\'œuvre n\'étant pas complètement gratuite ou disponible sur la plateforme officielle, vous pouvez retrouver la suite sur le site alternatif mentionné ci-dessus. *(Attention, la qualité de traduction ou d\'image peut varier)*.';
 
+/** Note de bas de bloc « Fin des publications connues » (œuvre incomplète). */
+export const WORK_PAID_KNOWN_END_NOTE =
+  '* : Cela ne veut pas dire que l\'œuvre est terminée, elle peut être en pause ou abandonnée.';
+
 /** Clés label_key reconnues pour les tags structurés. */
 export const WORK_STATUS_LABEL_KEYS: Record<string, WorkStatus> = {
   ongoing: 'ongoing',
@@ -63,8 +65,8 @@ export const WORK_TYPE_LABEL_KEYS: Record<string, WorkTypeKey> = {
   webtoon: 'webtoon',
   webcomic: 'webtoon',
   web_comic: 'webtoon',
-  manhua: 'manhua',
-  manhwa: 'manhwa',
+  manhua: 'webtoon',
+  manhwa: 'webtoon',
   manga: 'manga',
   light_novel: 'light_novel',
   lightnovel: 'light_novel',

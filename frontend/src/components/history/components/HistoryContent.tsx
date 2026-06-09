@@ -11,6 +11,7 @@ interface HistoryContentProps {
   searchQuery: string;
   activeTab: 'actifs' | 'archive';
   canEditPost: (post: PublishedPost) => boolean;
+  gridScrollRef?: React.RefObject<HTMLDivElement | null>;
   onPagePrev: () => void;
   onPageNext: () => void;
   onArchiveChange: (post: PublishedPost, archived: boolean) => void;
@@ -28,6 +29,7 @@ export default function HistoryContent({
   searchQuery,
   activeTab,
   canEditPost,
+  gridScrollRef,
   onPagePrev,
   onPageNext,
   onArchiveChange,
@@ -59,12 +61,12 @@ export default function HistoryContent({
       )}
 
       {!isLoading && paginatedPosts.length > 0 && (
-        <>
-          {totalPages > 1 && (
-            <div className="history-content__pagination">
-              <span className="history-content__pagination-count">
-                {filteredCount} résultat{filteredCount !== 1 ? 's' : ''}
-              </span>
+        <div className="history-content__body">
+          <div className="history-content__pagination">
+            <span className="history-content__pagination-count">
+              {filteredCount} résultat{filteredCount !== 1 ? 's' : ''}
+            </span>
+            {totalPages > 1 && (
               <span className="history-content__pagination-controls">
                 <button
                   type="button"
@@ -86,22 +88,24 @@ export default function HistoryContent({
                   Suiv. →
                 </button>
               </span>
-            </div>
-          )}
-
-          <div className="history-content__grid">
-            {paginatedPosts.map((post) => (
-              <HistoryPostCard
-                key={post.id}
-                post={post}
-                canEdit={canEditPost(post)}
-                onArchiveChange={(archived) => onArchiveChange(post, archived)}
-                onEdit={() => onEdit(post)}
-                onDelete={() => onDelete(post)}
-              />
-            ))}
+            )}
           </div>
-        </>
+
+          <div className="history-content__grid-scroll" ref={gridScrollRef}>
+            <div className="history-content__grid">
+              {paginatedPosts.map((post) => (
+                <HistoryPostCard
+                  key={post.id}
+                  post={post}
+                  canEdit={canEditPost(post)}
+                  onArchiveChange={(archived) => onArchiveChange(post, archived)}
+                  onEdit={() => onEdit(post)}
+                  onDelete={() => onDelete(post)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

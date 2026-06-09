@@ -54,12 +54,16 @@ function matchTypeFromNormalizedName(normalized: string): WorkTypeKey | null {
     const labelNorm = normalizeWorkTagName(meta.label);
     if (normalized === labelNorm || normalized.endsWith(` ${labelNorm}`)) return key;
   }
-  if (normalized.includes('webcomic') || normalized.includes('web comic') || normalized.includes('webtoon')) {
+  if (
+    normalized.includes('webcomic') ||
+    normalized.includes('web comic') ||
+    normalized.includes('webtoon') ||
+    normalized.includes('manhwa') ||
+    normalized.includes('manhua')
+  ) {
     return 'webtoon';
   }
-  if (normalized.includes('manhwa')) return 'manhwa';
-  if (normalized.includes('manhua')) return 'manhua';
-  if (normalized.includes('manga') && !normalized.includes('manhwa') && !normalized.includes('manhua')) return 'manga';
+  if (normalized.includes('manga')) return 'manga';
   if (normalized.includes('light novel') || normalized.includes('light_novel') || normalized.includes('lightnovel')) {
     return 'light_novel';
   }

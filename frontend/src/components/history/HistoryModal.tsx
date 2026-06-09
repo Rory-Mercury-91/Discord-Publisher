@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useConfirm } from '../../hooks/useConfirm';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useModalScrollLock } from '../../hooks/useModalScrollLock';
@@ -20,10 +20,22 @@ import {
   type ExternalTranslatorPublic,
   type ProfilePublic,
   type TabId,
+  GRID_COLUMNS,
+  HISTORY_CARD_ROW_HEIGHT,
+  HISTORY_GRID_GAP,
+  MIN_GRID_ROWS,
+  POSTS_PER_PAGE_FALLBACK,
   PREFIX_EXT,
   PREFIX_PROFILE,
-  POSTS_PER_PAGE,
+  isPostInPersonalHistory,
+  resolveAuthorFilterLabel,
 } from './constants';
+import {
+  buildAuthorFilterOptions,
+  getHistoryDefaultAuthorFilter,
+  isAuthorFilterIdValid,
+  setHistoryDefaultAuthorFilter,
+} from './historyDefaultAuthorFilter';
 
 interface HistoryModalProps {
   onClose?: () => void;
@@ -74,6 +86,11 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc'>('date-desc');
   const [filterAuthorId, setFilterAuthorId] = useState<string>('me');
+  const [defaultAuthorFilterId, setDefaultAuthorFilterId] = useState<string | null>(null);
+  const [authorMetadataLoaded, setAuthorMetadataLoaded] = useState(false);
+  const initialAuthorFilterApplied = useRef(false);
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+  const [postsPerPage, setPostsPerPage] = useState(POSTS_PER_PAGE_FALLBACK);
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
@@ -120,6 +137,8 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
         setOwnerIdsWhoAllowedMe(new Set());
         setGrantedForumIds(new Set());
         setGrantedExternalAuthorIds(new Set());
+      } finally {
+        setAuthorMetadataLoaded(true);
       }
     })();
   }, [profile?.id]);
@@ -149,16 +168,9 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
 
     if (filterAuthorId) {
       if (filterAuthorId === 'me') {
-        list = list.filter((post) => {
-          if (post.authorDiscordId && post.authorDiscordId === profile?.discord_id) return true;
-          if (
-            post.authorExternalTranslatorId &&
-            grantedExternalAuthorIds.has(post.authorExternalTranslatorId)
-          ) {
-            return true;
-          }
-          return false;
-        });
+        list = list.filter((post) =>
+          isPostInPersonalHistory(post, profile?.discord_id)
+        );
       } else if (filterAuthorId.startsWith(PREFIX_EXT)) {
         const extId = filterAuthorId.slice(PREFIX_EXT.length);
         list = list.filter((post) => post.authorExternalTranslatorId === extId);
@@ -201,8 +213,63 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
     filterAuthorId,
     profile?.discord_id,
     allProfilesForEdit,
-    grantedExternalAuthorIds,
   ]);
+
+  const canUseAuthorQuickFilter = useMemo(() => {
+    if (profile?.is_master_admin) return true;
+    if (ownerIdsWhoAllowedMe.size > 0) return true;
+    if (grantedForumIds.size > 0) return true;
+    return false;
+  }, [profile?.is_master_admin, ownerIdsWhoAllowedMe, grantedForumIds]);
+
+  useEffect(() => {
+    if (!profile?.id || !authorMetadataLoaded || initialAuthorFilterApplied.current) return;
+
+    const saved = getHistoryDefaultAuthorFilter(profile.id);
+    setDefaultAuthorFilterId(saved);
+
+    const options = buildAuthorFilterOptions({
+      currentUserPseudo: profile.pseudo,
+      allProfiles: allProfilesForEdit,
+      externalTranslators,
+      currentUserDiscordId: profile.discord_id,
+    });
+
+    if (saved && isAuthorFilterIdValid(saved, options)) {
+      setFilterAuthorId(saved);
+    } else if (!saved) {
+      setFilterAuthorId('me');
+    } else {
+      setFilterAuthorId('me');
+    }
+
+    initialAuthorFilterApplied.current = true;
+  }, [
+    profile?.id,
+    profile?.pseudo,
+    profile?.discord_id,
+    authorMetadataLoaded,
+    allProfilesForEdit,
+    externalTranslators,
+  ]);
+
+  function handleDefaultAuthorChange(id: string | null) {
+    if (!profile?.id) return;
+    setHistoryDefaultAuthorFilter(profile.id, id);
+    setDefaultAuthorFilterId(id);
+    if (id) {
+      setFilterAuthorId(id);
+      const label = resolveAuthorFilterLabel(
+        id,
+        profile.pseudo,
+        allProfilesForEdit,
+        externalTranslators
+      );
+      showToast(`Ouverture par défaut sur : ${label}`, 'success');
+    } else {
+      showToast("Ouverture par défaut sur « Moi »", 'info');
+    }
+  }
 
   const canEditPost = useMemo(() => {
     return (post: PublishedPost): boolean => {
@@ -342,24 +409,60 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
     }
   }
 
-  const totalPages = Math.ceil(filteredAndSortedPosts.length / POSTS_PER_PAGE);
-  const startIndex = (currentPage - 1) * POSTS_PER_PAGE;
+  useEffect(() => {
+    const el = gridScrollRef.current;
+    if (!el) return;
+
+    const updatePostsPerPage = () => {
+      const height = el.clientHeight;
+      if (height < 80) return;
+      const rows = Math.max(
+        MIN_GRID_ROWS,
+        Math.floor(height / (HISTORY_CARD_ROW_HEIGHT + HISTORY_GRID_GAP))
+      );
+      const next = rows * GRID_COLUMNS;
+      setPostsPerPage((prev) => (prev === next ? prev : next));
+    };
+
+    updatePostsPerPage();
+    const observer = new ResizeObserver(updatePostsPerPage);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isLoading, filteredAndSortedPosts.length, activeTab]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedPosts.length / postsPerPage));
+  const startIndex = (currentPage - 1) * postsPerPage;
   const paginatedPosts = filteredAndSortedPosts.slice(
     startIndex,
-    startIndex + POSTS_PER_PAGE
+    startIndex + postsPerPage
   );
-  const hasActiveFilters = Boolean(searchQuery.trim() || filterAuthorId);
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() ||
+      filterAuthorId !== 'me' ||
+      sortBy !== 'date-desc' ||
+      defaultAuthorFilterId
+  );
 
   function resetFilters() {
     setSearchQuery('');
     setSortBy('date-desc');
+    if (profile?.id) {
+      setHistoryDefaultAuthorFilter(profile.id, null);
+    }
+    setDefaultAuthorFilterId(null);
     setFilterAuthorId('me');
     setCurrentPage(1);
   }
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, sortBy, filterAuthorId, activeTab]);
+  }, [searchQuery, sortBy, filterAuthorId, activeTab, postsPerPage]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   function handleDeleteDefinitively(post: PublishedPost) {
     setPostToDelete(post);
@@ -461,7 +564,9 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
         />
         <HistoryFilters
           filterAuthorId={filterAuthorId}
+          defaultAuthorFilterId={defaultAuthorFilterId}
           onFilterAuthorChange={setFilterAuthorId}
+          onDefaultAuthorChange={handleDefaultAuthorChange}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           sortBy={sortBy}
@@ -476,7 +581,9 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
           allProfiles={allProfilesForEdit}
           externalTranslators={externalTranslators}
           currentUserDiscordId={profile?.discord_id}
+          currentUserPseudo={profile?.pseudo}
           isMasterAdmin={profile?.is_master_admin === true}
+          showDefaultAuthorStar={canUseAuthorQuickFilter}
         />
         <HistoryContent
           isLoading={isLoading}
@@ -488,6 +595,7 @@ export default function HistoryModal({ onClose }: HistoryModalProps) {
           searchQuery={searchQuery}
           activeTab={activeTab}
           canEditPost={canEditPost}
+          gridScrollRef={gridScrollRef}
           onPagePrev={() => setCurrentPage((p) => Math.max(1, p - 1))}
           onPageNext={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
           onArchiveChange={(post, archived) =>

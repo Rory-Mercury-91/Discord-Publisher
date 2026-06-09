@@ -210,7 +210,7 @@ button{background:transparent; border:1px solid var(--border); color:inherit; pa
 .modal .panel.templates-panel{width:98%; max-width:min(1520px,98vw); height:85vh; overflow:hidden}
 /* md-help-panel converti en panneau flottant — plus de règle modale */
 .modal .panel.instructions-panel{width:98%; max-width:min(1000px,98vw); height:85vh; overflow:hidden}
-.modal .panel.history-panel{width:95%; max-width:min(1200px,95vw); height:85vh; overflow:hidden}
+.modal .panel.history-panel{width:95%; max-width:min(1200px,95vw); height:min(90vh,100%); overflow:hidden; box-sizing:border-box}
 
 /* App-specific styles */
 .app h1{margin:0; font-size:18px}

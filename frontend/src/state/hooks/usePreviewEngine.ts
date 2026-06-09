@@ -155,13 +155,21 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
 
       if (workStatus === 'terminated') {
         content = content.replace(
+          /:books: \*\*Progression :\*\* Chapitre \[Chapitre_Actuel\] \(Dernier chapitre gratuit\)\n?/g,
+          ':books: **Progression :** Complété (Chapitre [Chapitre_Fin])\n'
+        );
+        content = content.replace(
           /Statut actuel : Chapitre \[Chapitre_Actuel\] \(Dernier disponible gratuitement\)\n?/g,
-          'Statut actuel : Chapitre [Chapitre_Fin] (Série terminée)\n'
+          ':books: **Progression :** Complété (Chapitre [Chapitre_Fin])\n'
         );
       } else if (workStatus === 'abandoned') {
         content = content.replace(
+          /:books: \*\*Progression :\*\* Chapitre \[Chapitre_Actuel\] \(Dernier chapitre gratuit\)\n?/g,
+          ':books: **Progression :** Arrêtée au chapitre [Chapitre_Fin]\n'
+        );
+        content = content.replace(
           /Statut actuel : Chapitre \[Chapitre_Actuel\] \(Dernier disponible gratuitement\)\n?/g,
-          'Statut actuel : Chapitre [Chapitre_Fin] (Série abandonnée)\n'
+          ':books: **Progression :** Arrêtée au chapitre [Chapitre_Fin]\n'
         );
       }
 
@@ -259,6 +267,10 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
         if (dateFinRaw) {
           const dateFinFormatted = formatVarValue(dateFinRaw, 'date', { discordTimestamp: true });
           if (dateFinFormatted) {
+            content = content.replace(
+              /(:books: \*\*Progression :\*\* [^\n]+)\n/,
+              `$1 — ${dateFinFormatted}\n`
+            );
             content = content.replace(
               /(Statut actuel : Chapitre [^\n]+)\n/,
               `$1 — ${dateFinFormatted}\n`

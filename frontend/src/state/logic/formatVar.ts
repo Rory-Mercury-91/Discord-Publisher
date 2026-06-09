@@ -61,33 +61,46 @@ export function formatDateForDisplay(isoDate: string): string {
   return (isoDate || '').trim();
 }
 
-/** Convertit AAAA-MM-JJ en timestamp Unix (secondes, minuit heure locale). */
-export function isoDateToUnixSeconds(isoDate: string): number | null {
+/** Convertit AAAA-MM-JJ en timestamp Unix (secondes, heure locale). */
+export function isoDateToUnixSeconds(
+  isoDate: string,
+  options?: { endOfDay?: boolean }
+): number | null {
   const trimmed = (isoDate || '').trim();
   const m = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return null;
   const year = parseInt(m[1], 10);
   const month = parseInt(m[2], 10) - 1;
   const day = parseInt(m[3], 10);
-  const d = new Date(year, month, day, 0, 0, 0, 0);
+  const hour = options?.endOfDay ? 23 : 0;
+  const minute = options?.endOfDay ? 59 : 0;
+  const second = options?.endOfDay ? 59 : 0;
+  const d = new Date(year, month, day, hour, minute, second, 0);
   if (Number.isNaN(d.getTime())) return null;
   return Math.floor(d.getTime() / 1000);
 }
 
 /**
  * Timestamp Discord : date longue sans heure (:D) + relatif (:R).
+ * endOfDay : fin de journée (23:59:59) pour les sorties « quelque part dans la journée ».
  */
-export function formatDateDiscordTimestamp(isoDate: string): string {
+export function formatDateDiscordTimestamp(
+  isoDate: string,
+  options?: { endOfDay?: boolean }
+): string {
   const resolved = resolveStoredDateValue(isoDate);
-  const unix = isoDateToUnixSeconds(resolved);
+  const unix = isoDateToUnixSeconds(resolved, options);
   if (unix === null) return formatDateForDisplay(isoDate);
   return `<t:${unix}:D> (<t:${unix}:R>)`;
 }
 
 /** Timestamp Discord date seule (:D), sans relatif. */
-export function formatDateDiscordTimestampShort(isoDate: string): string {
+export function formatDateDiscordTimestampShort(
+  isoDate: string,
+  options?: { endOfDay?: boolean }
+): string {
   const resolved = resolveStoredDateValue(isoDate);
-  const unix = isoDateToUnixSeconds(resolved);
+  const unix = isoDateToUnixSeconds(resolved, options);
   if (unix === null) return '';
   return `<t:${unix}:D>`;
 }

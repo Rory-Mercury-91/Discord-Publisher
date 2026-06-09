@@ -126,7 +126,7 @@ export function projectReleaseDateAtChapter(
   return current;
 }
 
-/** Date du jour (minuit local) >= dateIso ? (ISO ou offset « X J »). */
+/** Date du jour (minuit local) > dateIso ? (ISO ou offset « X J »). */
 export function isReleaseDatePassed(dateIso: string): boolean {
   const resolved = resolveStoredDateValue(dateIso);
   const m = resolved.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -142,5 +142,5 @@ export function isReleaseDatePassed(dateIso: string): boolean {
   );
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return today.getTime() >= target.getTime();
+  return today.getTime() > target.getTime();
 }
