@@ -75,7 +75,7 @@ export default function OperationsTab({
                 ref={sshKeyInputRef}
                 type="text"
                 defaultValue={sshKeyPath}
-                placeholder="F:/Projet_GitHub/Discord Publisher/python/_ignored/ssh-key.key"
+                placeholder="python/_ignored/ssh-key-2026-02-07.key (chemin absolu requis)"
                 className="server-input"
                 style={{ flex: 1, fontFamily: 'monospace', fontSize: 12 }}
               />

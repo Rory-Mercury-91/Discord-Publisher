@@ -69,9 +69,9 @@ Le `.bat` utilise un chemin relatif (`%~dp0`), donc le raccourci reste valide si
 **Méthode manuelle (PowerShell) :**
 
 1. **Clic droit sur le Bureau** → Nouveau → Raccourci
-2. **Cible :**
+2. **Cible** (remplacer `<chemin_projet>` par la racine du dépôt, ex. `F:\Projet_GitHub\Discord Publisher`) :
    ```
-   powershell.exe -ExecutionPolicy Bypass -File "F:\Projet_GitHub\Discord Publisher\outils_serveur\0_SSH_Menu.ps1"
+   <chemin_projet>\outils_serveur\Lancer-Menu-SSH.bat
    ```
 3. **Nom :** `⚙️ Gestion Serveur Ubuntu`
 
@@ -80,7 +80,9 @@ Le `.bat` utilise un chemin relatif (`%~dp0`), donc le raccourci reste valide si
 ## 📌 Connexion SSH Manuelle (Optionnel)
 
 ```powershell
-ssh -i "F:\Projet_GitHub\Discord Publisher\python\_ignored\ssh-key-2026-02-07.key" ubuntu@138.2.182.125
+# Depuis la racine du projet (adapter le lecteur si besoin)
+cd "F:\Projet_GitHub\Discord Publisher"
+ssh -i "python\_ignored\ssh-key-2026-02-07.key" ubuntu@138.2.182.125
 ```
 
 ---

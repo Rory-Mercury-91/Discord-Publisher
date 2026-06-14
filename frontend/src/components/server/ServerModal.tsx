@@ -4,6 +4,7 @@ import { useConfirm } from '../../hooks/useConfirm';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { useModalScrollLock } from '../../hooks/useModalScrollLock';
 import { apiFetch } from '../../lib/api-helpers';
+import { normalizeProjectPath } from '../../lib/normalizeProjectPath';
 import { getSupabase } from '../../lib/supabase';
 import { useApp } from '../../state/appContext';
 import { useAuth } from '../../state/authContext';
@@ -29,10 +30,20 @@ export default function ServerModal({ onClose, inlineMode = false }: ServerModal
   const [activeTab, setActiveTab] = useState<ServerTab>('status');
 
   // ── SSH Key ────────────────────────────────────────────────────────────────
-  const [sshKeyPath, setSshKeyPath] = useState(() => localStorage.getItem('ssh_key_path') || '');
+  const [sshKeyPath, setSshKeyPath] = useState(() => {
+    const stored = localStorage.getItem('ssh_key_path') || '';
+    return normalizeProjectPath(stored);
+  });
   const [showSshConfig, setShowSshConfig] = useState(false);
   const sshKeyInputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { localStorage.setItem('ssh_key_path', sshKeyPath); }, [sshKeyPath]);
+  useEffect(() => {
+    const normalized = normalizeProjectPath(sshKeyPath);
+    if (normalized !== sshKeyPath) {
+      setSshKeyPath(normalized);
+      return;
+    }
+    localStorage.setItem('ssh_key_path', sshKeyPath);
+  }, [sshKeyPath]);
 
   const isTauri = !!window.__TAURI__;
 
