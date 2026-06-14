@@ -282,8 +282,8 @@ if __name__ == "__main__":
         print(
             "Usage : python nexus_export.py <chemin_db.db> [chemin_sortie.json]\n"
             "Exemple :\n"
-            '  python nexus_export.py "D:/Projet GitHub/Nexus/databases/MonUser.db"\n'
-            '  python nexus_export.py "D:/Projet GitHub/Nexus/databases/MonUser.db" nexus_export.json',
+            '  python nexus_export.py "F:/Projet_GitHub/Nexus/databases/MonUser.db"\n'
+            '  python nexus_export.py "F:/Projet_GitHub/Nexus/databases/MonUser.db" nexus_export.json',
             file=sys.stderr,
         )
         sys.exit(1)

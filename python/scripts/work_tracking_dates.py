@@ -8,6 +8,14 @@ from __future__ import annotations
 import datetime
 import re
 from typing import List, Optional
+from zoneinfo import ZoneInfo
+
+PARIS_TZ = ZoneInfo("Europe/Paris")
+
+
+def today_paris() -> datetime.date:
+    """Date du jour calendaire à Paris (alignée sur le scheduler)."""
+    return datetime.datetime.now(PARIS_TZ).date()
 
 
 def parse_days_offset(raw: str) -> Optional[int]:
@@ -27,7 +35,7 @@ def resolve_stored_date_value(value: str) -> str:
         return ""
     days = parse_days_offset(trimmed)
     if days is not None:
-        d = datetime.date.today() + datetime.timedelta(days=days)
+        d = today_paris() + datetime.timedelta(days=days)
         return d.isoformat()
     if re.match(r"^\d{4}-\d{2}-\d{2}$", trimmed):
         return trimmed
@@ -121,12 +129,13 @@ def compute_next_release_date(from_iso: str, weekdays: List[int]) -> Optional[st
 
 
 def is_release_date_passed(date_iso: str) -> bool:
+    """True si la date de sortie est strictement avant aujourd'hui (Europe/Paris)."""
     resolved = resolve_stored_date_value(date_iso)
     try:
         target = datetime.date.fromisoformat(resolved)
     except ValueError:
         return False
-    return datetime.date.today() > target
+    return today_paris() > target
 
 
 def iso_to_discord_timestamp(iso_date: str, *, end_of_day: bool = False) -> str:

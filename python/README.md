@@ -63,10 +63,15 @@ Des scripts PowerShell sont disponibles dans le dossier **`outils_serveur/`** po
 
 ### 🔗 Créer un Raccourci Bureau (Recommandé)
 
+**Méthode la plus simple :** clic droit sur `outils_serveur\Lancer-Menu-SSH.bat` → **Envoyer vers** → **Bureau (créer un raccourci)**.  
+Le `.bat` utilise un chemin relatif (`%~dp0`), donc le raccourci reste valide si le projet change de lecteur ou de dossier.
+
+**Méthode manuelle (PowerShell) :**
+
 1. **Clic droit sur le Bureau** → Nouveau → Raccourci
 2. **Cible :**
    ```
-   powershell.exe -ExecutionPolicy Bypass -File "D:\Projet GitHub\Discord Publisher\outils_serveur\0_SSH_Menu.ps1"
+   powershell.exe -ExecutionPolicy Bypass -File "F:\Projet_GitHub\Discord Publisher\outils_serveur\0_SSH_Menu.ps1"
    ```
 3. **Nom :** `⚙️ Gestion Serveur Ubuntu`
 
@@ -75,7 +80,7 @@ Des scripts PowerShell sont disponibles dans le dossier **`outils_serveur/`** po
 ## 📌 Connexion SSH Manuelle (Optionnel)
 
 ```powershell
-ssh -i "F:\Projet GitHub\Discord Publisher\python\_ignored\ssh-key-2026-02-07.key" ubuntu@138.2.182.125
+ssh -i "F:\Projet_GitHub\Discord Publisher\python\_ignored\ssh-key-2026-02-07.key" ubuntu@138.2.182.125
 ```
 
 ---

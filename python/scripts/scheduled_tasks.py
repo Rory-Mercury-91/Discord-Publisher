@@ -526,7 +526,7 @@ async def daily_work_tracking_refresh():
     )
 )
 async def daily_work_tracking_yesterday_digest():
-    """Récap MP condensé des sorties de la veille (œuvres avec date renseignée)."""
+    """Rappel MP unique à 09:00 : sorties de la veille (Europe/Paris)."""
     logger.info(
         "[scheduler] Lancement digest suivi d'œuvres (%02d:%02d Europe/Paris)",
         config.WORK_TRACKING_DIGEST_HOUR,

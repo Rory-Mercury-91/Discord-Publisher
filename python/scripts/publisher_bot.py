@@ -10,6 +10,7 @@ Note importante sur l'ordre d'import :
 """
 
 import logging
+import asyncio
 
 import discord
 from discord.ext import commands
@@ -47,6 +48,13 @@ async def on_ready():
     # Demarrage des taches planifiees
     from scheduled_tasks import start_all_tasks
     start_all_tasks()
+
+    # Digest manquant si redemarrage apres 09:00 (ex. deploiement WinSCP)
+    from work_tracking_refresh import ensure_work_tracking_digest_on_startup
+    asyncio.create_task(
+        ensure_work_tracking_digest_on_startup(bot),
+        name="task_work_tracking_digest_catchup",
+    )
 
 
 # ==================== ENREGISTREMENT COMMANDES ====================
