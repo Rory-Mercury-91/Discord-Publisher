@@ -32,6 +32,8 @@ const TRAD_TYPE_LABELS: Record<string, string> = {
   hs: 'Lien de traduction HS',
   vf: 'Version française',
   to_tested: 'À tester',
+  patch: 'Patch de traduction',
+  integrated: 'Traduction intégrée',
 };
 
 /** Valeur d'affichage des statuts dans les filtres. */

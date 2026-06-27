@@ -16,9 +16,8 @@ from discord.ext import tasks
 from config import config
 from f95_public_api_client import (
     build_api_date_map,
-    fetch_public_games,
+    fetch_public_catalog_bundle,
     fetch_public_games_index,
-    fetch_public_translators,
     map_public_games_to_legacy_rows,
 )
 from supabase_client import (
@@ -371,15 +370,18 @@ async def sync_jeux_task():
     logger.info("[scheduler] Synchronisation jeux API publique -> Supabase")
     try:
         async with aiohttp.ClientSession() as session:
-            public_games   = await fetch_public_games(session, timeout_seconds=60)
-            translator_map = await fetch_public_translators(session, timeout_seconds=60)
-            data = map_public_games_to_legacy_rows(public_games, translator_map)
+            public_games, translator_map, update_map = await fetch_public_catalog_bundle(
+                session, timeout_seconds=60,
+            )
+            data = map_public_games_to_legacy_rows(public_games, translator_map, update_map)
             if isinstance(data, list) and data:
                 loop = asyncio.get_event_loop()
-                # Passer translator_map pour que _sync_jeux_to_supabase résolve
-                # correctement les noms de traducteurs via translatorId
                 await loop.run_in_executor(
-                    None, _sync_jeux_to_supabase, public_games, translator_map
+                    None,
+                    _sync_jeux_to_supabase,
+                    public_games,
+                    translator_map,
+                    update_map,
                 )
                 logger.info("[scheduler] %d lignes synchronisees dans f95_jeux", len(data))
 

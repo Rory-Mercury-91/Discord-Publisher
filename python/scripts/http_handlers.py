@@ -31,11 +31,15 @@ from scraper import (
 from image_utils import convert_image_url, batch_convert_images
 from nexus_export import parse_nexus_db
 from api_key_auth import _auth_request, LEGACY_KEY_WARNING
-from f95_public_api_client import fetch_public_games, fetch_public_translators, map_public_games_to_legacy_rows
+from f95_public_api_client import (
+    fetch_public_catalog_bundle,
+    map_public_games_to_legacy_rows,
+)
 from supabase_client import (
     _get_supabase, _fetch_post_by_thread_id_sync,
     _delete_from_supabase_sync, _normalize_history_row,
     _fetch_all_jeux_sync, _dedupe_jeux_by_site, _sync_jeux_to_supabase,
+    _jeux_cache_looks_stale,
     _norm_nom_url,
     _delete_account_data_sync, _transfer_post_ownership_sync,
     _transfer_profile_data_sync, _relink_scraped_entries_to_catalogue,
@@ -436,9 +440,10 @@ async def jeux_sync_force(request):
 
     try:
         async with aiohttp.ClientSession() as session:
-            public_games   = await fetch_public_games(session, timeout_seconds=60)
-            translator_map = await fetch_public_translators(session, timeout_seconds=60)
-            data = map_public_games_to_legacy_rows(public_games, translator_map)
+            public_games, translator_map, update_map = await fetch_public_catalog_bundle(
+                session, timeout_seconds=60,
+            )
+            data = map_public_games_to_legacy_rows(public_games, translator_map, update_map)
 
         if not isinstance(data, list) or not data:
             return _with_cors(request, web.json_response(
@@ -447,7 +452,13 @@ async def jeux_sync_force(request):
 
         synced_count = len(data)
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _sync_jeux_to_supabase, public_games, translator_map)
+        await loop.run_in_executor(
+            None,
+            _sync_jeux_to_supabase,
+            public_games,
+            translator_map,
+            update_map,
+        )
 
         logger.info(
             "[api] jeux/sync-force : %d lignes synchronisees depuis API publique par %s",
@@ -490,8 +501,9 @@ async def jeux_sync_game(request):
 
     try:
         async with aiohttp.ClientSession() as session:
-            public_games   = await fetch_public_games(session, timeout_seconds=60)
-            translator_map = await fetch_public_translators(session, timeout_seconds=60)
+            public_games, translator_map, update_map = await fetch_public_catalog_bundle(
+                session, timeout_seconds=60,
+            )
 
         # Chercher le jeu par site_id (threadId dans l'API publique)
         matching = [g for g in public_games if g.get("threadId") == site_id]
@@ -509,7 +521,13 @@ async def jeux_sync_game(request):
             }, status=404))
 
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _sync_jeux_to_supabase, matching, translator_map)
+        await loop.run_in_executor(
+            None,
+            _sync_jeux_to_supabase,
+            matching,
+            translator_map,
+            update_map,
+        )
 
         # Relier les entrées user_collection scrapées à ces nouvelles données
         synced_site_ids = [g.get("threadId") for g in matching if g.get("threadId")]
@@ -542,25 +560,37 @@ async def get_jeux(request):
         try:
             loop = asyncio.get_event_loop()
             data = await loop.run_in_executor(None, _fetch_all_jeux_sync)
-            if data:
+            if data and not _jeux_cache_looks_stale(data):
                 data = _dedupe_jeux_by_site(data)
                 data = batch_convert_images(data)
                 logger.info("[api] %d jeux depuis Supabase (cache, dédupliqués)", len(data))
                 return _with_cors(request, web.json_response({
                     "ok": True, "jeux": data, "count": len(data), "source": "cache",
                 }))
+            if data and _jeux_cache_looks_stale(data):
+                logger.warning(
+                    "[api] Cache f95_jeux incomplet (%d jeux, trad/statut manquants) → rechargement API",
+                    len(data),
+                )
         except Exception as e:
             logger.warning("[api] Supabase indisponible pour jeux, fallback API publique : %s", e)
 
     try:
         async with aiohttp.ClientSession() as session:
-            public_games   = await fetch_public_games(session, timeout_seconds=30)
-            translator_map = await fetch_public_translators(session, timeout_seconds=30)
-            data = map_public_games_to_legacy_rows(public_games, translator_map)
+            public_games, translator_map, update_map = await fetch_public_catalog_bundle(
+                session, timeout_seconds=30,
+            )
+            data = map_public_games_to_legacy_rows(public_games, translator_map, update_map)
 
         if sb and isinstance(data, list):
             loop = asyncio.get_event_loop()
-            loop.run_in_executor(None, _sync_jeux_to_supabase, public_games, translator_map)
+            loop.run_in_executor(
+                None,
+                _sync_jeux_to_supabase,
+                public_games,
+                translator_map,
+                update_map,
+            )
 
         if isinstance(data, list):
             data = _dedupe_jeux_by_site(data)

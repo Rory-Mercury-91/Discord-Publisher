@@ -15,9 +15,58 @@ import aiohttp
 
 logger = logging.getLogger("f95-public-api")
 
-F95_PUBLIC_API_BASE = (os.getenv("F95_PUBLIC_API_BASE") or "https://api.f95france.site").rstrip("/")
+_DEFAULT_API_BASE = "https://api.f95france.site"
+_LEGACY_API_BASES = {
+    "https://f95france.site",
+    "http://f95france.site",
+    "https://www.f95france.site",
+    "http://www.f95france.site",
+    "https://f95france.site/api",
+    "http://f95france.site/api",
+    "https://www.f95france.site/api",
+}
+
+
+def _normalize_api_base(raw: str | None) -> str:
+    """
+    Corrige les anciennes valeurs F95_PUBLIC_API_BASE (ex. https://f95france.site).
+    """
+    base = (raw or _DEFAULT_API_BASE).strip().rstrip("/")
+    if base in _LEGACY_API_BASES:
+        logger.warning(
+            "[f95-public-api] F95_PUBLIC_API_BASE obsolète (%s) → %s",
+            base,
+            _DEFAULT_API_BASE,
+        )
+        return _DEFAULT_API_BASE
+    if base.endswith("/api"):
+        trimmed = base[:-4]
+        if trimmed in _LEGACY_API_BASES or trimmed.endswith("f95france.site"):
+            logger.warning(
+                "[f95-public-api] F95_PUBLIC_API_BASE obsolète (%s) → %s",
+                base,
+                _DEFAULT_API_BASE,
+            )
+            return _DEFAULT_API_BASE
+        base = trimmed
+    return base or _DEFAULT_API_BASE
+
+
+def _api_error_hint(status: int, url: str, content_type: str) -> str:
+    if status == 401:
+        return " — clé API absente ou invalide (F95_PUBLIC_API_KEY / F95FR_API_KEY)"
+    if status == 404 and "html" in (content_type or "").lower():
+        return (
+            f" — URL appelée : {url}. "
+            "Utilisez F95_PUBLIC_API_BASE=https://api.f95france.site (pas f95france.site)"
+        )
+    return f" — URL appelée : {url}"
+
+
+F95_PUBLIC_API_BASE = _normalize_api_base(os.getenv("F95_PUBLIC_API_BASE"))
 F95_PUBLIC_API_GAMES_URL = f"{F95_PUBLIC_API_BASE}/v1/games"
 F95_PUBLIC_API_TRANSLATORS_URL = f"{F95_PUBLIC_API_BASE}/v1/translators"
+F95_PUBLIC_API_UPDATES_URL = f"{F95_PUBLIC_API_BASE}/v1/updates"
 F95_PUBLIC_API_KEY = (os.getenv("F95_PUBLIC_API_KEY") or os.getenv("F95FR_API_KEY") or "").strip()
 
 # Cache court pour éviter de re-télécharger toute la liste à chaque résolution unitaire.
@@ -54,6 +103,22 @@ _TRAD_TYPE_LABELS = {
     "hs": "Lien de traduction HS",
     "vf": "Version française",
     "to_tested": "À tester",
+    "patch": "Patch de traduction",
+    "integrated": "Traduction intégrée",
+}
+_UPDATE_STATUS_LABELS = {
+    "adding": "AJOUT DE JEU",
+    "update": "MISE À JOUR",
+}
+_ENGINE_TYPE_LABELS = {
+    "renpy": "RenPy",
+    "unity": "Unity",
+    "unreal": "Unreal",
+    "rpgm": "RPGM",
+    "html": "HTML",
+    "flash": "Flash",
+    "qsp": "QSP",
+    "other": "Autre",
 }
 
 
@@ -156,10 +221,10 @@ def public_game_to_scraped_data(
     }
     if translation:
         data.update({
-            "trad_ver"          : translation.get("tversion"),
+            "trad_ver"          : _extract_trad_ver(translation),
             "lien_trad"         : translation.get("tlink"),
             "status"            : _to_legacy_status(translation.get("status")),
-            "type"              : translation.get("gameType"),
+            "type"              : _to_legacy_engine_type(translation.get("gameType")),
             "type_de_traduction": _to_legacy_trad_type(translation.get("ttype")),
         })
     return {k: v for k, v in data.items() if v is not None}
@@ -216,9 +281,68 @@ def _to_legacy_trad_type(value: Any) -> str | None:
     return _TRAD_TYPE_LABELS.get(raw.lower(), raw)
 
 
+def _to_legacy_engine_type(value: Any) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    return _ENGINE_TYPE_LABELS.get(raw.lower(), raw)
+
+
+def _to_legacy_type_maj(value: Any) -> str | None:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return None
+    return _UPDATE_STATUS_LABELS.get(raw)
+
+
+def _is_no_translation_row(translation: dict[str, Any]) -> bool:
+    tname = str(translation.get("tname") or "").strip().lower()
+    return tname == "no_translation"
+
+
+def _extract_trad_ver(translation: dict[str, Any]) -> str | None:
+    for key in ("tversion", "version"):
+        value = _clean_optional_text(translation.get(key))
+        if value:
+            return value
+    tname = str(translation.get("tname") or "").strip().lower()
+    if tname == "integrated":
+        return "Intégrée"
+    return None
+
+
+def _filter_translation_rows(translations: list[Any]) -> list[dict[str, Any]]:
+    valid = [tr for tr in translations if isinstance(tr, dict)]
+    if not valid:
+        return []
+    without_placeholder = [tr for tr in valid if not _is_no_translation_row(tr)]
+    return without_placeholder or valid
+
+
+def build_update_type_by_game_id(updates: list[dict[str, Any]]) -> dict[str, str]:
+    """
+    Indexe les dernières mises à jour catalogue par gameId → type_maj legacy.
+    """
+    result: dict[str, str] = {}
+    for row in updates:
+        if not isinstance(row, dict):
+            continue
+        game_id = str(row.get("gameId") or "").strip()
+        if not game_id:
+            continue
+        label = _to_legacy_type_maj(row.get("updateStatus"))
+        if not label:
+            continue
+        # Les entrées sont triées par date décroissante côté API : on garde la plus récente.
+        if game_id not in result:
+            result[game_id] = label
+    return result
+
+
 def map_public_games_to_legacy_rows(
     games: list[dict[str, Any]],
     translator_name_by_id: dict[str, str] | None = None,
+    update_type_by_game_id: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Aplati /v1/games (avec include=translations) vers le format f95_jeux.
@@ -265,9 +389,13 @@ def map_public_games_to_legacy_rows(
         # f95_date_maj = date de dernière MAJ du JEU sur F95Zone (≠ date_maj qui est la trad)
         f95_date_maj = _iso_to_yyyy_mm_dd(game.get("updatedAt"))
 
-        translations = game.get("translations")
-        if not isinstance(translations, list) or not translations:
+        translations_raw = game.get("translations")
+        if isinstance(translations_raw, list) and translations_raw:
+            translations = _filter_translation_rows(translations_raw)
+        else:
             translations = [None]
+
+        type_maj = (update_type_by_game_id or {}).get(game_id)
 
         for idx, translation in enumerate(translations):
             tr    = translation if isinstance(translation, dict) else {}
@@ -305,18 +433,18 @@ def map_public_games_to_legacy_rows(
                     f"https://f95zone.to/threads/{site_id}" if site_id else None
                 ),
                 "version"           : game_version,
-                "trad_ver"          : tr.get("tversion"),
+                "trad_ver"          : _extract_trad_ver(tr) if tr else None,
                 "lien_trad"         : tr.get("tlink"),
                 "statut"            : _to_legacy_status(tr.get("status")),
                 "tags"              : tags,
-                "type"              : tr.get("gameType"),
+                "type"              : _to_legacy_engine_type(tr.get("gameType")),
                 "traducteur"        : translator_name,
                 # traducteur_url : champ "pages" du traducteur depuis /v1/translators
                 "traducteur_url"    : traducteur_url,
                 "type_de_traduction": _to_legacy_trad_type(tr.get("ttype")),
                 "ac"                : "1" if bool(tr.get("ac")) else "",
                 "image"             : image,
-                "type_maj"          : None,
+                "type_maj"          : type_maj,
                 # date_maj  = MAJ de la traduction ; f95_date_maj = MAJ du jeu sur F95
                 "date_maj"          : _iso_to_yyyy_mm_dd(tr.get("updatedAt")) or f95_date_maj,
                 "f95_date_maj"      : f95_date_maj,
@@ -429,7 +557,8 @@ async def fetch_public_games(session: aiohttp.ClientSession, *, timeout_seconds:
     ) as resp:
         if resp.status != 200:
             body = await resp.text()
-            raise RuntimeError(f"API publique HTTP {resp.status}: {body[:200]}")
+            hint = _api_error_hint(resp.status, F95_PUBLIC_API_GAMES_URL, resp.headers.get("Content-Type", ""))
+            raise RuntimeError(f"API publique HTTP {resp.status}{hint}: {body[:200]}")
 
         payload = await resp.json()
         if not isinstance(payload, list):
@@ -437,6 +566,56 @@ async def fetch_public_games(session: aiohttp.ClientSession, *, timeout_seconds:
 
         logger.info("[f95-public-api] %d jeu(x) récupéré(s)", len(payload))
         return payload
+
+
+async def fetch_public_updates(
+    session: aiohttp.ClientSession,
+    *,
+    timeout_seconds: int = 60,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """
+    Récupère les dernières mises à jour catalogue (type_maj).
+    """
+    headers = {"Accept": "application/json"}
+    if F95_PUBLIC_API_KEY:
+        headers["Authorization"] = f"Bearer {F95_PUBLIC_API_KEY}"
+        headers["X-Api-Key"]     = F95_PUBLIC_API_KEY
+
+    async with session.get(
+        F95_PUBLIC_API_UPDATES_URL,
+        params={"limit": max(1, min(int(limit), 200))},
+        headers=headers,
+        timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+    ) as resp:
+        if resp.status != 200:
+            body = await resp.text()
+            hint = _api_error_hint(resp.status, F95_PUBLIC_API_UPDATES_URL, resp.headers.get("Content-Type", ""))
+            raise RuntimeError(f"API publique /updates HTTP {resp.status}{hint}: {body[:200]}")
+        payload = await resp.json()
+        if not isinstance(payload, list):
+            raise RuntimeError("Réponse /v1/updates invalide (liste attendue)")
+        logger.info("[f95-public-api] %d mise(s) à jour récupérée(s)", len(payload))
+        return payload
+
+
+async def fetch_public_catalog_bundle(
+    session: aiohttp.ClientSession,
+    *,
+    timeout_seconds: int = 60,
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, str | None]], dict[str, str]]:
+    """
+    Récupère jeux + traducteurs + mises à jour catalogue en parallèle.
+    """
+    import asyncio
+
+    public_games, translator_map, updates = await asyncio.gather(
+        fetch_public_games(session, timeout_seconds=timeout_seconds),
+        fetch_public_translators(session, timeout_seconds=timeout_seconds),
+        fetch_public_updates(session, timeout_seconds=timeout_seconds),
+    )
+    update_map = build_update_type_by_game_id(updates)
+    return public_games, translator_map, update_map
 
 
 async def fetch_public_translators(
@@ -463,7 +642,8 @@ async def fetch_public_translators(
     ) as resp:
         if resp.status != 200:
             body = await resp.text()
-            raise RuntimeError(f"API publique /translators HTTP {resp.status}: {body[:200]}")
+            hint = _api_error_hint(resp.status, F95_PUBLIC_API_TRANSLATORS_URL, resp.headers.get("Content-Type", ""))
+            raise RuntimeError(f"API publique /translators HTTP {resp.status}{hint}: {body[:200]}")
         payload = await resp.json()
         if not isinstance(payload, list):
             raise RuntimeError("Réponse /v1/translators invalide (liste attendue)")

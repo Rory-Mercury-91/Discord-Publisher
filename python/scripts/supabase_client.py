@@ -619,7 +619,28 @@ def _normalize_legacy_site_labels(sb) -> None:
             )
 
 
-def _sync_jeux_to_supabase(jeux: list, translator_map: dict | None = None):
+def _jeux_cache_looks_stale(rows: list) -> bool:
+    """
+    Détecte un cache Supabase incomplet (version jeu présente mais champs trad absents).
+    Arrive souvent après une migration API ou une sync échouée.
+    """
+    if not rows or len(rows) < 50:
+        return False
+    with_version = sum(1 for r in rows if str(r.get("version") or "").strip())
+    with_trad    = sum(1 for r in rows if str(r.get("trad_ver") or "").strip())
+    with_statut  = sum(1 for r in rows if str(r.get("statut") or "").strip())
+    if with_version < 50:
+        return False
+    trad_ratio   = with_trad / with_version
+    statut_ratio = with_statut / with_version
+    return trad_ratio < 0.25 and statut_ratio < 0.25
+
+
+def _sync_jeux_to_supabase(
+    jeux: list,
+    translator_map: dict | None = None,
+    update_type_by_game_id: dict | None = None,
+):
     """
     Upsert des jeux dans la table f95_jeux (sync, appelé en arrière-plan).
     translator_map : dict optionnel {translatorId (str UUID) → nom (str)} issu de
@@ -763,7 +784,11 @@ def _sync_jeux_to_supabase(jeux: list, translator_map: dict | None = None):
     try:
         is_public_payload = bool(jeux and _looks_like_public_game(jeux[0]))
         if is_public_payload:
-            jeux = map_public_games_to_legacy_rows(jeux, translator_map)
+            jeux = map_public_games_to_legacy_rows(
+                jeux,
+                translator_map,
+                update_type_by_game_id,
+            )
 
         now = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
         site_ids = []
