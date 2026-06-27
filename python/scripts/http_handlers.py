@@ -709,15 +709,17 @@ async def get_enrich_synopsis_stats(request):
             else:
                 first   = group[0]
                 f95_url = (first.get("nom_url") or "").strip()
-                # N'inclure que les entrées avec une URL F95Zone valide (scraping possible)
-                if f95_url and "f95zone.to" in f95_url.lower():
+                site_id = first.get("site_id")
+                # Enrichissable si site_id connu (API publique) ou URL F95/LewdCorner valide
+                if site_id or (f95_url and ("f95zone.to" in f95_url.lower() or "lewdcorner.com" in f95_url.lower())):
                     missing_fr_entries.append({
                         "id":         first.get("id"),
                         "nom_du_jeu": first.get("nom_du_jeu") or "Inconnu",
                         "nom_url":    f95_url,
-                        "site_id":    first.get("site_id"),
+                        "site_id":    site_id,
                         "synopsis_en": first.get("synopsis_en") or "",
                         "group_ids":  [r.get("id") for r in group if r.get("id") is not None],
+                        "can_enrich": True,
                     })
 
         # Limiter la liste retournée (la suite peut être rechargée avec un filtre)

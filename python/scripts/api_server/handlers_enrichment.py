@@ -8,6 +8,7 @@ import aiohttp
 from aiohttp import web
 
 from api_key_auth import _auth_request
+from f95_public_api_client import build_api_date_map, fetch_public_games_index
 from scraper import enrich_dates_with_fallback
 from supabase_client import _get_supabase
 from translator import translate_text
@@ -99,14 +100,18 @@ async def get_enrich_synopsis_stats(request):
                 with_fr += 1
             if has_en and not has_fr:
                 first = group_rows[0]
-                missing_fr_entries.append({
-                    "id": first.get("id"),
-                    "site_id": first.get("site_id"),
-                    "nom_du_jeu": first.get("nom_du_jeu"),
-                    "nom_url": first.get("nom_url"),
-                    "group_size": len(group_rows),
-                    "group_ids": [r.get("id") for r in group_rows if r.get("id") is not None],
-                })
+                site_id = first.get("site_id")
+                nom_url = (first.get("nom_url") or "").strip()
+                if site_id or (nom_url and ("f95zone.to" in nom_url.lower() or "lewdcorner.com" in nom_url.lower())):
+                    missing_fr_entries.append({
+                        "id": first.get("id"),
+                        "site_id": site_id,
+                        "nom_du_jeu": first.get("nom_du_jeu"),
+                        "nom_url": nom_url,
+                        "group_size": len(group_rows),
+                        "group_ids": [r.get("id") for r in group_rows if r.get("id") is not None],
+                        "can_enrich": True,
+                    })
 
         missing_fr_entries = missing_fr_entries[:300]
         return with_cors(request, web.json_response({
@@ -183,12 +188,21 @@ async def scrape_thread_dates(request):
                 except Exception as e:
                     logger.warning("[api] scrape_thread_dates : erreur Supabase site_id=%s : %s", site_id, e)
 
-        await send({"log": f"🔍 {len(jeux)} jeux à traiter ({len(rss_date_map)} depuis RSS)…"})
+        await send({"log": f"🔍 {len(jeux)} jeux à traiter ({len(rss_date_map)} RSS, priorité API publique)…"})
         async with aiohttp.ClientSession() as session:
+            api_dates: dict[int, str] = {}
+            try:
+                api_index = await fetch_public_games_index(session, timeout_seconds=60)
+                api_dates = build_api_date_map(api_index)
+                await send({"log": f"🌐 API publique : {len(api_dates)} date(s) disponibles"})
+            except Exception as api_err:
+                await send({"log": f"⚠️ API publique indisponible ({api_err})"})
+
             await enrich_dates_with_fallback(
                 session,
                 jeux=jeux,
                 rss_date_map=rss_date_map,
+                api_date_map=api_dates,
                 cookies=f95_cookies,
                 scrape_delay=scrape_delay,
                 progress_callback=on_progress,

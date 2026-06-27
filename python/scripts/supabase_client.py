@@ -794,15 +794,24 @@ def _sync_jeux_to_supabase(jeux: list, translator_map: dict | None = None):
             existing_synopsis_fr = (existing_row or {}).get("synopsis_fr")
 
             has_upstream_synopsis = _is_non_empty_text(synopsis_en_in)
+            has_upstream_fr = _is_non_empty_text(synopsis_fr_in)
             if is_public_payload and not has_upstream_synopsis:
                 # Alignement strict demandé : si la source principale n'a plus de synopsis,
                 # on nettoie aussi localement EN/FR pour éviter les données obsolètes.
                 synopsis_en_to_save = None
                 synopsis_fr_to_save = None
             else:
-                synopsis_en_to_save = synopsis_en_in if has_upstream_synopsis else existing_synopsis_en
-                # Conserver la traduction FR déjà validée tant que la source EN existe.
-                synopsis_fr_to_save = existing_synopsis_fr if _is_non_empty_text(existing_synopsis_fr) else synopsis_fr_in
+                # Source API publique : champs catalogue prioritaires sur le cache local.
+                if is_public_payload and has_upstream_synopsis:
+                    synopsis_en_to_save = synopsis_en_in
+                else:
+                    synopsis_en_to_save = synopsis_en_in if has_upstream_synopsis else existing_synopsis_en
+                if is_public_payload and has_upstream_fr:
+                    synopsis_fr_to_save = synopsis_fr_in
+                elif _is_non_empty_text(existing_synopsis_fr):
+                    synopsis_fr_to_save = existing_synopsis_fr
+                else:
+                    synopsis_fr_to_save = synopsis_fr_in
             synopsis_en_to_save = _sanitize_text(synopsis_en_to_save)
             synopsis_fr_to_save = _sanitize_text(synopsis_fr_to_save)
 
@@ -822,16 +831,18 @@ def _sync_jeux_to_supabase(jeux: list, translator_map: dict | None = None):
                     )
                     nom_url = nom_url_corrige
 
-            # f95_date_maj : conserver la valeur existante si la source n'en fournit pas
+            # f95_date_maj : API publique prioritaire, sinon valeur locale non-placeholder
             incoming_f95_date = j.get("f95_date_maj")
             existing_f95_date = (existing_row or {}).get("f95_date_maj") if existing_row else None
 
-            if incoming_f95_date and incoming_f95_date != "2020-01-01":
+            if is_public_payload and incoming_f95_date and incoming_f95_date != "2020-01-01":
+                f95_date_to_save = incoming_f95_date
+            elif incoming_f95_date and incoming_f95_date != "2020-01-01":
                 f95_date_to_save = incoming_f95_date
             elif existing_f95_date and existing_f95_date != "2020-01-01":
                 f95_date_to_save = existing_f95_date
             else:
-                f95_date_to_save = incoming_f95_date  # peut être None
+                f95_date_to_save = incoming_f95_date
 
             rows.append({
                 "id"                : j.get("id"),
@@ -906,7 +917,7 @@ def _relink_scraped_entries_to_catalogue(site_ids: list[int]) -> None:
 
     Action : remplace scraped_data par les données actuelles de f95_jeux et
     marque source = "f95_jeux" pour éviter de re-scraper à la prochaine résolution.
-    Préserve synopsis_fr si absent de f95_jeux (travail de traduction utilisateur).
+    Préserve synopsis_fr local uniquement si l'API publique n'en fournit pas encore.
     """
     sb = _get_supabase()
     if not sb or not site_ids:
@@ -968,7 +979,7 @@ def _relink_scraped_entries_to_catalogue(site_ids: list[int]) -> None:
                 # elles peuvent contenir des données périmées d'une ancienne version
                 # de f95_jeux (ex. mauvaise synopsis avant correction de l'API publique).
 
-                # Préserver synopsis_fr du scraping si f95_jeux n'en a pas
+                # Préserver synopsis_fr local si le catalogue n'en a pas encore
                 synopsis_fr_preserved = None
                 if isinstance(sd, dict):
                     scraped_fr = (sd.get("synopsis_fr") or "").strip()
@@ -985,7 +996,7 @@ def _relink_scraped_entries_to_catalogue(site_ids: list[int]) -> None:
                     "type"              : jeu.get("type"),
                     "synopsis"          : jeu.get("synopsis_en"),
                     "synopsis_en"       : jeu.get("synopsis_en"),
-                    "synopsis_fr"       : synopsis_fr_preserved or jeu.get("synopsis_fr"),
+                    "synopsis_fr"       : jeu.get("synopsis_fr") or synopsis_fr_preserved,
                     "trad_ver"          : jeu.get("trad_ver"),
                     "lien_trad"         : jeu.get("lien_trad"),
                     "traducteur"        : jeu.get("traducteur"),

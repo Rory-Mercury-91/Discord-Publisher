@@ -406,7 +406,7 @@ export function useCollection(overrideProfileId?: string) {
         ? localStorage.getItem('f95_cookies')
         : null;
       if (f95Cookies && f95Cookies.trim()) body.cookies = f95Cookies.trim();
-      body.translate_synopsis = true;
+      body.translate_synopsis = false;
 
       try {
         const headers = await createApiHeaders(key);

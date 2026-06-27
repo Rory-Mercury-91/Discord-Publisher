@@ -82,7 +82,7 @@ export default function ManualGameModal({ onClose, onSubmit }: ManualGameModalPr
       const body: Record<string, unknown> = isNumeric
         ? { f95_thread_id: parseInt(raw, 10) }
         : { url: raw };
-      body.translate_synopsis = true;
+      body.translate_synopsis = false;
 
       const headers = await createApiHeaders(key);
       const res = await fetch(`${base}/api/collection/resolve`, {

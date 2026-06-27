@@ -14,7 +14,13 @@ import aiohttp
 from discord.ext import tasks
 
 from config import config
-from f95_public_api_client import fetch_public_games, fetch_public_translators, map_public_games_to_legacy_rows
+from f95_public_api_client import (
+    build_api_date_map,
+    fetch_public_games,
+    fetch_public_games_index,
+    fetch_public_translators,
+    map_public_games_to_legacy_rows,
+)
 from supabase_client import (
     _get_supabase, _sync_jeux_to_supabase,
     _update_date_maj_bulk_sync, _relink_scraped_entries_to_catalogue,
@@ -117,12 +123,18 @@ async def rss_date_sync():
 
     async with aiohttp.ClientSession() as session:
         rss_map = await _fetch_rss_date_map(session)
+        api_dates: dict[int, str] = {}
+        try:
+            api_index = await fetch_public_games_index(session, timeout_seconds=60)
+            api_dates = build_api_date_map(api_index)
+        except Exception as api_err:
+            logger.warning("[scheduler] rss_date_sync : API publique indisponible : %s", api_err)
 
-    if not rss_map:
-        logger.info("[scheduler] rss_date_sync : flux RSS vide ou inaccessible, abandon")
+    if not rss_map and not api_dates:
+        logger.info("[scheduler] rss_date_sync : aucune source de dates disponible, abandon")
         return
 
-    site_ids = list(rss_map.keys())
+    site_ids = sorted(set(rss_map.keys()) | set(api_dates.keys()))
 
     # ── 1. Mise à jour f95_jeux.f95_date_maj ─────────────────────────────────
     try:
@@ -137,19 +149,23 @@ async def rss_date_sync():
             for r in (res.data or [])
         }
 
-        for tid, rss_date in rss_map.items():
+        for tid in site_ids:
+            rss_date = rss_map.get(tid)
+            api_date = api_dates.get(tid)
+            date_to_use = api_date or rss_date
+            if not date_to_use:
+                continue
             current = existing_f95.get(tid)
-            # Mise à jour si : colonne vide, placeholder, ou date RSS plus récente
             should_update = (
                 current is None
                 or str(current) == _PLACEHOLDER_DATE
-                or str(current) < rss_date
+                or str(current) < date_to_use
             )
             if not should_update:
                 continue
             try:
                 sb.table("f95_jeux").update({
-                    "f95_date_maj": rss_date,
+                    "f95_date_maj": date_to_use,
                     "updated_at"  : now,
                 }).eq("site_id", tid).execute()
                 updated_f95 += 1
@@ -181,26 +197,27 @@ async def rss_date_sync():
                 .execute()
 
             for row in (res_coll.data or []):
-                tid      = int(row["f95_thread_id"])
+                tid = int(row["f95_thread_id"])
                 rss_date = rss_map.get(tid)
-                if not rss_date:
+                api_date = api_dates.get(tid)
+                date_to_use = api_date or rss_date
+                if not date_to_use:
                     continue
 
                 current_col = row.get("f95_date_maj")
                 should_update = (
                     current_col is None
                     or str(current_col) == _PLACEHOLDER_DATE
-                    or str(current_col) < rss_date
+                    or str(current_col) < date_to_use
                 )
                 if not should_update:
                     continue
 
                 try:
-                    # Mettre à jour la colonne dédiée ET le JSONB (rétrocompat)
                     sd = dict(row.get("scraped_data") or {})
-                    sd["f95_date_maj"] = rss_date
+                    sd["f95_date_maj"] = date_to_use
                     sb.table("user_collection").update({
-                        "f95_date_maj": rss_date,
+                        "f95_date_maj": date_to_use,
                         "scraped_data": sd,
                         "updated_at"  : now,
                     }).eq("id", row["id"]).execute()
@@ -464,12 +481,22 @@ async def configurable_date_refresh():
         else:
             logger.info("[scheduler] configurable_date_refresh : %d jeux à scraper", len(jeux))
 
-            # ── 5. Enrichir les dates via scraping ─────────────────────────
+            # ── 5. Enrichir les dates : API publique d'abord, scraping en secours ─
             async with aiohttp.ClientSession() as session:
+                api_dates: dict[int, str] = {}
+                try:
+                    api_index = await fetch_public_games_index(session, timeout_seconds=60)
+                    api_dates = build_api_date_map(api_index)
+                except Exception as api_err:
+                    logger.warning(
+                        "[scheduler] configurable_date_refresh : API publique indisponible : %s",
+                        api_err,
+                    )
                 date_map = await enrich_dates_with_fallback(
                     session,
                     jeux=jeux,
-                    rss_date_map={},    # pas de RSS : on scrape directement
+                    rss_date_map={},
+                    api_date_map=api_dates,
                     scrape_delay=3.0,
                 )
 

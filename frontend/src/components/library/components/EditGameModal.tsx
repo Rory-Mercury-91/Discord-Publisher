@@ -115,7 +115,7 @@ export default function EditGameModal({ entry, onClose, onSubmit }: EditGameModa
     try {
       const isNumeric = /^\d+$/.test(raw);
       const body: Record<string, unknown> = isNumeric ? { f95_thread_id: parseInt(raw, 10) } : { url: raw };
-      body.translate_synopsis = true;
+      body.translate_synopsis = false;
 
       const headers = await createApiHeaders(key);
       const res = await fetch(`${base}/api/collection/resolve`, {

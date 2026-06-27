@@ -61,7 +61,7 @@ export default function ConfigHelp() {
           <section className="help-section help-section--info">
             <h4 className="help-section__title">🤖 Enrichissement automatique</h4>
             <p>
-              Lancez l'enrichissement massif des fiches jeux : récupération des synopsis anglais sur F95Zone, traduction automatique, et sauvegarde dans Supabase.
+              Lancez l'enrichissement massif des fiches jeux : récupération des synopsis FR depuis l'API publique F95 France (puis catalogue synchronisé), avec traduction automatique uniquement en secours.
             </p>
             <ul>
               <li>Bouton « Lancer l'enrichissement » avec suivi en temps réel (progression + logs).</li>

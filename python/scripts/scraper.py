@@ -8,7 +8,7 @@ Fonctions disponibles :
   - extract_f95_thread_id()         : extrait l'ID numérique depuis une URL
   - extract_thread_updated_from_html() : date "Thread Updated" depuis du HTML
   - scrape_thread_updated_date()    : date "Thread Updated" via requête HTTP
-  - enrich_dates_with_fallback()    : hybride RSS + scraping pour enrichir date_maj
+  - enrich_dates_with_fallback()    : hybride API + RSS + scraping pour enrichir date_maj
 
 Dépendances : aiohttp, beautifulsoup4, lxml
 Logger       : [scraper]
@@ -417,6 +417,7 @@ async def enrich_dates_with_fallback(
     jeux: list[dict],
     rss_date_map: dict[int, str],
     *,
+    api_date_map: dict[int, str] | None = None,
     cookies: Optional[str] = None,
     scrape_delay: float = 2.0,
     progress_callback=None,
@@ -424,14 +425,16 @@ async def enrich_dates_with_fallback(
     """
     Stratégie hybride pour récupérer les dates de MAJ sur l'ensemble d'un catalogue :
 
-      - Jeux présents dans rss_date_map  → date extraite du RSS, aucune requête HTTP.
-      - Jeux absents du RSS              → scraping de la page du thread.
+      - Jeux présents dans api_date_map → date API publique F95 France (prioritaire).
+      - Jeux présents dans rss_date_map  → date extraite du RSS.
+      - Jeux absents des deux             → scraping de la page du thread (dernier recours).
 
     Paramètres
     ----------
     session           : aiohttp.ClientSession ouvert par l'appelant.
     jeux              : Liste de dicts {"site_id": int, "nom_url": str, ...}.
     rss_date_map      : {site_id: "YYYY-MM-DDTHH:MM:SS+00:00"} issu du flux RSS.
+    api_date_map      : {site_id: "YYYY-MM-DD"} issu de l'API publique F95 France.
     cookies           : Cookie xf_session optionnel pour les jeux 18+.
     scrape_delay      : Délai en secondes entre chaque scrape (défaut 2 s).
     progress_callback : Coroutine async(current, total, site_id, date) optionnelle.
@@ -442,21 +445,34 @@ async def enrich_dates_with_fallback(
     """
     result: dict[int, str] = {}
     to_scrape: list[dict] = []
+    api_dates = api_date_map or {}
+    api_hit_count = 0
+    rss_hit_count = 0
 
-    # Phase 1 : dates disponibles dans le RSS (sans requête HTTP)
     for jeu in jeux:
         sid = jeu.get("site_id")
         if not sid:
             continue
-        rss_iso = rss_date_map.get(int(sid))
+        sid_int = int(sid)
+
+        api_date = api_dates.get(sid_int)
+        if api_date:
+            result[sid_int] = api_date[:10]
+            api_hit_count += 1
+            continue
+
+        rss_iso = rss_date_map.get(sid_int)
         if rss_iso:
-            result[int(sid)] = rss_iso[:10]  # tronquer "YYYY-MM-DDTHH:..." → "YYYY-MM-DD"
+            result[sid_int] = rss_iso[:10]
+            rss_hit_count += 1
         else:
             to_scrape.append(jeu)
 
     logger.info(
-        "[scraper] enrich_dates : %d depuis RSS, %d à scraper",
-        len(result), len(to_scrape),
+        "[scraper] enrich_dates : %d depuis API, %d depuis RSS, %d à scraper",
+        api_hit_count,
+        rss_hit_count,
+        len(to_scrape),
     )
 
     # Phase 2 : scraper les jeux absents du RSS

@@ -6,6 +6,7 @@ import aiohttp
 from aiohttp import web
 
 from api_key_auth import _auth_request
+from f95_public_api_client import find_public_game_by_thread_id, public_game_to_scraped_data
 from nexus_export import parse_nexus_db
 from scraper import _PLACEHOLDER_DATE, extract_f95_thread_id, scrape_f95_game_data
 from supabase_client import _get_supabase
@@ -160,9 +161,38 @@ async def collection_resolve(request):
                     catalogue_err,
                 )
 
-        # ── Priorité 2 : scraping (jeu absent du catalogue) ──────────────────
+        # ── Priorité 2 : API publique F95 France ─────────────────────────────
+        async with aiohttp.ClientSession() as session:
+            try:
+                api_game = await find_public_game_by_thread_id(session, f95_thread_id)
+                if api_game:
+                    rss_date = await _get_date_from_rss(session, f95_thread_id)
+                    scraped_data = public_game_to_scraped_data(api_game, f95_date_override=rss_date)
+                    title = api_game.get("name")
+                    nom_url = (api_game.get("link") or "").strip() or url
+                    logger.info(
+                        "[api] collection_resolve : thread %d trouvé dans l'API publique ('%s') — scraping ignoré",
+                        f95_thread_id, title,
+                    )
+                    return with_cors(request, web.json_response({
+                        "ok"            : True,
+                        "f95_thread_id" : f95_thread_id,
+                        "title"         : title,
+                        "f95_url"       : nom_url,
+                        "scraped_data"  : scraped_data,
+                        "f95_date_maj"  : scraped_data.get("f95_date_maj"),
+                        "from_catalogue": False,
+                        "from_public_api": True,
+                    }))
+            except Exception as api_err:
+                logger.warning(
+                    "[api] collection_resolve : API publique indisponible (fallback scraping) : %s",
+                    api_err,
+                )
+
+        # ── Priorité 3 : scraping (jeu absent du catalogue et de l'API) ─────
         cookies = (data.get("cookies") or "").strip() or None
-        translate_synopsis = data.get("translate_synopsis", True)
+        translate_synopsis = data.get("translate_synopsis", False)
         synopsis_en = None
         synopsis_fr = None
         rss_date = None

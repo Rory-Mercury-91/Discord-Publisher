@@ -620,7 +620,7 @@ export default function GameDetailModal({
                 disabled={enrichingSynopsis || editingSynopsis || syncingFromApi}
                 title="Traduire le synopsis EN → FR pour ce jeu"
               >
-                {enrichingSynopsis ? '⏳ Traduction…' : '🌐 Traduire synopsis'}
+                {enrichingSynopsis ? '⏳ Enrichissement…' : '🌐 Enrichir synopsis (API)'}
               </button>
             )}
 

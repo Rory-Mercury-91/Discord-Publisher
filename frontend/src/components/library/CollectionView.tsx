@@ -222,21 +222,20 @@ export default function CollectionView({ view, setView }: CollectionViewProps) {
     if (!collData?.scraped_data) return;
     const sd = collData.scraped_data as Record<string, any>;
     if (sd.synopsis_fr) return;
-    const synopsisEn = sd.synopsis_en || sd.synopsis;
-    if (!synopsisEn) return;
     try {
-      const res = await fetch(`${base}/api/translate`, {
+      const res = await fetch(`${base}/api/collection/resolve`, {
         method: 'POST',
         headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: synopsisEn, source_lang: 'en', target_lang: 'fr' }),
+        body: JSON.stringify({ f95_thread_id: threadId }),
       });
       if (!res.ok) return;
       const json = await res.json();
-      if (json.ok && json.translated) {
+      const resolved = json.scraped_data as Record<string, any> | undefined;
+      if (json.ok && resolved?.synopsis_fr) {
         await sb.from('user_collection')
-          .update({ scraped_data: { ...sd, synopsis_fr: json.translated } })
+          .update({ scraped_data: { ...sd, ...resolved } })
           .eq('id', collData.id);
-        showToast('✅ Synopsis traduit automatiquement', 'success');
+        showToast('✅ Synopsis récupéré depuis l\'API F95 France', 'success');
         refresh();
       }
     } catch { /* silencieux */ }

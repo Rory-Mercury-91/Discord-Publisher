@@ -8,16 +8,22 @@ import hashlib
 import logging
 import os
 import re
+import time
 from typing import Any
 
 import aiohttp
 
 logger = logging.getLogger("f95-public-api")
 
-F95_PUBLIC_API_BASE = (os.getenv("F95_PUBLIC_API_BASE") or "https://f95france.site").rstrip("/")
-F95_PUBLIC_API_GAMES_URL = f"{F95_PUBLIC_API_BASE}/api/games"
-F95_PUBLIC_API_TRANSLATORS_URL = f"{F95_PUBLIC_API_BASE}/api/translators"
+F95_PUBLIC_API_BASE = (os.getenv("F95_PUBLIC_API_BASE") or "https://api.f95france.site").rstrip("/")
+F95_PUBLIC_API_GAMES_URL = f"{F95_PUBLIC_API_BASE}/v1/games"
+F95_PUBLIC_API_TRANSLATORS_URL = f"{F95_PUBLIC_API_BASE}/v1/translators"
 F95_PUBLIC_API_KEY = (os.getenv("F95_PUBLIC_API_KEY") or os.getenv("F95FR_API_KEY") or "").strip()
+
+# Cache court pour éviter de re-télécharger toute la liste à chaque résolution unitaire.
+_GAMES_INDEX_CACHE: dict[int, dict[str, Any]] | None = None
+_GAMES_INDEX_CACHE_AT: float = 0.0
+_GAMES_INDEX_TTL_SECONDS = 300.0
 
 _WEBSITE_TO_SITE = {
     "f95z"  : "F95Zone",
@@ -69,6 +75,94 @@ def _normalize_thread_id(raw: Any, link: str | None) -> int | None:
         if match:
             return int(match.group(1))
     return None
+
+
+def _clean_optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def extract_game_synopsis(game: dict[str, Any]) -> tuple[str | None, str | None]:
+    """
+    Extrait synopsis EN/FR depuis un objet Game de l'API publique.
+    """
+    synopsis_en = _clean_optional_text(game.get("description"))
+    synopsis_fr = _clean_optional_text(game.get("descriptionFr"))
+    return synopsis_en, synopsis_fr
+
+
+def build_games_index_by_thread_id(games: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    """
+    Indexe les jeux API par threadId (site_id F95/LewdCorner).
+    """
+    index: dict[int, dict[str, Any]] = {}
+    for game in games:
+        if not isinstance(game, dict):
+            continue
+        thread_id = _normalize_thread_id(game.get("threadId"), game.get("link"))
+        if thread_id is not None:
+            index[thread_id] = game
+    return index
+
+
+def build_api_date_map(games_index: dict[int, dict[str, Any]]) -> dict[int, str]:
+    """
+    Extrait {threadId: YYYY-MM-DD} depuis l'index API (champ updatedAt du jeu).
+    """
+    result: dict[int, str] = {}
+    for thread_id, game in games_index.items():
+        date_value = _iso_to_yyyy_mm_dd(game.get("updatedAt"))
+        if date_value and date_value != "2020-01-01":
+            result[int(thread_id)] = date_value
+    return result
+
+
+def _pick_primary_translation(game: dict[str, Any]) -> dict[str, Any]:
+    translations = game.get("translations")
+    if not isinstance(translations, list):
+        return {}
+    valid = [tr for tr in translations if isinstance(tr, dict)]
+    if not valid:
+        return {}
+    ac_rows = [tr for tr in valid if bool(tr.get("ac"))]
+    return (ac_rows or valid)[0]
+
+
+def public_game_to_scraped_data(
+    game: dict[str, Any],
+    *,
+    f95_date_override: str | None = None,
+) -> dict[str, Any]:
+    """
+    Convertit un jeu API publique vers le format scraped_data utilisé en collection.
+    """
+    synopsis_en, synopsis_fr = extract_game_synopsis(game)
+    api_date = _iso_to_yyyy_mm_dd(game.get("updatedAt"))
+    f95_date = api_date or f95_date_override
+    translation = _pick_primary_translation(game)
+
+    data: dict[str, Any] = {
+        "name"        : game.get("name"),
+        "version"     : game.get("gameVersion"),
+        "image"       : game.get("image"),
+        "tags"        : game.get("tags"),
+        "synopsis"    : synopsis_en,
+        "synopsis_en" : synopsis_en,
+        "synopsis_fr" : synopsis_fr,
+        "f95_date_maj": f95_date,
+        "source"      : "f95_public_api",
+    }
+    if translation:
+        data.update({
+            "trad_ver"          : translation.get("tversion"),
+            "lien_trad"         : translation.get("tlink"),
+            "status"            : _to_legacy_status(translation.get("status")),
+            "type"              : translation.get("gameType"),
+            "type_de_traduction": _to_legacy_trad_type(translation.get("ttype")),
+        })
+    return {k: v for k, v in data.items() if v is not None}
 
 
 def _iso_to_yyyy_mm_dd(value: Any) -> str | None:
@@ -127,7 +221,7 @@ def map_public_games_to_legacy_rows(
     translator_name_by_id: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Aplati /api/games (avec include=translations) vers le format f95_jeux.
+    Aplati /v1/games (avec include=translations) vers le format f95_jeux.
 
     Correspondance des champs :
       Game API          → f95_jeux
@@ -136,6 +230,7 @@ def map_public_games_to_legacy_rows(
       tags              → tags
       image             → image
       description       → synopsis_en
+      descriptionFr     → synopsis_fr
       website           → site  (f95z→F95Zone, lc→LewdCorner)
       threadId          → site_id
       link              → nom_url
@@ -162,7 +257,7 @@ def map_public_games_to_legacy_rows(
         name         = (game.get("name") or "").strip()
         link         = (game.get("link") or "").strip()
         site_id      = _normalize_thread_id(game.get("threadId"), link)
-        description  = (game.get("description") or "").strip() or None
+        description, description_fr = extract_game_synopsis(game)
         site_label   = _to_legacy_site_label(game.get("website"))
         game_version = game.get("gameVersion")
         tags         = game.get("tags")
@@ -216,7 +311,7 @@ def map_public_games_to_legacy_rows(
                 "tags"              : tags,
                 "type"              : tr.get("gameType"),
                 "traducteur"        : translator_name,
-                # traducteur_url : champ "pages" du traducteur depuis /api/translators
+                # traducteur_url : champ "pages" du traducteur depuis /v1/translators
                 "traducteur_url"    : traducteur_url,
                 "type_de_traduction": _to_legacy_trad_type(tr.get("ttype")),
                 "ac"                : "1" if bool(tr.get("ac")) else "",
@@ -226,7 +321,7 @@ def map_public_games_to_legacy_rows(
                 "date_maj"          : _iso_to_yyyy_mm_dd(tr.get("updatedAt")) or f95_date_maj,
                 "f95_date_maj"      : f95_date_maj,
                 "synopsis_en"       : description,
-                "synopsis_fr"       : None,
+                "synopsis_fr"       : description_fr,
             }
             rows.append(row)
 
@@ -267,6 +362,54 @@ def _extract_translator_url(pages: Any) -> str | None:
     return None
 
 
+async def fetch_public_games_index(
+    session: aiohttp.ClientSession,
+    *,
+    timeout_seconds: int = 60,
+    force_refresh: bool = False,
+) -> dict[int, dict[str, Any]]:
+    """
+    Retourne {threadId → Game} avec cache mémoire court.
+    """
+    global _GAMES_INDEX_CACHE, _GAMES_INDEX_CACHE_AT
+
+    now = time.monotonic()
+    if (
+        not force_refresh
+        and _GAMES_INDEX_CACHE is not None
+        and (now - _GAMES_INDEX_CACHE_AT) < _GAMES_INDEX_TTL_SECONDS
+    ):
+        return _GAMES_INDEX_CACHE
+
+    games = await fetch_public_games(session, timeout_seconds=timeout_seconds)
+    _GAMES_INDEX_CACHE = build_games_index_by_thread_id(games)
+    _GAMES_INDEX_CACHE_AT = now
+    logger.info("[f95-public-api] index threadId : %d jeu(x)", len(_GAMES_INDEX_CACHE))
+    return _GAMES_INDEX_CACHE
+
+
+async def find_public_game_by_thread_id(
+    session: aiohttp.ClientSession,
+    thread_id: int,
+    *,
+    timeout_seconds: int = 60,
+    force_refresh: bool = False,
+) -> dict[str, Any] | None:
+    """
+    Recherche un jeu API publique par threadId (site_id).
+    """
+    try:
+        tid = int(thread_id)
+    except (TypeError, ValueError):
+        return None
+    index = await fetch_public_games_index(
+        session,
+        timeout_seconds=timeout_seconds,
+        force_refresh=force_refresh,
+    )
+    return index.get(tid)
+
+
 async def fetch_public_games(session: aiohttp.ClientSession, *, timeout_seconds: int = 60) -> list[dict[str, Any]]:
     """
     Récupère les jeux depuis l'API publique F95 France.
@@ -290,7 +433,7 @@ async def fetch_public_games(session: aiohttp.ClientSession, *, timeout_seconds:
 
         payload = await resp.json()
         if not isinstance(payload, list):
-            raise RuntimeError("Réponse /api/games invalide (liste attendue)")
+            raise RuntimeError("Réponse /v1/games invalide (liste attendue)")
 
         logger.info("[f95-public-api] %d jeu(x) récupéré(s)", len(payload))
         return payload
@@ -323,7 +466,7 @@ async def fetch_public_translators(
             raise RuntimeError(f"API publique /translators HTTP {resp.status}: {body[:200]}")
         payload = await resp.json()
         if not isinstance(payload, list):
-            raise RuntimeError("Réponse /api/translators invalide (liste attendue)")
+            raise RuntimeError("Réponse /v1/translators invalide (liste attendue)")
 
         mapping: dict[str, dict[str, str | None]] = {}
         for row in payload:

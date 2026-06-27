@@ -469,10 +469,10 @@ export default function EnrichmentSettings() {
                 fontSize: 12, color: 'var(--muted)', lineHeight: 1.6,
               }}>
                 ℹ️ Sur les <strong style={{ color: 'var(--text)' }}>{stats.missing_synopsis_fr}</strong> groupes
-                sans synopsis FR, <strong style={{ color: '#10b981' }}>{stats.enrichable_count}</strong> ont
-                une URL F95Zone et peuvent être enrichis automatiquement.
+                sans synopsis FR, <strong style={{ color: '#10b981' }}>{stats.enrichable_count}</strong> peuvent
+                être enrichis via l'API publique F95 France ou le catalogue synchronisé.
                 Les <strong style={{ color: '#f59e0b' }}>{stats.missing_synopsis_fr - stats.enrichable_count}</strong> restants
-                sont des entrées LewdCorner, sans URL ou avec une URL non reconnue.
+                n'ont pas d'identifiant thread exploitable.
               </div>
             )}
           </>
@@ -481,13 +481,13 @@ export default function EnrichmentSettings() {
 
       {/* ════════════ Enrichissement synopsis ════════════ */}
       <section className="server-section">
-        <h4 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>🌐 Traduction des synopsis</h4>
+        <h4 style={{ margin: '0 0 6px', fontSize: '0.9rem' }}>🌐 Synopsis FR depuis l'API publique</h4>
         <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)' }}>
-          Traduit les synopsis anglais (EN → FR) via Google Translate pour les jeux
-          qui en sont dépourvus. Les synopsis EN proviennent du catalogue{' '}
-          <code style={{ fontSize: 11 }}>f95_jeux</code> alimenté par l'API publique —
-          aucun scraping F95Zone n'est effectué. Si un jeu n'a pas encore de synopsis EN,
-          lancez d'abord une synchronisation catalogue (bouton ci-dessous).
+          Complète les synopsis FR manquants en priorité depuis l'API publique F95 France
+          (<code style={{ fontSize: 11 }}>descriptionFr</code>), puis depuis le catalogue{' '}
+          <code style={{ fontSize: 11 }}>f95_jeux</code> synchronisé.
+          La traduction automatique Google n'est utilisée qu'en dernier recours.
+          Lancez d'abord une synchronisation catalogue si des synopsis EN manquent.
           Les synopsis déjà présents sont ignorés sauf avec l'option « Forcer ».
         </p>
 
@@ -499,12 +499,12 @@ export default function EnrichmentSettings() {
               onChange={e => setEnrichForce(e.target.checked)}
               disabled={enrichRunning}
             />
-            Forcer la re-traduction (écraser les synopsis existants)
+            Forcer la ré-enrichissement (écraser les synopsis existants)
           </label>
 
           {!enrichRunning ? (
             <button className="server-btn server-btn--default" onClick={() => startEnrichment()}>
-              🌐 Lancer la traduction
+              🌐 Lancer l'enrichissement synopsis
             </button>
           ) : (
             <button className="server-btn server-btn--danger" onClick={() => abortRef.current?.abort()}>

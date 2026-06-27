@@ -8,6 +8,11 @@ import aiohttp
 from aiohttp import web
 
 from api_key_auth import _auth_request
+from f95_public_api_client import (
+    build_api_date_map,
+    extract_game_synopsis,
+    fetch_public_games_index,
+)
 from scraper import _PLACEHOLDER_DATE, scrape_f95_synopsis, scrape_thread_updated_date
 from supabase_client import _get_supabase, _norm_nom_url
 from translator import translate_text
@@ -128,11 +133,9 @@ async def scrape_enrich(request):
         groups: dict[str, list[dict]] = {}
         for jeu in all_jeux:
             url = (jeu.get("nom_url") or "").strip()
-            # Clé de groupement : URL normalisée si disponible, sinon id de ligne
             if url and ("f95zone.to" in url.lower() or "lewdcorner.com" in url.lower()):
                 norm_url = _norm_nom_url(url) or url
             elif jeu.get("id"):
-                # Pas d'URL reconnue mais synopsis_en présent → clé par id
                 norm_url = f"id:{jeu['id']}"
             else:
                 continue
@@ -154,7 +157,10 @@ async def scrape_enrich(request):
             return response
 
         await send_json({
-            "log": f"🎮 {total} groupe(s) à enrichir — mode aligné API publique (scraping seulement avec force_scrape=true)",
+            "log": (
+                f"🎮 {total} groupe(s) à enrichir — source prioritaire : API publique F95 France "
+                f"(scraping F95Zone uniquement si force_scrape=true)"
+            ),
             "progress": {"current": 0, "total": total},
         })
 
@@ -163,38 +169,71 @@ async def scrape_enrich(request):
         now_iso = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
 
         async with aiohttp.ClientSession() as session:
+            await send_json({"log": "🌐 Chargement du catalogue API publique F95 France…"})
+            try:
+                api_index = await fetch_public_games_index(session, timeout_seconds=60)
+                await send_json({"log": f"✅ {len(api_index)} jeu(x) indexé(s) depuis l'API publique"})
+            except Exception as api_err:
+                api_index = {}
+                await send_json({"log": f"⚠️ API publique indisponible ({api_err}) — fallback local/scraping limité"})
+
             for idx, (norm_url, rows) in enumerate(to_enrich, 1):
                 if client_disconnected[0]:
                     break
                 if not await send_json({"progress": {"current": idx, "total": total}}):
                     break
 
-                source_url  = (rows[0].get("nom_url") or "").strip()
-                game_label  = rows[0].get("nom_du_jeu") or source_url or norm_url
+                source_url = (rows[0].get("nom_url") or "").strip()
+                game_label = rows[0].get("nom_du_jeu") or source_url or norm_url
+                site_id_raw = rows[0].get("site_id")
                 try:
+                    site_id = int(site_id_raw) if site_id_raw is not None else None
+                except (TypeError, ValueError):
+                    site_id = None
+
+                try:
+                    api_game = api_index.get(site_id) if site_id is not None else None
+                    api_synopsis_en, api_synopsis_fr = extract_game_synopsis(api_game or {})
+
                     existing_synopsis_en = next(
                         (_to_clean_text(r.get("synopsis_en")) for r in rows if _to_clean_text(r.get("synopsis_en"))),
                         "",
                     )
-                    # force_scrape jamais envoyé par l'UI — conservé comme filet de
-                    # secours admin uniquement, et uniquement pour les URLs F95Zone.
-                    if existing_synopsis_en and not force_scrape:
-                        synopsis_en = existing_synopsis_en
-                    elif force_scrape and source_url and "f95zone.to" in source_url.lower():
+                    existing_synopsis_fr = next(
+                        (_to_clean_text(r.get("synopsis_fr")) for r in rows if _to_clean_text(r.get("synopsis_fr"))),
+                        "",
+                    )
+
+                    synopsis_en = api_synopsis_en or existing_synopsis_en
+                    synopsis_fr = api_synopsis_fr or (existing_synopsis_fr if not force else "")
+
+                    if not synopsis_en and force_scrape and source_url and "f95zone.to" in source_url.lower():
                         scraped = await scrape_f95_synopsis(session, source_url, cookies=f95_cookies)
                         synopsis_en = _to_clean_text(scraped[0] if isinstance(scraped, tuple) else scraped)
-                    else:
-                        synopsis_en = ""
 
                     if not synopsis_en:
-                        failed.append({"nom_url": source_url, "reason": "synopsis_absent_source_principale"})
-                        await send_json({"log": f"⏭️ [{idx}/{total}] {game_label} — synopsis EN absent du catalogue (sync API requise)"})
+                        failed.append({"nom_url": source_url, "reason": "synopsis_absent_api_et_catalogue"})
+                        await send_json({
+                            "log": (
+                                f"⏭️ [{idx}/{total}] {game_label} — synopsis EN absent "
+                                f"(sync catalogue ou API publique requise)"
+                            ),
+                        })
                         continue
 
-                    synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
+                    source_fr = "api" if api_synopsis_fr else "catalogue"
                     if not synopsis_fr:
-                        failed.append({"nom_url": source_url, "reason": "traduction_echouee"})
-                        await send_json({"log": f"❌ [{idx}/{total}] {game_label} — traduction échouée"})
+                        if not force_scrape:
+                            synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
+                            source_fr = "traduction_auto"
+                            if not synopsis_fr:
+                                failed.append({"nom_url": source_url, "reason": "traduction_echouee"})
+                                await send_json({"log": f"❌ [{idx}/{total}] {game_label} — traduction échouée"})
+                                continue
+
+                    if not synopsis_fr:
+                        failed.append({"nom_url": source_url, "reason": "synopsis_fr_absent"})
+                        await send_json({"log": f"⏭️ [{idx}/{total}] {game_label} — synopsis FR indisponible"})
                         continue
 
                     for row in rows:
@@ -208,7 +247,14 @@ async def scrape_enrich(request):
                         }).eq("id", row_id).execute()
 
                     enriched += 1
-                    await send_json({"log": f"✅ [{idx}/{total}] {game_label} — synopsis FR traduit ({len(rows)} ligne(s))"})
+                    fr_label = {
+                        "api": "FR depuis API publique",
+                        "catalogue": "FR conservé du catalogue",
+                        "traduction_auto": "FR traduit automatiquement (secours)",
+                    }.get(source_fr, "FR mis à jour")
+                    await send_json({
+                        "log": f"✅ [{idx}/{total}] {game_label} — {fr_label} ({len(rows)} ligne(s))",
+                    })
                 except Exception as e:
                     logger.warning("[api] scrape_enrich group=%s : %s", norm_url, e)
                     failed.append({"nom_url": source_url or norm_url, "reason": str(e)})
@@ -229,7 +275,6 @@ async def scrape_enrich(request):
             try:
                 await response.write_eof()
             except Exception:
-                # Le client peut couper la connexion pendant un stream NDJSON.
                 pass
     return response
 
@@ -349,6 +394,7 @@ async def scrape_missing_dates(request):
         placeholder_count = 0
         login_blocked = 0
         rss_hits = 0
+        api_hits = 0
         now_iso = datetime.datetime.now(ZoneInfo("UTC")).isoformat()
 
         await send({
@@ -360,6 +406,15 @@ async def scrape_missing_dates(request):
         })
 
         async with aiohttp.ClientSession() as session:
+            api_index: dict[int, dict] = {}
+            api_dates: dict[int, str] = {}
+            try:
+                api_index = await fetch_public_games_index(session, timeout_seconds=60)
+                api_dates = build_api_date_map(api_index)
+                await send({"log": f"🌐 API publique : {len(api_dates)} date(s) disponibles"})
+            except Exception as api_err:
+                await send({"log": f"⚠️ API publique indisponible ({api_err}), fallback RSS/scraping"})
+
             await send({"log": "📡 Chargement du flux RSS F95Zone…"})
             rss_date_map: dict[int, str] = {}
             try:
@@ -401,9 +456,15 @@ async def scrape_missing_dates(request):
                     break
                 src_label = f"f95_jeux×{len(site_ids)}" if source == "f95_jeux" else "collection"
                 primary_sid = site_ids[0] if site_ids else None
+                api_date = api_dates.get(primary_sid) if primary_sid else None
                 rss_date = rss_date_map.get(primary_sid) if primary_sid else None
 
-                if rss_date:
+                if api_date:
+                    date = api_date
+                    api_hits += 1
+                    if not await send({"log": f"🌐 [{idx}/{total}] {nom_url.split('/')[-1] or nom_url} ({src_label}) → {date} (API)"}):
+                        break
+                elif rss_date:
                     date = rss_date
                     rss_hits += 1
                     if not await send({"log": f"📡 [{idx}/{total}] {nom_url.split('/')[-1] or nom_url} ({src_label}) → {date} (RSS)"}):
@@ -443,11 +504,11 @@ async def scrape_missing_dates(request):
                             placeholder_count += 1
                     except Exception as e:
                         logger.warning("[api] scrape_missing_dates user_collection id=%s : %s", entry.get("collection_id"), e)
-                if not rss_date and idx < total and not client_disconnected[0]:
+                if not api_date and not rss_date and idx < total and not client_disconnected[0]:
                     await asyncio.sleep(scrape_delay)
 
         if not client_disconnected[0]:
-            parts = [f"✅ {updated_count} date(s) (dont 📡 {rss_hits} depuis RSS)"]
+            parts = [f"✅ {updated_count} date(s) (dont 🌐 {api_hits} API, 📡 {rss_hits} RSS)"]
             if placeholder_count:
                 parts.append(f"⬜ {placeholder_count} placeholder(s)")
             if login_blocked:

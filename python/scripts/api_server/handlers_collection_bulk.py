@@ -8,9 +8,9 @@ import aiohttp
 from aiohttp import web
 
 from api_key_auth import _auth_request
+from f95_public_api_client import find_public_game_by_thread_id, public_game_to_scraped_data
 from scraper import scrape_f95_game_data
 from supabase_client import _get_supabase
-from translator import translate_text
 
 from .middleware import with_cors
 
@@ -562,7 +562,7 @@ async def collection_enrich_entries(request):
         missing = total - matched
         log_msg = f"✅ {matched} correspondance(s) f95_jeux"
         if scrape_missing and missing > 0:
-            log_msg += f" — {missing} à scraper depuis F95Zone ({scrape_delay:.0f}s entre chaque)"
+            log_msg += f" — {missing} via API publique F95 France (scraping en secours)"
         await send({"log": log_msg})
 
         updated_count = 0
@@ -572,75 +572,67 @@ async def collection_enrich_entries(request):
         entries_with_f95 = [e for e in entries if f95_map.get(e["f95_thread_id"])]
         entries_without_f95 = [e for e in entries if not f95_map.get(e["f95_thread_id"])]
 
-        async with aiohttp.ClientSession() as session_translate:
-            for idx, entry in enumerate(entries_with_f95, 1):
-                if client_disconnected[0]:
-                    break
-                if not await send({"progress": {"current": idx, "total": total}}):
-                    break
+        # Phase 1 : jeux avec correspondance f95_jeux (données API synchronisées)
+        for idx, entry in enumerate(entries_with_f95, 1):
+            if client_disconnected[0]:
+                break
+            if not await send({"progress": {"current": idx, "total": total}}):
+                break
 
-                tid = entry["f95_thread_id"]
-                f95 = f95_map.get(tid)
-                title = entry.get("title") or f"ID {tid}"
-                existing_scraped = entry.get("scraped_data") or {}
-                if isinstance(existing_scraped, str):
-                    try:
-                        existing_scraped = json.loads(existing_scraped)
-                    except Exception:
-                        existing_scraped = {}
-
-                new_scraped = dict(existing_scraped)
-                changed_fields = []
-                for f95_field, scraped_field in f95_to_scraped.items():
-                    if f95_field not in fields_to_sync:
-                        continue
-                    f95_val = f95.get(f95_field)
-                    if f95_val is not None and new_scraped.get(scraped_field) != f95_val:
-                        new_scraped[scraped_field] = f95_val
-                        changed_fields.append(scraped_field)
-
-                synopsis_en_available = new_scraped.get("synopsis") or new_scraped.get("synopsis_en")
-                needs_translation = synopsis_en_available and not new_scraped.get("synopsis_fr") and not f95.get("synopsis_fr")
-                if needs_translation:
-                    if not await send({"log": f"🌐 [{idx}/{total}] {title} — Traduction EN→FR du synopsis…"}):
-                        break
-                    try:
-                        synopsis_fr = await translate_text(session_translate, synopsis_en_available, "en", "fr")
-                        if synopsis_fr:
-                            new_scraped["synopsis_fr"] = synopsis_fr
-                            changed_fields.append("synopsis_fr")
-                    except Exception as te:
-                        logger.warning("[api] enrich-entries phase1 translation %s: %s", title, te)
-
-                new_title = f95.get("nom_du_jeu") or entry.get("title")
-                new_f95_url = f95.get("nom_url") or entry.get("f95_url")
-                title_changed = bool(new_title and new_title != entry.get("title"))
-                if not changed_fields and not title_changed:
-                    if not await send({"log": f"⏭️ [{idx}/{total}] {title} — déjà à jour"}):
-                        break
-                    skipped_count += 1
-                    continue
-
+            tid = entry["f95_thread_id"]
+            f95 = f95_map.get(tid)
+            title = entry.get("title") or f"ID {tid}"
+            existing_scraped = entry.get("scraped_data") or {}
+            if isinstance(existing_scraped, str):
                 try:
-                    update_payload: dict = {"scraped_data": new_scraped, "updated_at": now}
-                    if new_title:
-                        update_payload["title"] = new_title
-                    if new_f95_url:
-                        update_payload["f95_url"] = new_f95_url
-                    sb.table("user_collection").update(update_payload).eq("id", entry["id"]).eq("owner_id", owner_id).execute()
-                    fields_str = ", ".join(changed_fields[:4]) + ("…" if len(changed_fields) > 4 else "")
-                    if not await send({"log": f"✅ [{idx}/{total}] {new_title or title} — {fields_str or 'titre'}"}):
-                        break
-                    updated_count += 1
-                except Exception as e:
-                    logger.error("[api] enrich-entries update %s: %s", title, e)
-                    if not await send({"log": f"❌ [{idx}/{total}] {title} — erreur: {e}"}):
-                        break
+                    existing_scraped = json.loads(existing_scraped)
+                except Exception:
+                    existing_scraped = {}
+
+            new_scraped = dict(existing_scraped)
+            changed_fields = []
+            for f95_field, scraped_field in f95_to_scraped.items():
+                if f95_field not in fields_to_sync:
+                    continue
+                f95_val = f95.get(f95_field)
+                if f95_val is not None and new_scraped.get(scraped_field) != f95_val:
+                    new_scraped[scraped_field] = f95_val
+                    changed_fields.append(scraped_field)
+
+            new_title = f95.get("nom_du_jeu") or entry.get("title")
+            new_f95_url = f95.get("nom_url") or entry.get("f95_url")
+            title_changed = bool(new_title and new_title != entry.get("title"))
+            if not changed_fields and not title_changed:
+                if not await send({"log": f"⏭️ [{idx}/{total}] {title} — déjà à jour"}):
+                    break
+                skipped_count += 1
+                continue
+
+            try:
+                update_payload: dict = {"scraped_data": new_scraped, "updated_at": now}
+                if new_title:
+                    update_payload["title"] = new_title
+                if new_f95_url:
+                    update_payload["f95_url"] = new_f95_url
+                sb.table("user_collection").update(update_payload).eq("id", entry["id"]).eq("owner_id", owner_id).execute()
+                fields_str = ", ".join(changed_fields[:4]) + ("…" if len(changed_fields) > 4 else "")
+                if not await send({"log": f"✅ [{idx}/{total}] {new_title or title} — {fields_str or 'titre'}"}):
+                    break
+                updated_count += 1
+            except Exception as e:
+                logger.error("[api] enrich-entries update %s: %s", title, e)
+                if not await send({"log": f"❌ [{idx}/{total}] {title} — erreur: {e}"}):
+                    break
 
         if scrape_missing and entries_without_f95 and not client_disconnected[0]:
             base_idx = len(entries_with_f95)
             total_scrape = len(entries_without_f95)
-            await send({"log": f"🕷️ Démarrage du scraping F95Zone pour {total_scrape} entrée(s) sans données…"})
+            await send({
+                "log": (
+                    f"🌐 Récupération API publique F95 France pour {total_scrape} entrée(s) "
+                    f"sans correspondance f95_jeux (scraping F95Zone en dernier recours)…"
+                ),
+            })
             async with aiohttp.ClientSession() as session:
                 for s_idx, entry in enumerate(entries_without_f95, 1):
                     if client_disconnected[0]:
@@ -652,13 +644,49 @@ async def collection_enrich_entries(request):
                     tid = entry["f95_thread_id"]
                     title = entry.get("title") or f"ID {tid}"
                     f95_url = (entry.get("f95_url") or "").strip() or f"https://f95zone.to/threads/thread.{tid}/"
+
+                    existing_scraped = entry.get("scraped_data") or {}
+                    if isinstance(existing_scraped, str):
+                        try:
+                            existing_scraped = json.loads(existing_scraped)
+                        except Exception:
+                            existing_scraped = {}
+
+                    api_game = None
+                    try:
+                        api_game = await find_public_game_by_thread_id(session, tid)
+                    except Exception as api_err:
+                        logger.warning("[api] enrich-entries API publique %s: %s", title, api_err)
+
+                    if api_game:
+                        if not await send({"log": f"🌐 [{global_idx}/{total}] {title} — données API publique"}):
+                            break
+                        new_scraped = {**existing_scraped, **public_game_to_scraped_data(api_game)}
+                        new_title = api_game.get("name") or entry.get("title")
+                        try:
+                            update_payload = {"scraped_data": new_scraped, "updated_at": now}
+                            if new_title:
+                                update_payload["title"] = new_title
+                            if api_game.get("link"):
+                                update_payload["f95_url"] = api_game.get("link")
+                            sb.table("user_collection").update(update_payload).eq("id", entry["id"]).eq("owner_id", owner_id).execute()
+                            if not await send({"log": f"✅ [{global_idx}/{total}] {new_title or title} — API publique"}):
+                                break
+                            updated_count += 1
+                            scraped_count += 1
+                        except Exception as e:
+                            logger.error("[api] enrich-entries API update %s: %s", title, e)
+                            if not await send({"log": f"❌ [{global_idx}/{total}] {title} — erreur: {e}"}):
+                                break
+                        continue
+
                     if "f95zone.to" not in f95_url.lower():
                         if not await send({"log": f"⏭️ [{global_idx}/{total}] {title} — URL non-F95 (ignoré)"}):
                             break
                         skipped_count += 1
                         continue
 
-                    if not await send({"log": f"🕷️ [{global_idx}/{total}] {title} — scraping F95…"}):
+                    if not await send({"log": f"🕷️ [{global_idx}/{total}] {title} — scraping F95 (secours)…"}):
                         break
                     try:
                         game_data = await scrape_f95_game_data(session, f95_url, cookies=f95_cookies or None)
@@ -678,21 +706,10 @@ async def collection_enrich_entries(request):
                             await asyncio.sleep(scrape_delay)
                         continue
 
-                    existing_scraped = entry.get("scraped_data") or {}
-                    if isinstance(existing_scraped, str):
-                        try:
-                            existing_scraped = json.loads(existing_scraped)
-                        except Exception:
-                            existing_scraped = {}
-
                     existing_synopsis_fr = existing_scraped.get("synopsis_fr")
                     synopsis_en = game_data.get("synopsis")
                     synopsis_fr = existing_synopsis_fr
-                    if synopsis_en and not synopsis_fr:
-                        try:
-                            synopsis_fr = await translate_text(session, synopsis_en, "en", "fr")
-                        except Exception as e:
-                            logger.warning("[api] enrich-entries translation failed: %s", e)
+                    # Pas de traduction auto : les synopsis FR proviennent de l'API publique via f95_jeux.
 
                     new_scraped = {
                         **existing_scraped,
