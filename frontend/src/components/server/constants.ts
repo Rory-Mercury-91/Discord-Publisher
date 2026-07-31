@@ -24,6 +24,7 @@ export const ALLOWED_ROUTES = [
   '/reset-password',
   '/api/jeux',
   '/api/logs',
+  '/api/nautiljon/fetch',
 ];
 
 // Sources de logs (utilisateur)

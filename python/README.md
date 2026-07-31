@@ -174,6 +174,9 @@ Le service `discord-bots` démarre automatiquement au boot et redémarre en cas 
 | GET | `/api/history` | Historique des posts (Supabase) |
 | GET | `/api/jeux` | Liste des jeux (cache Supabase → fallback API f95fr) |
 | POST | `/api/account/delete` | Suppression de compte utilisateur |
+| GET | `/api/nautiljon/fetch?url=…` | Pont Nautiljon (Mangathèque) : HTML brut depuis l’IP Oracle |
+
+**Pont Nautiljon (Mangathèque) :** URL de base `http://138.2.182.125:8080`. Auth via header `X-API-KEY` = clé API Publisher (`tr_…` via `/generer-cle`, ou clé legacy) — **pas** le token bot Discord. Domaines autorisés : `nautiljon.com` / `www.nautiljon.com`. Réponse : `text/html` (+ headers `X-Bridge-Status`, `X-Bridge-Final-Url`).
 
 ### Rappel des Ports Oracle
 

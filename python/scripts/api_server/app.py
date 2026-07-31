@@ -7,6 +7,7 @@ from .routes_collection import get_collection_routes
 from .routes_common import get_common_routes
 from .routes_enrichment import get_enrichment_routes
 from .routes_forum import get_forum_routes
+from .routes_nautiljon import get_nautiljon_routes
 
 logger = logging.getLogger("api")
 
@@ -21,6 +22,7 @@ def _get_routes():
         *get_collection_routes(),
         *get_admin_routes(),
         *get_enrichment_routes(),
+        *get_nautiljon_routes(),
         *catch_all,
     ]
 
