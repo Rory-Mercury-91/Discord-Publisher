@@ -79,9 +79,6 @@ export default function TagSelectorModal({
       translationType: sortTags(availableTags.filter((t) => t.tagType === 'translationType')),
       gameStatus: sortTags(availableTags.filter((t) => t.tagType === 'gameStatus')),
       sites: sortTags(availableTags.filter((t) => t.tagType === 'sites')),
-      workType: sortTags(availableTags.filter((t) => t.tagType === 'workType')),
-      workStatus: sortTags(availableTags.filter((t) => t.tagType === 'workStatus')),
-      workModifier: sortTags(availableTags.filter((t) => t.tagType === 'workModifier')),
       other: sortTags(availableTags.filter((t) => t.tagType === 'other')),
     }),
     [availableTags]

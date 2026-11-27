@@ -21,16 +21,9 @@ interface TampermonkeyPayload {
   status?        : string | null;
   game_type?     : string | null;
   tags?          : string | null;
-  genres_themes?       : string | null;
-  official_site_label? : string | null;
-  link?                : string | null;
+  link?          : string | null;
   image?         : string | null;
-  image_data?    : string | null;
   synopsis?      : string | null;
-  work_type?             : string | null;
-  progress_current?      : string | null;
-  chapter_next_release?  : string | null;
-  date_next_release?     : string | null;
   f95_date_maj?  : string | null;
 }
 
@@ -126,26 +119,12 @@ export function useTampermonkeyListener() {
         console.info('[Tampermonkey] 📥 Import reçu :', payload);
 
         if (isWorkTrackingImport(payload)) {
-          window.dispatchEvent(
-            new CustomEvent('work-tracking:import', {
-              detail: {
-                domain               : payload.domain,
-                kind                 : payload.kind ?? 'work_tracking',
-                name                 : payload.name,
-                genres_themes        : payload.genres_themes ?? payload.tags ?? undefined,
-                image                : payload.image ?? undefined,
-                image_data           : payload.image_data ?? undefined,
-                synopsis             : payload.synopsis ?? undefined,
-                link                 : payload.link ?? undefined,
-                official_site_label  : payload.official_site_label ?? undefined,
-                work_type            : payload.work_type ?? undefined,
-                progress_current     : payload.progress_current ?? undefined,
-                chapter_next_release : payload.chapter_next_release ?? undefined,
-                date_next_release    : payload.date_next_release ?? undefined,
-              },
-            }),
+          await reportResult(
+            request_id,
+            false,
+            null,
+            'L\'import suivi d\'œuvres (Webtoon / Nautiljon) a été retiré.',
           );
-          await reportResult(request_id, true, 'work_imported');
           return;
         }
 

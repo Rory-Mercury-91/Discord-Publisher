@@ -1,7 +1,6 @@
 // frontend/src/components/Settings/components/PreferenceSettings.tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isTauri } from '../../../lib/runtime';
-import CalendarTemplateSettings from './CalendarTemplateSettings';
 
 type PreferenceSettingsProps = {
   registerFlush?: (fn: (() => Promise<void>) | null) => void;
@@ -23,16 +22,6 @@ export default function PreferenceSettings({ registerFlush }: PreferenceSettings
 
   const windowStateRef = useRef(windowState);
   windowStateRef.current = windowState;
-
-  const childFlushesRef = useRef(new Set<() => Promise<void>>());
-
-  const registerChildFlush = useCallback((fn: (() => Promise<void>) | null) => {
-    if (!fn) return undefined;
-    childFlushesRef.current.add(fn);
-    return () => {
-      childFlushesRef.current.delete(fn);
-    };
-  }, []);
 
   useEffect(() => { localStorage.setItem('default_translation_label', defaultTranslationLabel); }, [defaultTranslationLabel]);
   useEffect(() => { localStorage.setItem('default_mod_label', defaultModLabel); }, [defaultModLabel]);
@@ -118,9 +107,6 @@ export default function PreferenceSettings({ registerFlush }: PreferenceSettings
     if (!registerFlush) return;
     const combinedFlush = async () => {
       await flushWindowState();
-      for (const fn of childFlushesRef.current) {
-        await fn();
-      }
     };
     registerFlush(combinedFlush);
     return () => registerFlush(null);
@@ -213,9 +199,6 @@ export default function PreferenceSettings({ registerFlush }: PreferenceSettings
           </div>
         </div>
       </section>
-
-      {/* Section 3 : Webtoon | salon (admin) */}
-      <CalendarTemplateSettings registerFlush={registerChildFlush} />
     </div>
   );
 }

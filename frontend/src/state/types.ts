@@ -13,20 +13,17 @@ export type VarConfig = {
   isCustom?: boolean; // Pour distinguer les variables par défaut des personnalisées
 };
 
-export type TemplateCategory = 'translator' | 'work_tracking';
+export type TemplateCategory = 'translator';
 
 export type Template = {
   id?: string;
   name: string;
   type?: string | null;
-  /** Catégorie UI : traducteur vs suivi d'œuvres. */
   category?: TemplateCategory | null;
   content: string;
   isDraft?: boolean;
   /** Template par défaut (défini dans le code) : sauvegardé localement uniquement, jamais poussé en BDD. */
   isDefault?: boolean;
-  /** Template fourni par l’app (ex. calendrier) : non synchronisé, non supprimable. */
-  isBuiltin?: boolean;
   createdAt?: number;
   modifiedAt?: number;
   lastSavedAt?: number;
@@ -93,8 +90,6 @@ export type PublishedPost = {
   authorExternalTranslatorId?: string;
   archived?: boolean;
   templateId?: string;
-  publicationCategory?: TemplateCategory;
-  workPublicationId?: string;
 };
 
 export type AppContextValue = {
@@ -203,11 +198,6 @@ export type AppContextValue = {
   addAdditionalModLink: () => void;
   updateAdditionalModLink: (index: number, link: AdditionalTranslationLink) => void;
   deleteAdditionalModLink: (index: number) => void;
-
-  additionalScanLinks: AdditionalTranslationLink[];
-  addAdditionalScanLink: () => void;
-  updateAdditionalScanLink: (index: number, link: AdditionalTranslationLink) => void;
-  deleteAdditionalScanLink: (index: number) => void;
 
   apiStatus: string;
   setApiStatus: (status: string) => void;

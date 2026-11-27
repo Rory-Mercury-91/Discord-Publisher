@@ -1,6 +1,5 @@
 /**
  * Préférences utilisateur partagées (une seule instance React pour toute l'app).
- * Salon Webtoon : profil admin + repli localStorage + app_config global.
  */
 
 import React, {
@@ -17,14 +16,8 @@ import { useAuth } from './authContext';
 
 export type EnrichScheduleFrequency = 'manual' | 'daily' | 'weekly';
 
-const LS_SHOW_CALENDAR = 'show_calendar_template';
-const LS_CALENDAR_FORUM = 'calendar_forum_channel_id';
-export const APP_CONFIG_CALENDAR_FORUM = 'calendar_forum_channel_id';
-
 export type UserPreferences = {
   show_ma_collection: boolean;
-  show_calendar_template: boolean;
-  calendar_forum_channel_id: string;
   enrich_auto_frequency: EnrichScheduleFrequency;
   enrich_auto_hour: number;
   enrich_auto_day: number;
@@ -32,20 +25,10 @@ export type UserPreferences = {
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   show_ma_collection: false,
-  show_calendar_template: false,
-  calendar_forum_channel_id: '',
   enrich_auto_frequency: 'manual',
   enrich_auto_hour: 8,
   enrich_auto_day: 1,
 };
-
-function readLocalCalendarForum(): string {
-  try {
-    return (localStorage.getItem(LS_CALENDAR_FORUM) || '').trim();
-  } catch {
-    return '';
-  }
-}
 
 function normalizePreferences(value: Partial<UserPreferences> | null | undefined): UserPreferences {
   const merged = { ...DEFAULT_PREFERENCES, ...(value ?? {}) };
@@ -61,66 +44,10 @@ function applyPreferencesPatch(
   return normalizePreferences({ ...base, ...patch });
 }
 
-function syncCalendarLocalStorage(patch: Partial<UserPreferences>) {
-  try {
-    if (patch.show_calendar_template !== undefined) {
-      localStorage.setItem(LS_SHOW_CALENDAR, patch.show_calendar_template ? 'true' : 'false');
-    }
-    if (patch.calendar_forum_channel_id !== undefined) {
-      localStorage.setItem(LS_CALENDAR_FORUM, patch.calendar_forum_channel_id.trim());
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
-async function fetchGlobalCalendarForum(): Promise<string> {
-  const sb = getSupabase();
-  if (!sb) return '';
-  try {
-    const { data, error } = await sb
-      .from('app_config')
-      .select('value')
-      .eq('key', APP_CONFIG_CALENDAR_FORUM)
-      .maybeSingle();
-    if (error || !data?.value) return '';
-    return String(data.value).trim();
-  } catch {
-    return '';
-  }
-}
-
-async function persistGlobalCalendarForum(forumId: string): Promise<void> {
-  const sb = getSupabase();
-  if (!sb) return;
-  const trimmed = forumId.trim();
-  if (!trimmed) {
-    await sb.from('app_config').delete().eq('key', APP_CONFIG_CALENDAR_FORUM);
-    return;
-  }
-  await sb
-    .from('app_config')
-    .upsert({ key: APP_CONFIG_CALENDAR_FORUM, value: trimmed }, { onConflict: 'key' });
-}
-
-async function resolveCalendarForumChannelId(
-  profilePrefs: UserPreferences
-): Promise<string> {
-  const fromProfile = (profilePrefs.calendar_forum_channel_id || '').trim();
-  if (fromProfile) return fromProfile;
-  const fromLocal = readLocalCalendarForum();
-  if (fromLocal) return fromLocal;
-  return fetchGlobalCalendarForum();
-}
-
 type UserPreferencesContextValue = {
   preferences: UserPreferences;
   showMaCollection: boolean;
   setShowMaCollection: (value: boolean) => Promise<void>;
-  showCalendarTemplate: boolean;
-  setShowCalendarTemplate: (value: boolean) => Promise<void>;
-  calendarForumChannelId: string;
-  setCalendarForumChannelId: (forumChannelId: string) => Promise<void>;
   enrichAutoFrequency: EnrichScheduleFrequency;
   enrichAutoHour: number;
   enrichAutoDay: number;
@@ -144,20 +71,8 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
     const sb = getSupabase();
 
     if (!sb || !profile?.id) {
-      let localCalendar = false;
-      try {
-        localCalendar = localStorage.getItem(LS_SHOW_CALENDAR) === 'true';
-      } catch {
-        /* ignore */
-      }
-      const forum = (await fetchGlobalCalendarForum()) || readLocalCalendarForum();
       if (token !== loadTokenRef.current) return;
-      setPreferences(
-        normalizePreferences({
-          show_calendar_template: localCalendar,
-          calendar_forum_channel_id: forum,
-        })
-      );
+      setPreferences(DEFAULT_PREFERENCES);
       setLoading(false);
       return;
     }
@@ -177,16 +92,10 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
         ? normalizePreferences(data.value as Partial<UserPreferences>)
         : DEFAULT_PREFERENCES;
 
-      const forumId = await resolveCalendarForumChannelId(profilePrefs);
-      if (token !== loadTokenRef.current) return;
-
-      setPreferences({ ...profilePrefs, calendar_forum_channel_id: forumId });
+      setPreferences(profilePrefs);
     } catch {
       if (token === loadTokenRef.current) {
-        const forumId = readLocalCalendarForum() || (await fetchGlobalCalendarForum());
-        if (token === loadTokenRef.current) {
-          setPreferences({ ...DEFAULT_PREFERENCES, calendar_forum_channel_id: forumId });
-        }
+        setPreferences(DEFAULT_PREFERENCES);
       }
     } finally {
       if (token === loadTokenRef.current) {
@@ -202,7 +111,6 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
   const persistPreferences = useCallback(
     async (patch: Partial<UserPreferences>) => {
       loadTokenRef.current++;
-      syncCalendarLocalStorage(patch);
 
       setPreferences(prev => applyPreferencesPatch(prev, patch));
 
@@ -240,18 +148,13 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
 
         if (upsertError) throw upsertError;
 
-        if (patch.calendar_forum_channel_id !== undefined && profile.is_master_admin) {
-          await persistGlobalCalendarForum(patch.calendar_forum_channel_id);
-        }
-
-        const forumId = await resolveCalendarForumChannelId(merged);
-        setPreferences({ ...merged, calendar_forum_channel_id: forumId });
+        setPreferences(merged);
       } catch (e) {
         console.error('Erreur sauvegarde préférences:', e);
         await load();
       }
     },
-    [profile?.id, profile?.is_master_admin, load]
+    [profile?.id, load]
   );
 
   const setShowMaCollection = useCallback(
@@ -266,32 +169,11 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
     [persistPreferences]
   );
 
-  const setShowCalendarTemplate = useCallback(
-    (value: boolean) => persistPreferences({ show_calendar_template: value }),
-    [persistPreferences]
-  );
-
-  const setCalendarForumChannelId = useCallback(
-    (forumChannelId: string) =>
-      persistPreferences({ calendar_forum_channel_id: forumChannelId.trim() }),
-    [persistPreferences]
-  );
-
-  const calendarForumChannelId = useMemo(() => {
-    const fromState = (preferences.calendar_forum_channel_id || '').trim();
-    if (fromState) return fromState;
-    return readLocalCalendarForum();
-  }, [preferences.calendar_forum_channel_id]);
-
   const value = useMemo<UserPreferencesContextValue>(
     () => ({
       preferences,
       showMaCollection: preferences.show_ma_collection,
       setShowMaCollection,
-      showCalendarTemplate: preferences.show_calendar_template,
-      setShowCalendarTemplate,
-      calendarForumChannelId,
-      setCalendarForumChannelId,
       enrichAutoFrequency: preferences.enrich_auto_frequency,
       enrichAutoHour: preferences.enrich_auto_hour,
       enrichAutoDay: preferences.enrich_auto_day,
@@ -301,10 +183,7 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
     }),
     [
       preferences,
-      calendarForumChannelId,
       setShowMaCollection,
-      setShowCalendarTemplate,
-      setCalendarForumChannelId,
       setEnrichSchedule,
       loading,
       load,

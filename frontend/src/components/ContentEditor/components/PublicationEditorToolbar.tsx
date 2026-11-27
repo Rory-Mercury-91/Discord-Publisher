@@ -1,6 +1,4 @@
 import type { ConfirmOptions } from '../../../hooks/useConfirm';
-import Toggle from '../../shared/Toggle';
-import { WEBTOON_PUBLISH_LABEL } from '../../../state/calendarTemplate';
 
 interface PublicationEditorToolbarProps {
   editingPostId: string | null;
@@ -10,12 +8,8 @@ interface PublicationEditorToolbarProps {
   /** Bouton importer (vue traduction uniquement). */
   showImport?: boolean;
   onImportData?: () => void;
-  /** Toggle vue Webtoon (si la fonction est disponible). */
-  showWebtoonViewToggle?: boolean;
-  webtoonViewActive?: boolean;
-  onWebtoonViewChange?: (active: boolean) => void;
-  /** Sélecteur traducteur ou libellé Webtoon figé. */
-  publishForMode?: 'translator' | 'webtoon' | 'none';
+  /** Sélecteur traducteur. */
+  publishForMode?: 'translator' | 'none';
   translatorOptions?: Array<{ id: string; name: string }>;
   selectedTranslatorId?: string;
   onTranslatorChange?: (id: string) => void;
@@ -28,9 +22,6 @@ export default function PublicationEditorToolbar({
   onExitEditMode,
   showImport = false,
   onImportData,
-  showWebtoonViewToggle = false,
-  webtoonViewActive = false,
-  onWebtoonViewChange,
   publishForMode = 'none',
   translatorOptions = [],
   selectedTranslatorId = '',
@@ -95,50 +86,22 @@ export default function PublicationEditorToolbar({
           🗑️ Vider le formulaire
         </button>
 
-        {showWebtoonViewToggle && onWebtoonViewChange && (
-          <>
-            <div className="editor-toolbar__divider" />
-            <Toggle
-              checked={webtoonViewActive}
-              onChange={onWebtoonViewChange}
-              label="Webtoon"
-              title={
-                webtoonViewActive
-                  ? 'Passer à la publication traduction'
-                  : 'Passer à la publication calendrier / Webtoon'
-              }
-              size="sm"
-              className="editor-toolbar__view-toggle"
-            />
-          </>
-        )}
-
-        {(showTranslatorSelect || publishForMode === 'webtoon') && (
+        {showTranslatorSelect && (
           <>
             <div className="editor-toolbar__divider" />
             <div className="editor-toolbar__select-wrap">
               <span className="editor-toolbar__label-sm">👤 Publier sur :</span>
-              {publishForMode === 'webtoon' ? (
-                <select
-                  value="webtoon"
-                  disabled
-                  className="editor-toolbar__select editor-toolbar__select--disabled"
-                >
-                  <option value="webtoon">{WEBTOON_PUBLISH_LABEL}</option>
-                </select>
-              ) : (
-                <select
-                  value={selectedTranslatorId}
-                  onChange={e => onTranslatorChange?.(e.target.value)}
-                  className="editor-toolbar__select"
-                >
-                  {translatorOptions.map(opt => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <select
+                value={selectedTranslatorId}
+                onChange={e => onTranslatorChange?.(e.target.value)}
+                className="editor-toolbar__select"
+              >
+                {translatorOptions.map(opt => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </>
         )}

@@ -6,9 +6,6 @@ interface TagSelectorContentProps {
   hasAnyTag: boolean;
   myTagsLength: number;
   onSelectTag: (tagId: string) => void;
-  /** Vue Webtoon : tous les tags dans une seule section (ex. Statut de l'œuvre) */
-  flatGroupLabel?: string;
-  flatTags?: Tag[];
 }
 
 export default function TagSelectorContent({
@@ -16,46 +13,7 @@ export default function TagSelectorContent({
   hasAnyTag,
   myTagsLength,
   onSelectTag,
-  flatGroupLabel,
-  flatTags,
 }: TagSelectorContentProps) {
-  if (flatGroupLabel && flatTags) {
-    if (flatTags.length === 0) {
-      return (
-        <div className="tag-selector__empty">
-          {myTagsLength === 0
-            ? 'Aucun tag configuré pour ce salon'
-            : 'Tous les tags ont été ajoutés'}
-        </div>
-      );
-    }
-    return (
-      <div className="tag-selector__content-inner">
-        <div className="tag-selector__group">
-          <h4 className="tag-selector__group-title">
-            {flatGroupLabel}
-            <span className="tag-selector__group-count">({flatTags.length})</span>
-          </h4>
-          <div className="tag-selector__group-list">
-            {flatTags.map(tag => {
-              const tagId = tag.id || tag.name;
-              return (
-                <button
-                  key={tagId}
-                  type="button"
-                  className="tag-selector__card"
-                  onClick={() => onSelectTag(tagId)}
-                >
-                  {tag.name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   if (!hasAnyTag) {
     return (
       <div className="tag-selector__empty">
@@ -78,7 +36,7 @@ export default function TagSelectorContent({
               <span className="tag-selector__group-count">({tagsInType.length})</span>
             </h4>
             <div className="tag-selector__group-list">
-              {tagsInType.map((tag) => {
+              {tagsInType.map(tag => {
                 const tagId = tag.id || tag.name;
                 return (
                   <button

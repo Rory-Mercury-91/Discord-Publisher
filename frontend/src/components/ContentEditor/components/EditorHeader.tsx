@@ -1,5 +1,4 @@
 import type { ConfirmOptions } from '../../../hooks/useConfirm';
-import { useWebtoonView } from '../../../state/webtoonViewContext';
 import PublicationEditorToolbar from './PublicationEditorToolbar';
 
 interface EditorHeaderProps {
@@ -23,8 +22,6 @@ export default function EditorHeader({
   onExitEditMode,
   confirm,
 }: EditorHeaderProps) {
-  const { calendarViewAvailable, isWebtoonViewActive, setWebtoonViewActive } = useWebtoonView();
-
   return (
     <PublicationEditorToolbar
       editingPostId={editingPostId}
@@ -33,9 +30,6 @@ export default function EditorHeader({
       onExitEditMode={onExitEditMode}
       showImport
       onImportData={onImportData}
-      showWebtoonViewToggle={calendarViewAvailable}
-      webtoonViewActive={isWebtoonViewActive}
-      onWebtoonViewChange={setWebtoonViewActive}
       publishForMode="translator"
       translatorOptions={translatorOptions}
       selectedTranslatorId={selectedTranslatorId}

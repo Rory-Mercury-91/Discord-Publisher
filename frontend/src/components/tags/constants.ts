@@ -1,28 +1,10 @@
-import type { Tag, TagType } from '../../state/types';
+import type { TagType } from '../../state/types';
 
-/** Tags injectés automatiquement en vue traduction (absents en vue Webtoon). */
+/** Tags injectés automatiquement en vue traduction. */
 export const AUTO_INJECTED_TAG_TYPES: TagType[] = ['translator', 'translationType', 'sites'];
 
 export function isAutoInjectedTagType(tagType: TagType | undefined): boolean {
   return !!tagType && AUTO_INJECTED_TAG_TYPES.includes(tagType);
-}
-
-export function filterWebtoonSelectableTagIds(tagIds: string[], savedTags: Tag[]): string[] {
-  return tagIds.filter(id => {
-    const tag = savedTags.find(
-      t => (t.id || t.name) === id || String(t.discordTagId ?? '') === id
-    );
-    return tag && !isAutoInjectedTagType(tag.tagType);
-  });
-}
-
-/** Limite Discord / métier pour les posts calendrier Webtoon. */
-export const WEBTOON_TAGS_MAX = 5;
-
-export const WEBTOON_WORK_STATUS_LABEL = '📖 Statut de l\'œuvre';
-
-export function countWebtoonActiveTags(selectedTagIds: string[], savedTags: Tag[]): number {
-  return filterWebtoonSelectableTagIds(selectedTagIds, savedTags).length;
 }
 
 /** Largeur du panneau de sélection de tags (alignée sur .tag-selector-panel). */
@@ -58,23 +40,19 @@ export function computeTagSelectorPositionFromPreview(): TagSelectorPanelPositio
   };
 }
 
-export const TAG_SELECTOR_GROUP_ORDER: Exclude<TagType, 'translator'>[] = [
+export const TAG_SELECTOR_GROUP_ORDER = [
   'translationType',
   'sites',
   'gameStatus',
-  'workType',
-  'workStatus',
-  'workModifier',
   'other',
-];
+] as const;
 
-export const TAG_SELECTOR_TYPE_LABELS: Record<Exclude<TagType, 'translator'>, string> = {
+export type TagSelectorGroupKey = (typeof TAG_SELECTOR_GROUP_ORDER)[number];
+
+export const TAG_SELECTOR_TYPE_LABELS: Record<TagSelectorGroupKey, string> = {
   translationType: '📋 Type de traduction',
   gameStatus: '🎮 Statut du jeu',
   sites: '🌐 Sites',
-  workType: '📚 Type d\'œuvre',
-  workStatus: '📖 Statut de l\'œuvre',
-  workModifier: '🏷️ Modificateurs',
   other: '📦 Autres',
 };
 

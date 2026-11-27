@@ -4,9 +4,7 @@ import AuthModal from './components/AuthModal';
 import PasswordRecoveryModal from './components/AuthModal/PasswordRecoveryModal';
 import SettingsModal from './components/Settings';
 import ConfirmModal from './components/Modals/ConfirmModal';
-import PublicationEditorPane from './components/ContentEditor/PublicationEditorPane';
-import { CALENDAR_TEMPLATE_ID } from './state/calendarTemplate';
-import { useWebtoonView, WebtoonViewProvider } from './state/webtoonViewContext';
+import ContentEditor from './components/ContentEditor';
 import { DiscordPreviewModal, Preview } from './components/preview';
 import HelpCenterModal from './components/HelpCenter';
 import { HistoryModal } from './components/history';
@@ -18,7 +16,6 @@ import { TagsModal } from './components/tags';
 import { TemplatesModal } from './components/templates';
 import { ToastProvider, useToast } from './components/shared/ToastProvider';
 import UpdateNotification from './components/UpdateNotification';
-import WorkImportListener from './components/WorkImportListener';
 import { AppProvider, useApp } from './state/appContext';
 import { AuthProvider, useAuth } from './state/authContext';
 import { UserPreferencesProvider } from './state/userPreferencesContext';
@@ -43,7 +40,6 @@ function AppContentInner() {
   } = useApp();
 
   const { showToast } = useToast();
-  const { calendarViewAvailable, isWebtoonViewActive, setWebtoonViewActive } = useWebtoonView();
 
   const currentTemplate = templates[currentTemplateIdx];
   const templateName = currentTemplate?.name || 'Template';
@@ -135,12 +131,6 @@ function AppContentInner() {
   const handleTemplateChange = (newIndex: number) => {
     const tpl = templates[newIndex];
     setCurrentTemplateIdx(newIndex);
-    if (calendarViewAvailable && tpl) {
-      const isCalendar = tpl.id === CALENDAR_TEMPLATE_ID || tpl.type === 'calendar';
-      if (isCalendar !== isWebtoonViewActive) {
-        setWebtoonViewActive(isCalendar);
-      }
-    }
     showToast(`Template : ${tpl?.name ?? 'Template'}`, 'success');
   };
 
@@ -182,7 +172,7 @@ function AppContentInner() {
         <main style={{ display: 'grid', gridTemplateRows: 'auto 1fr', flex: 1, minHeight: 0, height: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
           <div className="publication-layout publication-layout--with-preview">
             <div className="publication-layout__editor styled-scrollbar">
-              <PublicationEditorPane />
+              <ContentEditor />
             </div>
             <div className="publication-layout__preview" data-preview-container>
               <Preview
@@ -263,10 +253,7 @@ export default function App() {
       <UserPreferencesProvider>
         <ToastProvider>
           <AppProvider>
-            <WebtoonViewProvider>
-              <WorkImportListener />
-              <AppWithAuth />
-            </WebtoonViewProvider>
+            <AppWithAuth />
           </AppProvider>
         </ToastProvider>
       </UserPreferencesProvider>

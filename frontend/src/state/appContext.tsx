@@ -1,15 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
-import {
-  buildEffectiveTemplates,
-  CALENDAR_TEMPLATE_ID,
-  ensureCalendarInputs,
-  mergeCalendarVarsConfig,
-  migrateCalendarInputs,
-} from './calendarTemplate';
+import React, { createContext, useCallback, useContext, useEffect } from 'react';
 import { buildSavedInputsForPublish } from './logic/postPublishFlags';
-import { buildCalendarSavedInputs } from './workTracking/scanLinks';
-import { syncWorkPublicationToSupabase } from './workTracking/syncWorkPublication';
-import { useUserPreferences } from './hooks/useUserPreferences';
 import ErrorModal from '../components/Modals/ErrorModal';
 import { useToast } from '../components/shared/ToastProvider';
 import { createApiHeaders } from '../lib/api-helpers';
@@ -31,7 +21,6 @@ import { useLoadPost } from './hooks/useLoadPost';
 import { useClearAllAppData } from './hooks/useClearAllAppData';
 import { mergeInstructionsFromSupabase, useInstructionsState } from './hooks/useInstructionsState';
 import { usePreviewEngine } from './hooks/usePreviewEngine';
-import { resolveExternalTranslatorIdForForum } from './hooks/useForumChannelTags';
 import { buildFinalLink } from './logic/links';
 import { postToRow, rowToPost } from './logic/history';
 import { buildDynamicTitle } from './logic/title';
@@ -165,10 +154,6 @@ export type {
   addAdditionalModLink: () => void;
   updateAdditionalModLink: (index: number, link: AdditionalTranslationLink) => void;
   deleteAdditionalModLink: (index: number) => void;
-  additionalScanLinks: AdditionalTranslationLink[];
-  addAdditionalScanLink: () => void;
-  updateAdditionalScanLink: (index: number, link: AdditionalTranslationLink) => void;
-  deleteAdditionalScanLink: (index: number) => void;
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -188,37 +173,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const { discordConfig, setDiscordConfig, apiStatus, setApiStatus } = useDiscordAndApiStatus();
 
   const tvState = useTemplatesVarsInputs();
-  const { showCalendarTemplate, calendarForumChannelId } = useUserPreferences();
 
-  const activeTemplates = useMemo(
-    () => buildEffectiveTemplates(tvState.templates, showCalendarTemplate),
-    [tvState.templates, showCalendarTemplate]
-  );
-  const activeVarsConfig = useMemo(
-    () => mergeCalendarVarsConfig(tvState.allVarsConfig, showCalendarTemplate),
-    [tvState.allVarsConfig, showCalendarTemplate]
-  );
-
-  useEffect(() => {
-    if (showCalendarTemplate) {
-      tvState.setInputs(prev => ensureCalendarInputs(prev));
-    }
-  }, [showCalendarTemplate, tvState.setInputs]);
+  const activeTemplates = tvState.templates;
+  const activeVarsConfig = tvState.allVarsConfig;
 
   useEffect(() => {
     if (tvState.currentTemplateIdx >= activeTemplates.length) {
       tvState.setCurrentTemplateIdx(Math.max(0, activeTemplates.length - 1));
-      return;
-    }
-    const cur = activeTemplates[tvState.currentTemplateIdx];
-    if (!showCalendarTemplate && cur?.id === CALENDAR_TEMPLATE_ID) {
-      tvState.setCurrentTemplateIdx(0);
     }
   }, [
-    showCalendarTemplate,
     activeTemplates.length,
     tvState.currentTemplateIdx,
-    activeTemplates,
     tvState.setCurrentTemplateIdx,
   ]);
 
@@ -256,18 +221,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Génération automatique du titre dynamique (logique pure dans state/logic/title.ts)
   useEffect(() => {
-    const tpl = activeTemplates[tvState.currentTemplateIdx];
-    if (tpl?.type === 'calendar') {
-      postFormState.setPostTitle(buildDynamicTitle(tvState.inputs['Nom_Oeuvre'], undefined));
-    } else {
-      postFormState.setPostTitle(buildDynamicTitle(tvState.inputs['Game_name'], tvState.inputs['Game_version']));
-    }
+    postFormState.setPostTitle(buildDynamicTitle(tvState.inputs['Game_name'], tvState.inputs['Game_version']));
   }, [
     tvState.inputs['Game_name'],
     tvState.inputs['Game_version'],
-    tvState.inputs['Nom_Oeuvre'],
-    tvState.currentTemplateIdx,
-    activeTemplates,
   ]);
 
   // Envoyer la configuration Discord à l'API au démarrage
@@ -311,24 +268,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const title = (postFormState.postTitle || '').trim();
     const content = previewEngine.preview || '';
     const activeTpl = activeTemplates[tvState.currentTemplateIdx];
-    const isCalendarPublish =
-      activeTpl?.type === 'calendar' || activeTpl?.type === 'work_tracking';
     const publishOpts = {
-      silentUpdate: isCalendarPublish || options?.silentUpdate === true,
-      skipVersionControl: isCalendarPublish || options?.skipVersionControl === true,
+      silentUpdate: options?.silentUpdate === true,
+      skipVersionControl: options?.skipVersionControl === true,
     };
     const templateId = activeTpl?.id || null;
     const isEditMode = pubState.editingPostId !== null && pubState.editingPostData !== null;
 
     let historyAuthorDiscordId = authorDiscordId;
     let historyAuthorExternalId = authorExternalTranslatorId;
-    if (isCalendarPublish) {
-      if (!historyAuthorExternalId && calendarForumChannelId?.trim()) {
-        historyAuthorExternalId = await resolveExternalTranslatorIdForForum(
-          calendarForumChannelId
-        );
-      }
-    }
     if (historyAuthorExternalId) {
       historyAuthorDiscordId = undefined;
     }
@@ -375,7 +323,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: 'rate_limit_cooldown' };
     }
 
-    if (!isCalendarPublish) {
     const hasSite = selectedTagObjects.some(t => t.tagType === 'sites');
     const hasTranslationType = selectedTagObjects.some(t => t.tagType === 'translationType');
     const hasTranslator = selectedTagObjects.some(t => t.tagType === 'translator');
@@ -388,14 +335,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       showErrorModal({ code: 'VALIDATION_ERROR', message: 'Tags obligatoires manquants', context: `Vous devez sélectionner au moins un tag pour chaque catégorie : Site, Type de traduction et Traducteur. Manquant : ${missing.join(', ')}. Les tags "Autres" et "Statut du jeu" restent optionnels.`, httpStatus: 400 });
       return { ok: false, error: 'missing_required_tags' };
     }
-    }
 
     pubState.setPublishInProgress(true);
     pubState.setLastPublishResult(null);
 
     try {
       const metadata = {
-        game_name: tvState.inputs['Nom_Oeuvre'] || tvState.inputs['Game_name'] || '',
+        game_name: tvState.inputs['Game_name'] || '',
         game_version: tvState.inputs['Game_version'] || '',
         translate_version: tvState.inputs['Translate_version'] || '',
         translation_type: postFormState.translationType || '',
@@ -405,9 +351,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
 
       let resolvedForumChannelId: string | null = null;
-      if (isCalendarPublish && calendarForumChannelId?.trim()) {
-        resolvedForumChannelId = calendarForumChannelId.trim();
-      }
 
       // Résoudre le forum_channel_id depuis le mapping du tag traducteur (posts traduction)
       const translatorTag = selectedTagObjects.find(t => t.tagType === 'translator');
@@ -476,13 +419,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         formData.append('isUpdate', 'true');
       }
 
-      const savedInputsWithVersionFlag = isCalendarPublish
-        ? buildCalendarSavedInputs(
-            tvState.inputs,
-            linkState.additionalScanLinks,
-            publishOpts.skipVersionControl
-          )
-        : buildSavedInputsForPublish(tvState.inputs, publishOpts.skipVersionControl);
+      const savedInputsWithVersionFlag = buildSavedInputsForPublish(
+        tvState.inputs,
+        publishOpts.skipVersionControl
+      );
 
       const now = Date.now();
       const postId = `post_${now}_${Math.random().toString(36).substr(2, 9)}`;
@@ -597,15 +537,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const forumId = res.forum_id || res.forumId || 0;
 
       if (threadId && messageId) {
-        const historyPostId =
-          isEditMode && pubState.editingPostId ? pubState.editingPostId : postId;
-        const savedInputsForState = isCalendarPublish
-          ? buildCalendarSavedInputs(
-              tvState.inputs,
-              linkState.additionalScanLinks,
-              publishOpts.skipVersionControl
-            )
-          : buildSavedInputsForPublish(tvState.inputs, publishOpts.skipVersionControl);
+        const savedInputsForState = buildSavedInputsForPublish(
+          tvState.inputs,
+          publishOpts.skipVersionControl
+        );
         if (isEditMode && pubState.editingPostId && pubState.editingPostData) {
           const now = Date.now();
           const updatedPost: PublishedPost = {
@@ -671,20 +606,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             postToRow(newPost),
             newPost.authorDiscordId ?? newPost.authorExternalTranslatorId ?? undefined
           );
-        }
-
-        if (isCalendarPublish) {
-          const syncResult = await syncWorkPublicationToSupabase({
-            publishedPostId: historyPostId,
-            profileId: profile?.id ?? null,
-            templateId: templateId ?? CALENDAR_TEMPLATE_ID,
-            inputs: savedInputsForState,
-            selectedTagIds: selectedIds,
-            savedTags: tagsState.savedTags,
-          });
-          if (!syncResult.ok) {
-            console.warn('[work_tracking] sync work_publications:', syncResult.error);
-          }
         }
       }
 
@@ -823,11 +744,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     isIntegrated: postFormState.isIntegrated,
     additionalTranslationLinks: linkState.additionalTranslationLinks,
     additionalModLinks: linkState.additionalModLinks,
-    additionalScanLinks: linkState.additionalScanLinks,
     uploadedImages: imagesState.uploadedImages,
     editingPostId: pubState.editingPostId,
-    postTags: postFormState.postTags,
-    savedTags: tagsState.savedTags,
   });
 
   const { loadPostForEditing, loadPostForDuplication } = useLoadPost({
@@ -844,16 +762,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setLinkConfigs: linkState.setLinkConfigs,
     setAdditionalTranslationLinks: linkState.setAdditionalTranslationLinks,
     setAdditionalModLinks: linkState.setAdditionalModLinks,
-    setAdditionalScanLinks: linkState.setAdditionalScanLinks,
     setUploadedImages: imagesState.setUploadedImages,
     setPreviewOverride: previewEngine.setPreviewOverride,
-    savedTags: tagsState.savedTags,
   });
 
   const updateTemplateActive = useCallback(
     (idx: number, t: Template) => {
       const target = activeTemplates[idx];
-      if (!target || target.isBuiltin) return;
+      if (!target) return;
       const rawIdx = tvState.templates.findIndex(
         x => (target.id && x.id === target.id) || (!target.id && x.name === target.name)
       );
@@ -870,27 +786,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     tvState.setInput('Mod_link', '');
     tvState.setInput('use_additional_links', 'false');
     tvState.setInputs(prev => {
-      const cleared = migrateCalendarInputs(prev);
+      const cleared = { ...prev };
       for (const key of Object.keys(cleared)) {
-        if (
-          key.startsWith('Chapitre_') ||
-          key.startsWith('Date_') ||
-          key === 'Nom_Oeuvre' ||
-          key === 'Genres_Themes' ||
-          key === 'Book_Link' ||
-          key === 'Book_Platform' ||
-          key === 'Official_Site_Label' ||
-          key === 'Official_Site_Link' ||
-          key === 'Scan_Site_Label' ||
-          key === 'Scan_Site_Link' ||
-          key === 'Synopsis_Oeuvre'
-        ) {
+        if (key.startsWith('Chapitre_') || key.startsWith('Date_')) {
           cleared[key] = '';
         }
       }
-      cleared.Official_Site_Label = '';
-      cleared.Book_Platform = '';
-      cleared.Book_Link = '';
       return cleared;
     });
     postFormState.setPostTitle('');
@@ -903,7 +804,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
     linkState.setAdditionalTranslationLinks([]);
     linkState.setAdditionalModLinks([]);
-    linkState.setAdditionalScanLinks([]);
     tvState.setInput('main_translation_label', localStorage.getItem('default_translation_label') || 'Traduction');
     tvState.setInput('main_mod_label', localStorage.getItem('default_mod_label') || 'Mod');
     imagesState.clearImages();
@@ -1011,10 +911,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addAdditionalModLink: linkState.addAdditionalModLink,
     updateAdditionalModLink: linkState.updateAdditionalModLink,
     deleteAdditionalModLink: linkState.deleteAdditionalModLink,
-    additionalScanLinks: linkState.additionalScanLinks,
-    addAdditionalScanLink: linkState.addAdditionalScanLink,
-    updateAdditionalScanLink: linkState.updateAdditionalScanLink,
-    deleteAdditionalScanLink: linkState.deleteAdditionalScanLink,
   };
 
   // Écoute les imports Tampermonkey envoyés via le serveur local Tauri (localhost:7832)

@@ -1,14 +1,6 @@
 import { useMemo, useState } from 'react';
-import {
-  getCalendarLinkParts,
-  getWebtoonWorkStatusFromTags,
-} from '../calendarTemplate';
-import {
-  applyWorkTrackingPreview,
-  isWorkTrackingTemplateType,
-} from '../workTracking/renderPreview';
-import { formatVarValue, resolveStoredDateValue } from '../logic/formatVar';
-import type { AdditionalTranslationLink, Tag, Template, VarConfig } from '../types';
+import { formatVarValue } from '../logic/formatVar';
+import type { AdditionalTranslationLink, Template, VarConfig } from '../types';
 import type { ImageData } from './useImagesState';
 
 /** Même logique qu’appContext : conserver la forme (#post-XXXXX ou /post-XXXXX), ne rien ajouter si absent. */
@@ -47,11 +39,8 @@ type UsePreviewEngineProps = {
   isIntegrated: boolean;
   additionalTranslationLinks: AdditionalTranslationLink[];
   additionalModLinks: AdditionalTranslationLink[];
-  additionalScanLinks: AdditionalTranslationLink[];
   uploadedImages: ImageData[];
   editingPostId: string | null;
-  postTags?: string;
-  savedTags?: Tag[];
 };
 
 export function usePreviewEngine(props: UsePreviewEngineProps) {
@@ -64,11 +53,8 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     isIntegrated,
     additionalTranslationLinks,
     additionalModLinks,
-    additionalScanLinks,
     uploadedImages,
     editingPostId,
-    postTags = '',
-    savedTags = [],
   } = props;
 
   const [previewOverride, setPreviewOverride] = useState<string | null>(null);
@@ -128,123 +114,20 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     if (!overviewRaw) {
       content = content.replace(/\*\*Synopsis du jeu :\*\*\n> \[Overview\]\n?/g, '');
     }
-    const synopsisOeuvreRaw = (inputs['Synopsis_Oeuvre'] || '').trim();
-    if (!synopsisOeuvreRaw) {
-      content = content.replace(/\*\*Synopsis :\*\*\n> \[Synopsis_Oeuvre\]\n?/g, '');
-      content = content.replace(/:pencil: \*\*Synopsis :\*\*\n> \[Synopsis_Oeuvre\]\n?/g, '');
-    }
-
-    const isWorkTracking = isWorkTrackingTemplateType(tpl.type);
-    const isNewWorkTemplate = isWorkTracking && content.includes('[WORK_PROGRESS_BLOCK]');
-
-    if (isNewWorkTemplate) {
-      content = applyWorkTrackingPreview({
-        content,
-        inputs,
-        postTags,
-        savedTags,
-        additionalScanLinks,
-        cleanUrl: cleanGameLink,
-      });
-    } else if (tpl.type === 'calendar') {
-      const selectedTagIds = postTags
-        ? postTags.split(',').map(s => s.trim()).filter(Boolean)
-        : [];
-      const workStatus = getWebtoonWorkStatusFromTags(selectedTagIds, savedTags);
-      const isFinalWorkStatus = workStatus !== 'ongoing';
-
-      if (workStatus === 'terminated') {
-        content = content.replace(
-          /:books: \*\*Progression :\*\* Chapitre \[Chapitre_Actuel\] \(Dernier chapitre gratuit\)\n?/g,
-          ':books: **Progression :** Complété (Chapitre [Chapitre_Fin])\n'
-        );
-        content = content.replace(
-          /Statut actuel : Chapitre \[Chapitre_Actuel\] \(Dernier disponible gratuitement\)\n?/g,
-          ':books: **Progression :** Complété (Chapitre [Chapitre_Fin])\n'
-        );
-      } else if (workStatus === 'abandoned') {
-        content = content.replace(
-          /:books: \*\*Progression :\*\* Chapitre \[Chapitre_Actuel\] \(Dernier chapitre gratuit\)\n?/g,
-          ':books: **Progression :** Arrêtée au chapitre [Chapitre_Fin]\n'
-        );
-        content = content.replace(
-          /Statut actuel : Chapitre \[Chapitre_Actuel\] \(Dernier disponible gratuitement\)\n?/g,
-          ':books: **Progression :** Arrêtée au chapitre [Chapitre_Fin]\n'
-        );
-      }
-
-      if (isFinalWorkStatus) {
-        content = content.replace(
-          /:calendar: \*\*Prochaines disponibilités \(gratuite\)\*\*\n\* \*\*Prochain chapitre :\*\* \[Chapitre_Suivant\] — \[Date_Suivant\]\n\* \*\*Fin des publications connues :\*\* chapitre \[Chapitre_Fin\] — \[Date_Fin\]\n?/g,
-          ''
-        );
-      }
-
-      const hasNext =
-        !isFinalWorkStatus &&
-        ((inputs['Chapitre_Suivant'] || '').trim() ||
-          resolveStoredDateValue(inputs['Date_Suivant'] || '').trim());
-      const hasEnd =
-        !isFinalWorkStatus &&
-        ((inputs['Chapitre_Fin'] || '').trim() ||
-          resolveStoredDateValue(inputs['Date_Fin'] || '').trim());
-      if (!hasNext) {
-        content = content.replace(
-          /\* \*\*Prochain chapitre :\*\* \[Chapitre_Suivant\] — \[Date_Suivant\]\n?/g,
-          ''
-        );
-      }
-      if (!hasEnd) {
-        content = content.replace(
-          /\* \*\*Fin des publications connues :\*\* chapitre \[Chapitre_Fin\] — \[Date_Fin\]\n?/g,
-          ''
-        );
-      }
-      if (!hasNext && !hasEnd) {
-        content = content.replace(
-          /:calendar: \*\*Prochaines disponibilités \(gratuite\)\*\*\n?/g,
-          ''
-        );
-      }
-      const calendarLinkParts = getCalendarLinkParts(inputs)
-        .map(p => ({ label: p.label, url: cleanGameLink(p.url) }))
-        .filter(p => p.url);
-      if (calendarLinkParts.length === 0) {
-        content = content.replace(/:link: \*\*Lien\*\*\n\[CALENDAR_LINKS_LINE\]\n?/g, '');
-        content = content.replace(/:link: \*\*Liens\*\*\n\[CALENDAR_LINKS_LINE\]\n?/g, '');
-        content = content.replace(
-          /:link: \*\*Lien officiel\*\*\n\* \[\[Book_Platform\]\]\(<\[Book_Link\]>\)\n?/g,
-          ''
-        );
-      } else {
-        const heading = calendarLinkParts.length >= 2 ? 'Liens' : 'Lien';
-        const linksLine = `* ${calendarLinkParts.map(p => `[${p.label}](<${p.url}>)`).join(' - ')}`;
-        content = content
-          .replace(/:link: \*\*Lien\*\*\n\[CALENDAR_LINKS_LINE\]/g, `:link: **${heading}**\n${linksLine}`)
-          .replace(/:link: \*\*Liens\*\*\n\[CALENDAR_LINKS_LINE\]/g, `:link: **${heading}**\n${linksLine}`);
-      }
-    }
 
     // 4. Remplacement des variables classiques
     allVarsConfig.forEach(varConfig => {
       const name = varConfig.name;
       if (name === 'is_modded_game') return;
       if (name === 'Mod_link' || name === 'Translate_link') return;
-      if (name === 'Overview' || name === 'Synopsis_Oeuvre') return;
+      if (name === 'Overview') return;
 
       const val = (inputs[name] || '').trim();
-      const useDiscordDate =
-        isWorkTrackingTemplateType(tpl.type) && varConfig.type === 'date';
-      let finalVal = formatVarValue(val, varConfig.type, {
-        discordTimestamp: useDiscordDate,
-      });
+      let finalVal = formatVarValue(val, varConfig.type);
 
       if (
         name === 'Game_link' ||
-        name === 'Translate_link' ||
-        name === 'Book_Link' ||
-        name === 'Official_Site_Link' ||
-        name === 'Scan_Site_Link'
+        name === 'Translate_link'
       ) {
         finalVal = cleanGameLink(val);
       }
@@ -257,28 +140,6 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
       content = content.split('[' + tag + ']').join(final || '[' + tag + ']');
     };
     applyBlockquoteSynopsis(overviewRaw, 'Overview');
-    applyBlockquoteSynopsis(synopsisOeuvreRaw, 'Synopsis_Oeuvre');
-
-    if (tpl.type === 'calendar' && !isNewWorkTemplate) {
-      const tagIds = postTags ? postTags.split(',').map(s => s.trim()).filter(Boolean) : [];
-      const workStatus = getWebtoonWorkStatusFromTags(tagIds, savedTags);
-      if (workStatus !== 'ongoing') {
-        const dateFinRaw = resolveStoredDateValue(inputs['Date_Fin'] || '').trim();
-        if (dateFinRaw) {
-          const dateFinFormatted = formatVarValue(dateFinRaw, 'date', { discordTimestamp: true });
-          if (dateFinFormatted) {
-            content = content.replace(
-              /(:books: \*\*Progression :\*\* [^\n]+)\n/,
-              `$1 — ${dateFinFormatted}\n`
-            );
-            content = content.replace(
-              /(Statut actuel : Chapitre [^\n]+)\n/,
-              `$1 — ${dateFinFormatted}\n`
-            );
-          }
-        }
-      }
-    }
 
     // 5. Remplacement de [Translation_Type]
     const displayTranslationType = isIntegrated
@@ -331,10 +192,7 @@ export function usePreviewEngine(props: UsePreviewEngineProps) {
     isIntegrated,
     additionalTranslationLinks,
     additionalModLinks,
-    additionalScanLinks,
     uploadedImages,
-    postTags,
-    savedTags,
   ]);
 
   /** Preview effectif : contenu saisi si non vide, sinon rendu template + variables (affichage et publication). */
