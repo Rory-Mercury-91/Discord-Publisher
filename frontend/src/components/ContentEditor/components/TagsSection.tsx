@@ -6,7 +6,7 @@ interface TagsSectionProps {
   savedTags: any[];
   onOpenTagSelector: () => void;
   onRemoveTag: (tagId: string) => void;
-  /** Vue Webtoon : tous les tags peuvent être retirés (pas de traducteur / type imposés). */
+  /** Si vrai, tous les tags peuvent être retirés (pas de traducteur / type imposés). */
   allowRemoveAll?: boolean;
   tagButtonClassName?: string;
 }

@@ -4,6 +4,20 @@ import { cleanGameLinkUrl } from '../logic/links';
 import { defaultTemplates, defaultVarsConfig } from '../defaults';
 import type { Template, VarConfig } from '../types';
 
+/** Anciens templates de suivi d'œuvres (Webtoon / calendrier) — exclus du chargement. */
+export function isWorkTrackingTemplate(t: Pick<Template, 'id' | 'type' | 'category'>): boolean {
+  return (
+    t.id === 'calendar' ||
+    t.type === 'calendar' ||
+    t.type === 'work_tracking' ||
+    (t.category as string | null | undefined) === 'work_tracking'
+  );
+}
+
+export function excludeWorkTrackingTemplates(templates: Template[]): Template[] {
+  return templates.filter(t => !isWorkTrackingTemplate(t));
+}
+
 /** Format Supabase : objet { templates, customVars } ou ancien format (tableau de templates). */
 export type SavedTemplatesPayload =
   | { templates: Template[]; customVars?: VarConfig[] }
@@ -11,11 +25,13 @@ export type SavedTemplatesPayload =
 
 export function parseSavedTemplatesValue(value: unknown): { templates: Template[]; customVars: VarConfig[] } {
   if (Array.isArray(value) && value.length >= 0) {
-    return { templates: value as Template[], customVars: [] };
+    return { templates: excludeWorkTrackingTemplates(value as Template[]), customVars: [] };
   }
   if (value && typeof value === 'object' && 'templates' in value) {
     const o = value as { templates: unknown; customVars?: unknown };
-    const templates = Array.isArray(o.templates) ? (o.templates as Template[]) : [];
+    const templates = Array.isArray(o.templates)
+      ? excludeWorkTrackingTemplates(o.templates as Template[])
+      : [];
     const customVars = Array.isArray(o.customVars) ? (o.customVars as VarConfig[]) : [];
     return { templates, customVars };
   }
@@ -58,7 +74,10 @@ export function useTemplatesVarsInputs() {
       const raw = localStorage.getItem('customTemplates');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const filtered = excludeWorkTrackingTemplates(parsed as Template[]);
+          if (filtered.length > 0) return filtered;
+        }
       }
     } catch {
       /* ignore */

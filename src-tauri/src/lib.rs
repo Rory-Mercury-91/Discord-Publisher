@@ -161,64 +161,6 @@ async fn report_quick_add_result(
     Ok(())
 }
 
-/// Télécharge une image distante (ex. Nautiljon anti-hotlink) et renvoie une data URL base64.
-#[tauri::command(rename_all = "camelCase")]
-async fn fetch_image_data_url(url: String) -> Result<String, String> {
-    let trimmed = url.trim();
-    if trimmed.is_empty() {
-        return Err("URL vide".to_string());
-    }
-    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
-        return Err("URL HTTP(S) requise".to_string());
-    }
-
-    let client = reqwest::Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        )
-        .build()
-        .map_err(|e| format!("Client HTTP : {}", e))?;
-
-    let mut req = client.get(trimmed);
-    if trimmed.contains("nautiljon.com") {
-        req = req.header("Referer", "https://www.nautiljon.com/");
-    }
-
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| format!("Téléchargement : {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
-    }
-
-    let ctype = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("image/webp")
-        .split(';')
-        .next()
-        .unwrap_or("image/webp")
-        .trim()
-        .to_string();
-
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Lecture : {}", e))?;
-
-    if bytes.is_empty() {
-        return Err("Image vide".to_string());
-    }
-
-    use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    Ok(format!("data:{};base64,{}", ctype, b64))
-}
-
 // ✨ NOUVELLE APPROCHE : Télécharger ET installer en une seule commande
 // Cela simplifie le workflow et réduit les erreurs
 #[tauri::command(rename_all = "camelCase")]
@@ -842,7 +784,6 @@ pub fn run() {
             download_and_install_update,
             cleanup_old_updates,
             report_quick_add_result,
-            fetch_image_data_url,
         ])
         .run(tauri::generate_context!())
         .expect("Erreur Tauri");

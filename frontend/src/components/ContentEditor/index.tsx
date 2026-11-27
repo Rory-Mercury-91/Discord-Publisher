@@ -33,7 +33,6 @@ function statusExportToGameStatusKey(status: string): 'ongoing' | 'completed' | 
 }
 
 interface ContentEditorProps {
-  /** Faux quand la vue est masquée (Webtoon active) — évite effets de bord et re-renders inutiles. */
   isActive?: boolean;
 }
 
@@ -193,19 +192,13 @@ export default function ContentEditor({ isActive = true }: ContentEditorProps) {
   }, [selectedTagIds, savedTags]);
 
   const canPublish =
-    (currentTemplate?.type === 'my' ||
-      currentTemplate?.type === 'calendar' ||
-      currentTemplate?.type === 'work_tracking') &&
+    currentTemplate?.type === 'my' &&
     rateLimitCooldown === null &&
     hasRequiredTags;
 
   const publishTooltipText = (() => {
     if (publishInProgress) return 'Publication en cours…';
-    if (
-      currentTemplate?.type !== 'my' &&
-      currentTemplate?.type !== 'calendar' &&
-      currentTemplate?.type !== 'work_tracking'
-    ) {
+    if (currentTemplate?.type !== 'my') {
       return 'Template en lecture seule';
     }
     if (rateLimitCooldown !== null) return `Rate limit : patientez ${Math.ceil((rateLimitCooldown - Date.now()) / 1000)}s`;
@@ -226,16 +219,15 @@ export default function ContentEditor({ isActive = true }: ContentEditorProps) {
     return set;
   }, [currentTemplate?.content]);
 
-  const usesNomOeuvre = varsUsedInTemplate.has('Nom_Oeuvre');
-  const primaryNameKey = usesNomOeuvre ? 'Nom_Oeuvre' : 'Game_name';
-  const primaryNameLabel = usesNomOeuvre ? "Nom de l'œuvre" : 'Nom du jeu';
+  const primaryNameKey = 'Game_name';
+  const primaryNameLabel = 'Nom du jeu';
 
   const sectionVisibility = useMemo(() => ({
     versions:     varsUsedInTemplate.has('Game_version') || varsUsedInTemplate.has('Translate_version'),
     gameLink:     varsUsedInTemplate.has('Game_link'),
     translations: varsUsedInTemplate.has('Translate_link'),
     mod:          varsUsedInTemplate.has('Mod_link'),
-    synopsis:     varsUsedInTemplate.has('Overview') || varsUsedInTemplate.has('Synopsis_Oeuvre'),
+    synopsis:     varsUsedInTemplate.has('Overview'),
     instructions: varsUsedInTemplate.has('instruction'),
   }), [varsUsedInTemplate]);
 
@@ -246,10 +238,10 @@ export default function ContentEditor({ isActive = true }: ContentEditorProps) {
 
   const visibleVars = useMemo(() => {
     const hardcoded = [
-      'Game_name', 'Nom_Oeuvre',
+      'Game_name',
       'Game_version', 'Translate_version',
-      'Game_link', 'Translate_link', 'Mod_link', 'Lien_Oeuvre',
-      'Overview', 'Synopsis_Oeuvre',
+      'Game_link', 'Translate_link', 'Mod_link',
+      'Overview',
       'instruction', 'is_modded_game',
     ];
     return allVarsConfig.filter(v => !hardcoded.includes(v.name) && varsUsedInTemplate.has(v.name));
@@ -671,13 +663,7 @@ export default function ContentEditor({ isActive = true }: ContentEditorProps) {
   const handleAddImage = async () => {
     const url = imageUrlInput.trim();
     if (!url) return;
-    const { resolveWorkImagePreview } = await import('../../state/workTracking/resolveWorkImage');
-    const resolved = await resolveWorkImagePreview(url);
-    if (resolved) {
-      addImageFromUrl(resolved.sourceUrl, { previewUrl: resolved.previewUrl });
-    } else {
-      addImageFromUrl(url);
-    }
+    addImageFromUrl(url);
     setImageUrlInput('');
   };
 
@@ -798,22 +784,11 @@ export default function ContentEditor({ isActive = true }: ContentEditorProps) {
         {synopsis && (
           <SynopsisSection
             ref={overviewRef}
-            value={
-              varsUsedInTemplate.has('Synopsis_Oeuvre')
-                ? (inputs['Synopsis_Oeuvre'] || '')
-                : (inputs['Overview'] || '')
-            }
-            onChange={(v) =>
-              setInput(varsUsedInTemplate.has('Synopsis_Oeuvre') ? 'Synopsis_Oeuvre' : 'Overview', v)
-            }
+            value={inputs['Overview'] || ''}
+            onChange={(v) => setInput('Overview', v)}
             disabled={false}
-            onTranslate={
-              varsUsedInTemplate.has('Overview') && !varsUsedInTemplate.has('Synopsis_Oeuvre')
-                ? handleTranslateSynopsis
-                : undefined
-            }
+            onTranslate={handleTranslateSynopsis}
             translating={translatingOverview}
-            label={varsUsedInTemplate.has('Synopsis_Oeuvre') ? 'Synopsis' : undefined}
           />
         )}
 

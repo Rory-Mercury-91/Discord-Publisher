@@ -44,7 +44,7 @@ export default function CustomVarsSection({
               <DateInputWithDayOffset
                 label=""
                 value={inputs[v.name] || ''}
-                onChange={val => setInput(v.name, val)}
+                onChange={(val: string) => setInput(v.name, val)}
                 disabled={!isUsed}
               />
             ) : isTime ? (

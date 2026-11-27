@@ -1,35 +1,9 @@
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import {
-  isCalendarPublishedPost,
-  migrateCalendarInputs,
-  migrateLegacyBookFields,
-} from '../calendarTemplate';
 import { SKIP_VERSION_CHECK_INPUT_KEY } from '../logic/postPublishFlags';
-import type { AdditionalTranslationLink, PublishedPost, Tag } from '../types';
-import {
-  applyWorkTrackingInputs,
-  catchUpWorkTrackingInputs,
-} from '../workTracking/catchUpWorkTrackingInputs';
-import { fetchPublishedPostById } from '../workTracking/fetchPublishedPost';
-import { ADDITIONAL_SCAN_LINKS_INPUT_KEY, parseAdditionalScanLinks } from '../workTracking/scanLinks';
+import type { AdditionalTranslationLink, PublishedPost } from '../types';
 import type { ImageData } from './useImagesState';
 import type { LinkConfigs } from './useLinkConfigState';
-
-function parsePostTagIds(tags: string): string[] {
-  return tags ? tags.split(',').map(s => s.trim()).filter(Boolean) : [];
-}
-
-function refreshWorkTrackingInputs(
-  rawInputs: Record<string, string>,
-  tagIds: string[],
-  savedTags: Tag[],
-  setInput: (name: string, value: string) => void
-): void {
-  const migrated = migrateLegacyBookFields(migrateCalendarInputs(rawInputs));
-  const caught = catchUpWorkTrackingInputs(migrated, tagIds, savedTags);
-  applyWorkTrackingInputs(caught, setInput);
-}
 
 type LoadPostDeps = {
   setEditingPostId: (id: string | null) => void;
@@ -44,11 +18,9 @@ type LoadPostDeps = {
   setLinkConfigs: Dispatch<SetStateAction<LinkConfigs>>;
   setAdditionalTranslationLinks: Dispatch<SetStateAction<AdditionalTranslationLink[]>>;
   setAdditionalModLinks: Dispatch<SetStateAction<AdditionalTranslationLink[]>>;
-  setAdditionalScanLinks: Dispatch<SetStateAction<AdditionalTranslationLink[]>>;
   setUploadedImages: (images: ImageData[]) => void;
   setPreviewOverride: (value: string | null) => void;
   setCurrentTemplateIdx: (idx: number) => void;
-  savedTags: Tag[];
 };
 
 /** Retourne loadPostForEditing et loadPostForDuplication pour restaurer un post dans le formulaire. */
@@ -66,11 +38,9 @@ export function useLoadPost(deps: LoadPostDeps) {
     setLinkConfigs,
     setAdditionalTranslationLinks,
     setAdditionalModLinks,
-    setAdditionalScanLinks,
     setUploadedImages,
     setPreviewOverride,
     setCurrentTemplateIdx,
-    savedTags,
   } = deps;
 
   const loadPostForEditing = useCallback(
@@ -106,24 +76,6 @@ export function useLoadPost(deps: LoadPostDeps) {
           if (key === SKIP_VERSION_CHECK_INPUT_KEY) return;
           setInput(key, post.savedInputs![key] || '');
         });
-
-        if (isCalendarPublishedPost(post)) {
-          const migrated = migrateLegacyBookFields(migrateCalendarInputs(post.savedInputs));
-          for (const key of [
-            'Official_Site_Label',
-            'Official_Site_Link',
-            'Scan_Site_Label',
-            'Scan_Site_Link',
-          ] as const) {
-            if (migrated[key]) setInput(key, migrated[key]);
-          }
-          refreshWorkTrackingInputs(
-            post.savedInputs,
-            parsePostTagIds(post.tags || ''),
-            savedTags,
-            setInput
-          );
-        }
       }
 
       if (post.savedLinkConfigs) {
@@ -146,13 +98,6 @@ export function useLoadPost(deps: LoadPostDeps) {
       } else {
         setAdditionalModLinks([]);
       }
-      if (post.savedInputs?.[ADDITIONAL_SCAN_LINKS_INPUT_KEY]) {
-        setAdditionalScanLinks(
-          parseAdditionalScanLinks(post.savedInputs[ADDITIONAL_SCAN_LINKS_INPUT_KEY])
-        );
-      } else {
-        setAdditionalScanLinks([]);
-      }
 
       if (post.savedInputs?.['main_translation_label']) {
         setInput('main_translation_label', post.savedInputs.main_translation_label);
@@ -163,35 +108,10 @@ export function useLoadPost(deps: LoadPostDeps) {
 
       if (post.imagePath && (post.imagePath.startsWith('http://') || post.imagePath.startsWith('https://'))) {
         const fileName = new URL(post.imagePath).pathname.split('/').pop() || 'image.jpg';
-        const baseImage = { id: Date.now().toString(), url: post.imagePath, name: fileName, isMain: true };
-        setUploadedImages([baseImage]);
-        void import('../workTracking/resolveWorkImage').then(({ resolveWorkImagePreview }) =>
-          resolveWorkImagePreview(post.imagePath!).then(resolved => {
-            if (!resolved) return;
-            setUploadedImages([{
-              ...baseImage,
-              url: resolved.sourceUrl,
-              previewUrl: resolved.previewUrl,
-            }]);
-          }),
-        );
+        setUploadedImages([{ id: Date.now().toString(), url: post.imagePath, name: fileName, isMain: true }]);
       }
 
-      if (isCalendarPublishedPost(post)) {
-        setPreviewOverride(null);
-        void (async () => {
-          const fresh = await fetchPublishedPostById(post.id);
-          if (!fresh?.savedInputs) return;
-          refreshWorkTrackingInputs(
-            fresh.savedInputs,
-            parsePostTagIds(fresh.tags || post.tags || ''),
-            savedTags,
-            setInput
-          );
-        })();
-      } else {
-        setPreviewOverride(post.content ?? '');
-      }
+      setPreviewOverride(post.content ?? '');
     },
     [
       setEditingPostId,
@@ -206,11 +126,9 @@ export function useLoadPost(deps: LoadPostDeps) {
       setLinkConfigs,
       setAdditionalTranslationLinks,
       setAdditionalModLinks,
-      setAdditionalScanLinks,
       setUploadedImages,
       setPreviewOverride,
       setCurrentTemplateIdx,
-      savedTags,
     ]
   );
 
@@ -230,14 +148,6 @@ export function useLoadPost(deps: LoadPostDeps) {
           if (key === SKIP_VERSION_CHECK_INPUT_KEY) return;
           setInput(key, post.savedInputs![key] ?? '');
         });
-        if (isCalendarPublishedPost(post)) {
-          refreshWorkTrackingInputs(
-            post.savedInputs,
-            parsePostTagIds(post.tags || ''),
-            savedTags,
-            setInput
-          );
-        }
       }
 
       if (post.savedLinkConfigs) {
@@ -259,13 +169,6 @@ export function useLoadPost(deps: LoadPostDeps) {
       } else {
         setAdditionalModLinks([]);
       }
-      if (post.savedInputs?.[ADDITIONAL_SCAN_LINKS_INPUT_KEY]) {
-        setAdditionalScanLinks(
-          parseAdditionalScanLinks(post.savedInputs[ADDITIONAL_SCAN_LINKS_INPUT_KEY])
-        );
-      } else {
-        setAdditionalScanLinks([]);
-      }
       if (post.savedInputs?.['main_translation_label']) {
         setInput('main_translation_label', post.savedInputs.main_translation_label);
       }
@@ -285,8 +188,6 @@ export function useLoadPost(deps: LoadPostDeps) {
       setLinkConfigs,
       setAdditionalTranslationLinks,
       setAdditionalModLinks,
-      setAdditionalScanLinks,
-      savedTags,
     ]
   );
 

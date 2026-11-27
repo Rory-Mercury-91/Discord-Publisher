@@ -4,7 +4,7 @@ import { useEscapeKey } from '../../hooks/useEscapeKey';
 interface DeleteConfirmModalProps {
   isOpen: boolean;
   postTitle: string;
-  /** Faux pour les posts Webtoon (suppression silencieuse, sans annonce Discord). */
+  /** Faux pour une suppression silencieuse, sans annonce Discord. */
   showDeletionAnnouncement?: boolean;
   onConfirm: (reason: string) => void;
   onCancel: () => void;

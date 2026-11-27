@@ -13,31 +13,16 @@ type DateInputWithDayOffsetProps = {
   onChange: (isoOrEmpty: string) => void;
   disabled?: boolean;
   id?: string;
-  /** Libellé complet au survol (vue Webtoon compacte) */
-  labelTitle?: string;
-  /** Champs date / offset plus étroits */
-  compact?: boolean;
-  /**
-   * stacked : date puis « ou dans » en dessous (variables custom)
-   * row : 2 colonnes grille parente (date | ou) — legacy
-   * planning : date | « ou » | jours (sans label, aligné sur la ligne labels Webtoon)
-   */
-  layout?: 'stacked' | 'row' | 'planning';
 };
 
-/** Date picker + jours (« 468 ») synchronisés dans les deux sens. */
+/** Date picker + délai en jours, synchronisés dans les deux sens. */
 export default function DateInputWithDayOffset({
   label,
   value,
   onChange,
   disabled = false,
   id,
-  labelTitle,
-  compact = false,
-  layout = 'stacked',
 }: DateInputWithDayOffsetProps) {
-  const rowLayout = layout === 'row';
-  const planningLayout = layout === 'planning';
   const [offsetDraft, setOffsetDraft] = useState('');
   const offsetFocusedRef = useRef(false);
   const skipOffsetSyncRef = useRef(false);
@@ -106,71 +91,6 @@ export default function DateInputWithDayOffset({
     applyOffset(trimmed);
   };
 
-  const offsetInput = (
-    <input
-      id={id ? `${id}-offset` : undefined}
-      type="text"
-      value={offsetDraft}
-      onChange={e => setOffsetDraft(e.target.value)}
-      onFocus={() => {
-        offsetFocusedRef.current = true;
-      }}
-      onKeyDown={handleOffsetKeyDown}
-      onBlur={handleOffsetBlur}
-      disabled={disabled}
-      className={`form-input date-input-offset__days ${disabled ? 'form-input--disabled' : ''}`}
-      placeholder="468"
-      inputMode="numeric"
-      aria-label={label ? `${label} — délai en jours` : 'Délai en jours'}
-    />
-  );
-
-  const dateInput = (
-    <input
-      id={id}
-      type="date"
-      value={showIso ? isoValue : ''}
-      onChange={e => handleDateChange(e.target.value)}
-      disabled={disabled}
-      className={`form-input ${disabled ? 'form-input--disabled' : ''}`}
-    />
-  );
-
-  if (planningLayout) {
-    return (
-      <div className="webtoon-editor__plan-date-bundle">
-        {dateInput}
-        <span className="webtoon-editor__plan-ou-sep" aria-hidden>
-          ou
-        </span>
-        {offsetInput}
-      </div>
-    );
-  }
-
-  if (rowLayout) {
-    return (
-      <div
-        className={`date-input-offset date-input-offset--row${compact ? ' date-input-offset--compact' : ''}`}
-      >
-        <div className="form-field date-input-offset__date-cell webtoon-editor__plan-cell webtoon-editor__plan-cell--date">
-          {label ? (
-            <label className="form-label" htmlFor={id} title={labelTitle || label}>
-              {label}
-            </label>
-          ) : null}
-          {dateInput}
-        </div>
-        <div className="form-field date-input-offset__ou-cell webtoon-editor__plan-cell webtoon-editor__plan-cell--ou">
-          <label className="form-label" htmlFor={id ? `${id}-offset` : undefined}>
-            ou
-          </label>
-          {offsetInput}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="form-field date-input-offset">
       {label ? (
@@ -178,10 +98,32 @@ export default function DateInputWithDayOffset({
           {label}
         </label>
       ) : null}
-      {dateInput}
+      <input
+        id={id}
+        type="date"
+        value={showIso ? isoValue : ''}
+        onChange={e => handleDateChange(e.target.value)}
+        disabled={disabled}
+        className={`form-input ${disabled ? 'form-input--disabled' : ''}`}
+      />
       <div className="date-input-offset__row">
         <span className="date-input-offset__label">ou dans</span>
-        {offsetInput}
+        <input
+          id={id ? `${id}-offset` : undefined}
+          type="text"
+          value={offsetDraft}
+          onChange={e => setOffsetDraft(e.target.value)}
+          onFocus={() => {
+            offsetFocusedRef.current = true;
+          }}
+          onKeyDown={handleOffsetKeyDown}
+          onBlur={handleOffsetBlur}
+          disabled={disabled}
+          className={`form-input date-input-offset__days ${disabled ? 'form-input--disabled' : ''}`}
+          placeholder="468"
+          inputMode="numeric"
+          aria-label={label ? `${label} — délai en jours` : 'Délai en jours'}
+        />
       </div>
       {showIso && (
         <p className="date-input-offset__hint settings-log-description">
