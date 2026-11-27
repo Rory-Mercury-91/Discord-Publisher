@@ -5,6 +5,7 @@ Envoie des rappels de publication F95fr quand un thread est créé ou tagué "MA
 import logging
 import discord
 import os
+import re
 import asyncio
 import datetime
 import random
@@ -24,6 +25,7 @@ FRELON_SEMI_AUTO_ID = int(os.getenv('FRELON_SEMI_AUTO_ID')) if os.getenv('FRELON
 FRELON_AUTO_ID = int(os.getenv('FRELON_AUTO_ID')) if os.getenv('FRELON_AUTO_ID') else None
 FRELON_RPGM_ID = int(os.getenv('FRELON_RPGM_ID', '1553753327693725797'))
 FRELON_UNITY_ID = int(os.getenv('FRELON_UNITY_ID', '1553772811464614049'))
+FRELON_UNREAL_ID = int(os.getenv('FRELON_UNREAL_ID', '1563631603115237476'))
 FRELON_NOTIFICATION_CHANNEL_ID = int(os.getenv('FRELON_NOTIFICATION_CHANNEL_ID')) if os.getenv('FRELON_NOTIFICATION_CHANNEL_ID') else None
 DAYS_BEFORE_PUBLICATION = int(os.getenv('DAYS_BEFORE_PUBLICATION', '14'))
 
@@ -35,6 +37,7 @@ WATCHED_FORUM_IDS = {
         FRELON_AUTO_ID,
         FRELON_RPGM_ID,
         FRELON_UNITY_ID,
+        FRELON_UNREAL_ID,
     )
     if forum_id
 }
@@ -73,7 +76,59 @@ def nom_salon(thread) -> str:
     return "Forum"
 
 
-async def envoyer_notification_f95(thread, is_update: bool = False):
+# Premier message du thread, tel que posté sur Frelon :
+#   Version de la traduction: v1.0.1.3
+#   Lien de la traduction: [Mega](https://...)
+_RE_TRANSLATION_VERSION = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?\s*Version\s+de\s+la\s+traduction\s*:?\s*(?:\*\*)?\s*`?(?P<ver>[^\n`]+?)`?\s*$"
+)
+_RE_TRANSLATION_LINK_MD = re.compile(
+    r"(?is)Lien\s+de\s+la\s+traduction\s*:?\s*(?:\*\*)?\s*\[[^\]]*\]\(\s*<?(?P<url>https?://[^)\s>]+)>?\s*\)"
+)
+_RE_TRANSLATION_LINK_PLAIN = re.compile(
+    r"(?is)Lien\s+de\s+la\s+traduction\s*:?\s*(?:\*\*)?\s*<?(?P<url>https?://[^\s>]+)>?"
+)
+
+
+def texte_premier_message(message) -> str:
+    """Regroupe le contenu texte du message de départ (corps + embeds)."""
+    if not message:
+        return ""
+    parts = []
+    content = getattr(message, "content", None)
+    if content:
+        parts.append(content)
+    for embed in getattr(message, "embeds", None) or []:
+        if getattr(embed, "title", None):
+            parts.append(embed.title)
+        if getattr(embed, "description", None):
+            parts.append(embed.description)
+        for field in getattr(embed, "fields", None) or []:
+            parts.append(f"{field.name}: {field.value}")
+    return "\n".join(parts)
+
+
+def extraire_infos_traduction(message) -> tuple[str, str]:
+    """
+    Lit la version et le lien de traduction dans le premier message.
+    Retourne des libellés de repli si le format n'est pas reconnu.
+    """
+    texte = texte_premier_message(message)
+    version = "Non indiquée"
+    lien = "Non trouvé"
+
+    match_version = _RE_TRANSLATION_VERSION.search(texte)
+    if match_version:
+        version = match_version.group("ver").strip()
+
+    match_lien = _RE_TRANSLATION_LINK_MD.search(texte) or _RE_TRANSLATION_LINK_PLAIN.search(texte)
+    if match_lien:
+        lien = match_lien.group("url").strip().rstrip(".,)")
+
+    return version, lien
+
+
+async def envoyer_notification_f95(thread, is_update: bool = False, message=None):
     channel_notif = bot.get_channel(FRELON_NOTIFICATION_CHANNEL_ID)
     if not channel_notif:
         return
@@ -81,7 +136,8 @@ async def envoyer_notification_f95(thread, is_update: bool = False):
     try:
         await asyncio.sleep(random.random() * 2)
 
-        message = thread.starter_message
+        if message is None:
+            message = thread.starter_message
         if not message:
             await asyncio.sleep(1)
             message = await thread.fetch_message(thread.id)
@@ -94,15 +150,22 @@ async def envoyer_notification_f95(thread, is_update: bool = False):
         date_publication = date_ref + datetime.timedelta(days=DAYS_BEFORE_PUBLICATION)
         timestamp_discord = int(date_publication.timestamp())
 
-        action_txt = "a été mis à jour" if is_update else "a été créé"
+        action_txt = "mis à jour" if is_update else "créé"
+        version_traduction, lien_traduction = extraire_infos_traduction(message)
+        # Les liens Mega contiennent un # : les <> évitent que Discord coupe la clé.
+        if lien_traduction.startswith("http"):
+            lien_traduction = f"<{lien_traduction}>"
 
         msg_content = (
             f"📢 **Rappel Publication F95fr**\n"
-            f"Le thread **{thread.name}** {action_txt}.\n"
+            f"Le thread suivant a été {action_txt} :\n"
+            f"**{thread.name}**\n"
             f"**Salon :** {nom_salon(thread)}\n"
             f"**Traducteur :** {auteur}\n"
-            f"📅 À publier le : <t:{timestamp_discord}:D> (<t:{timestamp_discord}:R>)\n"
-            f"🔗 Lien : {thread.jump_url}"
+            f"**Version de la traduction :** {version_traduction}\n"
+            f"🔗 Lien du post : {thread.jump_url}\n"
+            f"🔗 Lien de la traduction : {lien_traduction}\n"
+            f"📅 À publier le : <t:{timestamp_discord}:D> (<t:{timestamp_discord}:R>)"
         )
 
         await channel_notif.send(msg_content)
@@ -164,7 +227,7 @@ async def on_message_edit(before, after):
             if est_forum_surveille(after.channel.parent_id):
                 if a_tag_maj(after.channel):
                     logger.info("✅ Thread avec tag MAJ, envoi notification F95...")
-                    await envoyer_notification_f95(after.channel, is_update=True)
+                    await envoyer_notification_f95(after.channel, is_update=True, message=after)
                 else:
                     logger.info("Pas de tag MAJ, pas de notification")
             else:
